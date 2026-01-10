@@ -182,8 +182,8 @@ class KeyboardShortcutsManager {
                 // Other Cmd shortcuts
                 if !event.modifierFlags.contains(.option) && !event.modifierFlags.contains(.shift) {
                     switch event.charactersIgnoringModifiers {
-                    case "t":
-                        Logger.log("🎯 COMMAND: Cmd+T → New tab", type: "KeyboardShortcutsManager")
+                    case "t", "n":
+                        Logger.log("🎯 COMMAND: Cmd+T/Cmd+N → New tab", type: "KeyboardShortcutsManager")
                         NotificationCenter.default.post(name: .browserNewTab, object: nil)
                         return nil
                     case "w":
