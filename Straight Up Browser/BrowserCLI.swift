@@ -15,6 +15,7 @@ class BrowserCLI {
     private var isPipeSetup = false
 
     private init() {
+        Logger.log("BrowserCLI initialized", type: "BrowserCLI")
         // Defer pipe setup until first use to avoid sandboxing issues during app initialization
     }
 
@@ -62,12 +63,27 @@ class BrowserCLI {
     }
 
     private func handleCommand(_ command: String) {
+        Logger.log("BrowserCLI handleCommand called with: \(command)", type: "BrowserCLI")
         // Ensure pipe is set up before handling commands
         setupCommandInterface()
 
-        let parts = command.split(separator: " ", maxSplits: 1)
-        let action = parts.first?.lowercased()
-        let parameter = parts.count > 1 ? String(parts[1]) : nil
+        // Parse command and extract response file if present
+        var commandParts = command.split(separator: " ")
+        var responseFilePath: String? = nil
+
+        // Check for --response-file flag
+        if let responseFlagIndex = commandParts.firstIndex(of: "--response-file"),
+           responseFlagIndex + 1 < commandParts.count {
+            responseFilePath = String(commandParts[responseFlagIndex + 1])
+            Logger.log("Found response file path: \(responseFilePath!)", type: "BrowserCLI")
+            // Remove the response file arguments from the command
+            commandParts.remove(at: responseFlagIndex + 1)
+            commandParts.remove(at: responseFlagIndex)
+        }
+
+        let action = commandParts.first?.lowercased()
+        let parameter = commandParts.count > 1 ? commandParts[1..<commandParts.count].joined(separator: " ") : nil
+        Logger.log("Parsed action: \(action ?? "nil"), parameter: \(parameter ?? "nil")", type: "BrowserCLI")
 
         switch action {
         case "open":
@@ -76,7 +92,8 @@ class BrowserCLI {
             }
         case "get":
             if let urlString = parameter {
-                getPageData(urlString)
+                let actualURL = (urlString == "current") ? nil : urlString
+                getPageData(actualURL, responseFilePath: responseFilePath)
             }
         case "search":
             if let query = parameter {
@@ -125,9 +142,32 @@ class BrowserCLI {
         NotificationCenter.default.post(name: .browserOpenURL, object: nil, userInfo: ["url": urlString])
     }
 
-    private func getPageData(_ urlString: String) {
+    private func getPageData(_ urlString: String?, responseFilePath: String? = nil) {
+        Logger.log("BrowserCLI getPageData called with urlString: \(urlString ?? "nil"), responseFilePath: \(responseFilePath ?? "nil")", type: "BrowserCLI")
+
+        // For testing, write a simple response immediately
+        if let responseFilePath = responseFilePath {
+            let testResponse = "{\"status\": \"command_received\", \"url\": \"\(urlString ?? "current")\", \"timestamp\": \"\(Date())\"}"
+            do {
+                try testResponse.write(toFile: responseFilePath, atomically: true, encoding: .utf8)
+                Logger.log("Test response written to: \(responseFilePath)", type: "BrowserCLI")
+            } catch {
+                Logger.log("Error writing test response: \(error)", type: "BrowserCLI")
+            }
+        }
+
         // Send notification to extract page data from the active web view
-        NotificationCenter.default.post(name: .browserGetPageData, object: nil, userInfo: ["url": urlString])
+        var userInfo: [String: Any] = [:]
+        if let urlString = urlString {
+            userInfo["url"] = urlString
+        } else {
+            userInfo["currentPage"] = true
+        }
+        if let responseFilePath = responseFilePath {
+            userInfo["responseFilePath"] = responseFilePath
+        }
+        Logger.log("Posting browserGetPageData notification", type: "BrowserCLI")
+        NotificationCenter.default.post(name: .browserGetPageData, object: nil, userInfo: userInfo)
     }
 
     private func search(_ query: String) {

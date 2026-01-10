@@ -142,7 +142,6 @@ struct ContentView: View {
     @State private var windowManager: WindowManager?
     @State private var notificationManager: NotificationManager?
     @State private var keyboardShortcutsManager: KeyboardShortcutsManager?
-    @State private var crashRecoveryManager: CrashRecoveryManager?
     @State private var bookmarkManager: BookmarkManager?
     @State private var webViewManager: WebViewManager?
     @State private var managersInitialized = false
@@ -932,26 +931,8 @@ struct ContentView: View {
                         preloadFaviconsForAllTabs()
                     }
                     // Note: Removed reloadAllTabs() call - tabs should load their content naturally when selected
-                }
-                // Then check for crash recovery if no normal session was restored - automatically restore
-                else if let savedSession = crashRecoveryManager?.getSavedSession(),
-                   !savedSession.tabs.isEmpty {
-                    Logger.log("ContentView onAppear: Crash detected, automatically restoring session. Saved session has \(savedSession.tabs.count) tabs", type: "ContentView")
-                    crashRecoveryManager?.restoreSession(savedSession, in: modelContext)
-                    // Refresh the tabs query by triggering a state update
-                    DispatchQueue.main.async {
-                        if let restoredTabs = try? modelContext.fetch(FetchDescriptor<Tab>()),
-                           let firstTab = restoredTabs.first {
-                            tabManager.selectedTabId = firstTab.id
-                        }
-                    }
-                    // Reload favicons after session restoration
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        preloadFaviconsForAllTabs()
-                    }
-                    // Note: Removed reloadAllTabs() call - tabs should load their content naturally when selected
                 } else {
-                    Logger.log("ContentView onAppear: No crash detected, normal startup. shouldOfferRecovery=\(crashRecoveryManager?.shouldOfferRecovery() ?? false), hasSavedSession=\(crashRecoveryManager?.getSavedSession() != nil)", type: "ContentView")
+                    Logger.log("ContentView onAppear: Normal startup", type: "ContentView")
                     if tabs.isEmpty {
                         _ = tabManager.createNewTab()
                     } else {
@@ -965,6 +946,9 @@ struct ContentView: View {
                     self.reloadAllTabs()
                 }
             }
+
+            // Ensure there's always a selected tab when tabs are available
+            tabManager.ensureSelectedTab(from: tabs)
         }
         .onChange(of: tabManager.selectedTabId) { oldValue, newValue in
             Logger.log("ContentView onChange selectedTabId: \(oldValue?.uuidString ?? "nil") -> \(newValue?.uuidString ?? "nil")", type: "ContentView")
@@ -1032,9 +1016,12 @@ struct ContentView: View {
                 }
             }
         }
+        .onChange(of: tabs) { oldTabs, newTabs in
+            // Ensure there's always a selected tab when tabs change
+            tabManager.ensureSelectedTab(from: newTabs)
+        }
         .onDisappear {
             notificationManager!.cleanup()
-            crashRecoveryManager?.cleanup()
 
             // Save session for normal app restart
             saveSessionForRestart()
@@ -1074,13 +1061,13 @@ struct ContentView: View {
         }
         navigationManager = NavigationManager()
         windowManager = WindowManager()
-        crashRecoveryManager = CrashRecoveryManager()
         bookmarkManager = BookmarkManager(modelContext: modelContext)
         managersInitialized = true
 
         notificationManager = NotificationManager(
             tabManager: tabManager,
             navigationManager: navigationManager!,
+            webViewManager: webViewManager!,
             showOmnibar: $showOmnibar,
             tabs: { self.tabs },
             closeTabAction: { tab, tabs in
@@ -1140,9 +1127,6 @@ struct ContentView: View {
                 #endif
             }
         )
-
-        // Setup crash recovery after all managers are initialized
-        crashRecoveryManager?.setup(with: modelContext, getSelectedTabId: { tabManager.selectedTabId })
     }
 
     private func createNewTab() {
@@ -1536,11 +1520,10 @@ struct ContentView: View {
             selectedTabId: tabManager.selectedTabId
         )
 
-        // Save to UserDefaults with a different key than crash recovery
         let normalSessionKey = "normal_session_data"
         if let encoded = try? JSONEncoder().encode(sessionData) {
             UserDefaults.standard.set(encoded, forKey: normalSessionKey)
-            // Clear the crash recovery saved session since we're saving a normal session
+            // Clear any leftover crash recovery data
             UserDefaults.standard.removeObject(forKey: "saved_session_data")
             UserDefaults.standard.synchronize()
         }
@@ -1607,6 +1590,25 @@ struct ContentView: View {
 
         return sessionData
     }
+}
+
+// Data structures for session persistence
+struct SessionData: Codable {
+    let tabs: [SavedTab]
+    let selectedTabId: UUID?
+}
+
+struct SavedTab: Codable {
+    let id: UUID
+    let title: String
+    let url: URL?
+    let isActive: Bool
+    let historyStrings: [String]
+    let currentHistoryIndex: Int
+    let isPinned: Bool
+    let isMuted: Bool
+    let zoomLevel: Double
+    let orderIndex: Int
 }
 
 #Preview {

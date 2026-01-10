@@ -17,7 +17,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Print logger filter status for debugging
         Logger.printFilterStatus()
-        
+
+        // Initialize CLI interface
+        _ = BrowserCLI.shared
+
         // Set up observers before windows are created
         setupWindowObservers()
     }
@@ -36,16 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.configureAllWindows()
         }
     }
-    
-    func applicationWillTerminate(_ notification: Notification) {
-        // Clear crash flag on normal app termination
-        Logger.log("AppDelegate applicationWillTerminate: Clearing crash flag", type: "AppDelegate")
-        UserDefaults.standard.set(false, forKey: "app_crashed_flag")
-        // Also clear the crash recovery saved session
-        UserDefaults.standard.removeObject(forKey: "saved_session_data")
-        UserDefaults.standard.synchronize()
-    }
-    
+
     private func setupWindowObservers() {
         // Observe for windows becoming key (when they become active)
         NotificationCenter.default.addObserver(

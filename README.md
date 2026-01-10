@@ -20,42 +20,139 @@ A minimal, efficient web browser for macOS with left-side tabs, popup omnibar, a
 - `⌘[` - Go back
 - `⌘]` - Go forward
 
-## Command Line Interface
+## Command Line Interface (CLI)
 
-The browser includes a command-line interface that allows other applications to control it.
+The browser includes a comprehensive command-line interface that allows other applications to control it programmatically. The CLI supports both simple commands and data extraction operations.
 
 ### Building the CLI Tool
 
 ```bash
-swiftc browser-cli/main.swift -o browser-cli
+# Use the provided build script
+./build-cli.sh
+
+# Or build manually
+swiftc browser-cli/main.swift -o browser-cli-tool
 ```
+
+### CLI Architecture
+
+The CLI communicates with the running browser application through:
+- **Command Channel**: Named pipe at `/tmp/straight_up_browser_commands`
+- **Response Channel**: Temporary files in `/tmp/` for commands that return data
+
+**Important**: The browser application must be running for CLI commands to work.
 
 ### Usage
 
+#### Basic Commands
+
 ```bash
 # Open a URL in a new tab
-./browser-cli open https://www.apple.com
+./browser-cli-tool open https://www.apple.com
 
-# Search for something
-./browser-cli search "swift programming"
-
-# Get page data (for scraping)
-./browser-cli get https://example.com
+# Search for something (uses Google)
+./browser-cli-tool search "swift programming"
 
 # Create a new tab
-./browser-cli new
+./browser-cli-tool new
 
 # Close current tab
-./browser-cli close
+./browser-cli-tool close
 ```
+
+#### Data Extraction Commands
+
+```bash
+# Extract data from current page
+./browser-cli-tool get
+
+# Extract data from specific URL (opens in new tab)
+./browser-cli-tool get https://example.com
+```
+
+### Response Handling for Data Commands
+
+Commands that extract data (`get`) return results via temporary JSON files:
+
+1. **File Location**: Responses are written to `/tmp/straight_up_browser_response_*.json`
+2. **Format**: JSON containing page title, URL, HTML content, text content, links, and images
+3. **Lifetime**: Files are automatically cleaned up after reading
+
+**Example Response File Content**:
+```json
+{
+  "url": "https://example.com",
+  "title": "Example Domain",
+  "text": "Example Domain\nThis domain is for use in illustrative examples...",
+  "links": [
+    {
+      "text": "More information...",
+      "href": "https://www.iana.org/domains/example"
+    }
+  ]
+}
+```
+
+### Programmatic Usage
+
+#### From Shell Scripts
+
+```bash
+#!/bin/bash
+# Open Sweetwater and extract guitar pedal data
+./browser-cli-tool open "https://www.sweetwater.com/shop/guitars/guitar-pedals/"
+sleep 3
+./browser-cli-tool get
+```
+
+#### From Other Applications
+
+```python
+import subprocess
+import json
+import glob
+
+# Send command
+subprocess.run(["./browser-cli-tool", "get", "https://example.com"])
+
+# Read response
+response_files = glob.glob("/tmp/straight_up_browser_response_*.json")
+if response_files:
+    with open(response_files[0], 'r') as f:
+        data = json.load(f)
+    print(f"Page title: {data.get('title')}")
+```
+
+### Important Notes
+
+#### Browser State Requirements
+- The Straight Up Browser application must be running
+- Some websites may require user interaction (CAPTCHA verification, login, etc.)
+- The browser may display dialogs that require user attention
+
+#### CAPTCHA and Human Verification
+When scraping websites, you may encounter CAPTCHA challenges or other human verification systems. The CLI will open the page, but you may need to:
+
+1. **Switch to the browser application**
+2. **Complete any CAPTCHA or verification**
+3. **Then run the extraction command**
+
+For automated scraping, consider websites that don't require human verification or implement appropriate delays and error handling.
+
+#### Security Considerations
+- CLI commands execute in the context of the running browser
+- Be cautious with URLs from untrusted sources
+- Data extraction includes all page content (HTML, scripts, etc.)
 
 ### Integration with Other Apps
 
-The CLI communicates with the browser via a named pipe at `/tmp/straight_up_browser_commands`. You can send commands directly:
+You can send commands directly to the named pipe:
 
 ```bash
 echo "open https://github.com" > /tmp/straight_up_browser_commands
 ```
+
+Or use the CLI tool for more complex operations with response handling.
 
 ## Building the Application
 
@@ -70,7 +167,6 @@ xcodebuild -scheme "Straight Up Browser" -configuration Release build
 - **Tab Model**: SwiftData-powered tab management with history
 - **Omnibar**: Popup search/navigation interface
 - **CLI**: Named pipe-based inter-process communication
-- **Crash Recovery**: Automatic session restoration after crashes
 - **Logger**: Compile-time filtering logging system for debugging
 
 ## Future Development Roadmap

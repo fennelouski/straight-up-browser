@@ -12,6 +12,7 @@ import WebKit
 class NotificationManager {
     private var tabManager: TabManager
     private var navigationManager: NavigationManager
+    private var webViewManager: WebViewManager
     private var showOmnibar: Binding<Bool>
     private var tabs: () -> [Tab]
     private var closeTabAction: (Tab, [Tab]) -> Void
@@ -29,6 +30,7 @@ class NotificationManager {
     init(
         tabManager: TabManager,
         navigationManager: NavigationManager,
+        webViewManager: WebViewManager,
         showOmnibar: Binding<Bool>,
         tabs: @escaping () -> [Tab],
         closeTabAction: @escaping (Tab, [Tab]) -> Void,
@@ -43,6 +45,7 @@ class NotificationManager {
     ) {
         self.tabManager = tabManager
         self.navigationManager = navigationManager
+        self.webViewManager = webViewManager
         self.showOmnibar = showOmnibar
         self.tabs = tabs
         self.closeTabAction = closeTabAction
@@ -304,34 +307,84 @@ class NotificationManager {
             object: nil,
             queue: .main
         ) { [weak self] notification in
+            Logger.log("browserGetPageData notification received", type: "NotificationManager")
+            let responseFilePath = notification.userInfo?["responseFilePath"] as? String
+            Logger.log("Response file path: \(responseFilePath ?? "nil")", type: "NotificationManager")
             if let urlString = notification.userInfo?["url"] as? String {
-                self?.extractPageData(from: urlString)
+                Logger.log("Extracting page data from URL: \(urlString)", type: "NotificationManager")
+                self?.extractPageData(from: urlString, responseFilePath: responseFilePath)
+            } else if notification.userInfo?["currentPage"] as? Bool == true {
+                Logger.log("Extracting current page data", type: "NotificationManager")
+                self?.extractCurrentPageData(responseFilePath: responseFilePath)
+            } else {
+                Logger.log("No URL or currentPage flag in notification", type: "NotificationManager")
             }
         }
         observers.append(getPageDataObserver)
     }
 
-    private func extractPageData(from urlString: String) {
-        guard let backgroundWebView = backgroundWebView,
-              let url = URL(string: urlString) else {
-            Logger.log("Error: Invalid URL or background web view not available", type: "NotificationManager")
+    private func extractCurrentPageData(responseFilePath: String? = nil) {
+        // Extract data from the currently active page
+        let activeTab = tabManager.getActiveTab(from: tabs())
+
+        guard let activeTab = activeTab else {
+            Logger.log("Error: No active tab available", type: "NotificationManager")
             return
         }
 
-        Logger.log("Loading page data for: \(urlString)", type: "NotificationManager")
+        let webView = webViewManager.getWebView(for: activeTab.id)
 
-        // Load the URL in the background web view
-        let request = URLRequest(url: url)
-        backgroundWebView.load(request)
+        Logger.log("Extracting data from current active page", type: "NotificationManager")
+        extractDataFromLoadedPage(urlString: activeTab.url?.absoluteString ?? "current", webView: webView, responseFilePath: responseFilePath)
+    }
 
-        // Wait for the page to load, then extract data
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
-            self?.extractDataFromLoadedPage(urlString: urlString)
+    private func extractPageData(from urlString: String, responseFilePath: String? = nil) {
+        // Try to use the active webview first, fallback to background webview
+        let activeTab = tabManager.getActiveTab(from: tabs())
+        var targetWebView: WKWebView?
+        var shouldLoadURL = false
+
+        if let activeTab = activeTab {
+            // Get the webview for the active tab
+            targetWebView = webViewManager.getWebView(for: activeTab.id)
+            Logger.log("Using active tab webview for data extraction", type: "NotificationManager")
+        }
+
+        if targetWebView == nil {
+            targetWebView = backgroundWebView
+            shouldLoadURL = true
+            Logger.log("Using background webview for data extraction", type: "NotificationManager")
+        }
+
+        guard let webView = targetWebView else {
+            Logger.log("Error: No webview available for data extraction", type: "NotificationManager")
+            return
+        }
+
+        if shouldLoadURL {
+            // If using background webview, we need to load the URL first
+            guard let url = URL(string: urlString) else {
+                Logger.log("Error: Invalid URL", type: "NotificationManager")
+                return
+            }
+
+            let request = URLRequest(url: url)
+            webView.load(request)
+
+            // Wait for background webview to load
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
+                self?.extractDataFromLoadedPage(urlString: urlString, webView: webView, responseFilePath: responseFilePath)
+            }
+        } else {
+            // Extract data from the current page in the active webview
+            Logger.log("About to extract data from active webview", type: "NotificationManager")
+            extractDataFromLoadedPage(urlString: urlString, webView: webView, responseFilePath: responseFilePath)
         }
     }
 
-    private func extractDataFromLoadedPage(urlString: String) {
-        guard let backgroundWebView = backgroundWebView else { return }
+    private func extractDataFromLoadedPage(urlString: String, webView: WKWebView? = nil, responseFilePath: String? = nil) {
+        let webViewToUse = webView ?? backgroundWebView
+        guard let webViewToUse = webViewToUse else { return }
 
         // JavaScript to extract page data
         let extractionScript = """
@@ -365,17 +418,31 @@ class NotificationManager {
         })();
         """
 
-        backgroundWebView.evaluateJavaScript(extractionScript) { [weak self] result, error in
+        webViewToUse.evaluateJavaScript(extractionScript) { [weak self] result, error in
+            var resultString: String
+
             if let error = error {
                 Logger.log("Error extracting page data: \(error)", type: "NotificationManager")
-                return
+                resultString = "{\"error\": \"\(error.localizedDescription)\", \"url\": \"\(urlString)\"}"
+            } else if let jsonString = result as? String {
+                resultString = jsonString
+                // Still log for debugging
+                Logger.log("Page data extracted successfully", type: "NotificationManager")
+            } else {
+                resultString = "{\"error\": \"Failed to extract page data\", \"url\": \"\(urlString)\"}"
+                Logger.log("Failed to extract page data", type: "NotificationManager")
             }
 
-            if let resultString = result as? String {
-                // Print the JSON data to stdout for the CLI
-                Logger.log(resultString, type: "NotificationManager")
+            // If we have a response file path, write the result there
+            if let responseFilePath = responseFilePath {
+                do {
+                    try resultString.write(toFile: responseFilePath, atomically: true, encoding: .utf8)
+                } catch {
+                    Logger.log("Error writing response to file: \(error)", type: "NotificationManager")
+                }
             } else {
-                Logger.log("{\"error\": \"Failed to extract page data\", \"url\": \"\(urlString)\"}", type: "NotificationManager")
+                // Fallback to logging if no response file
+                Logger.log(resultString, type: "NotificationManager")
             }
         }
     }

@@ -49,6 +49,8 @@ class TabManager: ObservableObject {
             if selectedTabId == tab.id {
                 selectedTabId = tabs.filter { $0.id != tab.id }.first?.id
             }
+            // Ensure there's always a selected tab after closing
+            ensureSelectedTab(from: tabs.filter { $0.id != tab.id })
         } else {
             Logger.log("TabManager closeTab: Closing last tab, converting to history tab", type: "TabManager")
             // Handle closing the last tab - convert the existing tab to a history tab instead of creating a new one
@@ -231,5 +233,23 @@ class TabManager: ObservableObject {
     func createHistoryTab(tabs: [Tab]) -> Tab {
         let historyTab = Tab(title: "History", url: URL(string: "straightup://history"), isActive: true)
         return historyTab
+    }
+
+    /// Ensures there is always a selected tab when tabs are available
+    func ensureSelectedTab(from tabs: [Tab]) {
+        // If there are no tabs, there's nothing to select
+        guard !tabs.isEmpty else {
+            selectedTabId = nil
+            return
+        }
+
+        // If we already have a valid selected tab, keep it
+        if let selectedId = selectedTabId, tabs.contains(where: { $0.id == selectedId }) {
+            return
+        }
+
+        // Otherwise, select the first available tab
+        selectedTabId = tabs.first?.id
+        Logger.log("TabManager ensureSelectedTab: No valid selected tab found, selecting first tab: \(selectedTabId?.uuidString ?? "nil")", type: "TabManager")
     }
 }
