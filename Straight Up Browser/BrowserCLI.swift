@@ -30,7 +30,7 @@ class BrowserCLI {
         // Create new pipe
         let result = mkfifo(pipePath, 0o666)
         if result == 0 {
-            print("Browser CLI pipe created at: \(pipePath)")
+            Logger.log("Browser CLI pipe created at: \(pipePath)", type: "BrowserCLI")
             isPipeSetup = true
 
             // Start listening for commands in background
@@ -38,7 +38,7 @@ class BrowserCLI {
                 self.listenForCommands(at: pipePath)
             }
         } else {
-            print("Failed to create command pipe")
+            Logger.log("Failed to create command pipe", type: "BrowserCLI")
         }
     }
 
@@ -54,7 +54,7 @@ class BrowserCLI {
                     }
                 }
             } catch {
-                print("Error reading from pipe: \(error)")
+                Logger.log("Error reading from pipe: \(error)", type: "BrowserCLI")
                 // Wait a bit before retrying
                 Thread.sleep(forTimeInterval: 1.0)
             }
@@ -115,7 +115,7 @@ class BrowserCLI {
                 focusTab(tabId)
             }
         default:
-            print("Unknown command: \(command)")
+            Logger.log("Unknown command: \(command)", type: "BrowserCLI")
         }
 
     }

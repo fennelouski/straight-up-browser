@@ -70,6 +70,8 @@ xcodebuild -scheme "Straight Up Browser" -configuration Release build
 - **Tab Model**: SwiftData-powered tab management with history
 - **Omnibar**: Popup search/navigation interface
 - **CLI**: Named pipe-based inter-process communication
+- **Crash Recovery**: Automatic session restoration after crashes
+- **Logger**: Compile-time filtering logging system for debugging
 
 ## Future Development Roadmap
 
@@ -105,7 +107,7 @@ xcodebuild -scheme "Straight Up Browser" -configuration Release build
 - [ ] Bookmark management system
 - [ ] Bookmark folders and organization
 - [ ] Bookmark sync across devices
-- [ ] Import/export bookmarks
+- [x] Import/export bookmarks (Chrome, Edge support; Safari/Firefox in progress)
 - [ ] Quick bookmark access in omnibar
 
 #### Privacy & Security
@@ -121,12 +123,12 @@ xcodebuild -scheme "Straight Up Browser" -configuration Release build
 - [ ] Memory management for multiple tabs
 - [ ] Cache management
 - [ ] Background tab throttling
-- [ ] Crash recovery and session restoration
+- [x] Crash recovery and session restoration
 
 ### 🛠️ Developer Features
 
 #### CLI Integration
-- [ ] Enhanced CLI commands (screenshot, PDF export, etc.)
+- [x] Enhanced CLI commands (page data extraction, tab management, bookmark operations)
 - [ ] JavaScript injection capabilities
 - [ ] Cookie inspection and management
 - [ ] Network request monitoring

@@ -20,39 +20,39 @@ class WebViewManager: ObservableObject {
     weak var delegate: WebViewManagerDelegate?
 
     init() {
-        print("WebViewManager initialized")
+        Logger.log("WebViewManager initialized", type: "WebViewManager")
     }
 
     // Get or create a web view for a specific tab
     func getWebView(for tabId: UUID) -> WKWebView {
-        print("WebViewManager getWebView called for tab \(tabId)")
+        Logger.log("WebViewManager getWebView called for tab \(tabId)", type: "WebViewManager")
         if let existingWebView = webViews[tabId] {
-            print("WebViewManager getWebView: returning existing WebView \(Unmanaged.passUnretained(existingWebView).toOpaque()) for tab \(tabId)")
+            Logger.log("WebViewManager getWebView: returning existing WebView \(Unmanaged.passUnretained(existingWebView).toOpaque()) for tab \(tabId)", type: "WebViewManager")
             return existingWebView
         }
 
-        print("WebViewManager: Creating new WKWebView for tab \(tabId)")
+        Logger.log("WebViewManager: Creating new WKWebView for tab \(tabId)", type: "WebViewManager")
         let webView = createWebView()
         webViews[tabId] = webView
-        print("WebViewManager: Created new WebView \(Unmanaged.passUnretained(webView).toOpaque()) for tab \(tabId)")
+        Logger.log("WebViewManager: Created new WebView \(Unmanaged.passUnretained(webView).toOpaque()) for tab \(tabId)", type: "WebViewManager")
         return webView
     }
 
     // Set the active tab (switches which web view is considered active)
     func setActiveTab(_ tabId: UUID?) {
-        print("WebViewManager setActiveTab called with tabId: \(tabId?.uuidString ?? "nil")")
+        Logger.log("WebViewManager setActiveTab called with tabId: \(tabId?.uuidString ?? "nil")", type: "WebViewManager")
         guard let tabId = tabId else {
             activeWebView = nil
             return
         }
 
         let webView = getWebView(for: tabId)
-        print("WebViewManager setActiveTab: got WebView for tab \(tabId): \(Unmanaged.passUnretained(webView).toOpaque())")
+        Logger.log("WebViewManager setActiveTab: got WebView for tab \(tabId): \(Unmanaged.passUnretained(webView).toOpaque())", type: "WebViewManager")
         if activeWebView !== webView {
-            print("WebViewManager: Switching active web view for tab \(tabId)")
+            Logger.log("WebViewManager: Switching active web view for tab \(tabId)", type: "WebViewManager")
             activeWebView = webView
         } else {
-            print("WebViewManager setActiveTab: activeWebView already correct for tab \(tabId)")
+            Logger.log("WebViewManager setActiveTab: activeWebView already correct for tab \(tabId)", type: "WebViewManager")
         }
     }
 
@@ -70,7 +70,7 @@ class WebViewManager: ObservableObject {
                 activeWebView = nil
             }
 
-            print("Removed web view for tab \(tabId)")
+            Logger.log("Removed web view for tab \(tabId)", type: "WebViewManager")
         }
     }
 
@@ -161,7 +161,7 @@ class WebViewManager: ObservableObject {
 
     deinit {
         cleanup()
-        print("WebViewManager deallocated")
+        Logger.log("WebViewManager deallocated", type: "WebViewManager")
     }
 }
 

@@ -61,7 +61,7 @@ enum BrowserType: String, CaseIterable {
                         }
                     }
                 } catch {
-                    print("Error reading Firefox profiles: \(error)")
+                    Logger.log("Error reading Firefox profiles: \(error)", type: "BookmarkImporter")
                 }
             }
             return nil
@@ -119,7 +119,7 @@ class BookmarkImporter {
         // or user permission. Safari also doesn't expose bookmarks via AppleScript.
 
         // For now, return empty array with a note that Safari import requires manual export
-        print("Safari bookmark import requires manual export: File > Export Bookmarks... then import the HTML file")
+        Logger.log("Safari bookmark import requires manual export: File > Export Bookmarks... then import the HTML file", type: "BookmarkImporter")
 
         // TODO: Add support for importing Safari's exported HTML bookmark files
         // Safari can export bookmarks as HTML, which we could parse
@@ -169,7 +169,7 @@ class BookmarkImporter {
                 }
             }
         } catch {
-            print("Error importing Chrome bookmarks: \(error)")
+            Logger.log("Error importing Chrome bookmarks: \(error)", type: "BookmarkImporter")
         }
 
         return bookmarks
@@ -194,7 +194,7 @@ class BookmarkImporter {
     private static func importFirefoxBookmarks(from filePath: String) -> [ImportedBookmark] {
         // Firefox uses SQLite database, which is more complex to parse
         // For now, we'll return an empty array and note that Firefox import requires additional setup
-        print("Firefox bookmark import requires SQLite parsing which is not implemented yet")
+        Logger.log("Firefox bookmark import requires SQLite parsing which is not implemented yet", type: "BookmarkImporter")
         return []
     }
 }

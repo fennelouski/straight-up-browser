@@ -67,7 +67,7 @@ final class Tab {
     }
 
     func navigateTo(_ url: URL) {
-        print("Tab.navigateTo: setting URL to \(url.absoluteString)")
+        Logger.log("Tab.navigateTo: setting URL to \(url.absoluteString)", type: "Tab")
         self.url = url
 
         // Add to history
@@ -122,6 +122,19 @@ final class Tab {
         }
 
         return domain
+    }
+
+    // Normalize URL for comparison by removing trailing slashes
+    static func normalizeURLForComparison(_ url: URL?) -> URL? {
+        guard let url = url else { return nil }
+        var urlString = url.absoluteString
+
+        // Remove trailing slash from path, but keep it for root URLs
+        if urlString.hasSuffix("/") && url.path != "/" {
+            urlString = String(urlString.dropLast())
+        }
+
+        return URL(string: urlString)
     }
 
     // Update title based on current URL

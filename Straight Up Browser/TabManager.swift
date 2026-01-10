@@ -13,17 +13,27 @@ class TabManager: ObservableObject {
     @Published var selectedTabId: UUID?
     @Published var closedTabs: [Tab] = []
 
-    private var modelContext: ModelContext
+    private var modelContext: ModelContext?
     private weak var webViewManager: WebViewManager?
 
-    init(modelContext: ModelContext, webViewManager: WebViewManager? = nil) {
+    init(modelContext: ModelContext? = nil, webViewManager: WebViewManager? = nil) {
         self.modelContext = modelContext
+        self.webViewManager = webViewManager
+    }
+
+    func setModelContext(_ modelContext: ModelContext) {
+        self.modelContext = modelContext
+    }
+
+    func setWebViewManager(_ webViewManager: WebViewManager) {
         self.webViewManager = webViewManager
     }
 
     func createNewTab() -> Tab {
         let newTab = Tab()
-        modelContext.insert(newTab)
+        if let modelContext = modelContext {
+            modelContext.insert(newTab)
+        }
         selectedTabId = newTab.id
         return newTab
     }
@@ -35,23 +45,32 @@ class TabManager: ObservableObject {
 
             // Store the tab in closed tabs list for potential reopening
             closedTabs.append(tab)
-            modelContext.delete(tab)
+            modelContext?.delete(tab)
             if selectedTabId == tab.id {
                 selectedTabId = tabs.filter { $0.id != tab.id }.first?.id
             }
         } else {
-            // Handle closing the last tab - create a history tab instead of showing confirmation
-            // First, clean up the web view for the current tab
+            Logger.log("TabManager closeTab: Closing last tab, converting to history tab", type: "TabManager")
+            // Handle closing the last tab - convert the existing tab to a history tab instead of creating a new one
+            // This ensures there's always at least one tab open, showing browsing history
+
+            // Clean up the web view for this tab
             webViewManager?.removeWebView(for: tab.id)
 
-            // Store the tab in closed tabs list
+            // Store the tab in closed tabs list (but don't delete it from the model)
             closedTabs.append(tab)
-            modelContext.delete(tab)
 
-            // Create a new history tab to replace the closed one
-            let historyTab = createHistoryTab(tabs: [])
-            modelContext.insert(historyTab)
-            selectedTabId = historyTab.id
+            // Convert the existing tab to a history tab by changing its properties
+            Logger.log("TabManager closeTab: Converting tab \(tab.id) to history tab", type: "TabManager")
+            tab.title = "History"
+            tab.url = URL(string: "about:history")
+            tab.historyStrings = [] // Clear the history since we're showing all history
+            tab.currentHistoryIndex = -1
+            tab.lastAccessed = Date() // Update last accessed time
+
+            // Keep the same selectedTabId since we're modifying the existing tab
+            Logger.log("TabManager closeTab: Converted tab \(tab.id) to history tab with URL \(tab.url?.absoluteString ?? "nil")", type: "TabManager")
+            Logger.log("TabManager closeTab: selectedTabId remains \(selectedTabId?.uuidString ?? "nil")", type: "TabManager")
         }
     }
 
@@ -60,7 +79,7 @@ class TabManager: ObservableObject {
         let newTab = Tab(title: tab.title + " Copy", url: tab.url, isActive: false)
         // Update the title to use the domain name
         newTab.updateTitleFromURL()
-        modelContext.insert(newTab)
+        modelContext?.insert(newTab)
         selectedTabId = newTab.id
         return newTab
     }
@@ -83,7 +102,7 @@ class TabManager: ObservableObject {
         // Update the title to use the domain name
         newTab.updateTitleFromURL()
 
-        modelContext.insert(newTab)
+        modelContext?.insert(newTab)
         selectedTabId = newTab.id
         return newTab
     }
@@ -118,11 +137,11 @@ class TabManager: ObservableObject {
 
     func switchToTab(at index: Int, tabs: [Tab]) {
         guard index >= 0 && index < tabs.count else {
-            print("TabManager switchToTab: invalid index \(index), tabs.count = \(tabs.count)")
+            Logger.log("TabManager switchToTab: invalid index \(index), tabs.count = \(tabs.count)", type: "TabManager")
             return
         }
         let tab = tabs[index]
-        print("TabManager switchToTab: switching to tab at index \(index), id=\(tab.id), url=\(tab.url?.absoluteString ?? "nil")")
+        Logger.log("TabManager switchToTab: switching to tab at index \(index), id=\(tab.id), url=\(tab.url?.absoluteString ?? "nil")", type: "TabManager")
         selectedTabId = tab.id
     }
 
@@ -131,7 +150,7 @@ class TabManager: ObservableObject {
         // Note: SwiftData doesn't support reordering directly. This would require
         // recreating the tabs in the new order. For now, we'll just log that this
         // functionality needs proper implementation with a reorderable data source.
-        print("Tab moving not yet implemented - requires reordering data source")
+        Logger.log("Tab moving not yet implemented - requires reordering data source", type: "TabManager")
     }
 
     func moveTabRight(tabs: [Tab]) {
@@ -139,19 +158,19 @@ class TabManager: ObservableObject {
         // Note: SwiftData doesn't support reordering directly. This would require
         // recreating the tabs in the new order. For now, we'll just log that this
         // functionality needs proper implementation with a reorderable data source.
-        print("Tab moving not yet implemented - requires reordering data source")
+        Logger.log("Tab moving not yet implemented - requires reordering data source", type: "TabManager")
     }
 
     func reorderTabs(sourceTabId: UUID, targetTabId: UUID, tabs: [Tab]) {
-        print("TabManager reorderTabs called: sourceTabId=\(sourceTabId), targetTabId=\(targetTabId)")
+        Logger.log("TabManager reorderTabs called: sourceTabId=\(sourceTabId), targetTabId=\(targetTabId)", type: "TabManager")
         guard let sourceIndex = tabs.firstIndex(where: { $0.id == sourceTabId }),
               let targetIndex = tabs.firstIndex(where: { $0.id == targetTabId }),
               sourceIndex != targetIndex else {
-            print("TabManager reorderTabs: invalid indices or same tab")
+            Logger.log("TabManager reorderTabs: invalid indices or same tab", type: "TabManager")
             return
         }
 
-        print("TabManager reorderTabs: sourceIndex=\(sourceIndex), targetIndex=\(targetIndex)")
+        Logger.log("TabManager reorderTabs: sourceIndex=\(sourceIndex), targetIndex=\(targetIndex)", type: "TabManager")
 
         // Create a mutable copy of the tabs array to work with
         var reorderedTabs = tabs
@@ -166,7 +185,7 @@ class TabManager: ObservableObject {
             tab.orderIndex = index
         }
 
-        print("Reordered tabs: new order: \(reorderedTabs.map { $0.id })")
+        Logger.log("Reordered tabs: new order: \(reorderedTabs.map { $0.id })", type: "TabManager")
     }
 
     func collectBrowsingHistory(from tabs: [Tab]) -> [URL] {
@@ -210,7 +229,7 @@ class TabManager: ObservableObject {
     }
 
     func createHistoryTab(tabs: [Tab]) -> Tab {
-        let historyTab = Tab(title: "History", url: URL(string: "browser://history"), isActive: true)
+        let historyTab = Tab(title: "History", url: URL(string: "straightup://history"), isActive: true)
         return historyTab
     }
 }

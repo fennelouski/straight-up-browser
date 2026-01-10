@@ -14,6 +14,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Disable automatic window tabbing
         NSWindow.allowsAutomaticWindowTabbing = false
+
+        // Print logger filter status for debugging
+        Logger.printFilterStatus()
         
         // Set up observers before windows are created
         setupWindowObservers()
@@ -36,7 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationWillTerminate(_ notification: Notification) {
         // Clear crash flag on normal app termination
-        print("AppDelegate applicationWillTerminate: Clearing crash flag")
+        Logger.log("AppDelegate applicationWillTerminate: Clearing crash flag", type: "AppDelegate")
         UserDefaults.standard.set(false, forKey: "app_crashed_flag")
         // Also clear the crash recovery saved session
         UserDefaults.standard.removeObject(forKey: "saved_session_data")

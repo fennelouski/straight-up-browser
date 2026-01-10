@@ -26,9 +26,40 @@ struct WebView: NSViewRepresentable {
     var tabManager: TabManager?
     var tabs: [Tab]?
     var activeTabId: UUID?
+    var onURLChange: ((URL?) -> Void)?
+
+    init(url: Binding<URL?>,
+         canGoBack: Binding<Bool>,
+         canGoForward: Binding<Bool>,
+         title: Binding<String>,
+         isLoading: Binding<Bool>,
+         progressValue: Binding<Double>,
+         hasRenderedContent: Binding<Bool>,
+         webViewManager: WebViewManager?,
+         onPopupRequest: ((URL, WKWindowFeatures?) -> Void)?,
+         tabManager: TabManager?,
+         tabs: [Tab]?,
+         activeTabId: UUID?,
+         onURLChange: ((URL?) -> Void)?) {
+        self._url = url
+        self._canGoBack = canGoBack
+        self._canGoForward = canGoForward
+        self._title = title
+        self._isLoading = isLoading
+        self._progressValue = progressValue
+        self._hasRenderedContent = hasRenderedContent
+        self.webViewManager = webViewManager
+        self.onPopupRequest = onPopupRequest
+        self.tabManager = tabManager
+        self.tabs = tabs
+        self.activeTabId = activeTabId
+        self.onURLChange = onURLChange
+
+        Logger.log("WebView init: activeTabId=\(activeTabId?.uuidString ?? "nil")", type: "WebView")
+    }
 
     func makeNSView(context: Context) -> WebViewContainer {
-        print("WebView makeNSView called for activeTabId: \(activeTabId?.uuidString ?? "nil")")
+        Logger.log("WebView makeNSView called for activeTabId: \(activeTabId?.uuidString ?? "nil")", type: "WebView")
         let container = WebViewContainer(webViewManager: webViewManager, coordinator: context.coordinator)
 
         // Add observer for progress changes - we'll add this to the container
@@ -37,15 +68,20 @@ struct WebView: NSViewRepresentable {
         return container
     }
 
+    static func dismantleNSView(_ nsView: WebViewContainer, coordinator: Coordinator) {
+        // Clean up observers
+        nsView.removeObserver(coordinator, forKeyPath: "estimatedProgress")
+    }
+
     // Get the current active web view from the manager
     private func getCurrentWebView() -> WKWebView {
-        print("WebView getCurrentWebView called with activeTabId: \(activeTabId?.uuidString ?? "nil")")
+        Logger.log("WebView getCurrentWebView called with activeTabId: \(activeTabId?.uuidString ?? "nil")", type: "WebView")
         if let activeTabId = activeTabId {
             let webView = webViewManager?.getWebView(for: activeTabId) ?? WKWebView()
-            print("WebView getCurrentWebView: returning WebView \(Unmanaged.passUnretained(webView).toOpaque()) for tab \(activeTabId)")
+            Logger.log("WebView getCurrentWebView: returning WebView \(Unmanaged.passUnretained(webView).toOpaque()) for tab \(activeTabId)", type: "WebView")
             return webView
         }
-        print("WebView getCurrentWebView: returning new WKWebView (no activeTabId)")
+        Logger.log("WebView getCurrentWebView: returning new WKWebView (no activeTabId)", type: "WebView")
         return WKWebView()
     }
 
@@ -136,39 +172,58 @@ struct WebView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: WebViewContainer, context: Context) {
+        Logger.log("WebView updateNSView: activeTabId=\(activeTabId?.uuidString ?? "nil"), url=\(url?.absoluteString ?? "nil")", type: "WebView")
+
         // Update the active tab in the container
         nsView.setActiveTab(activeTabId)
 
-        // Load the URL when it changes, but only if it's different from the last requested URL
-        // and we're not currently loading
+        // Log the active WebView after the update
         if let activeWebView = nsView.activeWebView {
-            if let url = url, url != context.coordinator.lastRequestedURL, !activeWebView.isLoading {
-                print("WebView loading URL: \(url.absoluteString) (current: \(activeWebView.url?.absoluteString ?? "nil"))")
-                context.coordinator.lastRequestedURL = url
-                let request = URLRequest(url: url)
-                activeWebView.load(request)
-            } else if let url = url, url == context.coordinator.lastRequestedURL {
-                print("WebView skipping duplicate load: \(url.absoluteString)")
-            } else if activeWebView.isLoading {
-                print("WebView skipping load while already loading: \(url?.absoluteString ?? "nil")")
-            }
-
-            // Ensure responsive layout updates when view size changes - skip for Google to avoid interface detection issues
-            if let currentURL = activeWebView.url, !(currentURL.host?.contains("google.com") ?? false) {
-                DispatchQueue.main.async {
-                    // Trigger viewport size update for responsive design
-                    activeWebView.evaluateJavaScript("""
-                        if (window.visualViewport) {
-                            window.dispatchEvent(new Event('resize'));
-                        }
-                    """) { _, _ in }
-                }
-            }
+            Logger.log("WebView updateNSView: activeWebView after update: \(Unmanaged.passUnretained(activeWebView).toOpaque())", type: "WebView")
+        } else {
+            Logger.log("WebView updateNSView: no activeWebView after update", type: "WebView")
         }
+
+        Logger.log("WebView updateNSView: after setActiveTab, checking activeWebView", type: "WebView")
+
+        // Ensure we have an active web view
+        guard let activeWebView = nsView.activeWebView else {
+            Logger.log("WebView updateNSView: no active web view available - activeWebView is nil", type: "WebView")
+            return
+        }
+
+        Logger.log("WebView updateNSView: activeWebView found: \(Unmanaged.passUnretained(activeWebView).toOpaque())", type: "WebView")
+
+        // Load the URL when it changes, but prevent rapid reloading
+        let normalizedURL = Tab.normalizeURLForComparison(url)
+        let normalizedWebViewURL = Tab.normalizeURLForComparison(activeWebView.url)
+
+        // Only load if the URL is different from what's currently displayed and not loading
+        // Also check if enough time has passed since last load to prevent rapid reloading
+        let timeSinceLastLoad = context.coordinator.lastLoadTime.map { Date().timeIntervalSince($0) } ?? Double.greatestFiniteMagnitude
+        let minLoadInterval: TimeInterval = 1.0 // 1 second minimum between loads
+
+        if let url = url, normalizedURL != normalizedWebViewURL, !activeWebView.isLoading, timeSinceLastLoad >= minLoadInterval {
+            Logger.log("WebView loading URL: \(url.absoluteString) (current: \(activeWebView.url?.absoluteString ?? "nil"))", type: "WebView")
+            context.coordinator.lastRequestedURL = url
+            context.coordinator.lastLoadTime = Date()
+            let request = URLRequest(url: url)
+            activeWebView.load(request)
+        } else if let url = url, normalizedURL == normalizedWebViewURL {
+            Logger.log("WebView skipping duplicate load: \(url.absoluteString)", type: "WebView")
+            // Ensure lastRequestedURL is set correctly
+            context.coordinator.lastRequestedURL = url
+        } else if activeWebView.isLoading {
+            Logger.log("WebView skipping load while already loading: \(url?.absoluteString ?? "nil")", type: "WebView")
+        } else if timeSinceLastLoad < minLoadInterval {
+            Logger.log("WebView skipping load - too soon since last load (\(timeSinceLastLoad)s < \(minLoadInterval)s)", type: "WebView")
+        }
+
+        // Removed JavaScript injection that may interfere with user interactions
     }
 
     func makeCoordinator() -> Coordinator {
-        print("WebView makeCoordinator called")
+        Logger.log("WebView makeCoordinator called", type: "WebView")
         return Coordinator(self, tabManager: tabManager, tabs: tabs)
     }
 
@@ -179,6 +234,9 @@ struct WebView: NSViewRepresentable {
         private var currentPageIsHTTPS = false
         private var mixedContentWarningsShown = Set<String>()
         var lastRequestedURL: URL?
+        var lastSuccessfullyLoadedURL: URL?
+        var lastLoadTime: Date?
+        var lastViewSize: NSSize?
 
         // Redirect loop detection
         private var navigationHistory: [(url: URL, timestamp: Date)] = []
@@ -195,7 +253,7 @@ struct WebView: NSViewRepresentable {
 
             // If we've seen this URL more than maxRedirectsInTimeWindow times in the last loopDetectionTimeWindow seconds, it's a loop
             if urlCount >= maxRedirectsInTimeWindow {
-                print("WebView: Detected redirect loop for URL: \(url.absoluteString) (navigated \(urlCount) times in \(loopDetectionTimeWindow)s)")
+                Logger.log("WebView: Detected redirect loop for URL: \(url.absoluteString) (navigated \(urlCount) times in \(loopDetectionTimeWindow)s)", type: "WebView")
                 return true
             }
 
@@ -220,7 +278,7 @@ struct WebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             // Check for redirect loops before starting navigation
             if let url = webView.url, isRedirectLoop(url) {
-                print("WebView didStartProvisionalNavigation: Blocking redirect loop for URL: \(url.absoluteString)")
+                Logger.log("WebView didStartProvisionalNavigation: Blocking redirect loop for URL: \(url.absoluteString)", type: "WebView")
                 parent.isLoading = false
                 return
             }
@@ -230,7 +288,7 @@ struct WebView: NSViewRepresentable {
             parent.progressValue = 0.0
             // Update lastRequestedURL to reflect what we're actually loading
             if let url = webView.url {
-                print("WebView didStartProvisionalNavigation: setting lastRequestedURL to \(url.absoluteString)")
+                Logger.log("WebView didStartProvisionalNavigation: setting lastRequestedURL to \(url.absoluteString)", type: "WebView")
                 lastRequestedURL = url
                 recordNavigation(url)
             }
@@ -243,12 +301,19 @@ struct WebView: NSViewRepresentable {
             parent.canGoForward = webView.canGoForward
             parent.title = webView.title ?? ""
 
+            // Track the URL that successfully loaded
+            if let url = webView.url {
+                lastSuccessfullyLoadedURL = url
+            }
+
             // Clear navigation history on successful page load to reset loop detection
             navigationHistory.removeAll()
 
             // Update the tab's URL if it changed (e.g., user clicked a link)
-            if let currentURL = webView.url, currentURL != parent.url {
-                print("WebView didFinish: updating tab URL to \(currentURL.absoluteString)")
+            let normalizedCurrentURL = Tab.normalizeURLForComparison(webView.url)
+            let normalizedParentURL = Tab.normalizeURLForComparison(parent.url)
+            if let currentURL = webView.url, normalizedCurrentURL != normalizedParentURL {
+                Logger.log("WebView didFinish: updating tab URL to \(currentURL.absoluteString)", type: "WebView")
                 // Update the tab URL directly without triggering navigateTo to avoid recursion
                 if let tabManager = self.tabManager,
                    let tabs = self.tabs,
@@ -266,20 +331,27 @@ struct WebView: NSViewRepresentable {
                         let maxHistorySize = 100 // Use a reasonable default
                         if activeTab.history.count > maxHistorySize {
                             let excess = activeTab.history.count - maxHistorySize
-                            activeTab.history.removeFirst(excess)
                             activeTab.currentHistoryIndex = max(activeTab.history.count - 1, 0)
                         }
                     }
                 }
+
+                // Notify parent of URL change to update stable URL
+                parent.onURLChange?(currentURL)
             }
 
             // Load favicon for the current page
             loadFavicon(for: webView)
 
-            // Ensure responsive layout is triggered - delay for Google to avoid interface detection issues
-            if let url = webView.url, !(url.host?.contains("google.com") ?? false) {
-                triggerResponsiveLayout(in: webView)
+            // Ensure WebView remains interactive after loading
+            DispatchQueue.main.async {
+                // Re-enable interactions
+                webView.allowsBackForwardNavigationGestures = true
+                webView.allowsMagnification = true
+                webView.allowsLinkPreview = true
             }
+
+            // Removed JavaScript injection that may interfere with user interactions
         }
 
         private func loadFavicon(for webView: WKWebView) {
@@ -315,13 +387,13 @@ struct WebView: NSViewRepresentable {
                     // Resolve relative URLs
                     let resolvedURL = faviconURL.scheme != nil ? faviconURL : URL(string: faviconURLString, relativeTo: baseURL)?.absoluteURL
 
-                    print("Favicon debug: Found favicon URL: \(resolvedURL?.absoluteString ?? "nil") for page: \(baseURL.absoluteString)")
+                    Logger.log("Favicon debug: Found favicon URL: \(resolvedURL?.absoluteString ?? "nil") for page: \(baseURL.absoluteString)", type: "WebView")
 
                     if let finalURL = resolvedURL {
                         self.downloadFavicon(from: finalURL, webView: webView)
                     }
                 } else {
-                    print("Favicon debug: No favicon URL found for page: \(webView.url?.absoluteString ?? "nil"), trying alternative images")
+                    Logger.log("Favicon debug: No favicon URL found for page: \(webView.url?.absoluteString ?? "nil"), trying alternative images", type: "WebView")
                     // Try to find alternative images as fallback - dispatch to main thread
                     DispatchQueue.main.async {
                         self.findAlternativeImage(for: webView)
@@ -331,11 +403,11 @@ struct WebView: NSViewRepresentable {
         }
 
         private func downloadFavicon(from url: URL, webView: WKWebView? = nil) {
-            print("Favicon debug: Attempting to download favicon from: \(url.absoluteString)")
+            Logger.log("Favicon debug: Attempting to download favicon from: \(url.absoluteString)", type: "WebView")
 
             // First check if favicon is already cached
             if let cachedData = FaviconCache.shared.getFavicon(for: url) {
-                print("Favicon debug: Found cached favicon for: \(url.absoluteString), size: \(cachedData.count) bytes")
+                Logger.log("Favicon debug: Found cached favicon for: \(url.absoluteString), size: \(cachedData.count) bytes", type: "WebView")
                 // Use cached favicon
                 DispatchQueue.main.async {
                     if let tabManager = self.tabManager,
@@ -347,24 +419,24 @@ struct WebView: NSViewRepresentable {
                 return
             }
 
-            print("Favicon debug: No cached favicon found, downloading from: \(url.absoluteString)")
+            Logger.log("Favicon debug: No cached favicon found, downloading from: \(url.absoluteString)", type: "WebView")
 
             // Download favicon if not in cache
             URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
                 guard let self = self else { return }
 
-                print("Favicon debug: Download completed for \(url.absoluteString) - data size: \(data?.count ?? 0), error: \(error?.localizedDescription ?? "none")")
+                Logger.log("Favicon debug: Download completed for \(url.absoluteString) - data size: \(data?.count ?? 0), error: \(error?.localizedDescription ?? "none")", type: "WebView")
 
                 if let data = data,
                    let httpResponse = response as? HTTPURLResponse {
-                    print("Favicon debug: HTTP status: \(httpResponse.statusCode), content type: \(httpResponse.allHeaderFields["Content-Type"] ?? "unknown")")
+                    Logger.log("Favicon debug: HTTP status: \(httpResponse.statusCode), content type: \(httpResponse.allHeaderFields["Content-Type"] ?? "unknown")", type: "WebView")
 
                     if httpResponse.statusCode == 200, data.count > 0 {
-                        print("Favicon debug: Successfully downloaded favicon, caching and setting for tab")
+                        Logger.log("Favicon debug: Successfully downloaded favicon, caching and setting for tab", type: "WebView")
 
                         // Validate that it's actually an image
                         if let _ = NSImage(data: data) {
-                            print("Favicon debug: Valid image data, proceeding with caching")
+                            Logger.log("Favicon debug: Valid image data, proceeding with caching", type: "WebView")
 
                             // Cache the favicon
                             FaviconCache.shared.setFavicon(data, for: url)
@@ -379,7 +451,7 @@ struct WebView: NSViewRepresentable {
                                 }
                             }
                         } else {
-                            print("Favicon debug: Downloaded data is not a valid image")
+                            Logger.log("Favicon debug: Downloaded data is not a valid image", type: "WebView")
                             // Try alternative images if this was the favicon attempt
                             if webView != nil {
                                 DispatchQueue.main.async {
@@ -388,7 +460,7 @@ struct WebView: NSViewRepresentable {
                             }
                         }
                     } else {
-                        print("Favicon debug: Failed to download favicon - status: \(httpResponse.statusCode), data size: \(data.count)")
+                        Logger.log("Favicon debug: Failed to download favicon - status: \(httpResponse.statusCode), data size: \(data.count)", type: "WebView")
                         // Try alternative images if this was the favicon attempt
                         if webView != nil {
                             DispatchQueue.main.async {
@@ -397,7 +469,7 @@ struct WebView: NSViewRepresentable {
                         }
                     }
                 } else {
-                    print("Favicon debug: No response data received")
+                    Logger.log("Favicon debug: No response data received", type: "WebView")
                     // Try alternative images if this was the favicon attempt
                     if webView != nil {
                         DispatchQueue.main.async {
@@ -409,7 +481,7 @@ struct WebView: NSViewRepresentable {
         }
 
         private func findAlternativeImage(for webView: WKWebView) {
-            print("Favicon debug: Looking for alternative images for page: \(webView.url?.absoluteString ?? "unknown")")
+            Logger.log("Favicon debug: Looking for alternative images for page: \(webView.url?.absoluteString ?? "unknown")", type: "WebView")
 
             // JavaScript to find alternative images from meta tags and header
             let alternativeImageScript = """
@@ -497,7 +569,7 @@ struct WebView: NSViewRepresentable {
             webView.evaluateJavaScript(alternativeImageScript) { [weak self] result, error in
                 guard let self = self else { return }
 
-                print("Favicon debug: Alternative image search result: \(result ?? "nil"), error: \(error?.localizedDescription ?? "none")")
+                Logger.log("Favicon debug: Alternative image search result: \(result ?? "nil"), error: \(error?.localizedDescription ?? "none")", type: "WebView")
 
                 if let imageURLString = result as? String,
                    let imageURL = URL(string: imageURLString),
@@ -505,13 +577,13 @@ struct WebView: NSViewRepresentable {
                     // Resolve relative URLs
                     let resolvedURL = imageURL.scheme != nil ? imageURL : URL(string: imageURLString, relativeTo: baseURL)?.absoluteURL
 
-                    print("Favicon debug: Found alternative image URL: \(resolvedURL?.absoluteString ?? "nil")")
+                    Logger.log("Favicon debug: Found alternative image URL: \(resolvedURL?.absoluteString ?? "nil")", type: "WebView")
 
                     if let finalURL = resolvedURL {
                         self.downloadAndResizeAlternativeImage(from: finalURL, for: webView)
                     }
                 } else {
-                    print("Favicon debug: No alternative image found, trying domain initial")
+                    Logger.log("Favicon debug: No alternative image found, trying domain initial", type: "WebView")
                     // Final fallback: generate domain initial
                     self.generateDomainInitial(for: webView)
                 }
@@ -519,13 +591,13 @@ struct WebView: NSViewRepresentable {
         }
 
         private func downloadAndResizeAlternativeImage(from url: URL, for webView: WKWebView) {
-            print("Favicon debug: Downloading alternative image from: \(url.absoluteString)")
+            Logger.log("Favicon debug: Downloading alternative image from: \(url.absoluteString)", type: "WebView")
 
             // Check if we already have this alternative image cached
             // Use a safer approach for the cache key to avoid URL parsing issues
             let cacheKey = "alt_\(url.absoluteString)".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "alt_\(url.absoluteString.hashValue)"
             if let cacheURL = URL(string: cacheKey), let cachedData = FaviconCache.shared.getFavicon(for: cacheURL) {
-                print("Favicon debug: Found cached alternative image, size: \(cachedData.count) bytes")
+                Logger.log("Favicon debug: Found cached alternative image, size: \(cachedData.count) bytes", type: "WebView")
                 DispatchQueue.main.async {
                     if let tabManager = self.tabManager,
                        let tabs = self.tabs,
@@ -539,7 +611,7 @@ struct WebView: NSViewRepresentable {
             URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
                 guard let self = self else { return }
 
-                print("Favicon debug: Alternative image download completed - data size: \(data?.count ?? 0), error: \(error?.localizedDescription ?? "none")")
+                Logger.log("Favicon debug: Alternative image download completed - data size: \(data?.count ?? 0), error: \(error?.localizedDescription ?? "none")", type: "WebView")
 
                 if let data = data,
                    let httpResponse = response as? HTTPURLResponse,
@@ -547,7 +619,7 @@ struct WebView: NSViewRepresentable {
                    data.count > 0,
                    let originalImage = NSImage(data: data) {
 
-                    print("Favicon debug: Successfully downloaded alternative image, resizing for favicon use")
+                    Logger.log("Favicon debug: Successfully downloaded alternative image, resizing for favicon use", type: "WebView")
 
                     // Resize the image to favicon size (16x16 for tabs, but we'll keep it at 32x32 for better quality)
                     let resizedData = self.resizeImage(originalImage, to: NSSize(width: 32, height: 32))
@@ -567,10 +639,10 @@ struct WebView: NSViewRepresentable {
                             }
                         }
                     } else {
-                        print("Favicon debug: Failed to resize alternative image")
+                        Logger.log("Favicon debug: Failed to resize alternative image", type: "WebView")
                     }
                 } else {
-                    print("Favicon debug: Failed to download or validate alternative image")
+                    Logger.log("Favicon debug: Failed to download or validate alternative image", type: "WebView")
                     // Final fallback: generate domain initial - dispatch to main thread
                     DispatchQueue.main.async {
                         self.generateDomainInitial(for: webView)
@@ -611,15 +683,15 @@ struct WebView: NSViewRepresentable {
 
         private func generateDomainInitial(for webView: WKWebView) {
             guard let url = webView.url, let domain = url.host else {
-                print("Favicon debug: Cannot generate domain initial - no URL or host")
+                Logger.log("Favicon debug: Cannot generate domain initial - no URL or host", type: "WebView")
                 return
             }
 
-            print("Favicon debug: Generating domain initial for: \(domain)")
+            Logger.log("Favicon debug: Generating domain initial for: \(domain)", type: "WebView")
 
             // Generate the initial image
             if let initialImageData = DomainInitialsGenerator.shared.generateInitialImage(for: domain) {
-                print("Favicon debug: Successfully generated domain initial, size: \(initialImageData.count) bytes")
+                Logger.log("Favicon debug: Successfully generated domain initial, size: \(initialImageData.count) bytes", type: "WebView")
 
                 // Update the tab's favicon on the main thread
                 DispatchQueue.main.async {
@@ -630,7 +702,7 @@ struct WebView: NSViewRepresentable {
                     }
                 }
             } else {
-                print("Favicon debug: Failed to generate domain initial")
+                Logger.log("Favicon debug: Failed to generate domain initial", type: "WebView")
             }
         }
 
@@ -667,22 +739,22 @@ struct WebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             parent.isLoading = false
-            print("WebView navigation failed: \(error.localizedDescription)")
-            print("Error domain: \(error._domain), code: \((error as NSError).code)")
+            Logger.log("WebView navigation failed: \(error.localizedDescription)", type: "WebView")
+            Logger.log("Error domain: \(error._domain), code: \((error as NSError).code)", type: "WebView")
             // Reset lastRequestedURL on failure so we can retry
-            print("WebView didFail: resetting lastRequestedURL to nil")
+            Logger.log("WebView didFail: resetting lastRequestedURL to nil", type: "WebView")
             lastRequestedURL = nil
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             parent.isLoading = false
-            print("WebView provisional navigation failed: \(error.localizedDescription)")
-            print("Error domain: \(error._domain), code: \((error as NSError).code)")
+            Logger.log("WebView provisional navigation failed: \(error.localizedDescription)", type: "WebView")
+            Logger.log("Error domain: \(error._domain), code: \((error as NSError).code)", type: "WebView")
             if let url = webView.url {
-                print("Failed URL: \(url.absoluteString)")
+                Logger.log("Failed URL: \(url.absoluteString)", type: "WebView")
             }
             // Reset lastRequestedURL on failure so we can retry
-            print("WebView didFailProvisionalNavigation: resetting lastRequestedURL to nil")
+            Logger.log("WebView didFailProvisionalNavigation: resetting lastRequestedURL to nil", type: "WebView")
             lastRequestedURL = nil
         }
 
@@ -985,9 +1057,9 @@ struct WebView: NSViewRepresentable {
                 }
 
                 // Display certificate info in console for debugging
-                print("SSL Certificate for \(host):")
-                print("- Common Name: \(commonName ?? "Unknown" as CFString)")
-                print("- Valid certificate chain established")
+                Logger.log("SSL Certificate for \(host):", type: "WebView")
+                Logger.log("- Common Name: \(commonName ?? "Unknown" as CFString)", type: "WebView")
+                Logger.log("- Valid certificate chain established", type: "WebView")
             }
         }
 
@@ -1128,7 +1200,33 @@ class WebViewContainer: NSView {
     private var visibleWebViews: Set<WKWebView> = []
 
     var activeWebView: WKWebView? {
+        // Return the WebView for the currently active tab, not necessarily the manager's activeWebView
+        if let activeTabId = activeTabId, let webViewManager = webViewManager {
+            return webViewManager.getWebView(for: activeTabId)
+        }
         return webViewManager?.activeWebView
+    }
+
+    override var acceptsFirstResponder: Bool {
+        return true
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        // Try to make the active WebView the first responder
+        if let activeWebView = activeWebView {
+            return activeWebView.becomeFirstResponder()
+        }
+        return super.becomeFirstResponder()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        Logger.log("WebViewContainer mouseDown received", type: "WebView")
+        super.mouseDown(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        Logger.log("WebViewContainer keyDown received", type: "WebView")
+        super.keyDown(with: event)
     }
 
     init(webViewManager: WebViewManager?, coordinator: WebView.Coordinator?) {
@@ -1155,7 +1253,10 @@ class WebViewContainer: NSView {
     }
 
     func setActiveTab(_ tabId: UUID?) {
-        print("WebViewContainer setActiveTab called with tabId: \(tabId?.uuidString ?? "nil")")
+        Logger.log("WebViewContainer setActiveTab called with tabId: \(tabId?.uuidString ?? "nil")", type: "WebView")
+
+        // Update active tab first
+        activeTabId = tabId
 
         // Update the WebViewManager's active tab
         webViewManager?.setActiveTab(tabId)
@@ -1172,12 +1273,22 @@ class WebViewContainer: NSView {
         // Show new active web view
         if let newTabId = tabId, let webViewManager = webViewManager {
             let webView = webViewManager.getWebView(for: newTabId)
+            Logger.log("WebViewContainer setActiveTab: got WebView \(Unmanaged.passUnretained(webView).toOpaque()) for tab \(newTabId)", type: "WebView")
+
+            // Verify this matches the WebViewManager's activeWebView
+            if let managerActiveWebView = webViewManager.activeWebView {
+                if webView !== managerActiveWebView {
+                    Logger.log("WebViewContainer setActiveTab: WARNING - WebView mismatch! Container got \(Unmanaged.passUnretained(webView).toOpaque()) but manager has \(Unmanaged.passUnretained(managerActiveWebView).toOpaque())", type: "WebView")
+                } else {
+                    Logger.log("WebViewContainer setActiveTab: WebView matches manager's activeWebView", type: "WebView")
+                }
+            }
 
             // Configure the web view if it's not already a subview
             if webView.superview !== self {
                 webView.frame = self.bounds
                 webView.autoresizingMask = [.width, .height]
-                
+
                 // Ensure web view doesn't extend beyond container bounds
                 webView.wantsLayer = true
                 webView.layer?.masksToBounds = true
@@ -1188,16 +1299,25 @@ class WebViewContainer: NSView {
 
                 // Add to container
                 self.addSubview(webView)
-                print("WebViewContainer: added new WebView for tab \(newTabId)")
+                Logger.log("WebViewContainer: added new WebView for tab \(newTabId)", type: "WebView")
             } else {
                 // Update frame if already a subview
                 webView.frame = self.bounds
+                Logger.log("WebViewContainer: updated frame for existing WebView for tab \(newTabId)", type: "WebView")
             }
 
             // Show the web view
             webView.isHidden = false
             visibleWebViews.insert(webView)
-            print("WebViewContainer: showed WebView for tab \(newTabId)")
+
+            // Ensure WebView can accept user interactions
+            webView.allowsBackForwardNavigationGestures = true
+            webView.allowsMagnification = true
+            webView.allowsLinkPreview = true
+
+            Logger.log("WebViewContainer: showed WebView \(Unmanaged.passUnretained(webView).toOpaque()) for tab \(newTabId)", type: "WebView")
+        } else {
+            Logger.log("WebViewContainer setActiveTab: no tabId or webViewManager", type: "WebView")
         }
     }
 

@@ -12,9 +12,12 @@ import WebKit
 import Combine
 import UniformTypeIdentifiers
 
+// Type alias to disambiguate our Tab model from SwiftUI's Tab view
+typealias BrowserTab = Tab
+
 // Floating favicon overlay for compact mode
 struct FloatingFaviconOverlay: View {
-    let tabs: [Tab]
+    let tabs: [BrowserTab]
     let selectedTabId: UUID?
     let onTabSelect: (UUID) -> Void
     let onReorder: ((UUID, UUID) -> Void)?
@@ -24,44 +27,48 @@ struct FloatingFaviconOverlay: View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(tabs.indices, id: \.self) { index in
                 let tab = tabs[index]
-                let isSelected = selectedTabId == tab.id
+                let isSelected = tabManager?.selectedTabId == tab.id
 
-                Button(action: {
-                    onTabSelect(tab.id)
-                }) {
-                    ZStack {
-                        // Background circle - sized to provide 4 points buffer around 18x18 favicon (26x26 circle)
-                        Circle()
-                            .fill(isSelected ? Color.blue.opacity(0.8) : Color.black.opacity(0.6))
-                            .frame(width: 26, height: 26)
+                ZStack {
+                    Button(action: {
+                        onTabSelect(tab.id)
+                    }) {
+                        ZStack {
+                            // Background circle - sized to provide 4 points buffer around 18x18 favicon (26x26 circle)
+                            Circle()
+                                .fill(isSelected ? Color.blue.opacity(0.8) : Color.black.opacity(0.6))
+                                .frame(width: 26, height: 26)
 
-                        // Favicon or default icon
-                        if let faviconData = tab.favicon, let nsImage = NSImage(data: faviconData) {
-                            Image(nsImage: nsImage)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 18, height: 18)
-                                .clipped()
-                        } else if tab.url != nil {
-                            Image(systemName: "globe")
-                                .font(.system(size: 14))
-                                .foregroundColor(.white)
-                        } else {
-                            Image(systemName: "plus.circle")
-                                .font(.system(size: 14))
-                                .foregroundColor(.white)
+                            // Favicon or default icon
+                            if let faviconData = tab.favicon, let nsImage = NSImage(data: faviconData) {
+                                Image(nsImage: nsImage)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 18, height: 18)
+                                    .clipped()
+                            } else if tab.url != nil {
+                                Image(systemName: "globe")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.white)
+                            } else {
+                                Image(systemName: "plus.circle")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.white)
+                            }
                         }
+                        .frame(width: 26, height: 26)
                     }
-                    .frame(width: 26, height: 26)
+                    .buttonStyle(PlainButtonStyle())
+                    .shadow(color: Color.black.opacity(0.3), radius: 2, x: 0, y: 1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(PlainButtonStyle())
-                .shadow(color: Color.black.opacity(0.3), radius: 2, x: 0, y: 1)
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .onDrag {
+                    Logger.log("FloatingFaviconOverlay onDrag called for tab: \(tab.id)", type: "ContentView")
                     // Provide the tab ID as the drag item
-                    NSItemProvider(object: tab.id.uuidString as NSString)
+                    return NSItemProvider(object: tab.id.uuidString as NSString)
                 }
                 .onDrop(of: [UTType.text], delegate: TabDropDelegate(tabId: tab.id, onReorder: onReorder))
+                .contentShape(Rectangle()) // Make the entire area droppable
             }
         }
         .padding(.top, 8)
@@ -78,7 +85,7 @@ struct SavedWorkspace: Codable, Identifiable {
     let groups: [SavedTabGroup]
     let tabs: [SavedWorkspaceTab]
 
-    init(name: String, groups: [TabGroup], tabs: [Tab]) {
+    init(name: String, groups: [TabGroup], tabs: [BrowserTab]) {
         self.id = UUID()
         self.name = name
         self.createdAt = Date()
@@ -125,12 +132,12 @@ struct SavedWorkspaceTab: Codable {
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Tab.orderIndex) private var tabs: [Tab]
+    @Query(sort: \BrowserTab.orderIndex) private var tabs: [BrowserTab]
     @Query(sort: \TabGroup.orderIndex) private var tabGroups: [TabGroup]
     @Query(sort: \Bookmark.createdAt, order: .reverse) private var allBookmarks: [Bookmark]
 
     // Managers
-    @State private var tabManager: TabManager?
+    @StateObject private var tabManager: TabManager
     @State private var navigationManager: NavigationManager?
     @State private var windowManager: WindowManager?
     @State private var notificationManager: NotificationManager?
@@ -138,6 +145,7 @@ struct ContentView: View {
     @State private var crashRecoveryManager: CrashRecoveryManager?
     @State private var bookmarkManager: BookmarkManager?
     @State private var webViewManager: WebViewManager?
+    @State private var managersInitialized = false
 
     // UI State
     @State private var showOmnibar = false
@@ -146,7 +154,6 @@ struct ContentView: View {
     @State private var canGoForward = false
     @State private var currentTitle = ""
     @State private var isLoading = false
-    @State private var showCrashRecoveryPrompt = false
     @State private var isImportBookmarksDialogPresented = false
     @State private var availableBrowsers: [BrowserType] = []
     @State private var showCreateGroupDialog = false
@@ -168,10 +175,14 @@ struct ContentView: View {
     @State private var progressTimer: Timer?
     @State private var hasRenderedContent = false
 
+    // Stable URL for WebView binding to prevent constant reloading
+    @State private var stableWebViewURL: URL?
+
 
 
     init() {
         // CLI is now initialized lazily when first used
+        _tabManager = StateObject(wrappedValue: TabManager())
     }
     
     // WindowAccessor to configure NSWindow when it becomes available
@@ -193,7 +204,6 @@ struct ContentView: View {
         }
     }
 
-    @State private var selectedTabId: UUID?
 
 
     private var bookmarks: [Bookmark] {
@@ -204,8 +214,8 @@ struct ContentView: View {
         return bookmarks.map { (title: $0.title, url: $0.url) }
     }
 
-    private var groupedTabs: [(group: TabGroup?, tabs: [Tab])] {
-        var result: [(group: TabGroup?, tabs: [Tab])] = []
+    private var groupedTabs: [(group: TabGroup?, tabs: [BrowserTab])] {
+        var result: [(group: TabGroup?, tabs: [BrowserTab])] = []
 
         // Group tabs by groupId
         let groupedById = Dictionary(grouping: tabs) { $0.groupId }
@@ -307,6 +317,8 @@ struct ContentView: View {
     private func tabListView(geometry: GeometryProxy) -> some View {
         ScrollView {
             VStack(spacing: 0) {
+                // Add a spacer at the top to allow dragging without scroll interference
+                Color.clear.frame(height: 1)
                 // Force refresh when tab selection or title display mode changes
                 let _ = tabSelectionRefreshTrigger
                 let _ = tabTitleDisplayRefreshTrigger
@@ -319,24 +331,23 @@ struct ContentView: View {
                     ForEach(groupSection.tabs) { tab in
                         TabRowView(
                             tab: tab,
-                            selectedTabId: selectedTabId,
+                            selectedTabId: tabManager.selectedTabId,
                             availableWidth: geometry.size.width,
                             showOnlyIcons: tabBarWidth <= 30,
                             tabBarWidth: tabBarWidth,
                             onSelect: {
-                                print("Tab clicked: \(tab.id), current selectedTabId: \(selectedTabId?.uuidString ?? "nil")")
-                                print("Setting selectedTabId to: \(tab.id)")
-                                selectedTabId = tab.id
-                                tabManager?.selectedTabId = tab.id
-                                print("After setting, selectedTabId is now: \(selectedTabId?.uuidString ?? "nil")")
+                                Logger.log("Tab clicked: \(tab.id), current selectedTabId: \(tabManager.selectedTabId?.uuidString ?? "nil")", type: "ContentView")
+                                Logger.log("Setting selectedTabId to: \(tab.id)", type: "ContentView")
+                                tabManager.selectedTabId = tab.id
+                                Logger.log("After setting, selectedTabId is now: \(tabManager.selectedTabId?.uuidString ?? "nil")", type: "ContentView")
                             },
                             onReorder: { sourceTabId, targetTabId in
-                                tabManager?.reorderTabs(sourceTabId: sourceTabId, targetTabId: targetTabId, tabs: tabs)
+                                tabManager.reorderTabs(sourceTabId: sourceTabId, targetTabId: targetTabId, tabs: tabs)
                             }
                         )
                         .contextMenu {
-                            Button("Close Tab", action: { tabManager?.closeTab(tab, tabs: tabs) })
-                            Button("Duplicate Tab", action: { _ = tabManager?.duplicateTab(tab) })
+                            Button("Close Tab", action: { tabManager.closeTab(tab, tabs: tabs) })
+                            Button("Duplicate Tab", action: { _ = tabManager.duplicateTab(tab) })
                             Divider()
 
                             // Move to group submenu
@@ -372,14 +383,13 @@ struct ContentView: View {
                     // Vertical favicon stack for compact mode
                     FloatingFaviconOverlay(
                         tabs: tabs,
-                        selectedTabId: selectedTabId,
+                        selectedTabId: tabManager.selectedTabId,
                         onTabSelect: { tabId in
-                            selectedTabId = tabId
-                            tabManager?.selectedTabId = tabId
+                            tabManager.selectedTabId = tabId
                         },
-                        onReorder: { sourceTabId, targetTabId in
-                            tabManager?.reorderTabs(sourceTabId: sourceTabId, targetTabId: targetTabId, tabs: tabs)
-                        },
+                            onReorder: { sourceTabId, targetTabId in
+                                tabManager.reorderTabs(sourceTabId: sourceTabId, targetTabId: targetTabId, tabs: tabs)
+                            },
                         tabManager: tabManager
                     )
                 } else {
@@ -394,98 +404,155 @@ struct ContentView: View {
         .background(Color(.windowBackgroundColor)) // Solid background to cover web view
     }
 
-    private var mainContent: some View {
-        ZStack {
-            // Always render WebView to prevent recreation when switching tabs
-            WebView(url: Binding(
-                get: {
-                    let url = self.activeTab?.url
-                    print("WebView binding getter: returning URL \(url?.absoluteString ?? "nil")")
-                    return url
-                },
-                set: { newURL in
-                    // Only update the tab URL directly, don't call navigateTo to avoid recursion
-                    if let url = newURL, let activeTab = self.activeTab {
-                        print("WebView binding setter: setting tab URL to \(url.absoluteString)")
-                        activeTab.url = url
-                    }
-                    if let activeTab = self.activeTab {
-                        self.tabManager?.updateTabTitle(activeTab)
-                    }
-                }
-            ), canGoBack: Binding(
-                get: { self.webViewManager?.canGoBack ?? false },
-                set: { _ in }
-            ), canGoForward: Binding(
-                get: { self.webViewManager?.canGoForward ?? false },
-                set: { _ in }
-            ), title: Binding(
-                get: { self.currentTitle },
-                set: { newTitle in
-                    self.currentTitle = newTitle
-                    // Also update the active tab's title
-                    if let activeTab = self.activeTab {
-                        activeTab.title = newTitle
-                    }
-                }
-            ), isLoading: $isLoading, progressValue: $progressValue, hasRenderedContent: $hasRenderedContent, webViewManager: webViewManager, onPopupRequest: handlePopupRequest, tabManager: tabManager, tabs: tabs, activeTabId: selectedTabId)
-            .clipped() // Ensure WebView doesn't extend beyond bounds
-            .overlay(
-                // Progress bar at the top
-                VStack(spacing: 0) {
-                    progressBar
-                    Spacer()
-                }
-                .edgesIgnoringSafeArea(.top)
-            )
-            .overlay(
-                // Show new tab page when no active tab
-                Group {
-                    if activeTab == nil {
-                        VStack {
-                            Image(systemName: "globe")
-                                .font(.system(size: 64))
-                                .foregroundColor(.gray)
-                            Text("New Tab")
-                                .font(.title)
-                                .foregroundColor(.gray)
-                            Text("Press ⌥Space to navigate")
-                                .font(.subheadline)
-                                .foregroundColor(.gray.opacity(0.8))
-                                .padding(.top, 8)
-                        }
-                    }
-                }
-            )
-
-            // Omnibar overlay
-            if showOmnibar {
-                Color.black.opacity(0.3)
-                    .edgesIgnoringSafeArea(.all)
-                    .onTapGesture {
-                        showOmnibar = false
-                    }
-
-                VStack {
-                    Spacer()
-                    OmnibarView(
-                        isPresented: $showOmnibar,
-                        urlString: .constant(currentURL?.absoluteString ?? ""),
-                        onNavigate: { urlString in
-                            if let navigationManager = navigationManager {
-                                _ = navigationManager.navigateToURL(urlString, activeTab: activeTab)
-                                tabManager?.updateTabTitle(activeTab!)
-                            }
-                        },
-                        errorMessage: navigationManager!.omnibarError,
+    private var webViewContent: some View {
+        Group {
+            if managersInitialized {
+                WebView(url: webViewURLBinding,
+                        canGoBack: webViewCanGoBackBinding,
+                        canGoForward: webViewCanGoForwardBinding,
+                        title: webViewTitleBinding,
+                        isLoading: $isLoading,
+                        progressValue: $progressValue,
+                        hasRenderedContent: $hasRenderedContent,
+                        webViewManager: webViewManager,
+                        onPopupRequest: handlePopupRequest,
+                        tabManager: tabManager,
                         tabs: tabs,
-                        bookmarkSuggestions: bookmarkSuggestions
-                    )
-                    Spacer()
+                        activeTabId: tabManager.selectedTabId,
+                        onURLChange: { newURL in
+                            Logger.log("ContentView onURLChange: updating stableWebViewURL to \(newURL?.absoluteString ?? "nil")", type: "ContentView")
+                            stableWebViewURL = newURL
+                        })
+                        .allowsHitTesting(true)
+                        .focusable(true)
+            } else {
+                // Show loading state when managers are not yet initialized
+                VStack {
+                    Image(systemName: "globe")
+                        .font(.system(size: 64))
+                        .foregroundColor(.gray)
+                    Text("Loading...")
+                        .font(.title)
+                        .foregroundColor(.gray)
                 }
             }
+        }
+    }
 
-            // Create Tab Group Dialog
+    private var webViewURLBinding: Binding<URL?> {
+        Binding(
+            get: {
+                // Use stable URL to prevent constant reloading, but allow WebView interactions
+                Logger.log("WebView binding getter: returning stable URL \(stableWebViewURL?.absoluteString ?? "nil")", type: "ContentView")
+                return stableWebViewURL
+            },
+            set: { newURL in
+                Logger.log("WebView binding setter: setting stable URL to \(newURL?.absoluteString ?? "nil")", type: "ContentView")
+                stableWebViewURL = newURL
+                // Only update the tab URL directly, don't call navigateTo to avoid recursion
+                if let url = newURL, let activeTab = self.activeTab {
+                    Logger.log("WebView binding setter: setting tab URL to \(url.absoluteString) for tab \(activeTab.title)", type: "ContentView")
+                    activeTab.url = url
+                } else {
+                    Logger.log("WebView binding setter: newURL=\(newURL?.absoluteString ?? "nil"), activeTab=\(self.activeTab?.title ?? "nil")", type: "ContentView")
+                }
+                if let activeTab = self.activeTab {
+                    tabManager.updateTabTitle(activeTab)
+                }
+            }
+        )
+    }
+
+    private var webViewCanGoBackBinding: Binding<Bool> {
+        Binding(
+            get: { self.webViewManager?.canGoBack ?? false },
+            set: { _ in }
+        )
+    }
+
+    private var webViewCanGoForwardBinding: Binding<Bool> {
+        Binding(
+            get: { self.webViewManager?.canGoForward ?? false },
+            set: { _ in }
+        )
+    }
+
+    private var webViewTitleBinding: Binding<String> {
+        Binding(
+            get: { self.currentTitle },
+            set: { newTitle in
+                self.currentTitle = newTitle
+                // Also update the active tab's title
+                if let activeTab = self.activeTab {
+                    activeTab.title = newTitle
+                }
+            }
+        )
+    }
+
+    private var progressBarOverlay: some View {
+        VStack(spacing: 0) {
+            progressBar
+            Spacer()
+        }
+        .edgesIgnoringSafeArea(.top)
+    }
+
+    private var newTabPageOverlay: some View {
+        Group {
+            if activeTab == nil {
+                VStack {
+                    Image(systemName: "globe")
+                        .font(.system(size: 64))
+                        .foregroundColor(.gray)
+                    Text("New Tab")
+                        .font(.title)
+                        .foregroundColor(.gray)
+                    Text("Press ⌥Space to navigate")
+                        .font(.subheadline)
+                        .foregroundColor(.gray.opacity(0.8))
+                        .padding(.top, 8)
+                }
+            }
+        }
+    }
+
+    private var omnibarOverlay: some View {
+        Group {
+            if showOmnibar {
+                ZStack {
+                    // Background with tap to close
+                    Color.black.opacity(0.3)
+                        .edgesIgnoringSafeArea(.all)
+                        .onTapGesture {
+                            showOmnibar = false
+                        }
+
+                    VStack {
+                        Spacer()
+                        OmnibarView(
+                            isPresented: $showOmnibar,
+                            urlString: .constant(currentURL?.absoluteString ?? ""),
+                            onNavigate: { urlString in
+                                if let navigationManager = navigationManager {
+                                    _ = navigationManager.navigateToURL(urlString, activeTab: activeTab)
+                                    tabManager.updateTabTitle(activeTab!)
+                                }
+                            },
+                            errorMessage: navigationManager!.omnibarError,
+                            tabs: tabs,
+                            bookmarkSuggestions: bookmarkSuggestions
+                        )
+                        .allowsHitTesting(true)
+                        Spacer()
+                    }
+                }
+            }
+        }
+    }
+
+    private var createGroupDialogOverlay: some View {
+        Group {
             if showCreateGroupDialog {
                 Color.black.opacity(0.5)
                     .edgesIgnoringSafeArea(.all)
@@ -535,8 +602,11 @@ struct ContentView: View {
                     Spacer()
                 }
             }
+        }
+    }
 
-            // Save Workspace Dialog
+    private var saveWorkspaceDialogOverlay: some View {
+        Group {
             if showSaveWorkspaceDialog {
                 Color.black.opacity(0.5)
                     .edgesIgnoringSafeArea(.all)
@@ -579,63 +649,12 @@ struct ContentView: View {
                     Spacer()
                 }
             }
+        }
+    }
 
-            // Crash recovery prompt
-            if showCrashRecoveryPrompt {
-                Color.black.opacity(0.5)
-                    .edgesIgnoringSafeArea(.all)
 
-                VStack {
-                    Spacer()
-                    VStack(spacing: 20) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 48))
-                            .foregroundColor(.orange)
-
-                        Text("Browser Crash Detected")
-                            .font(.title)
-                            .fontWeight(.bold)
-
-                        Text("It looks like the browser crashed during your last session. Would you like to restore your previous tabs?")
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-
-                        HStack(spacing: 16) {
-                            Button("Restore Session") {
-                                if let savedSession = crashRecoveryManager?.getSavedSession() {
-                                    crashRecoveryManager?.restoreSession(savedSession, in: modelContext)
-                                    // Refresh the tabs query by triggering a state update
-                                    DispatchQueue.main.async {
-                                        if let restoredTabs = try? modelContext.fetch(FetchDescriptor<Tab>()),
-                                           let firstTab = restoredTabs.first {
-                                            tabManager?.selectedTabId = firstTab.id
-                                        }
-                                    }
-                                }
-                                showCrashRecoveryPrompt = false
-                            }
-                            .buttonStyle(.borderedProminent)
-
-                            Button("Start Fresh") {
-                                showCrashRecoveryPrompt = false
-                                if tabs.isEmpty {
-                                    _ = tabManager?.createNewTab()
-                                } else {
-                                    tabManager?.selectedTabId = tabs.first?.id
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                    }
-                    .padding(32)
-                    .background(Color(.windowBackgroundColor))
-                    .cornerRadius(12)
-                    .shadow(radius: 20)
-                    Spacer()
-                }
-            }
-
-            // Import Bookmarks Dialog
+    private var importBookmarksDialogOverlay: some View {
+        Group {
             if isImportBookmarksDialogPresented {
                 Color.black.opacity(0.5)
                     .edgesIgnoringSafeArea(.all)
@@ -691,6 +710,19 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    private var mainContent: some View {
+        ZStack {
+            webViewContent
+                .zIndex(0)
+        }
+        .overlay(progressBarOverlay.zIndex(1))
+        .overlay(newTabPageOverlay.zIndex(2))
+        .overlay(omnibarOverlay.zIndex(3))
+        .overlay(createGroupDialogOverlay.zIndex(4))
+        .overlay(saveWorkspaceDialogOverlay.zIndex(5))
+        .overlay(importBookmarksDialogOverlay.zIndex(6))
     }
 
     private var colorScheme: ColorScheme? {
@@ -830,10 +862,7 @@ struct ContentView: View {
             // Load favicons for all tabs BEFORE web views are loaded
             preloadFaviconsForAllTabs()
 
-            // Initialize selectedTabId from tabManager
-            if let tabManagerSelectedId = tabManager?.selectedTabId {
-                selectedTabId = tabManagerSelectedId
-            }
+            // TabManager is now observed directly, no manual sync needed
 
             // Also configure window when view appears (backup method)
             // Aggressively remove title bar completely - remove .titled style mask
@@ -883,51 +912,84 @@ struct ContentView: View {
                 tabTitleDisplayRefreshTrigger = UUID()
             }
 
-            // First, try to restore normal session from previous app restart
-            if let restoredSession = restoreSessionForRestart() {
-                print("ContentView onAppear: Restored normal session")
-                tabManager?.selectedTabId = restoredSession.selectedTabId
-                // Reload favicons after session restoration
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    preloadFaviconsForAllTabs()
-                }
-                // Note: Removed reloadAllTabs() call - tabs should load their content naturally when selected
-            }
-            // Then check for crash recovery if no normal session was restored
-            else if crashRecoveryManager?.shouldOfferRecovery() == true,
-               let savedSession = crashRecoveryManager?.getSavedSession(),
-               !savedSession.tabs.isEmpty {
-                print("ContentView onAppear: Crash detected, showing recovery prompt. Saved session has \(savedSession.tabs.count) tabs")
-                showCrashRecoveryPrompt = true
-                // Note: Removed reloadAllTabs() call - tabs should load their content naturally when selected
-            } else {
-                print("ContentView onAppear: No crash detected, normal startup. shouldOfferRecovery=\(crashRecoveryManager?.shouldOfferRecovery() ?? false), hasSavedSession=\(crashRecoveryManager?.getSavedSession() != nil)")
+            // Check if Option key is held down - if so, skip restoration and reloading
+            let isOptionKeyPressed = NSEvent.modifierFlags.contains(.option)
+            
+            if isOptionKeyPressed {
+                Logger.log("ContentView onAppear: Option key held - skipping session restoration and tab reloading", type: "ContentView")
                 if tabs.isEmpty {
-                    _ = tabManager?.createNewTab()
+                    _ = tabManager.createNewTab()
                 } else {
-                    tabManager?.selectedTabId = tabs.first?.id
+                    tabManager.selectedTabId = tabs.first?.id
                 }
-                // Note: Removed reloadAllTabs() call - tabs should load their content naturally when selected
-            }
+            } else {
+                // First, try to restore normal session from previous app restart
+                if let restoredSession = restoreSessionForRestart() {
+                    Logger.log("ContentView onAppear: Restored normal session", type: "ContentView")
+                    tabManager.selectedTabId = restoredSession.selectedTabId
+                    // Reload favicons after session restoration
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        preloadFaviconsForAllTabs()
+                    }
+                    // Note: Removed reloadAllTabs() call - tabs should load their content naturally when selected
+                }
+                // Then check for crash recovery if no normal session was restored - automatically restore
+                else if let savedSession = crashRecoveryManager?.getSavedSession(),
+                   !savedSession.tabs.isEmpty {
+                    Logger.log("ContentView onAppear: Crash detected, automatically restoring session. Saved session has \(savedSession.tabs.count) tabs", type: "ContentView")
+                    crashRecoveryManager?.restoreSession(savedSession, in: modelContext)
+                    // Refresh the tabs query by triggering a state update
+                    DispatchQueue.main.async {
+                        if let restoredTabs = try? modelContext.fetch(FetchDescriptor<Tab>()),
+                           let firstTab = restoredTabs.first {
+                            tabManager.selectedTabId = firstTab.id
+                        }
+                    }
+                    // Reload favicons after session restoration
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        preloadFaviconsForAllTabs()
+                    }
+                    // Note: Removed reloadAllTabs() call - tabs should load their content naturally when selected
+                } else {
+                    Logger.log("ContentView onAppear: No crash detected, normal startup. shouldOfferRecovery=\(crashRecoveryManager?.shouldOfferRecovery() ?? false), hasSavedSession=\(crashRecoveryManager?.getSavedSession() != nil)", type: "ContentView")
+                    if tabs.isEmpty {
+                        _ = tabManager.createNewTab()
+                    } else {
+                        tabManager.selectedTabId = tabs.first?.id
+                    }
+                    // Note: Removed reloadAllTabs() call - tabs should load their content naturally when selected
+                }
 
-            // Reload all tabs exactly once on app launch
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                self.reloadAllTabs()
+                // Reload all tabs exactly once on app launch
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self.reloadAllTabs()
+                }
             }
         }
-        .onChange(of: selectedTabId) { oldValue, newValue in
-            print("ContentView onChange selectedTabId: \(oldValue?.uuidString ?? "nil") -> \(newValue?.uuidString ?? "nil")")
+        .onChange(of: tabManager.selectedTabId) { oldValue, newValue in
+            Logger.log("ContentView onChange selectedTabId: \(oldValue?.uuidString ?? "nil") -> \(newValue?.uuidString ?? "nil")", type: "ContentView")
 
             // Update tabManager to match the new selection (single source of truth is selectedTabId)
-            tabManager?.selectedTabId = newValue
+            tabManager.selectedTabId = newValue
 
             // Update the WebViewManager with the new active tab
             webViewManager?.setActiveTab(newValue)
-            print("ContentView onChange: WebViewManager activeWebView set to tab \(newValue?.uuidString ?? "nil")")
+            Logger.log("ContentView onChange: WebViewManager activeWebView set to tab \(newValue?.uuidString ?? "nil")", type: "ContentView")
+
+            // Update stable URL to the URL of the newly selected tab
+            if let newTabId = newValue, let activeTab = tabs.first(where: { $0.id == newTabId }) {
+                stableWebViewURL = activeTab.url
+                Logger.log("ContentView onChange: Updated stableWebViewURL to \(activeTab.url?.absoluteString ?? "nil") for tab \(newTabId)", type: "ContentView")
+            } else {
+                stableWebViewURL = nil
+                Logger.log("ContentView onChange: Cleared stableWebViewURL (no active tab)", type: "ContentView")
+            }
+
+            Logger.log("ContentView onChange: completed tab switch to \(newValue?.uuidString ?? "nil")", type: "ContentView")
 
             if let activeTab = activeTab {
                 currentURL = activeTab.url
-                print("ContentView onChange: currentURL set to \(activeTab.url?.absoluteString ?? "nil")")
+                Logger.log("ContentView onChange: currentURL set to \(activeTab.url?.absoluteString ?? "nil")", type: "ContentView")
             }
         }
         .onChange(of: isLoading) { oldValue, newValue in
@@ -1006,30 +1068,34 @@ struct ContentView: View {
 
     private func initializeManagers() {
         webViewManager = WebViewManager()
-        tabManager = TabManager(modelContext: modelContext, webViewManager: webViewManager)
+        tabManager.setModelContext(modelContext)
+        if let webViewManager = webViewManager {
+            tabManager.setWebViewManager(webViewManager)
+        }
         navigationManager = NavigationManager()
         windowManager = WindowManager()
         crashRecoveryManager = CrashRecoveryManager()
         bookmarkManager = BookmarkManager(modelContext: modelContext)
+        managersInitialized = true
 
         notificationManager = NotificationManager(
-            tabManager: tabManager!,
+            tabManager: tabManager,
             navigationManager: navigationManager!,
             showOmnibar: $showOmnibar,
             tabs: { self.tabs },
             closeTabAction: { tab, tabs in
-                self.tabManager?.closeTab(tab, tabs: tabs)
+                tabManager.closeTab(tab, tabs: tabs)
             },
             createNewTabAction: {
                 // Close empty tabs before creating a new one
                 let emptyTabs = self.tabs.filter { $0.url == nil }
                 for emptyTab in emptyTabs {
-                    if emptyTab.id != self.tabManager?.selectedTabId {
-                        self.tabManager?.closeTab(emptyTab, tabs: self.tabs)
+                    if emptyTab.id != tabManager.selectedTabId {
+                        tabManager.closeTab(emptyTab, tabs: tabs)
                     }
                 }
 
-                let newTab = self.tabManager?.createNewTab()
+                let newTab = self.tabManager.createNewTab()
                 // Show omnibar when creating a new tab
                 if newTab != nil {
                     self.showOmnibar = true
@@ -1048,7 +1114,7 @@ struct ContentView: View {
         )
 
         keyboardShortcutsManager = KeyboardShortcutsManager(
-            tabManager: tabManager!,
+            tabManager: tabManager,
             navigationManager: navigationManager!,
             webViewManager: webViewManager,
             showOmnibar: $showOmnibar,
@@ -1076,19 +1142,19 @@ struct ContentView: View {
         )
 
         // Setup crash recovery after all managers are initialized
-        crashRecoveryManager?.setup(with: modelContext)
+        crashRecoveryManager?.setup(with: modelContext, getSelectedTabId: { tabManager.selectedTabId })
     }
 
     private func createNewTab() {
         // Close empty tabs before creating a new one
         let emptyTabs = tabs.filter { $0.url == nil }
         for emptyTab in emptyTabs {
-            if emptyTab.id != tabManager?.selectedTabId {
-                tabManager?.closeTab(emptyTab, tabs: tabs)
+            if emptyTab.id != tabManager.selectedTabId {
+                tabManager.closeTab(emptyTab, tabs: tabs)
             }
         }
 
-        let newTab = tabManager?.createNewTab()
+        let newTab = tabManager.createNewTab()
         // Show omnibar when creating a new tab
         if newTab != nil {
             showOmnibar = true
@@ -1144,7 +1210,7 @@ struct ContentView: View {
 
         // Restore tabs
         for savedTab in workspace.tabs {
-            let tab = Tab(title: savedTab.title, url: nil, isActive: false)
+            let tab = BrowserTab(title: savedTab.title, url: nil, isActive: false)
             tab.id = savedTab.id
             tab.groupId = savedTab.groupId
             tab.isPinned = savedTab.isPinned
@@ -1165,7 +1231,7 @@ struct ContentView: View {
         // Select the first tab if available
         DispatchQueue.main.async {
             if let firstTab = try? modelContext.fetch(FetchDescriptor<Tab>()).first {
-                tabManager?.selectedTabId = firstTab.id
+                tabManager.selectedTabId = firstTab.id
             }
         }
     }
@@ -1188,12 +1254,12 @@ struct ContentView: View {
     }
 
     private func preloadFaviconsForAllTabs() {
-        print("Preloading favicons for all tabs before web views are loaded...")
+        Logger.log("Preloading favicons for all tabs before web views are loaded...", type: "ContentView")
         
         for tab in tabs {
             // Skip if tab already has a favicon
             if tab.favicon != nil {
-                print("Tab \(tab.url?.absoluteString ?? "no url") already has favicon")
+                Logger.log("Tab \(tab.url?.absoluteString ?? "no url") already has favicon", type: "ContentView")
                 continue
             }
             
@@ -1205,11 +1271,11 @@ struct ContentView: View {
                 continue
             }
             
-            print("Preloading favicon for tab: \(url.absoluteString)")
+            Logger.log("Preloading favicon for tab: \(url.absoluteString)", type: "ContentView")
             
             // First check cache
             if let cachedFavicon = FaviconCache.shared.getFavicon(for: url) {
-                print("Found cached favicon for \(url.absoluteString), setting on tab")
+                Logger.log("Found cached favicon for \(url.absoluteString), setting on tab", type: "ContentView")
                 tab.favicon = cachedFavicon
                 continue
             }
@@ -1236,7 +1302,7 @@ struct ContentView: View {
                    data.count > 0,
                    let _ = NSImage(data: data) {
                     
-                    print("Preloaded favicon for \(url.absoluteString) from \(faviconURL.absoluteString)")
+                    Logger.log("Preloaded favicon for \(url.absoluteString) from \(faviconURL.absoluteString)", type: "ContentView")
                     
                     // Cache the favicon
                     FaviconCache.shared.setFavicon(data, for: url)
@@ -1253,7 +1319,7 @@ struct ContentView: View {
                     DispatchQueue.main.async {
                         if tab.favicon == nil, let host = url.host {
                             if let domainInitial = DomainInitialsGenerator.shared.generateInitialImage(for: host) {
-                                print("Generated domain initial for \(host)")
+                                Logger.log("Generated domain initial for \(host)", type: "ContentView")
                                 tab.favicon = domainInitial
                             }
                         }
@@ -1267,32 +1333,39 @@ struct ContentView: View {
     }
 
     private func loadFaviconsForAllTabs() {
-        print("Loading favicons for all tabs...")
+        Logger.log("Loading favicons for all tabs...", type: "ContentView")
         for tab in tabs {
             if let url = tab.url, tab.favicon == nil {
-                print("Checking favicon cache for tab: \(url.absoluteString)")
+                Logger.log("Checking favicon cache for tab: \(url.absoluteString)", type: "ContentView")
 
                 // First check if we have a favicon cached for this URL
                 if let cachedFavicon = FaviconCache.shared.getFavicon(for: url) {
-                    print("Found cached favicon for \(url.absoluteString), setting on tab")
+                    Logger.log("Found cached favicon for \(url.absoluteString), setting on tab", type: "ContentView")
                     tab.favicon = cachedFavicon
                 } else {
-                    print("No cached favicon for \(url.absoluteString), will load when tab becomes active")
+                    Logger.log("No cached favicon for \(url.absoluteString), will load when tab becomes active", type: "ContentView")
                     // For now, we'll load favicons when tabs become active
                     // In the future, we could implement background favicon loading
                 }
             } else if tab.favicon != nil {
-                print("Tab \(tab.url?.absoluteString ?? "no url") already has favicon")
+                Logger.log("Tab \(tab.url?.absoluteString ?? "no url") already has favicon", type: "ContentView")
             }
         }
     }
 
-    private func updateTabTitle(_ tab: Tab) {
-        tabManager?.updateTabTitle(tab)
+    private func updateTabTitle(_ tab: BrowserTab) {
+        tabManager.updateTabTitle(tab)
     }
 
-    private var activeTab: Tab? {
-        tabManager?.getActiveTab(from: tabs)
+    private var activeTab: BrowserTab? {
+        let active = tabManager.getActiveTab(from: tabs)
+        if active == nil && tabManager.selectedTabId != nil {
+            Logger.log("ContentView activeTab: selectedTabId is \(tabManager.selectedTabId?.uuidString ?? "nil") but no matching tab found in \(tabs.count) tabs", type: "ContentView")
+            for tab in tabs {
+                Logger.log("  Tab: \(tab.id) - \(tab.title)", type: "ContentView")
+            }
+        }
+        return active
     }
 
 
@@ -1407,46 +1480,40 @@ struct ContentView: View {
     }
 
     private func switchToNextTab() {
-        tabManager?.switchToNextTab(tabs: tabs)
-        // Update local selectedTabId to match TabManager
-        if let tabManagerSelectedId = tabManager?.selectedTabId {
-            selectedTabId = tabManagerSelectedId
-        }
+        tabManager.switchToNextTab(tabs: tabs)
+        // TabManager is now observed directly, no manual sync needed
     }
 
     private func switchToPreviousTab() {
-        tabManager?.switchToPreviousTab(tabs: tabs)
-        // Update local selectedTabId to match TabManager
-        if let tabManagerSelectedId = tabManager?.selectedTabId {
-            selectedTabId = tabManagerSelectedId
-        }
+        tabManager.switchToPreviousTab(tabs: tabs)
+        // TabManager is now observed directly, no manual sync needed
     }
 
     private func switchToTab(at index: Int) {
-        print("ContentView switchToTab: switching to index \(index), tabs.count = \(tabs.count)")
+        Logger.log("ContentView switchToTab: switching to index \(index), tabs.count = \(tabs.count)", type: "ContentView")
         for (i, tab) in tabs.enumerated() {
-            print("  Tab \(i): id=\(tab.id), url=\(tab.url?.absoluteString ?? "nil")")
+            Logger.log("  Tab \(i): id=\(tab.id), url=\(tab.url?.absoluteString ?? "nil")", type: "ContentView")
         }
-        tabManager?.switchToTab(at: index, tabs: tabs)
+        tabManager.switchToTab(at: index, tabs: tabs)
         // Also update our local state
         if index >= 0 && index < tabs.count {
             let targetTabId = tabs[index].id
-            print("Setting selectedTabId to: \(targetTabId)")
-            selectedTabId = targetTabId
+        Logger.log("Setting selectedTabId to: \(targetTabId)", type: "ContentView")
+        // TabManager is updated by switchToTab(at:) method, no manual sync needed
         }
     }
 
     private func closeCurrentTab() {
         if let activeTab = activeTab {
-            tabManager?.closeTab(activeTab, tabs: tabs)
+            tabManager.closeTab(activeTab, tabs: tabs)
         }
     }
 
     private func handlePopupRequest(url: URL, windowFeatures: Any?) {
         // Create a new tab for the popup
-        let newTab = Tab(title: "Popup", url: url, isActive: false)
+        let newTab = BrowserTab(title: "Popup", url: url, isActive: false)
         modelContext.insert(newTab)
-        tabManager?.selectedTabId = newTab.id
+        tabManager.selectedTabId = newTab.id
     }
 
     private func saveSessionForRestart() {
@@ -1466,7 +1533,7 @@ struct ContentView: View {
                     orderIndex: index
                 )
             },
-            selectedTabId: tabManager?.selectedTabId
+            selectedTabId: tabManager.selectedTabId
         )
 
         // Save to UserDefaults with a different key than crash recovery
@@ -1494,9 +1561,9 @@ struct ContentView: View {
         }
 
         // Restore tabs, handling invalid URLs gracefully
-        var restoredTabs: [Tab] = []
+        var restoredTabs: [BrowserTab] = []
         for savedTab in sessionData.tabs {
-            let tab = Tab(title: savedTab.title, url: nil, isActive: savedTab.isActive)
+            let tab = BrowserTab(title: savedTab.title, url: nil, isActive: savedTab.isActive)
             tab.id = savedTab.id
 
             // Handle invalid URLs - only restore valid URLs

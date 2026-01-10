@@ -117,15 +117,15 @@ class NotificationManager {
         ) { [weak self] _ in
             let tabs = self?.tabs() ?? []
             if tabs.isEmpty {
-                print("No tabs open")
+                Logger.log("No tabs open", type: "NotificationManager")
             } else {
-                print("Open tabs:")
+                Logger.log("Open tabs:", type: "NotificationManager")
                 for (index, tab) in tabs.enumerated() {
                     let activeIndicator = tab.isActive ? " (active)" : ""
                     let title = tab.title
                     let url = tab.url?.absoluteString ?? "about:blank"
-                    print("\(index + 1). \(title)\(activeIndicator)")
-                    print("   URL: \(url)")
+                    Logger.log("\(index + 1). \(title)\(activeIndicator)", type: "NotificationManager")
+                    Logger.log("   URL: \(url)", type: "NotificationManager")
                 }
             }
         }
@@ -314,11 +314,11 @@ class NotificationManager {
     private func extractPageData(from urlString: String) {
         guard let backgroundWebView = backgroundWebView,
               let url = URL(string: urlString) else {
-            print("Error: Invalid URL or background web view not available")
+            Logger.log("Error: Invalid URL or background web view not available", type: "NotificationManager")
             return
         }
 
-        print("Loading page data for: \(urlString)")
+        Logger.log("Loading page data for: \(urlString)", type: "NotificationManager")
 
         // Load the URL in the background web view
         let request = URLRequest(url: url)
@@ -367,15 +367,15 @@ class NotificationManager {
 
         backgroundWebView.evaluateJavaScript(extractionScript) { [weak self] result, error in
             if let error = error {
-                print("Error extracting page data: \(error)")
+                Logger.log("Error extracting page data: \(error)", type: "NotificationManager")
                 return
             }
 
             if let resultString = result as? String {
                 // Print the JSON data to stdout for the CLI
-                print(resultString)
+                Logger.log(resultString, type: "NotificationManager")
             } else {
-                print("{\"error\": \"Failed to extract page data\", \"url\": \"\(urlString)\"}")
+                Logger.log("{\"error\": \"Failed to extract page data\", \"url\": \"\(urlString)\"}", type: "NotificationManager")
             }
         }
     }

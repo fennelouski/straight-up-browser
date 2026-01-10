@@ -74,11 +74,11 @@ class KeyboardShortcutsManager {
             let modifiers = self.formatModifiers(event.modifierFlags)
             let chars = event.charactersIgnoringModifiers ?? ""
             let keyCode = event.keyCode
-            print("🔹 KEY EVENT: [\(modifiers)] + '\(chars)' (keyCode: \(keyCode))")
+            Logger.log("🔹 KEY EVENT: [\(modifiers)] + '\(chars)' (keyCode: \(keyCode))", type: "KeyboardShortcutsManager")
 
             // Check if we're in an input field that should receive normal typing
             if self.shouldAllowNormalTyping(for: event) {
-                print("✅ ALLOWED: Normal typing in input field")
+                Logger.log("✅ ALLOWED: Normal typing in input field", type: "KeyboardShortcutsManager")
                 return event // Allow normal typing in input fields
             }
 
@@ -88,7 +88,7 @@ class KeyboardShortcutsManager {
             }
 
             if event.modifierFlags.contains(.control) && event.charactersIgnoringModifiers == " " {
-                print("🎯 COMMAND: Control+Space → Toggle omnibar")
+                Logger.log("🎯 COMMAND: Control+Space → Toggle omnibar", type: "KeyboardShortcutsManager")
                 self.showOmnibar.wrappedValue.toggle()
                 return nil
             }
@@ -97,12 +97,12 @@ class KeyboardShortcutsManager {
             if event.modifierFlags.contains(.control) && event.keyCode == 48 { // Tab key (0x30)
                 if event.modifierFlags.contains(.shift) {
                     // Control+Shift+Tab - Previous tab
-                    print("🎯 COMMAND: Control+Shift+Tab → Switch to previous tab")
+                    Logger.log("🎯 COMMAND: Control+Shift+Tab → Switch to previous tab", type: "KeyboardShortcutsManager")
                     NotificationCenter.default.post(name: .browserPreviousTab, object: nil)
                     return nil
                 } else {
                     // Control+Tab - Next tab
-                    print("🎯 COMMAND: Control+Tab → Switch to next tab")
+                    Logger.log("🎯 COMMAND: Control+Tab → Switch to next tab", type: "KeyboardShortcutsManager")
                     NotificationCenter.default.post(name: .browserNextTab, object: nil)
                     return nil
                 }
@@ -110,11 +110,11 @@ class KeyboardShortcutsManager {
             // Alternative: Check for Tab character
             if event.modifierFlags.contains(.control) && event.charactersIgnoringModifiers == "\t" {
                 if event.modifierFlags.contains(.shift) {
-                    print("🎯 COMMAND: Control+Shift+Tab → Switch to previous tab")
+                    Logger.log("🎯 COMMAND: Control+Shift+Tab → Switch to previous tab", type: "KeyboardShortcutsManager")
                     NotificationCenter.default.post(name: .browserPreviousTab, object: nil)
                     return nil
                 } else {
-                    print("🎯 COMMAND: Control+Tab → Switch to next tab")
+                    Logger.log("🎯 COMMAND: Control+Tab → Switch to next tab", type: "KeyboardShortcutsManager")
                     NotificationCenter.default.post(name: .browserNextTab, object: nil)
                     return nil
                 }
@@ -124,28 +124,28 @@ class KeyboardShortcutsManager {
             if event.modifierFlags.contains(.command) {
                 // Cmd+Option+` - Hide tab bar
                 if event.modifierFlags.contains(.option) && (event.charactersIgnoringModifiers == "`" || event.charactersIgnoringModifiers == "~") {
-                    print("🎯 COMMAND: Cmd+Option+` → Hide tab bar")
+                    Logger.log("🎯 COMMAND: Cmd+Option+` → Hide tab bar", type: "KeyboardShortcutsManager")
                     NotificationCenter.default.post(name: .browserHideTabBar, object: nil)
                     return nil
                 }
 
                 // Cmd+Option+1 - Minimal favicon view (just icons)
                 if event.modifierFlags.contains(.option) && event.charactersIgnoringModifiers == "1" {
-                    print("🎯 COMMAND: Cmd+Option+1 → Set minimal tab bar view")
+                    Logger.log("🎯 COMMAND: Cmd+Option+1 → Set minimal tab bar view", type: "KeyboardShortcutsManager")
                     NotificationCenter.default.post(name: .browserMinimalTabBar, object: nil)
                     return nil
                 }
 
                 // Cmd+Option+2 - Compact view (favicon + ~14 chars)
                 if event.modifierFlags.contains(.option) && event.charactersIgnoringModifiers == "2" {
-                    print("🎯 COMMAND: Cmd+Option+2 → Set compact tab bar view")
+                    Logger.log("🎯 COMMAND: Cmd+Option+2 → Set compact tab bar view", type: "KeyboardShortcutsManager")
                     NotificationCenter.default.post(name: .browserCompactTabBar, object: nil)
                     return nil
                 }
 
                 // Cmd+Option+3 - Wide view (20% of window or 200px, whichever is greater)
                 if event.modifierFlags.contains(.option) && event.charactersIgnoringModifiers == "3" {
-                    print("🎯 COMMAND: Cmd+Option+3 → Set wide tab bar view")
+                    Logger.log("🎯 COMMAND: Cmd+Option+3 → Set wide tab bar view", type: "KeyboardShortcutsManager")
                     NotificationCenter.default.post(name: .browserWideTabBar, object: nil)
                     return nil
                 }
@@ -153,7 +153,7 @@ class KeyboardShortcutsManager {
                 // Direct tab switching (Cmd + 1-9)
                 if !event.modifierFlags.contains(.option) && !event.modifierFlags.contains(.shift) {
                     if let characters = event.charactersIgnoringModifiers, let number = Int(characters), number >= 1 && number <= 9 {
-                        print("🎯 COMMAND: Cmd+\(number) → Switch to tab \(number)")
+                        Logger.log("🎯 COMMAND: Cmd+\(number) → Switch to tab \(number)", type: "KeyboardShortcutsManager")
                         let notificationName: Notification.Name
                         switch number {
                         case 1: notificationName = .browserSwitchToTab1
@@ -174,7 +174,7 @@ class KeyboardShortcutsManager {
 
                 // Cmd+Shift+R - Reload all tabs
                 if event.modifierFlags.contains(.shift) && !event.modifierFlags.contains(.option) && event.charactersIgnoringModifiers == "R" {
-                    print("🎯 COMMAND: Cmd+Shift+R → Reload all tabs")
+                    Logger.log("🎯 COMMAND: Cmd+Shift+R → Reload all tabs", type: "KeyboardShortcutsManager")
                     self.reloadAllTabsAction()
                     return nil
                 }
@@ -183,31 +183,31 @@ class KeyboardShortcutsManager {
                 if !event.modifierFlags.contains(.option) && !event.modifierFlags.contains(.shift) {
                     switch event.charactersIgnoringModifiers {
                     case "t":
-                        print("🎯 COMMAND: Cmd+T → New tab")
+                        Logger.log("🎯 COMMAND: Cmd+T → New tab", type: "KeyboardShortcutsManager")
                         NotificationCenter.default.post(name: .browserNewTab, object: nil)
                         return nil
                     case "w":
-                        print("🎯 COMMAND: Cmd+W → Close tab")
+                        Logger.log("🎯 COMMAND: Cmd+W → Close tab", type: "KeyboardShortcutsManager")
                         self.closeTabAction()
                         return nil
                     case "r":
-                        print("🎯 COMMAND: Cmd+R → Reload page")
+                        Logger.log("🎯 COMMAND: Cmd+R → Reload page", type: "KeyboardShortcutsManager")
                         self.reloadAction()
                         return nil
                     case "l":
-                        print("🎯 COMMAND: Cmd+L → Focus omnibar")
+                        Logger.log("🎯 COMMAND: Cmd+L → Focus omnibar", type: "KeyboardShortcutsManager")
                         self.showOmnibar.wrappedValue.toggle()
                         return nil
                     case "o":
-                        print("🎯 COMMAND: Cmd+O → Focus omnibar")
+                        Logger.log("🎯 COMMAND: Cmd+O → Focus omnibar", type: "KeyboardShortcutsManager")
                         self.showOmnibar.wrappedValue.toggle()
                         return nil
                     case "[":
-                        print("🎯 COMMAND: Cmd+[ → Go back")
+                        Logger.log("🎯 COMMAND: Cmd+[ → Go back", type: "KeyboardShortcutsManager")
                         self.goBackAction()
                         return nil
                     case "]":
-                        print("🎯 COMMAND: Cmd+] → Go forward")
+                        Logger.log("🎯 COMMAND: Cmd+] → Go forward", type: "KeyboardShortcutsManager")
                         self.goForwardAction()
                         return nil
                     default:
@@ -216,7 +216,7 @@ class KeyboardShortcutsManager {
                 }
             }
 
-            print("❌ IGNORED: No matching keyboard shortcut")
+            Logger.log("❌ IGNORED: No matching keyboard shortcut", type: "KeyboardShortcutsManager")
             return event
         }
     }
@@ -295,7 +295,7 @@ class KeyboardShortcutsManager {
             lastControlPressTime = currentTime
 
             if isDoublePress {
-                print("🎯 COMMAND: Double Control press → Toggle tab title display mode")
+                Logger.log("🎯 COMMAND: Double Control press → Toggle tab title display mode", type: "KeyboardShortcutsManager")
                 SettingsManager.shared.showWebpageTitlesInTabs.toggle()
                 NotificationCenter.default.post(name: .browserTabTitleDisplayModeChanged, object: nil)
                 return true

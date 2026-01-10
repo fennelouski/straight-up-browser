@@ -17,21 +17,25 @@ class CrashRecoveryManager {
     private var autosaveTimer: Timer?
     private var modelContext: ModelContext?
     private var wasCrashDetected: Bool = false
+    private var getSelectedTabId: (() -> UUID?)?
 
-    init() {
+    init(getSelectedTabId: (() -> UUID?)? = nil) {
+        self.getSelectedTabId = getSelectedTabId
+
         // Check if crash flag is already set (from previous session)
         // If it's true, that means the previous session didn't terminate normally
         wasCrashDetected = UserDefaults.standard.bool(forKey: crashFlagKey)
-        
-        print("CrashRecoveryManager init: wasCrashDetected = \(wasCrashDetected)")
-        
+
+        Logger.log("CrashRecoveryManager init: wasCrashDetected = \(wasCrashDetected)", type: "CrashRecoveryManager")
+
         // Set crash flag for this session (will be cleared on normal exit)
         UserDefaults.standard.set(true, forKey: crashFlagKey)
         UserDefaults.standard.synchronize()
     }
 
-    func setup(with modelContext: ModelContext) {
+    func setup(with modelContext: ModelContext, getSelectedTabId: @escaping () -> UUID?) {
         self.modelContext = modelContext
+        self.getSelectedTabId = getSelectedTabId
         startAutosave()
         clearCrashFlagOnNormalExit()
     }
@@ -50,6 +54,7 @@ class CrashRecoveryManager {
         guard let tabs = try? modelContext.fetch(descriptor) else { return }
 
         // Create session data
+        let selectedTabId = getSelectedTabId?() ?? tabs.first(where: { $0.isActive })?.id
         let sessionData = SessionData(
             tabs: tabs.enumerated().map { (index, tab) in
                 SavedTab(
@@ -65,7 +70,7 @@ class CrashRecoveryManager {
                     orderIndex: index
                 )
             },
-            selectedTabId: tabs.first(where: { $0.isActive })?.id
+            selectedTabId: selectedTabId
         )
 
         // Save to UserDefaults
@@ -77,7 +82,7 @@ class CrashRecoveryManager {
 
     func shouldOfferRecovery() -> Bool {
         // Only offer recovery if we detected a crash from the previous session
-        print("CrashRecoveryManager shouldOfferRecovery: wasCrashDetected = \(wasCrashDetected)")
+        Logger.log("CrashRecoveryManager shouldOfferRecovery: wasCrashDetected = \(wasCrashDetected)", type: "CrashRecoveryManager")
         return wasCrashDetected
     }
 
@@ -130,7 +135,7 @@ class CrashRecoveryManager {
     }
 
     private func clearCrashFlag() {
-        print("CrashRecoveryManager clearCrashFlag: clearing crash flag on normal exit")
+        Logger.log("CrashRecoveryManager clearCrashFlag: clearing crash flag on normal exit", type: "CrashRecoveryManager")
         UserDefaults.standard.set(false, forKey: crashFlagKey)
         // Also clear the saved session on normal exit - it's only needed for crash recovery
         UserDefaults.standard.removeObject(forKey: savedSessionKey)

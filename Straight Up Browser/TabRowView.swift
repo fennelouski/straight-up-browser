@@ -12,10 +12,11 @@ struct TabDropDelegate: DropDelegate {
     let tabId: UUID
     let onReorder: ((UUID, UUID) -> Void)?
 
+
     func performDrop(info: DropInfo) -> Bool {
-        print("TabDropDelegate performDrop called for tabId: \(tabId)")
+        Logger.log("TabDropDelegate performDrop called for tabId: \(tabId)", type: "TabRowView")
         guard let itemProvider = info.itemProviders(for: [UTType.text]).first else {
-            print("No text item provider found")
+            Logger.log("No text item provider found", type: "TabRowView")
             return false
         }
 
@@ -24,13 +25,13 @@ struct TabDropDelegate: DropDelegate {
                 let draggedTabIdString = string as? String
                 if let draggedTabIdString = draggedTabIdString,
                    let draggedTabId = UUID(uuidString: draggedTabIdString) {
-                    print("Dropped tab \(draggedTabId) onto tab \(self.tabId)")
+                    Logger.log("Dropped tab \(draggedTabId) onto tab \(self.tabId)", type: "TabRowView")
                     if draggedTabId != self.tabId {
                         // Call the reorder function with source and target tab IDs
                         self.onReorder?(draggedTabId, self.tabId)
                     }
                 } else {
-                    print("Failed to parse dragged tab ID: \(draggedTabIdString ?? "nil")")
+                    Logger.log("Failed to parse dragged tab ID: \(draggedTabIdString ?? "nil")", type: "TabRowView")
                 }
             }
         }
@@ -64,73 +65,85 @@ struct TabRowView: View {
     }
 
     var body: some View {
-        Button {
-            onSelect()
-        } label: {
-            if showOnlyIcons {
-                // Centered favicon layout for icon-only mode
-                // Use ZStack with explicit frame to ensure content stays within tab bar bounds
-                ZStack {
-                    // Show favicon if available, otherwise show default icon
-                    if let faviconData = tab.favicon, let nsImage = NSImage(data: faviconData) {
-                        Image(nsImage: nsImage)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 16, height: 16)
-                            .clipped()
-                    } else if tab.url != nil {
-                        Image(systemName: "globe")
-                            .font(.system(size: 14))
-                            .foregroundColor(isSelected ? .blue : .gray)
-                    } else {
-                        Image(systemName: "plus.circle")
-                            .font(.system(size: 14))
-                            .foregroundColor(isSelected ? .blue : .gray)
+        ZStack {
+            Button {
+                onSelect()
+            } label: {
+                if showOnlyIcons {
+                    // Centered favicon layout for icon-only mode
+                    // Use ZStack with explicit frame to ensure content stays within tab bar bounds
+                    ZStack {
+                        // Show favicon if available, otherwise show default icon
+                        if let faviconData = tab.favicon, let nsImage = NSImage(data: faviconData) {
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 16, height: 16)
+                                .clipped()
+                        } else if tab.url != nil {
+                            Image(systemName: "globe")
+                                .font(.system(size: 14))
+                                .foregroundColor(isSelected ? .blue : .gray)
+                        } else {
+                            Image(systemName: "plus.circle")
+                                .font(.system(size: 14))
+                                .foregroundColor(isSelected ? .blue : .gray)
+                        }
                     }
-                }
-                .frame(width: availableWidth, height: 32)
-                .background(isSelected ? Color.blue.opacity(0.15) : Color(.windowBackgroundColor).opacity(0.01))
-                .contentShape(Rectangle())
-                .clipped() // Ensure content doesn't overflow
-            } else {
-                // Standard layout with icon and text
-                HStack(spacing: 4) {
-                    // Show favicon if available, otherwise show default icon
-                    if let faviconData = tab.favicon, let nsImage = NSImage(data: faviconData) {
-                        Image(nsImage: nsImage)
-                            .resizable()
-                            .frame(width: 16, height: 16)
-                    } else if tab.url != nil {
-                        Image(systemName: "globe")
-                            .font(.system(size: 12))
-                            .foregroundColor(isSelected ? .blue : .gray)
-                    } else {
-                        Image(systemName: "plus.circle")
-                            .font(.system(size: 12))
-                            .foregroundColor(isSelected ? .blue : .gray)
+                    .frame(width: availableWidth, height: 32)
+                    .background(isSelected ? Color.blue.opacity(0.15) : Color(.windowBackgroundColor).opacity(0.01))
+                    .contentShape(Rectangle())
+                    .clipped() // Ensure content doesn't overflow
+                } else {
+                    // Standard layout with icon and text
+                    HStack(spacing: 4) {
+                        // Show favicon if available, otherwise show default icon
+                        if let faviconData = tab.favicon, let nsImage = NSImage(data: faviconData) {
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .frame(width: 16, height: 16)
+                        } else if tab.url != nil {
+                            Image(systemName: "globe")
+                                .font(.system(size: 12))
+                                .foregroundColor(isSelected ? .blue : .gray)
+                        } else {
+                            Image(systemName: "plus.circle")
+                                .font(.system(size: 12))
+                                .foregroundColor(isSelected ? .blue : .gray)
+                        }
+
+                        Text(displayTitle)
+                            .font(.system(size: 11))
+                            .lineLimit(1)
+                            .foregroundColor(isSelected ? .blue : .primary)
+                            .truncationMode(.tail)
+
+                        Spacer(minLength: 0)
                     }
-
-                    Text(displayTitle)
-                        .font(.system(size: 11))
-                        .lineLimit(1)
-                        .foregroundColor(isSelected ? .blue : .primary)
-                        .truncationMode(.tail)
-
-                    Spacer(minLength: 0)
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 6)
+                    .background(isSelected ? Color.blue.opacity(0.15) : Color.clear)
+                    .cornerRadius(4)
+                    .contentShape(Rectangle())
                 }
-                .padding(.vertical, 4)
-                .padding(.horizontal, 6)
-                .background(isSelected ? Color.blue.opacity(0.15) : Color.clear)
-                .cornerRadius(4)
-                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 10)
+                .onChanged { value in
+                    Logger.log("TabRowView highPriorityGesture onChanged for tab: \(tab.id), distance: \(value.translation)", type: "TabRowView")
+                }
+                .onEnded { value in
+                    Logger.log("TabRowView highPriorityGesture onEnded for tab: \(tab.id)", type: "TabRowView")
+                }
+        )
         .onDrag {
-            print("TabRowView onDrag called for tab: \(tab.id)")
+            Logger.log("TabRowView onDrag called for tab: \(tab.id)", type: "TabRowView")
             // Provide the tab ID as the drag item
             return NSItemProvider(object: tab.id.uuidString as NSString)
         }
         .onDrop(of: [UTType.text], delegate: TabDropDelegate(tabId: tab.id, onReorder: onReorder))
+        .contentShape(Rectangle()) // Make the entire area droppable
     }
 }

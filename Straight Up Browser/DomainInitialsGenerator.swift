@@ -200,13 +200,13 @@ class DomainInitialsGenerator {
     /// Test function to verify the generator works
     func testGenerator() {
         let testDomains = ["google.com", "github.com", "stackoverflow.com", "example.co.uk"]
-        print("Testing Domain Initials Generator:")
+        Logger.log("Testing Domain Initials Generator:", type: "DomainInitialsGenerator")
 
         for domain in testDomains {
             if let data = generateInitialImage(for: domain) {
-                print("✓ Generated initial for \(domain): \(data.count) bytes")
+                Logger.log("✓ Generated initial for \(domain): \(data.count) bytes", type: "DomainInitialsGenerator")
             } else {
-                print("✗ Failed to generate initial for \(domain)")
+                Logger.log("✗ Failed to generate initial for \(domain)", type: "DomainInitialsGenerator")
             }
         }
     }
