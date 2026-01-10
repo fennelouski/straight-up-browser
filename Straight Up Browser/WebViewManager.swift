@@ -1,0 +1,175 @@
+//
+//  WebViewManager.swift
+//  Straight Up Browser
+//
+//  Created by Nathan Fennel on 1/9/26.
+//
+
+import SwiftUI
+import WebKit
+import Combine
+
+class WebViewManager: ObservableObject {
+    // Store web views per tab ID
+    private var webViews: [UUID: WKWebView] = [:]
+
+    // Active web view for the currently selected tab
+    @Published var activeWebView: WKWebView?
+
+    // Delegate for web view events
+    weak var delegate: WebViewManagerDelegate?
+
+    init() {
+        print("WebViewManager initialized")
+    }
+
+    // Get or create a web view for a specific tab
+    func getWebView(for tabId: UUID) -> WKWebView {
+        print("WebViewManager getWebView called for tab \(tabId)")
+        if let existingWebView = webViews[tabId] {
+            print("WebViewManager getWebView: returning existing WebView \(Unmanaged.passUnretained(existingWebView).toOpaque()) for tab \(tabId)")
+            return existingWebView
+        }
+
+        print("WebViewManager: Creating new WKWebView for tab \(tabId)")
+        let webView = createWebView()
+        webViews[tabId] = webView
+        print("WebViewManager: Created new WebView \(Unmanaged.passUnretained(webView).toOpaque()) for tab \(tabId)")
+        return webView
+    }
+
+    // Set the active tab (switches which web view is considered active)
+    func setActiveTab(_ tabId: UUID?) {
+        print("WebViewManager setActiveTab called with tabId: \(tabId?.uuidString ?? "nil")")
+        guard let tabId = tabId else {
+            activeWebView = nil
+            return
+        }
+
+        let webView = getWebView(for: tabId)
+        print("WebViewManager setActiveTab: got WebView for tab \(tabId): \(Unmanaged.passUnretained(webView).toOpaque())")
+        if activeWebView !== webView {
+            print("WebViewManager: Switching active web view for tab \(tabId)")
+            activeWebView = webView
+        } else {
+            print("WebViewManager setActiveTab: activeWebView already correct for tab \(tabId)")
+        }
+    }
+
+    // Remove a web view when a tab is closed
+    func removeWebView(for tabId: UUID) {
+        if let webView = webViews[tabId] {
+            // Stop any loading
+            webView.stopLoading()
+
+            // Remove from storage
+            webViews.removeValue(forKey: tabId)
+
+            // If this was the active web view, clear it
+            if activeWebView === webView {
+                activeWebView = nil
+            }
+
+            print("Removed web view for tab \(tabId)")
+        }
+    }
+
+    // Create a new WKWebView with proper configuration
+    private func createWebView() -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+
+        // Configure user agent
+        configuration.defaultWebpagePreferences.preferredContentMode = .mobile
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        configuration.mediaTypesRequiringUserActionForPlayback = .video
+
+        // Create web view
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+        webView.allowsBackForwardNavigationGestures = true
+        webView.allowsLinkPreview = true
+
+        return webView
+    }
+
+    // Navigation methods that delegate to the active web view
+    func goBack() {
+        activeWebView?.goBack()
+    }
+
+    func goForward() {
+        activeWebView?.goForward()
+    }
+
+    func reload() {
+        activeWebView?.reload()
+    }
+
+    func reloadAllTabs() {
+        for (_, webView) in webViews {
+            webView.reload()
+        }
+    }
+
+    func stopLoading() {
+        activeWebView?.stopLoading()
+    }
+
+    func load(_ request: URLRequest) {
+        activeWebView?.load(request)
+    }
+
+    // Computed properties that delegate to the active web view
+    var canGoBack: Bool {
+        activeWebView?.canGoBack ?? false
+    }
+
+    var canGoForward: Bool {
+        activeWebView?.canGoForward ?? false
+    }
+
+    var isLoading: Bool {
+        activeWebView?.isLoading ?? false
+    }
+
+    var url: URL? {
+        activeWebView?.url
+    }
+
+    var title: String? {
+        activeWebView?.title
+    }
+
+    var estimatedProgress: Double {
+        activeWebView?.estimatedProgress ?? 0.0
+    }
+
+    // Evaluate JavaScript on the active web view
+    func evaluateJavaScript(_ javaScriptString: String, completionHandler: ((Any?, Error?) -> Void)? = nil) {
+        activeWebView?.evaluateJavaScript(javaScriptString, completionHandler: completionHandler)
+    }
+
+    // Clean up all web views
+    func cleanup() {
+        for (_, webView) in webViews {
+            webView.stopLoading()
+        }
+        webViews.removeAll()
+        activeWebView = nil
+    }
+
+    deinit {
+        cleanup()
+        print("WebViewManager deallocated")
+    }
+}
+
+// Delegate protocol for web view events
+protocol WebViewManagerDelegate: AnyObject {
+    func webViewDidStartLoading(_ webView: WKWebView)
+    func webViewDidFinishLoading(_ webView: WKWebView)
+    func webViewDidFailLoading(_ webView: WKWebView, withError error: Error)
+    func webViewDidChangeURL(_ webView: WKWebView, url: URL?)
+    func webViewDidChangeTitle(_ webView: WKWebView, title: String?)
+}
