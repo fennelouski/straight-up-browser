@@ -120,18 +120,23 @@ class DomainInitialsGenerator {
     }
 
     private func generateColors(for domain: String) -> (background: NSColor, text: NSColor) {
-        // Generate a consistent hash from the domain
-        let hash = domain.hashValue
+        // FNV-1a: String.hashValue is seeded per process, which changed every
+        // tab's color on every launch. This stays stable across runs.
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in domain.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x100000001b3
+        }
 
         // Use the hash to generate HSL colors for consistency
         // Hue: 0-360 degrees based on hash
-        let hue = Double(abs(hash) % 360) / 360.0
+        let hue = Double(hash % 360) / 360.0
 
         // Saturation: 65-85% for vibrant but not overwhelming colors
-        let saturation = 0.65 + (Double(abs(hash) % 20) / 100.0)
+        let saturation = 0.65 + (Double(hash % 20) / 100.0)
 
         // Lightness: 45-65% for good contrast
-        let lightness = 0.45 + (Double(abs(hash) % 20) / 100.0)
+        let lightness = 0.45 + (Double(hash % 20) / 100.0)
 
         // Convert HSL to RGB
         let backgroundColor = hslToRgb(h: hue, s: saturation, l: lightness)
@@ -173,41 +178,4 @@ class DomainInitialsGenerator {
         return NSColor(red: r + m, green: g + m, blue: b + m, alpha: 1.0)
     }
 
-    /// Clear all cached generated images
-    func clearCache() {
-        cache.removeAllObjects()
-    }
-
-    /// Get cache statistics
-    func getCacheStats() -> (count: Int, maxSize: Int) {
-        return (cache.totalCostLimit - cache.totalCostLimit + cache.countLimit, maxCacheSize)
-    }
-
-    /// Pre-generate common domain initials for faster loading
-    func pregenerateCommonDomains() {
-        let commonDomains = [
-            "google.com", "youtube.com", "facebook.com", "amazon.com",
-            "twitter.com", "instagram.com", "linkedin.com", "github.com",
-            "stackoverflow.com", "reddit.com", "wikipedia.org", "apple.com",
-            "microsoft.com", "netflix.com", "spotify.com", "twitch.tv"
-        ]
-
-        for domain in commonDomains {
-            _ = generateInitialImage(for: domain)
-        }
-    }
-
-    /// Test function to verify the generator works
-    func testGenerator() {
-        let testDomains = ["google.com", "github.com", "stackoverflow.com", "example.co.uk"]
-        Logger.log("Testing Domain Initials Generator:", type: "DomainInitialsGenerator")
-
-        for domain in testDomains {
-            if let data = generateInitialImage(for: domain) {
-                Logger.log("✓ Generated initial for \(domain): \(data.count) bytes", type: "DomainInitialsGenerator")
-            } else {
-                Logger.log("✗ Failed to generate initial for \(domain)", type: "DomainInitialsGenerator")
-            }
-        }
-    }
 }

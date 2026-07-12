@@ -71,4 +71,18 @@ class BookmarkManager {
         let allBookmarks = fetchAllBookmarks()
         return allBookmarks.contains { $0.url.absoluteString == url.absoluteString }
     }
+
+    /// Bulk import: dedups against existing bookmarks, one save at the end.
+    /// Returns how many were actually added.
+    func importBookmarks(_ items: [(title: String, url: URL)]) -> Int {
+        var existing = Set(fetchAllBookmarks().map { $0.url.absoluteString })
+        var added = 0
+        for item in items where !existing.contains(item.url.absoluteString) {
+            modelContext.insert(Bookmark(title: item.title, url: item.url))
+            existing.insert(item.url.absoluteString)
+            added += 1
+        }
+        try? modelContext.save()
+        return added
+    }
 }

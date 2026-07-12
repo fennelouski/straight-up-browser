@@ -427,17 +427,12 @@ struct ContentView: View {
                 return stableWebViewURL
             },
             set: { newURL in
-                Logger.log("WebView binding setter: setting stable URL to \(newURL?.absoluteString ?? "nil")", type: "ContentView")
                 stableWebViewURL = newURL
-                // Only update the tab URL directly, don't call navigateTo to avoid recursion
+                // Only update the tab URL directly, don't call navigateTo to avoid
+                // recursion. The title comes from the page via webViewTitleBinding;
+                // overwriting it with the domain here clobbered real titles.
                 if let url = newURL, let activeTab = self.activeTab {
-                    Logger.log("WebView binding setter: setting tab URL to \(url.absoluteString) for tab \(activeTab.title)", type: "ContentView")
                     activeTab.url = url
-                } else {
-                    Logger.log("WebView binding setter: newURL=\(newURL?.absoluteString ?? "nil"), activeTab=\(self.activeTab?.title ?? "nil")", type: "ContentView")
-                }
-                if let activeTab = self.activeTab {
-                    tabManager.updateTabTitle(activeTab)
                 }
             }
         )
@@ -1114,71 +1109,30 @@ struct ContentView: View {
     }
     
     private func preloadFaviconForTab(tab: Tab, url: URL) {
-        // Try common favicon locations
-        let faviconURLs = [
-            URL(string: "\(url.scheme ?? "https")://\(url.host ?? "")/favicon.ico"),
-            URL(string: "\(url.scheme ?? "https")://\(url.host ?? "")/apple-touch-icon.png")
-        ].compactMap { $0 }
-        
-        // Try each URL
-        for faviconURL in faviconURLs {
-            URLSession.shared.dataTask(with: faviconURL) { data, response, error in
-                
-                if let data = data,
-                   let httpResponse = response as? HTTPURLResponse,
-                   httpResponse.statusCode == 200,
-                   data.count > 0,
-                   let _ = NSImage(data: data) {
-                    
-                    Logger.log("Preloaded favicon for \(url.absoluteString) from \(faviconURL.absoluteString)", type: "ContentView")
-                    
-                    // Cache the favicon
-                    FaviconCache.shared.setFavicon(data, for: url)
-                    
-                    // Update tab on main thread
-                    DispatchQueue.main.async {
-                        tab.favicon = data
-                    }
-                    return
-                }
-                
-                // If this was the last URL and we still don't have a favicon, generate domain initial
-                if faviconURL == faviconURLs.last {
-                    DispatchQueue.main.async {
-                        if tab.favicon == nil, let host = url.host {
-                            if let domainInitial = DomainInitialsGenerator.shared.generateInitialImage(for: host) {
-                                Logger.log("Generated domain initial for \(host)", type: "ContentView")
-                                tab.favicon = domainInitial
-                            }
-                        }
-                    }
-                }
-            }.resume()
-            
-            // Only try the first URL for now to avoid multiple requests
-            break
-        }
-    }
+        guard let faviconURL = URL(string: "\(url.scheme ?? "https")://\(url.host ?? "")/favicon.ico") else { return }
 
-    private func loadFaviconsForAllTabs() {
-        Logger.log("Loading favicons for all tabs...", type: "ContentView")
-        for tab in tabs {
-            if let url = tab.url, tab.favicon == nil {
-                Logger.log("Checking favicon cache for tab: \(url.absoluteString)", type: "ContentView")
-
-                // First check if we have a favicon cached for this URL
-                if let cachedFavicon = FaviconCache.shared.getFavicon(for: url) {
-                    Logger.log("Found cached favicon for \(url.absoluteString), setting on tab", type: "ContentView")
-                    tab.favicon = cachedFavicon
-                } else {
-                    Logger.log("No cached favicon for \(url.absoluteString), will load when tab becomes active", type: "ContentView")
-                    // For now, we'll load favicons when tabs become active
-                    // In the future, we could implement background favicon loading
+        URLSession.shared.dataTask(with: faviconURL) { data, response, error in
+            if let data = data,
+               let httpResponse = response as? HTTPURLResponse,
+               httpResponse.statusCode == 200,
+               data.count > 0,
+               NSImage(data: data) != nil {
+                // Cache the favicon and update the tab on the main thread
+                FaviconCache.shared.setFavicon(data, for: url)
+                DispatchQueue.main.async {
+                    tab.favicon = data
                 }
-            } else if tab.favicon != nil {
-                Logger.log("Tab \(tab.url?.absoluteString ?? "no url") already has favicon", type: "ContentView")
+                return
             }
-        }
+
+            // No favicon.ico: fall back to a generated domain-initial icon
+            DispatchQueue.main.async {
+                if tab.favicon == nil, let host = url.host,
+                   let domainInitial = DomainInitialsGenerator.shared.generateInitialImage(for: host) {
+                    tab.favicon = domainInitial
+                }
+            }
+        }.resume()
     }
 
     private func updateTabTitle(_ tab: BrowserTab) {
@@ -1282,18 +1236,15 @@ struct ContentView: View {
             return
         }
 
-        // Import the bookmarks
-        for importedBookmark in importedBookmarks {
-            _ = bookmarkManager?.addBookmark(
-                title: importedBookmark.title,
-                url: importedBookmark.url
-            )
-        }
+        // Import the bookmarks (deduped, single save)
+        let addedCount = bookmarkManager?.importBookmarks(
+            importedBookmarks.map { (title: $0.title, url: $0.url) }
+        ) ?? 0
 
         // Show success message
         let alert = NSAlert()
         alert.messageText = "Import Complete"
-        alert.informativeText = "Successfully imported \(importedBookmarks.count) bookmarks from \(browser.displayName)."
+        alert.informativeText = "Imported \(addedCount) new bookmarks from \(browser.displayName) (\(importedBookmarks.count - addedCount) already existed)."
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
         alert.runModal()

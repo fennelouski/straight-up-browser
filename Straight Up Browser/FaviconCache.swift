@@ -7,74 +7,25 @@
 
 import Foundation
 
+// NSCache is thread-safe and evicts by countLimit on its own; no extra
+// queue or LRU bookkeeping needed.
 class FaviconCache {
     static let shared = FaviconCache()
 
     private let cache = NSCache<NSString, NSData>()
-    private let maxEntries = 314
-    private var accessOrder = [String]() // Track access order for LRU eviction
-    private let accessQueue = DispatchQueue(label: "com.straightupbrowser.faviconcache", attributes: .concurrent)
 
     private init() {
-        cache.countLimit = maxEntries
+        cache.countLimit = 314
     }
 
     /// Get cached favicon data for a URL
     func getFavicon(for url: URL) -> Data? {
-        let key = cacheKey(for: url)
-        return accessQueue.sync {
-            // Update access order (move to front)
-            if let index = accessOrder.firstIndex(of: key) {
-                accessOrder.remove(at: index)
-            }
-            accessOrder.insert(key, at: 0)
-
-            return cache.object(forKey: key as NSString) as Data?
-        }
+        return cache.object(forKey: cacheKey(for: url) as NSString) as Data?
     }
 
     /// Store favicon data for a URL
     func setFavicon(_ data: Data, for url: URL) {
-        let key = cacheKey(for: url)
-        accessQueue.async(flags: .barrier) {
-            // Check if we're at capacity and need to evict
-            if self.accessOrder.count >= self.maxEntries {
-                if let oldestKey = self.accessOrder.last {
-                    self.cache.removeObject(forKey: oldestKey as NSString)
-                    self.accessOrder.removeLast()
-                }
-            }
-
-            // Add new entry
-            if let index = self.accessOrder.firstIndex(of: key) {
-                self.accessOrder.remove(at: index)
-            }
-            self.accessOrder.insert(key, at: 0)
-            self.cache.setObject(data as NSData, forKey: key as NSString)
-        }
-    }
-
-    /// Check if favicon exists in cache
-    func hasFavicon(for url: URL) -> Bool {
-        let key = cacheKey(for: url)
-        return accessQueue.sync {
-            return cache.object(forKey: key as NSString) != nil
-        }
-    }
-
-    /// Clear all cached favicons
-    func clearCache() {
-        accessQueue.async(flags: .barrier) {
-            self.cache.removeAllObjects()
-            self.accessOrder.removeAll()
-        }
-    }
-
-    /// Get cache statistics
-    func getCacheStats() -> (count: Int, maxEntries: Int) {
-        return accessQueue.sync {
-            return (accessOrder.count, maxEntries)
-        }
+        cache.setObject(data as NSData, forKey: cacheKey(for: url) as NSString)
     }
 
     /// Generate a consistent cache key from URL

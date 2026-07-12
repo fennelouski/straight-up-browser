@@ -93,10 +93,4 @@ class SettingsManager {
         }
     }
 
-    /// Reset all settings to defaults
-    func resetToDefaults() {
-        maxHistorySize = Defaults.maxHistorySize
-        theme = Defaults.theme
-        showWebpageTitlesInTabs = Defaults.showWebpageTitlesInTabs
-    }
 }

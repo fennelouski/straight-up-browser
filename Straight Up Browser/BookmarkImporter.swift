@@ -112,7 +112,7 @@ class BookmarkImporter {
     }
 
     private static func importSafariBookmarks(from filePath: String) -> [ImportedBookmark] {
-        var bookmarks: [ImportedBookmark] = []
+        let bookmarks: [ImportedBookmark] = []
 
         // Direct access to Safari's bookmark file is restricted by macOS privacy policies
         // We cannot access ~/Library/Safari/Bookmarks.plist without special entitlements
@@ -125,33 +125,6 @@ class BookmarkImporter {
         // Safari can export bookmarks as HTML, which we could parse
 
         return bookmarks
-    }
-
-    private static func parseSafariBookmarks(_ items: [[String: Any]], bookmarks: inout [ImportedBookmark]) {
-        for item in items {
-            if let type = item["WebBookmarkType"] as? String {
-                if type == "WebBookmarkTypeLeaf" {
-                    var title: String?
-                    if let uriDict = item["URIDictionary"] as? [String: Any],
-                       let uriTitle = uriDict["title"] as? String {
-                        title = uriTitle
-                    } else if let directTitle = item["title"] as? String {
-                        title = directTitle
-                    }
-
-                    if let title = title,
-                       let urlString = item["URLString"] as? String,
-                       let url = URL(string: urlString) {
-                        let dateAdded = (item["WebBookmarkCreationDateKey"] as? Date) ?? Date()
-                        bookmarks.append(ImportedBookmark(title: title, url: url, dateAdded: dateAdded))
-                    }
-                } else if type == "WebBookmarkTypeList" {
-                    if let children = item["Children"] as? [[String: Any]] {
-                        parseSafariBookmarks(children, bookmarks: &bookmarks)
-                    }
-                }
-            }
-        }
     }
 
     private static func importChromeBookmarks(from filePath: String) -> [ImportedBookmark] {
@@ -180,8 +153,12 @@ class BookmarkImporter {
             if let title = item["name"] as? String,
                let urlString = item["url"] as? String,
                let url = URL(string: urlString) {
-                let dateAdded = item["date_added"] as? String
-                let parsedDate = dateAdded != nil ? Date(timeIntervalSince1970: TimeInterval(dateAdded!)! / 1000000) : Date()
+                // Chrome's date_added is microseconds since 1601-01-01, as a string.
+                // Never force-unwrap external file content.
+                let parsedDate = (item["date_added"] as? String)
+                    .flatMap { TimeInterval($0) }
+                    .map { Date(timeIntervalSince1970: $0 / 1_000_000 - 11_644_473_600) }
+                    ?? Date()
                 bookmarks.append(ImportedBookmark(title: title, url: url, dateAdded: parsedDate))
             }
         } else if let children = item["children"] as? [[String: Any]] {

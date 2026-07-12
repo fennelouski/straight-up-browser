@@ -60,8 +60,12 @@ struct TabRowView: View {
         selectedTabId == tab.id
     }
 
+    // SwiftUI's .lineLimit(1)/.truncationMode(.tail) handles width truncation
     private var displayTitle: String {
-        TextUtils.getOptimalTabTitle(for: tab, availableWidth: availableWidth, tabBarWidth: tabBarWidth)
+        if SettingsManager.shared.showWebpageTitlesInTabs && !tab.title.isEmpty {
+            return tab.title
+        }
+        return Tab.extractDomain(from: tab.url)
     }
 
     var body: some View {
@@ -129,15 +133,6 @@ struct TabRowView: View {
             }
             .buttonStyle(.plain)
         }
-        .highPriorityGesture(
-            DragGesture(minimumDistance: 10)
-                .onChanged { value in
-                    Logger.log("TabRowView highPriorityGesture onChanged for tab: \(tab.id), distance: \(value.translation)", type: "TabRowView")
-                }
-                .onEnded { value in
-                    Logger.log("TabRowView highPriorityGesture onEnded for tab: \(tab.id)", type: "TabRowView")
-                }
-        )
         .onDrag {
             Logger.log("TabRowView onDrag called for tab: \(tab.id)", type: "TabRowView")
             // Provide the tab ID as the drag item
