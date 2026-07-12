@@ -66,6 +66,13 @@ struct WebView: NSViewRepresentable {
     func updateNSView(_ nsView: WebViewContainer, context: Context) {
         Logger.log("WebView updateNSView: activeTabId=\(activeTabId?.uuidString ?? "nil"), url=\(url?.absoluteString ?? "nil")", type: "WebView")
 
+        // Refresh the coordinator's view of the world. Without this it keeps the
+        // struct (and tab list) captured at creation, so its bindings write into
+        // a stale snapshot - titles/URLs never landed on tabs created later.
+        context.coordinator.parent = self
+        context.coordinator.tabs = tabs
+        context.coordinator.tabManager = tabManager
+
         // Update the active tab in the container
         nsView.setActiveTab(activeTabId)
 
