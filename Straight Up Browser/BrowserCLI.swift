@@ -7,216 +7,145 @@
 
 import Foundation
 
+// File-based CLI IPC. The browser owns a named pipe (FIFO) in its own
+// Application Support directory with owner-only permissions - filesystem
+// permissions are the authentication. The CLI tool writes one command per
+// line; data commands pass --response-file <path>, which must live inside
+// our response directory, and the app writes the JSON result there.
 class BrowserCLI {
     static let shared = BrowserCLI()
 
-    private var commandPipe: Pipe?
-    private var commandHandle: FileHandle?
+    static let supportDirectory = FileManager.default
+        .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Straight Up Browser", isDirectory: true)
+    static let pipeURL = supportDirectory.appendingPathComponent("cli.pipe")
+    static let responseDirectory = supportDirectory.appendingPathComponent("responses", isDirectory: true)
+
     private var isPipeSetup = false
 
     private init() {
-        Logger.log("BrowserCLI initialized", type: "BrowserCLI")
-        // Defer pipe setup until first use to avoid sandboxing issues during app initialization
+        setupCommandInterface()
     }
 
     private func setupCommandInterface() {
         guard !isPipeSetup else { return }
 
-        // Create a named pipe for receiving commands
-        let pipePath = "/tmp/straight_up_browser_commands"
+        let fm = FileManager.default
+        do {
+            try fm.createDirectory(at: Self.responseDirectory, withIntermediateDirectories: true,
+                                   attributes: [.posixPermissions: 0o700])
+        } catch {
+            Logger.log("Failed to create CLI directories: \(error)", type: "BrowserCLI")
+            return
+        }
 
-        // Remove existing pipe if it exists
-        try? FileManager.default.removeItem(atPath: pipePath)
+        let pipePath = Self.pipeURL.path
+        try? fm.removeItem(atPath: pipePath)
 
-        // Create new pipe
-        let result = mkfifo(pipePath, 0o666)
-        if result == 0 {
-            Logger.log("Browser CLI pipe created at: \(pipePath)", type: "BrowserCLI")
-            isPipeSetup = true
+        guard mkfifo(pipePath, 0o600) == 0 else {
+            Logger.log("Failed to create command pipe at \(pipePath)", type: "BrowserCLI")
+            return
+        }
 
-            // Start listening for commands in background
-            DispatchQueue.global(qos: .background).async {
-                self.listenForCommands(at: pipePath)
-            }
-        } else {
-            Logger.log("Failed to create command pipe", type: "BrowserCLI")
+        Logger.log("Browser CLI pipe created at: \(pipePath)", type: "BrowserCLI")
+        isPipeSetup = true
+
+        DispatchQueue.global(qos: .background).async { [weak self] in
+            self?.listenForCommands(at: pipePath)
         }
     }
 
     private func listenForCommands(at pipePath: String) {
-        while true {
-            do {
-                let fileHandle = FileHandle(forReadingAtPath: pipePath)
-                defer { try? fileHandle?.close() }
+        // O_RDWR on our own FIFO: never blocks on open, keeps a reader alive so
+        // clients' O_NONBLOCK writes succeed (Darwin returns ENXIO to a
+        // nonblocking writer unless the read end is fully open), and read()
+        // blocks instead of returning EOF between clients. No polling, no spin.
+        let fd = open(pipePath, O_RDWR)
+        guard fd >= 0 else {
+            Logger.log("Failed to open command pipe for reading", type: "BrowserCLI")
+            return
+        }
+        let fileHandle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
 
-                if let data = try fileHandle?.readToEnd() {
-                    if let command = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) {
-                        handleCommand(command)
-                    }
+        var buffer = Data()
+        while true {
+            let chunk = fileHandle.availableData // blocks until data arrives
+            if chunk.isEmpty { continue }
+            buffer.append(chunk)
+
+            // One command per line; writes under PIPE_BUF are atomic
+            while let newlineIndex = buffer.firstIndex(of: UInt8(ascii: "\n")) {
+                let lineData = buffer[buffer.startIndex..<newlineIndex]
+                buffer = Data(buffer[buffer.index(after: newlineIndex)...])
+                if let command = String(data: lineData, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                   !command.isEmpty {
+                    handleCommand(command)
                 }
-            } catch {
-                Logger.log("Error reading from pipe: \(error)", type: "BrowserCLI")
-                // Wait a bit before retrying
-                Thread.sleep(forTimeInterval: 1.0)
             }
         }
     }
 
     private func handleCommand(_ command: String) {
-        Logger.log("BrowserCLI handleCommand called with: \(command)", type: "BrowserCLI")
-        // Ensure pipe is set up before handling commands
-        setupCommandInterface()
+        Logger.log("BrowserCLI handleCommand: \(command)", type: "BrowserCLI")
 
-        // Parse command and extract response file if present
         var commandParts = command.split(separator: " ")
         var responseFilePath: String? = nil
 
-        // Check for --response-file flag
         if let responseFlagIndex = commandParts.firstIndex(of: "--response-file"),
            responseFlagIndex + 1 < commandParts.count {
-            responseFilePath = String(commandParts[responseFlagIndex + 1])
-            Logger.log("Found response file path: \(responseFilePath!)", type: "BrowserCLI")
-            // Remove the response file arguments from the command
+            // Bare filename only (the response dir path contains spaces, and we
+            // never take an arbitrary write path from input anyway) - the app
+            // resolves it inside its own response directory
+            let name = String(commandParts[responseFlagIndex + 1])
             commandParts.remove(at: responseFlagIndex + 1)
             commandParts.remove(at: responseFlagIndex)
+
+            if !name.contains("/") && !name.contains("..") {
+                responseFilePath = Self.responseDirectory.appendingPathComponent(name).path
+            } else {
+                Logger.log("Rejected response file name: \(name)", type: "BrowserCLI")
+            }
         }
 
         let action = commandParts.first?.lowercased()
         let parameter = commandParts.count > 1 ? commandParts[1..<commandParts.count].joined(separator: " ") : nil
-        Logger.log("Parsed action: \(action ?? "nil"), parameter: \(parameter ?? "nil")", type: "BrowserCLI")
 
         switch action {
         case "open":
             if let urlString = parameter {
-                openURL(urlString)
-            }
-        case "get":
-            if let urlString = parameter {
-                let actualURL = (urlString == "current") ? nil : urlString
-                getPageData(actualURL, responseFilePath: responseFilePath)
+                NotificationCenter.default.post(name: .browserOpenURL, object: nil, userInfo: ["url": urlString])
             }
         case "search":
             if let query = parameter {
-                search(query)
+                let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+                NotificationCenter.default.post(name: .browserOpenURL, object: nil,
+                                                userInfo: ["url": "https://www.google.com/search?q=" + encoded])
             }
-        case "close":
-            closeActiveTab()
         case "new":
-            createNewTab()
+            NotificationCenter.default.post(name: .browserNewTab, object: nil)
+        case "close":
+            NotificationCenter.default.post(name: .browserCloseTab, object: nil)
         case "tabs":
-            listTabs()
-        case "screenshot":
-            if let urlString = parameter {
-                screenshot(urlString)
+            var userInfo: [String: Any] = [:]
+            if let responseFilePath = responseFilePath {
+                userInfo["responseFilePath"] = responseFilePath
             }
-        case "pdf":
-            if let urlString = parameter {
-                exportPDF(urlString)
+            NotificationCenter.default.post(name: .browserListTabs, object: nil, userInfo: userInfo)
+        case "get":
+            var userInfo: [String: Any] = [:]
+            if let urlString = parameter, urlString != "current" {
+                userInfo["url"] = urlString
+            } else {
+                userInfo["currentPage"] = true
             }
-        case "inject":
-            if let script = parameter {
-                injectScript(script)
+            if let responseFilePath = responseFilePath {
+                userInfo["responseFilePath"] = responseFilePath
             }
-        case "cookies":
-            showCookies()
-        case "history":
-            showHistory()
-        case "bookmarks":
-            showBookmarks()
-        case "download":
-            if let urlString = parameter {
-                downloadFile(urlString)
-            }
-        case "focus":
-            if let tabId = parameter {
-                focusTab(tabId)
-            }
+            NotificationCenter.default.post(name: .browserGetPageData, object: nil, userInfo: userInfo)
         default:
-            Logger.log("Unknown command: \(command)", type: "BrowserCLI")
+            Logger.log("Unknown CLI command: \(command)", type: "BrowserCLI")
         }
-
-    }
-
-    private func openURL(_ urlString: String) {
-        // Send notification to the main app to open URL
-        NotificationCenter.default.post(name: .browserOpenURL, object: nil, userInfo: ["url": urlString])
-    }
-
-    private func getPageData(_ urlString: String?, responseFilePath: String? = nil) {
-        Logger.log("BrowserCLI getPageData called with urlString: \(urlString ?? "nil"), responseFilePath: \(responseFilePath ?? "nil")", type: "BrowserCLI")
-
-        // For testing, write a simple response immediately
-        if let responseFilePath = responseFilePath {
-            let testResponse = "{\"status\": \"command_received\", \"url\": \"\(urlString ?? "current")\", \"timestamp\": \"\(Date())\"}"
-            do {
-                try testResponse.write(toFile: responseFilePath, atomically: true, encoding: .utf8)
-                Logger.log("Test response written to: \(responseFilePath)", type: "BrowserCLI")
-            } catch {
-                Logger.log("Error writing test response: \(error)", type: "BrowserCLI")
-            }
-        }
-
-        // Send notification to extract page data from the active web view
-        var userInfo: [String: Any] = [:]
-        if let urlString = urlString {
-            userInfo["url"] = urlString
-        } else {
-            userInfo["currentPage"] = true
-        }
-        if let responseFilePath = responseFilePath {
-            userInfo["responseFilePath"] = responseFilePath
-        }
-        Logger.log("Posting browserGetPageData notification", type: "BrowserCLI")
-        NotificationCenter.default.post(name: .browserGetPageData, object: nil, userInfo: userInfo)
-    }
-
-    private func search(_ query: String) {
-        let searchURL = "https://www.google.com/search?q=" + query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
-        openURL(searchURL)
-    }
-
-    private func closeActiveTab() {
-        NotificationCenter.default.post(name: .browserCloseTab, object: nil)
-    }
-
-    private func createNewTab() {
-        NotificationCenter.default.post(name: .browserNewTab, object: nil)
-    }
-
-    private func listTabs() {
-        NotificationCenter.default.post(name: .browserListTabs, object: nil)
-    }
-
-    private func screenshot(_ urlString: String) {
-        NotificationCenter.default.post(name: .browserScreenshot, object: nil, userInfo: ["url": urlString])
-    }
-
-    private func exportPDF(_ urlString: String) {
-        NotificationCenter.default.post(name: .browserExportPDF, object: nil, userInfo: ["url": urlString])
-    }
-
-    private func injectScript(_ script: String) {
-        NotificationCenter.default.post(name: .browserInjectScript, object: nil, userInfo: ["script": script])
-    }
-
-    private func showCookies() {
-        NotificationCenter.default.post(name: .browserShowCookies, object: nil)
-    }
-
-    private func showHistory() {
-        NotificationCenter.default.post(name: .browserShowHistory, object: nil)
-    }
-
-    private func showBookmarks() {
-        NotificationCenter.default.post(name: .browserShowBookmarks, object: nil)
-    }
-
-    private func downloadFile(_ urlString: String) {
-        NotificationCenter.default.post(name: .browserDownloadFile, object: nil, userInfo: ["url": urlString])
-    }
-
-    private func focusTab(_ tabId: String) {
-        NotificationCenter.default.post(name: .browserFocusTab, object: nil, userInfo: ["tabId": tabId])
     }
 }
 
@@ -235,9 +164,6 @@ extension Notification.Name {
     static let browserMinimalTabBar = Notification.Name("browserMinimalTabBar")
     static let browserCompactTabBar = Notification.Name("browserCompactTabBar")
     static let browserWideTabBar = Notification.Name("browserWideTabBar")
-
-    // History menu
-    static let browserShowHistory = Notification.Name("browserShowHistory")
 
     // Bookmarks menu
     static let browserShowBookmarks = Notification.Name("browserShowBookmarks")
@@ -259,14 +185,8 @@ extension Notification.Name {
 
     // Settings
     static let browserShowSettings = Notification.Name("browserShowSettings")
-
-    // CLI Commands
-    static let browserScreenshot = Notification.Name("browserScreenshot")
-    static let browserExportPDF = Notification.Name("browserExportPDF")
-    static let browserInjectScript = Notification.Name("browserInjectScript")
-    static let browserShowCookies = Notification.Name("browserShowCookies")
-    static let browserDownloadFile = Notification.Name("browserDownloadFile")
-    static let browserFocusTab = Notification.Name("browserFocusTab")
-    static let browserGetPageData = Notification.Name("browserGetPageData")
     static let browserTabTitleDisplayModeChanged = Notification.Name("browserTabTitleDisplayModeChanged")
+
+    // CLI data command
+    static let browserGetPageData = Notification.Name("browserGetPageData")
 }

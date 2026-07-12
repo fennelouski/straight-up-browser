@@ -119,19 +119,21 @@ class NotificationManager {
             forName: .browserListTabs,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] notification in
             let tabs = self?.tabs() ?? []
-            if tabs.isEmpty {
-                Logger.log("No tabs open", type: "NotificationManager")
+            let tabList: [[String: Any]] = tabs.map { tab in
+                [
+                    "title": tab.title,
+                    "url": tab.url?.absoluteString ?? "",
+                    "active": tab.isActive
+                ]
+            }
+
+            if let responseFilePath = notification.userInfo?["responseFilePath"] as? String,
+               let data = try? JSONSerialization.data(withJSONObject: ["tabs": tabList], options: .prettyPrinted) {
+                try? data.write(to: URL(fileURLWithPath: responseFilePath))
             } else {
-                Logger.log("Open tabs:", type: "NotificationManager")
-                for (index, tab) in tabs.enumerated() {
-                    let activeIndicator = tab.isActive ? " (active)" : ""
-                    let title = tab.title
-                    let url = tab.url?.absoluteString ?? "about:blank"
-                    Logger.log("\(index + 1). \(title)\(activeIndicator)", type: "NotificationManager")
-                    Logger.log("   URL: \(url)", type: "NotificationManager")
-                }
+                Logger.log("Open tabs: \(tabList)", type: "NotificationManager")
             }
         }
         observers.append(listTabsObserver)
@@ -420,7 +422,7 @@ class NotificationManager {
         })();
         """
 
-        webViewToUse.evaluateJavaScript(extractionScript) { [weak self] result, error in
+        webViewToUse.evaluateJavaScript(extractionScript) { result, error in
             var resultString: String
 
             if let error = error {

@@ -8,18 +8,18 @@
 
 import Foundation
 
-// TODO: Enhance CLI tool features
-// - Add JSON output format option (--json)
-// - Support for configuration files
-// - Batch command execution from file
-// - Interactive mode with tab completion
-// - Authentication for remote browser control
-// - Progress indicators for long operations
-// - Error handling with detailed exit codes
-// - Logging and verbose output options
-
 // Command line interface for Straight Up Browser
 // Usage: browser-cli <command> [arguments]
+//
+// Talks to the running app over a named pipe in the app's own Application
+// Support directory (owner-only permissions). Data commands pass a response
+// file path inside the app's response directory and poll it for the result.
+
+let supportDirectory = FileManager.default
+    .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    .appendingPathComponent("Straight Up Browser", isDirectory: true)
+let pipePath = supportDirectory.appendingPathComponent("cli.pipe").path
+let responseDirectory = supportDirectory.appendingPathComponent("responses", isDirectory: true)
 
 enum Command: String {
     case open
@@ -27,6 +27,7 @@ enum Command: String {
     case search
     case close
     case new
+    case tabs
 }
 
 func printUsage() {
@@ -36,86 +37,59 @@ func printUsage() {
     Usage: browser-cli <command> [arguments]
 
     Commands:
-      open <url>        Open URL in new tab
-      get [url]         Get page data from URL or current page
+      open <url>        Open URL in the browser
+      get [url]         Get page data (JSON) from URL or current page
       search <query>    Search for query
       close             Close active tab
       new               Create new tab
+      tabs              List open tabs (JSON)
 
     Examples:
       browser-cli open https://www.apple.com
       browser-cli search "swift programming"
-      browser-cli new
+      browser-cli get current
+      browser-cli tabs
     """)
 }
 
-func sendCommand(_ command: String, expectsResponse: Bool = false) -> String? {
-    let pipePath = "/tmp/straight_up_browser_commands"
-
-    var commandWithResponse = command
-    var responseFile: URL?
-
-    if expectsResponse {
-        // Create a response file in /tmp which should be accessible to both processes
-        let responseFilename = "straight_up_browser_response_\(UUID().uuidString).json"
-        responseFile = URL(fileURLWithPath: "/tmp/\(responseFilename)")
-        commandWithResponse += " --response-file \(responseFile!.path)"
-        print("Expecting response in file: \(responseFile!.path)")
-    }
-
-    do {
-        try commandWithResponse.write(toFile: pipePath, atomically: true, encoding: .utf8)
-        print("Command sent: \(command)")
-
-        if expectsResponse, let responseFile = responseFile {
-            // Wait for response file to be created and read it
-            let maxWaitTime = 10.0 // 10 seconds
-            let startTime = Date()
-
-            while Date().timeIntervalSince(startTime) < maxWaitTime {
-                if FileManager.default.fileExists(atPath: responseFile.path) {
-                    do {
-                        let responseData = try String(contentsOf: responseFile, encoding: .utf8)
-                        // Clean up the response file
-                        try? FileManager.default.removeItem(at: responseFile)
-                        return responseData
-                    } catch {
-                        print("Error reading response file: \(error)")
-                        try? FileManager.default.removeItem(at: responseFile)
-                        return nil
-                    }
-                }
-                Thread.sleep(forTimeInterval: 0.1) // Wait 100ms before checking again
-            }
-
-            print("Timeout waiting for response from browser")
-            try? FileManager.default.removeItem(at: responseFile)
-            return nil
-        }
-
-        return nil
-    } catch {
-        print("Error: Could not send command to browser. Make sure Straight Up Browser is running.")
-        print("Error details: \(error)")
+// Write a command line into the FIFO. O_NONBLOCK makes open() fail with ENXIO
+// when no reader (the app) is on the other end instead of hanging forever.
+// A plain write(toFile:atomically:true) would rename() over the FIFO and
+// destroy it - never do that.
+func sendCommand(_ command: String) {
+    let fd = open(pipePath, O_WRONLY | O_NONBLOCK)
+    guard fd >= 0 else {
+        print("Error: Could not reach the browser. Make sure Straight Up Browser is running.")
         exit(1)
     }
+    let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+    handle.write((command + "\n").data(using: .utf8)!)
+    try? handle.close()
 }
 
-func handleGetCommand(arguments: [String]) {
-    // For now, send the command via pipe and the app will log results
-    // In a future version, this will return the data directly
-    var fullCommand = "get"
+// Send a command that produces a JSON response and print it to stdout.
+// Only the response FILENAME goes over the pipe (the full path contains
+// spaces, and the app only writes inside its own response directory).
+func sendCommandExpectingResponse(_ command: String) {
+    try? FileManager.default.createDirectory(at: responseDirectory, withIntermediateDirectories: true)
+    let responseName = "response_\(UUID().uuidString).json"
+    let responseFile = responseDirectory.appendingPathComponent(responseName)
 
-    if arguments.count > 2 {
-        let parameter = arguments[2..<arguments.count].joined(separator: " ")
-        fullCommand += " \(parameter)"
-    } else {
-        fullCommand += " current"
+    sendCommand("\(command) --response-file \(responseName)")
+
+    let deadline = Date().addingTimeInterval(15.0)
+    while Date() < deadline {
+        if let response = try? String(contentsOf: responseFile, encoding: .utf8) {
+            try? FileManager.default.removeItem(at: responseFile)
+            print(response)
+            return
+        }
+        Thread.sleep(forTimeInterval: 0.1)
     }
 
-    sendCommand(fullCommand)
-    print("Command sent. Check the Straight Up Browser app console for results.")
-    print("Future versions will return data directly to CLI.")
+    try? FileManager.default.removeItem(at: responseFile)
+    print("Error: Timeout waiting for response from browser.")
+    exit(1)
 }
 
 func main() {
@@ -134,19 +108,22 @@ func main() {
         exit(1)
     }
 
-    if command == .get {
-        // Use browser tools to get page data
-        handleGetCommand(arguments: arguments)
-    } else {
-        // Use the traditional pipe-based communication for other commands
-        var fullCommand = commandString
+    var fullCommand = commandString
+    if arguments.count > 2 {
+        fullCommand += " " + arguments[2...].joined(separator: " ")
+    }
 
-        if arguments.count > 2 {
-            let parameter = arguments[2..<arguments.count].joined(separator: " ")
-            fullCommand += " \(parameter)"
+    switch command {
+    case .get:
+        if arguments.count <= 2 {
+            fullCommand += " current"
         }
-
+        sendCommandExpectingResponse(fullCommand)
+    case .tabs:
+        sendCommandExpectingResponse(fullCommand)
+    case .open, .search, .close, .new:
         sendCommand(fullCommand)
+        print("Command sent: \(fullCommand)")
     }
 }
 

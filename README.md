@@ -1,193 +1,96 @@
 # Straight Up Browser
 
-A minimal, efficient web browser for macOS with left-side tabs, popup omnibar, and command-line interface.
+A chromeless web browser for macOS. No toolbar, no title bar — the page fills
+the window. Tabs live in a thin vertical sidebar you can hide entirely.
 
 ## Features
 
-### Core Features
-- **Left-side tabs**: Clean, vertical tab layout instead of traditional top tabs
-- **Popup omnibar**: Press `⌥Space` to quickly navigate to URLs or search
-- **Maximized vertical space**: Window optimized for content viewing
-- **Full keyboard shortcuts**: All common browser shortcuts work out of the box
-- **Command-line interface**: Control the browser from other applications
+- **No chrome**: no toolbar, no title bar, no traffic lights. Web content runs
+  edge to edge, maximizing vertical space.
+- **Vertical tabs**: a left sidebar (resizable, and hideable with `⌘⇧L`) instead
+  of a horizontal tab strip that eats page height.
+- **Popup omnibar**: `⌃Space` to navigate or search; it appears over the page and
+  gets out of the way.
+- **Command-line interface**: drive the running browser from the terminal.
 
 ### Keyboard Shortcuts
-- `⌥Space` - Show omnibar
-- `⌘T` - New tab
-- `⌘W` - Close current tab
-- `⌘R` - Reload page
-- `⌘L` - Focus address bar (opens omnibar)
-- `⌘[` - Go back
-- `⌘]` - Go forward
 
-## Command Line Interface (CLI)
+| Shortcut | Action |
+|---|---|
+| `⌃Space` | Show omnibar |
+| `⌘L` | Show omnibar (Open Location) |
+| `⌘T` / `⌘N` | New tab |
+| `⌘W` | Close current tab |
+| `⌘⇧T` | Reopen last closed tab |
+| `⌘R` | Reload page |
+| `⌘⇧R` | Reload all tabs |
+| `⌘[` / `⌘]` | Back / Forward |
+| `⌃Tab` / `⌃⇧Tab` | Next / Previous tab |
+| `⌘1`–`⌘9` | Switch to tab N |
+| `⌘⇧L` | Toggle the tab sidebar |
+| `⌘⌥\`` / `⌘⌥1` / `⌘⌥2` / `⌘⌥3` | Tab bar: hidden / minimal / compact / wide |
+| `⌘D` | Bookmark current page |
+| `⌘,` | Settings |
 
-The browser includes a comprehensive command-line interface that allows other applications to control it programmatically. The CLI supports both simple commands and data extraction operations.
+Back and forward also work with the standard two-finger trackpad swipe.
 
-### Building the CLI Tool
+## Command Line Interface
 
-```bash
-# Use the provided build script
-./build-cli.sh
-
-# Or build manually
-swiftc browser-cli/main.swift -o browser-cli-tool
-```
-
-### CLI Architecture
-
-The CLI communicates with the running browser application through:
-- **Command Channel**: Named pipe at `/tmp/straight_up_browser_commands`
-- **Response Channel**: Temporary files in `/tmp/` for commands that return data
-
-**Important**: The browser application must be running for CLI commands to work.
-
-### Usage
-
-#### Basic Commands
+See [CLI_USAGE.md](CLI_USAGE.md) for the full guide.
 
 ```bash
-# Open a URL in a new tab
-./browser-cli-tool open https://www.apple.com
+./build-cli.sh                              # build ./browser-cli-tool
 
-# Search for something (uses Google)
-./browser-cli-tool search "swift programming"
-
-# Create a new tab
-./browser-cli-tool new
-
-# Close current tab
-./browser-cli-tool close
+./browser-cli-tool open https://example.com
+./browser-cli-tool search "swift concurrency"
+./browser-cli-tool tabs                     # JSON list of open tabs
+./browser-cli-tool get current              # JSON page data
 ```
 
-#### Data Extraction Commands
-
-```bash
-# Extract data from current page
-./browser-cli-tool get
-
-# Extract data from specific URL (opens in new tab)
-./browser-cli-tool get https://example.com
-```
-
-### Response Handling for Data Commands
-
-Commands that extract data (`get`) return results via temporary JSON files:
-
-1. **File Location**: Responses are written to `/tmp/straight_up_browser_response_*.json`
-2. **Format**: JSON containing page title, URL, HTML content, text content, links, and images
-3. **Lifetime**: Files are automatically cleaned up after reading
-
-**Example Response File Content**:
-```json
-{
-  "url": "https://example.com",
-  "title": "Example Domain",
-  "text": "Example Domain\nThis domain is for use in illustrative examples...",
-  "links": [
-    {
-      "text": "More information...",
-      "href": "https://www.iana.org/domains/example"
-    }
-  ]
-}
-```
-
-### Programmatic Usage
-
-#### From Shell Scripts
-
-```bash
-#!/bin/bash
-# Open Sweetwater and extract guitar pedal data
-./browser-cli-tool open "https://www.sweetwater.com/shop/guitars/guitar-pedals/"
-sleep 3
-./browser-cli-tool get
-```
-
-#### From Other Applications
-
-```python
-import subprocess
-import json
-import glob
-
-# Send command
-subprocess.run(["./browser-cli-tool", "get", "https://example.com"])
-
-# Read response
-response_files = glob.glob("/tmp/straight_up_browser_response_*.json")
-if response_files:
-    with open(response_files[0], 'r') as f:
-        data = json.load(f)
-    print(f"Page title: {data.get('title')}")
-```
-
-### Important Notes
-
-#### Browser State Requirements
-- The Straight Up Browser application must be running
-- Some websites may require user interaction (CAPTCHA verification, login, etc.)
-- The browser may display dialogs that require user attention
-
-#### CAPTCHA and Human Verification
-When scraping websites, you may encounter CAPTCHA challenges or other human verification systems. The CLI will open the page, but you may need to:
-
-1. **Switch to the browser application**
-2. **Complete any CAPTCHA or verification**
-3. **Then run the extraction command**
-
-For automated scraping, consider websites that don't require human verification or implement appropriate delays and error handling.
-
-#### Security Considerations
-- CLI commands execute in the context of the running browser
-- Be cautious with URLs from untrusted sources
-- Data extraction includes all page content (HTML, scripts, etc.)
-
-### Integration with Other Apps
-
-You can send commands directly to the named pipe:
-
-```bash
-echo "open https://github.com" > /tmp/straight_up_browser_commands
-```
-
-Or use the CLI tool for more complex operations with response handling.
+The browser must be running with its window open. Commands travel over an
+owner-only named pipe at
+`~/Library/Application Support/Straight Up Browser/cli.pipe` — filesystem
+permissions are the authentication, so only your user can send commands.
 
 ## Building the Application
 
 ```bash
-cd "Straight Up Browser"
-xcodebuild -scheme "Straight Up Browser" -configuration Release build
+xcodebuild -project "Straight Up Browser.xcodeproj" -scheme Browser -configuration Release build
 ```
 
 ## Architecture
 
-- **WebView**: Custom NSViewRepresentable wrapper around WKWebView
-- **Tab Model**: SwiftData-powered tab management with history
-- **Omnibar**: Popup search/navigation interface
-- **CLI**: Named pipe-based inter-process communication
-- **Logger**: Compile-time filtering logging system for debugging
+- **WebView**: `NSViewRepresentable` wrapper around `WKWebView`. One `WKWebView`
+  per tab, owned by `WebViewManager`; the container shows the active one.
+- **Tabs**: SwiftData `@Model`. SwiftData *is* the session store — tabs and the
+  active selection persist across launches with no parallel JSON copy.
+- **Navigation**: `WKWebView`'s own back-forward list is the single source of
+  truth. A tab's `historyStrings` is only a visit log for omnibar suggestions.
+- **Window chrome**: configured in exactly one place (`WindowManager`), which
+  hides the title bar and traffic lights while keeping the window `.titled` so
+  dragging, focus, and fullscreen keep working.
+- **CLI**: named-pipe IPC into `NotificationCenter`.
+- **Logger**: thin wrapper over `os.Logger` (view in Console.app).
 
 ## Future Development Roadmap
 
 ### 🚀 High Priority Features
 
 #### Tab Management
-- [ ] Tab state persistence across app restarts
-- [ ] Tab reordering with drag and drop
+- [x] Tab state persistence across app restarts (SwiftData)
+- [x] Tab reordering with drag and drop
 - [ ] Tab pinning (keep important tabs at front)
-- [ ] Recently closed tabs (Cmd+Shift+T to reopen)
-- [ ] Tab groups/workspaces
+- [x] Recently closed tabs (Cmd+Shift+T to reopen)
+- [x] Tab groups/workspaces
 - [ ] Tab thumbnails/previews
 
 #### Navigation & History
 - [ ] Enhanced history management with timestamps
 - [ ] History search and filtering
-- [ ] Forward/back gesture improvements
-- [ ] URL validation and security warnings
-- [ ] Auto-complete in omnibar
-- [ ] Multiple search engine support
+- [x] Forward/back trackpad gestures
+- [x] URL validation and security warnings
+- [x] Auto-complete in omnibar (history + bookmarks)
+- [x] Multiple search engine support (Google/DuckDuckGo/Bing/Yahoo)
 
 #### User Interface
 - [ ] Omnibar animations and transitions
@@ -216,15 +119,15 @@ xcodebuild -scheme "Straight Up Browser" -configuration Release build
 
 #### Performance
 - [ ] Page preload for faster navigation
-- [ ] Memory management for multiple tabs
+- [x] Memory management for multiple tabs (closed tabs release their WKWebView)
 - [ ] Cache management
 - [ ] Background tab throttling
-- [x] Crash recovery and session restoration
+- [x] Session restoration across restarts
 
 ### 🛠️ Developer Features
 
 #### CLI Integration
-- [x] Enhanced CLI commands (page data extraction, tab management, bookmark operations)
+- [x] CLI commands: open, search, new, close, tabs, get (page data)
 - [ ] JavaScript injection capabilities
 - [ ] Cookie inspection and management
 - [ ] Network request monitoring
@@ -248,15 +151,15 @@ xcodebuild -scheme "Straight Up Browser" -configuration Release build
 ### 🐛 Bug Fixes & Edge Cases
 
 #### Tab Handling
-- [ ] Proper handling of closing last tab
+- [x] Proper handling of closing last tab (resets to a clean New Tab)
 - [ ] Tab state during app minimization
-- [ ] Memory cleanup when tabs are closed
+- [x] Memory cleanup when tabs are closed
 - [ ] URL encoding/decoding edge cases
 
 #### Navigation
-- [ ] Handling of invalid URLs gracefully
-- [ ] Redirect loop detection
-- [ ] Mixed content warnings
+- [x] Handling of invalid URLs gracefully
+- [x] Redirect loop detection
+- [x] Mixed content warnings
 - [ ] SSL certificate validation display
 
 #### UI/UX

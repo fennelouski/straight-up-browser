@@ -148,7 +148,6 @@ struct ContentView: View {
 
     // UI State
     @State private var showOmnibar = false
-    @State private var currentURL: URL?
     @State private var canGoBack = false
     @State private var canGoForward = false
     @State private var currentTitle = ""
@@ -174,8 +173,7 @@ struct ContentView: View {
     @State private var progressTimer: Timer?
     @State private var hasRenderedContent = false
 
-    // Stable URL for WebView binding to prevent constant reloading
-    @State private var stableWebViewURL: URL?
+    private var currentURL: URL? { activeTab?.url }
 
 
 
@@ -399,10 +397,7 @@ struct ContentView: View {
                         tabManager: tabManager,
                         tabs: tabs,
                         activeTabId: tabManager.selectedTabId,
-                        onURLChange: { newURL in
-                            Logger.log("ContentView onURLChange: updating stableWebViewURL to \(newURL?.absoluteString ?? "nil")", type: "ContentView")
-                            stableWebViewURL = newURL
-                        })
+                        onURLChange: { _ in })
                         .allowsHitTesting(true)
                         .focusable(true)
             } else {
@@ -419,18 +414,16 @@ struct ContentView: View {
         }
     }
 
+    // The active tab's URL is the single source of truth for what the WebView
+    // shows. (A separate @State copy meant omnibar/CLI navigation updated the
+    // model but never reached the WebView.) WebView.updateNSView dedupes
+    // against what the webview already displays, so this can't loop.
     private var webViewURLBinding: Binding<URL?> {
         Binding(
-            get: {
-                // Use stable URL to prevent constant reloading, but allow WebView interactions
-                Logger.log("WebView binding getter: returning stable URL \(stableWebViewURL?.absoluteString ?? "nil")", type: "ContentView")
-                return stableWebViewURL
-            },
+            get: { self.activeTab?.url },
             set: { newURL in
-                stableWebViewURL = newURL
-                // Only update the tab URL directly, don't call navigateTo to avoid
-                // recursion. The title comes from the page via webViewTitleBinding;
-                // overwriting it with the domain here clobbered real titles.
+                // Update the tab URL directly, don't call navigateTo to avoid
+                // recursion. The title comes from the page via webViewTitleBinding.
                 if let url = newURL, let activeTab = self.activeTab {
                     activeTab.url = url
                 }
@@ -846,25 +839,9 @@ struct ContentView: View {
             // Persist which tab is active so relaunch restores the selection
             tabManager.updateActiveTab(in: tabs)
 
-            // Update the WebViewManager with the new active tab
+            // Update the WebViewManager with the new active tab. The WebView's
+            // URL binding reads from the active tab, so nothing else to sync.
             webViewManager?.setActiveTab(newValue)
-            Logger.log("ContentView onChange: WebViewManager activeWebView set to tab \(newValue?.uuidString ?? "nil")", type: "ContentView")
-
-            // Update stable URL to the URL of the newly selected tab
-            if let newTabId = newValue, let activeTab = tabs.first(where: { $0.id == newTabId }) {
-                stableWebViewURL = activeTab.url
-                Logger.log("ContentView onChange: Updated stableWebViewURL to \(activeTab.url?.absoluteString ?? "nil") for tab \(newTabId)", type: "ContentView")
-            } else {
-                stableWebViewURL = nil
-                Logger.log("ContentView onChange: Cleared stableWebViewURL (no active tab)", type: "ContentView")
-            }
-
-            Logger.log("ContentView onChange: completed tab switch to \(newValue?.uuidString ?? "nil")", type: "ContentView")
-
-            if let activeTab = activeTab {
-                currentURL = activeTab.url
-                Logger.log("ContentView onChange: currentURL set to \(activeTab.url?.absoluteString ?? "nil")", type: "ContentView")
-            }
         }
         .onChange(of: isLoading) { oldValue, newValue in
             if newValue {
