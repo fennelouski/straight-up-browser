@@ -15,102 +15,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Disable automatic window tabbing
         NSWindow.allowsAutomaticWindowTabbing = false
 
-        // Print logger filter status for debugging
-        Logger.printFilterStatus()
-
         // Initialize CLI interface
         _ = BrowserCLI.shared
-
-        // Set up observers before windows are created
-        setupWindowObservers()
-    }
-    
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        // Configure all existing windows immediately and repeatedly to catch them
-        configureAllWindows()
-        
-        // Also configure after a delay to catch windows created later
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.configureAllWindows()
-        }
-        
-        // And again after a longer delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.configureAllWindows()
-        }
-    }
-
-    private func setupWindowObservers() {
-        // Observe for windows becoming key (when they become active)
-        NotificationCenter.default.addObserver(
-            forName: NSWindow.didBecomeKeyNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            if let window = notification.object as? NSWindow {
-                self?.configureWindow(window)
-            }
-        }
-        
-        // Observe when windows become main
-        NotificationCenter.default.addObserver(
-            forName: NSWindow.didBecomeMainNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            if let window = notification.object as? NSWindow {
-                self?.configureWindow(window)
-            }
-        }
-    }
-    
-    private func configureAllWindows() {
-        for window in NSApplication.shared.windows {
-            configureWindow(window)
-        }
-    }
-    
-    @objc func configureWindow(_ window: NSWindow) {
-        // Aggressively remove title bar - following recommendations for eliminating black bar
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        
-        // Insert fullSizeContentView style mask to allow content under title bar
-        if !window.styleMask.contains(.fullSizeContentView) {
-            window.styleMask.insert(.fullSizeContentView)
-        }
-        
-        // Remove .titled style mask - this is key to eliminating the black bar
-        // Content view will extend into title bar area
-        window.styleMask.remove(.titled)
-        
-        // Hide the window control buttons (close, minimize, zoom)
-        window.standardWindowButton(.closeButton)?.isHidden = true
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        window.standardWindowButton(.zoomButton)?.isHidden = true
-        
-        // Use very low alpha white instead of clear to avoid rendering artifacts
-        // This prevents the black bar issue
-        window.backgroundColor = NSColor.white.withAlphaComponent(0.00001)
-        window.isOpaque = false
-        
-        // Disable shadow which can contribute to black bar issues
-        window.hasShadow = false
-        
-        // Make window movable by background
-        window.isMovableByWindowBackground = true
-        
-        // Force content view to extend to top edge
-        if let contentView = window.contentView {
-            contentView.wantsLayer = true
-            // Ensure content view fills entire window frame
-            contentView.frame = window.frame
-        }
-        
-        // Invalidate shadow and force redraw
-        window.invalidateShadow()
-        window.contentView?.needsDisplay = true
-        window.display()
     }
 }
 
@@ -193,6 +99,11 @@ struct Straight_Up_BrowserApp: App {
                 .keyboardShortcut("t", modifiers: [.command, .shift])
 
                 Divider()
+
+                Button("Toggle Tab Bar") {
+                    NotificationCenter.default.post(name: .browserToggleTabBar, object: nil)
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
 
                 Button("Hide Tab Bar") {
                     NotificationCenter.default.post(name: .browserHideTabBar, object: nil)

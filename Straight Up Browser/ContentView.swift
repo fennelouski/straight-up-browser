@@ -183,25 +183,6 @@ struct ContentView: View {
         // CLI is now initialized lazily when first used
         _tabManager = StateObject(wrappedValue: TabManager())
     }
-    
-    // WindowAccessor to configure NSWindow when it becomes available
-    private struct WindowAccessor: NSViewRepresentable {
-        var callback: (NSWindow?) -> Void
-        
-        func makeNSView(context: Context) -> NSView {
-            let view = NSView()
-            DispatchQueue.main.async {
-                self.callback(view.window)
-            }
-            return view
-        }
-        
-        func updateNSView(_ nsView: NSView, context: Context) {
-            DispatchQueue.main.async {
-                self.callback(nsView.window)
-            }
-        }
-    }
 
 
 
@@ -507,7 +488,7 @@ struct ContentView: View {
                     Text("New Tab")
                         .font(.title)
                         .foregroundColor(.gray)
-                    Text("Press ⌥Space to navigate")
+                    Text("Press ⌃Space to navigate")
                         .font(.subheadline)
                         .foregroundColor(.gray.opacity(0.8))
                         .padding(.top, 8)
@@ -814,46 +795,6 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.all) // Ignore safe areas to extend to edges
         .background(Color(.windowBackgroundColor)) // Set explicit background
-        .background(WindowAccessor { window in
-            guard let window = window else { return }
-            // Aggressively configure window to completely remove title bar
-            // Following recommendations to eliminate black bar rendering issues
-            DispatchQueue.main.async {
-                window.titleVisibility = .hidden
-                window.titlebarAppearsTransparent = true
-                
-                if !window.styleMask.contains(.fullSizeContentView) {
-                    window.styleMask.insert(.fullSizeContentView)
-                }
-                
-                // Remove .titled style mask - critical for eliminating black bar
-                window.styleMask.remove(.titled)
-                
-                // Hide all control buttons
-                window.standardWindowButton(.closeButton)?.isHidden = true
-                window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-                window.standardWindowButton(.zoomButton)?.isHidden = true
-                
-                // Use very low alpha white instead of clear to avoid rendering artifacts
-                window.backgroundColor = NSColor.white.withAlphaComponent(0.00001)
-                window.isOpaque = false
-                
-                // Disable shadow
-                window.hasShadow = false
-                
-                window.isMovableByWindowBackground = true
-                
-                // Force content view to extend to top
-                if let contentView = window.contentView {
-                    contentView.wantsLayer = true
-                    contentView.frame = window.frame
-                }
-                
-                window.invalidateShadow()
-                window.contentView?.needsDisplay = true
-                window.display()
-            }
-        })
         .onAppear {
             initializeManagers()
             loadWorkspacesFromDisk()
@@ -861,46 +802,9 @@ struct ContentView: View {
             // Load favicons for all tabs BEFORE web views are loaded
             preloadFaviconsForAllTabs()
 
-            // TabManager is now observed directly, no manual sync needed
-
-            // Also configure window when view appears (backup method)
-            // Aggressively remove title bar completely - remove .titled style mask
-            #if os(macOS)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                if let window = NSApplication.shared.keyWindow ?? NSApplication.shared.mainWindow ?? NSApplication.shared.windows.first {
-                    window.titleVisibility = .hidden
-                    window.titlebarAppearsTransparent = true
-                    if !window.styleMask.contains(.fullSizeContentView) {
-                        window.styleMask.insert(.fullSizeContentView)
-                    }
-                    // Remove .titled to eliminate black bar
-                    window.styleMask.remove(.titled)
-                    
-                    window.standardWindowButton(.closeButton)?.isHidden = true
-                    window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-                    window.standardWindowButton(.zoomButton)?.isHidden = true
-                    
-                    // Use very low alpha white instead of clear
-                    window.backgroundColor = NSColor.white.withAlphaComponent(0.00001)
-                    window.isOpaque = false
-                    window.hasShadow = false
-                    
-                    window.isMovableByWindowBackground = true
-                    
-                    // Force content to extend to top
-                    if let contentView = window.contentView {
-                        contentView.frame = window.frame
-                    }
-                    
-                    window.invalidateShadow()
-                    window.contentView?.needsDisplay = true
-                    window.display()
-                }
-            }
-            #endif
-            notificationManager!.setupNotificationObservers()
-            keyboardShortcutsManager!.setupKeyboardShortcuts()
-            windowManager!.configureWindow(showTitleBar: false)
+            notificationManager?.setupNotificationObservers()
+            keyboardShortcutsManager?.setupKeyboardShortcuts()
+            windowManager?.configureWindow()
 
             // Setup observer for tab title display mode changes
             NotificationCenter.default.addObserver(
@@ -909,6 +813,21 @@ struct ContentView: View {
                 queue: .main
             ) { [self] _ in
                 tabTitleDisplayRefreshTrigger = UUID()
+            }
+
+            // Toggle tab bar between hidden and last visible width (Cmd+Shift+L)
+            NotificationCenter.default.addObserver(
+                forName: .browserToggleTabBar,
+                object: nil,
+                queue: .main
+            ) { [self] _ in
+                if tabBarWidth > 0 {
+                    UserDefaults.standard.set(tabBarWidth, forKey: "lastTabBarWidth")
+                    tabBarWidth = 0
+                } else {
+                    let last = UserDefaults.standard.double(forKey: "lastTabBarWidth")
+                    tabBarWidth = last > 0 ? last : 200
+                }
             }
 
             // Check if Option key is held down - if so, skip restoration and reloading
@@ -1025,31 +944,6 @@ struct ContentView: View {
 
             // Save session for normal app restart
             saveSessionForRestart()
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
-                Button(action: goBack) {
-                    Image(systemName: "arrow.left")
-                }
-                .disabled(!(activeTab?.canGoBack() ?? false))
-                .help("Go Back")
-
-                Button(action: goForward) {
-                    Image(systemName: "arrow.right")
-                }
-                .disabled(!(activeTab?.canGoForward() ?? false))
-                .help("Go Forward")
-
-                Button(action: reload) {
-                    Image(systemName: isLoading ? "xmark" : "arrow.clockwise")
-                }
-                .help(isLoading ? "Stop Loading" : "Reload")
-
-                Button(action: toggleBookmark) {
-                    Image(systemName: isCurrentPageBookmarked ? "bookmark.fill" : "bookmark")
-                }
-                .help(isCurrentPageBookmarked ? "Remove Bookmark" : "Add Bookmark")
-            }
         }
     }
 

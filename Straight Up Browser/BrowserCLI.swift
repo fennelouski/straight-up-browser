@@ -230,6 +230,7 @@ extension Notification.Name {
     static let browserListTabs = Notification.Name("browserListTabs")
 
     // View menu
+    static let browserToggleTabBar = Notification.Name("browserToggleTabBar")
     static let browserHideTabBar = Notification.Name("browserHideTabBar")
     static let browserMinimalTabBar = Notification.Name("browserMinimalTabBar")
     static let browserCompactTabBar = Notification.Name("browserCompactTabBar")
