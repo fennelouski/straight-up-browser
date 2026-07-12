@@ -229,21 +229,7 @@ extension Notification.Name {
     static let showOmnibar = Notification.Name("showOmnibar")
     static let browserListTabs = Notification.Name("browserListTabs")
 
-    // File menu
-    static let browserOpenLocation = Notification.Name("browserOpenLocation")
-    static let browserSavePageAs = Notification.Name("browserSavePageAs")
-    static let browserPrint = Notification.Name("browserPrint")
-
-    // Edit menu
-    static let browserFind = Notification.Name("browserFind")
-    static let browserFindNext = Notification.Name("browserFindNext")
-    static let browserFindPrevious = Notification.Name("browserFindPrevious")
-
     // View menu
-    static let browserZoomIn = Notification.Name("browserZoomIn")
-    static let browserZoomOut = Notification.Name("browserZoomOut")
-    static let browserActualSize = Notification.Name("browserActualSize")
-    static let browserReaderMode = Notification.Name("browserReaderMode")
     static let browserHideTabBar = Notification.Name("browserHideTabBar")
     static let browserMinimalTabBar = Notification.Name("browserMinimalTabBar")
     static let browserCompactTabBar = Notification.Name("browserCompactTabBar")
@@ -257,15 +243,7 @@ extension Notification.Name {
     static let browserAddBookmark = Notification.Name("browserAddBookmark")
     static let browserImportBookmarks = Notification.Name("browserImportBookmarks")
 
-    // Developer menu
-    static let browserInspectElement = Notification.Name("browserInspectElement")
-    static let browserShowConsole = Notification.Name("browserShowConsole")
-    static let browserShowNetwork = Notification.Name("browserShowNetwork")
-
     // Window menu
-    static let browserNewWindow = Notification.Name("browserNewWindow")
-    static let browserShowDownloads = Notification.Name("browserShowDownloads")
-    static let browserShowExtensions = Notification.Name("browserShowExtensions")
     static let browserNextTab = Notification.Name("browserNextTab")
     static let browserPreviousTab = Notification.Name("browserPreviousTab")
     static let browserSwitchToTab1 = Notification.Name("browserSwitchToTab1")

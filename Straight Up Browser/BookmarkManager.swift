@@ -71,43 +71,4 @@ class BookmarkManager {
         let allBookmarks = fetchAllBookmarks()
         return allBookmarks.contains { $0.url.absoluteString == url.absoluteString }
     }
-
-    // MARK: - Import/Export
-
-    func exportBookmarks() -> Data? {
-        let bookmarks = fetchAllBookmarks()
-        let bookmarkDicts = bookmarks.map { bookmark -> [String: Any] in
-            var dict: [String: Any] = [
-                "title": bookmark.title,
-                "url": bookmark.url.absoluteString,
-                "createdAt": bookmark.createdAt.timeIntervalSince1970,
-                "lastVisited": bookmark.lastVisited?.timeIntervalSince1970 ?? 0
-            ]
-            if let category = bookmark.category {
-                dict["category"] = category
-            }
-            return dict
-        }
-
-        return try? JSONSerialization.data(withJSONObject: bookmarkDicts, options: .prettyPrinted)
-    }
-
-    func importBookmarks(from data: Data) -> Bool {
-        guard let jsonArray = try? JSONSerialization.jsonObject(with: data, options: []) as? [[String: Any]] else {
-            return false
-        }
-
-        for dict in jsonArray {
-            guard let title = dict["title"] as? String,
-                  let urlString = dict["url"] as? String,
-                  let url = URL(string: urlString) else {
-                continue
-            }
-
-            let category = dict["category"] as? String
-            _ = addBookmark(title: title, url: url, category: category)
-        }
-
-        return true
-    }
 }

@@ -147,22 +147,6 @@ class TabManager: ObservableObject {
         selectedTabId = tab.id
     }
 
-    func moveTabLeft(tabs: [Tab]) {
-        guard let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabId }), currentIndex > 0 else { return }
-        // Note: SwiftData doesn't support reordering directly. This would require
-        // recreating the tabs in the new order. For now, we'll just log that this
-        // functionality needs proper implementation with a reorderable data source.
-        Logger.log("Tab moving not yet implemented - requires reordering data source", type: "TabManager")
-    }
-
-    func moveTabRight(tabs: [Tab]) {
-        guard let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabId }), currentIndex < tabs.count - 1 else { return }
-        // Note: SwiftData doesn't support reordering directly. This would require
-        // recreating the tabs in the new order. For now, we'll just log that this
-        // functionality needs proper implementation with a reorderable data source.
-        Logger.log("Tab moving not yet implemented - requires reordering data source", type: "TabManager")
-    }
-
     func reorderTabs(sourceTabId: UUID, targetTabId: UUID, tabs: [Tab]) {
         Logger.log("TabManager reorderTabs called: sourceTabId=\(sourceTabId), targetTabId=\(targetTabId)", type: "TabManager")
         guard let sourceIndex = tabs.firstIndex(where: { $0.id == sourceTabId }),

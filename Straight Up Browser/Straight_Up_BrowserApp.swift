@@ -180,37 +180,9 @@ struct Straight_Up_BrowserApp: App {
             // File menu commands
             CommandGroup(after: .newItem) {
                 Button("Open Location...") {
-                    NotificationCenter.default.post(name: .browserOpenLocation, object: nil)
+                    NotificationCenter.default.post(name: .showOmnibar, object: nil)
                 }
                 .keyboardShortcut("l", modifiers: .command)
-
-                Button("Save Page As...") {
-                    NotificationCenter.default.post(name: .browserSavePageAs, object: nil)
-                }
-                .keyboardShortcut("s", modifiers: .command)
-
-                Button("Print...") {
-                    NotificationCenter.default.post(name: .browserPrint, object: nil)
-                }
-                .keyboardShortcut("p", modifiers: .command)
-            }
-
-            // Edit menu commands
-            CommandGroup(before: .pasteboard) {
-                Button("Find...") {
-                    NotificationCenter.default.post(name: .browserFind, object: nil)
-                }
-                .keyboardShortcut("f", modifiers: .command)
-
-                Button("Find Next") {
-                    NotificationCenter.default.post(name: .browserFindNext, object: nil)
-                }
-                .keyboardShortcut("g", modifiers: .command)
-
-                Button("Find Previous") {
-                    NotificationCenter.default.post(name: .browserFindPrevious, object: nil)
-                }
-                .keyboardShortcut("g", modifiers: [.command, .shift])
             }
 
             // View menu commands
@@ -221,10 +193,6 @@ struct Straight_Up_BrowserApp: App {
                 .keyboardShortcut("t", modifiers: [.command, .shift])
 
                 Divider()
-
-                Button("Tab Bar") {
-                    // Submenu for tab bar controls
-                }
 
                 Button("Hide Tab Bar") {
                     NotificationCenter.default.post(name: .browserHideTabBar, object: nil)
@@ -245,34 +213,6 @@ struct Straight_Up_BrowserApp: App {
                     NotificationCenter.default.post(name: .browserWideTabBar, object: nil)
                 }
                 .keyboardShortcut("3", modifiers: [.command, .option])
-
-                Button("Zoom In") {
-                    NotificationCenter.default.post(name: .browserZoomIn, object: nil)
-                }
-                .keyboardShortcut("+", modifiers: .command)
-
-                Button("Zoom Out") {
-                    NotificationCenter.default.post(name: .browserZoomOut, object: nil)
-                }
-                .keyboardShortcut("-", modifiers: .command)
-
-                Button("Actual Size") {
-                    NotificationCenter.default.post(name: .browserActualSize, object: nil)
-                }
-                .keyboardShortcut("0", modifiers: .command)
-
-                Button("Reader Mode") {
-                    NotificationCenter.default.post(name: .browserReaderMode, object: nil)
-                }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
-            }
-
-            // History menu commands
-            CommandGroup(after: .textEditing) {
-                Button("Show History") {
-                    NotificationCenter.default.post(name: .browserShowHistory, object: nil)
-                }
-                .keyboardShortcut("y", modifiers: [.command, .shift])
             }
 
             // Bookmarks menu commands
@@ -294,33 +234,8 @@ struct Straight_Up_BrowserApp: App {
                 }
             }
 
-            // Developer menu commands
-            CommandGroup(after: .textEditing) {
-                Button("Inspect Element") {
-                    NotificationCenter.default.post(name: .browserInspectElement, object: nil)
-                }
-                .keyboardShortcut("i", modifiers: [.command, .option])
-
-                Button("Show Console") {
-                    NotificationCenter.default.post(name: .browserShowConsole, object: nil)
-                }
-                .keyboardShortcut("j", modifiers: [.command, .option])
-
-                Button("Show Network") {
-                    NotificationCenter.default.post(name: .browserShowNetwork, object: nil)
-                }
-                .keyboardShortcut("e", modifiers: [.command, .option])
-            }
-
             // Window menu commands
             CommandGroup(after: .windowArrangement) {
-                Button("New Window") {
-                    NotificationCenter.default.post(name: .browserNewWindow, object: nil)
-                }
-                .keyboardShortcut("n", modifiers: .command)
-
-                Divider()
-
                 Button("Show Next Tab") {
                     NotificationCenter.default.post(name: .browserNextTab, object: nil)
                 }
@@ -377,17 +292,6 @@ struct Straight_Up_BrowserApp: App {
                     NotificationCenter.default.post(name: .browserSwitchToTab9, object: nil)
                 }
                 .keyboardShortcut("9", modifiers: .command)
-
-                Divider()
-
-                Button("Downloads") {
-                    NotificationCenter.default.post(name: .browserShowDownloads, object: nil)
-                }
-                .keyboardShortcut("j", modifiers: [.command, .shift])
-
-                Button("Extensions") {
-                    NotificationCenter.default.post(name: .browserShowExtensions, object: nil)
-                }
             }
 
             // Add omnibar shortcut and settings to menu
