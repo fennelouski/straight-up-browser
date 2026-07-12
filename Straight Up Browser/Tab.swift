@@ -26,7 +26,7 @@ final class Tab {
     var createdAt: Date
     var lastAccessed: Date
     var historyStrings: [String] = []
-    var currentHistoryIndex: Int = -1
+    var currentHistoryIndex: Int = -1 // ponytail: unused since back/forward moved to WKWebView, kept for store compatibility
 
     // Computed property to get history as URLs
     var history: [URL] {
@@ -66,47 +66,19 @@ final class Tab {
         self.init(title: "New Tab", url: nil, isActive: false)
     }
 
+    // Back/forward navigation lives in WKWebView's back-forward list.
+    // historyStrings is only a visit log for omnibar suggestions.
     func navigateTo(_ url: URL) {
         Logger.log("Tab.navigateTo: setting URL to \(url.absoluteString)", type: "Tab")
         self.url = url
 
-        // Add to history
-        if currentHistoryIndex >= 0 && currentHistoryIndex < history.count {
-            // Remove forward history if we're not at the end
-            history = Array(history.prefix(through: currentHistoryIndex))
-        }
-        history.append(url)
-        currentHistoryIndex = history.count - 1
+        historyStrings.append(url.absoluteString)
 
         // Limit history size (remove oldest entries)
         let maxHistorySize = SettingsManager.shared.maxHistorySize
-        if history.count > maxHistorySize {
-            let excess = history.count - maxHistorySize
-            history.removeFirst(excess)
-            currentHistoryIndex = max(history.count - 1, 0)
+        if historyStrings.count > maxHistorySize {
+            historyStrings.removeFirst(historyStrings.count - maxHistorySize)
         }
-    }
-
-    func canGoBack() -> Bool {
-        return currentHistoryIndex > 0
-    }
-
-    func canGoForward() -> Bool {
-        return currentHistoryIndex < history.count - 1
-    }
-
-    func goBack() -> URL? {
-        guard canGoBack() else { return nil }
-        currentHistoryIndex -= 1
-        url = history[currentHistoryIndex]
-        return url
-    }
-
-    func goForward() -> URL? {
-        guard canGoForward() else { return nil }
-        currentHistoryIndex += 1
-        url = history[currentHistoryIndex]
-        return url
     }
 
     // Helper function to extract domain name from URL

@@ -516,10 +516,12 @@ struct ContentView: View {
                             onNavigate: { urlString in
                                 if let navigationManager = navigationManager {
                                     _ = navigationManager.navigateToURL(urlString, activeTab: activeTab)
-                                    tabManager.updateTabTitle(activeTab!)
+                                    if let activeTab = activeTab {
+                                        tabManager.updateTabTitle(activeTab)
+                                    }
                                 }
                             },
-                            errorMessage: navigationManager!.omnibarError,
+                            errorMessage: navigationManager?.omnibarError,
                             tabs: tabs,
                             bookmarkSuggestions: bookmarkSuggestions
                         )
@@ -830,50 +832,19 @@ struct ContentView: View {
                 }
             }
 
-            // Check if Option key is held down - if so, skip restoration and reloading
-            let isOptionKeyPressed = NSEvent.modifierFlags.contains(.option)
-            
-            if isOptionKeyPressed {
-                Logger.log("ContentView onAppear: Option key held - skipping session restoration and tab reloading", type: "ContentView")
-                if tabs.isEmpty {
-                    _ = tabManager.createNewTab()
-                } else {
-                    tabManager.selectedTabId = tabs.first?.id
-                }
+            // SwiftData is the session store: tabs are already loaded via @Query.
+            // Select the tab that was active last time, tabs load lazily on selection.
+            if tabs.isEmpty {
+                _ = tabManager.createNewTab()
             } else {
-                // First, try to restore normal session from previous app restart
-                if let restoredSession = restoreSessionForRestart() {
-                    Logger.log("ContentView onAppear: Restored normal session", type: "ContentView")
-                    tabManager.selectedTabId = restoredSession.selectedTabId
-                    // Reload favicons after session restoration
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        preloadFaviconsForAllTabs()
-                    }
-                    // Note: Removed reloadAllTabs() call - tabs should load their content naturally when selected
-                } else {
-                    Logger.log("ContentView onAppear: Normal startup", type: "ContentView")
-                    if tabs.isEmpty {
-                        _ = tabManager.createNewTab()
-                    } else {
-                        tabManager.selectedTabId = tabs.first?.id
-                    }
-                    // Note: Removed reloadAllTabs() call - tabs should load their content naturally when selected
-                }
-
-                // Reload all tabs exactly once on app launch
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    self.reloadAllTabs()
-                }
+                tabManager.selectedTabId = tabs.first(where: { $0.isActive })?.id ?? tabs.first?.id
             }
-
-            // Ensure there's always a selected tab when tabs are available
-            tabManager.ensureSelectedTab(from: tabs)
         }
         .onChange(of: tabManager.selectedTabId) { oldValue, newValue in
             Logger.log("ContentView onChange selectedTabId: \(oldValue?.uuidString ?? "nil") -> \(newValue?.uuidString ?? "nil")", type: "ContentView")
 
-            // Update tabManager to match the new selection (single source of truth is selectedTabId)
-            tabManager.selectedTabId = newValue
+            // Persist which tab is active so relaunch restores the selection
+            tabManager.updateActiveTab(in: tabs)
 
             // Update the WebViewManager with the new active tab
             webViewManager?.setActiveTab(newValue)
@@ -940,28 +911,26 @@ struct ContentView: View {
             tabManager.ensureSelectedTab(from: newTabs)
         }
         .onDisappear {
-            notificationManager!.cleanup()
-
-            // Save session for normal app restart
-            saveSessionForRestart()
+            notificationManager?.cleanup()
+            keyboardShortcutsManager?.teardown()
         }
     }
 
     private func initializeManagers() {
-        webViewManager = WebViewManager()
+        let webViewManager = WebViewManager()
+        let navigationManager = NavigationManager()
+        self.webViewManager = webViewManager
+        self.navigationManager = navigationManager
         tabManager.setModelContext(modelContext)
-        if let webViewManager = webViewManager {
-            tabManager.setWebViewManager(webViewManager)
-        }
-        navigationManager = NavigationManager()
+        tabManager.setWebViewManager(webViewManager)
         windowManager = WindowManager()
         bookmarkManager = BookmarkManager(modelContext: modelContext)
         managersInitialized = true
 
         notificationManager = NotificationManager(
             tabManager: tabManager,
-            navigationManager: navigationManager!,
-            webViewManager: webViewManager!,
+            navigationManager: navigationManager,
+            webViewManager: webViewManager,
             showOmnibar: $showOmnibar,
             tabs: { self.tabs },
             closeTabAction: { tab, tabs in
@@ -976,11 +945,9 @@ struct ContentView: View {
                     }
                 }
 
-                let newTab = self.tabManager.createNewTab()
+                _ = self.tabManager.createNewTab()
                 // Show omnibar when creating a new tab
-                if newTab != nil {
-                    self.showOmnibar = true
-                }
+                self.showOmnibar = true
             },
             setTabBarWidth: { width in
                 self.tabBarWidth = width
@@ -995,31 +962,11 @@ struct ContentView: View {
         )
 
         keyboardShortcutsManager = KeyboardShortcutsManager(
-            tabManager: tabManager,
-            navigationManager: navigationManager!,
-            webViewManager: webViewManager,
             showOmnibar: $showOmnibar,
-            activeTab: { self.activeTab },
             reloadAction: { self.reload() },
-            goBackAction: { self.goBack() },
-            goForwardAction: { self.goForward() },
-            hardReloadAction: { self.hardReload() },
-            switchToNextTabAction: { self.switchToNextTab() },
-            switchToPreviousTabAction: { self.switchToPreviousTab() },
-            switchToTabAction: { index in self.switchToTab(at: index) },
-            closeTabAction: { self.closeCurrentTab() },
             reloadAllTabsAction: { self.reloadAllTabs() },
-            setTabBarWidth: { width in
-                self.tabBarWidth = width
-                UserDefaults.standard.set(width, forKey: "tabBarWidth")
-            },
-            getWindowWidth: {
-                #if os(macOS)
-                return Double(NSApplication.shared.keyWindow?.frame.width ?? 800)
-                #else
-                return 800.0
-                #endif
-            }
+            goBackAction: { self.goBack() },
+            goForwardAction: { self.goForward() }
         )
     }
 
@@ -1032,11 +979,9 @@ struct ContentView: View {
             }
         }
 
-        let newTab = tabManager.createNewTab()
+        _ = tabManager.createNewTab()
         // Show omnibar when creating a new tab
-        if newTab != nil {
-            showOmnibar = true
-        }
+        showOmnibar = true
     }
 
     private func createTabGroup(name: String, color: Color) {
@@ -1249,22 +1194,14 @@ struct ContentView: View {
 
 
 
+    // WKWebView's back-forward list is the single source of truth;
+    // the tab's URL/title update via the navigation delegate.
     private func goBack() {
-        if let activeTab = activeTab, activeTab.canGoBack() {
-            if let newURL = activeTab.goBack() {
-                currentURL = newURL
-                webViewManager?.goBack()
-            }
-        }
+        webViewManager?.goBack()
     }
 
     private func goForward() {
-        if let activeTab = activeTab, activeTab.canGoForward() {
-            if let newURL = activeTab.goForward() {
-                currentURL = newURL
-                webViewManager?.goForward()
-            }
-        }
+        webViewManager?.goForward()
     }
 
     private func reload() {
@@ -1394,115 +1331,6 @@ struct ContentView: View {
         tabManager.selectedTabId = newTab.id
     }
 
-    private func saveSessionForRestart() {
-        // Create session data for normal app restart
-        let sessionData = SessionData(
-            tabs: tabs.enumerated().map { (index, tab) in
-                SavedTab(
-                    id: tab.id,
-                    title: tab.title,
-                    url: tab.url,
-                    isActive: tab.isActive,
-                    historyStrings: tab.historyStrings,
-                    currentHistoryIndex: tab.currentHistoryIndex,
-                    isPinned: tab.isPinned,
-                    isMuted: tab.isMuted,
-                    zoomLevel: tab.zoomLevel,
-                    orderIndex: index
-                )
-            },
-            selectedTabId: tabManager.selectedTabId
-        )
-
-        let normalSessionKey = "normal_session_data"
-        if let encoded = try? JSONEncoder().encode(sessionData) {
-            UserDefaults.standard.set(encoded, forKey: normalSessionKey)
-            // Clear any leftover crash recovery data
-            UserDefaults.standard.removeObject(forKey: "saved_session_data")
-            UserDefaults.standard.synchronize()
-        }
-    }
-
-    private func restoreSessionForRestart() -> SessionData? {
-        let normalSessionKey = "normal_session_data"
-
-        // Check if we have a saved normal session
-        guard let data = UserDefaults.standard.data(forKey: normalSessionKey),
-              let sessionData = try? JSONDecoder().decode(SessionData.self, from: data) else {
-            return nil
-        }
-
-        // Clear existing tabs first
-        for tab in tabs {
-            modelContext.delete(tab)
-        }
-
-        // Restore tabs, handling invalid URLs gracefully
-        var restoredTabs: [BrowserTab] = []
-        for savedTab in sessionData.tabs {
-            let tab = BrowserTab(title: savedTab.title, url: nil, isActive: savedTab.isActive)
-            tab.id = savedTab.id
-
-            // Handle invalid URLs - only restore valid URLs
-            var validHistory: [URL] = []
-            for urlString in savedTab.historyStrings {
-                if let url = URL(string: urlString), url.scheme != nil && url.host != nil {
-                    validHistory.append(url)
-                }
-            }
-
-            // Set current URL if it's valid, otherwise set to nil
-            if let currentURL = savedTab.url,
-               currentURL.scheme != nil && currentURL.host != nil {
-                tab.url = currentURL
-                // Make sure current URL is in history
-                if !validHistory.contains(currentURL) {
-                    validHistory.append(currentURL)
-                }
-            } else {
-                // If current URL is invalid, try to use the last valid history entry
-                tab.url = validHistory.last
-            }
-
-            tab.historyStrings = validHistory.map { $0.absoluteString }
-            tab.currentHistoryIndex = min(savedTab.currentHistoryIndex, validHistory.count - 1)
-            tab.isPinned = savedTab.isPinned
-            tab.isMuted = savedTab.isMuted
-            tab.zoomLevel = savedTab.zoomLevel
-            tab.orderIndex = savedTab.orderIndex
-
-            // Update title to use domain name
-            tab.updateTitleFromURL()
-
-            modelContext.insert(tab)
-            restoredTabs.append(tab)
-        }
-
-        // Clear the saved session after successful restore
-        UserDefaults.standard.removeObject(forKey: normalSessionKey)
-        UserDefaults.standard.synchronize()
-
-        return sessionData
-    }
-}
-
-// Data structures for session persistence
-struct SessionData: Codable {
-    let tabs: [SavedTab]
-    let selectedTabId: UUID?
-}
-
-struct SavedTab: Codable {
-    let id: UUID
-    let title: String
-    let url: URL?
-    let isActive: Bool
-    let historyStrings: [String]
-    let currentHistoryIndex: Int
-    let isPinned: Bool
-    let isMuted: Bool
-    let zoomLevel: Double
-    let orderIndex: Int
 }
 
 #Preview {
