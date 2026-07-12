@@ -9,9 +9,17 @@ import SwiftUI
 import SwiftData
 import Combine
 
+// Value snapshot of a closed tab. Holding the deleted SwiftData model itself
+// is undefined behavior once modelContext.delete runs.
+struct ClosedTabSnapshot {
+    let title: String
+    let url: URL?
+    let historyStrings: [String]
+}
+
 class TabManager: ObservableObject {
     @Published var selectedTabId: UUID?
-    @Published var closedTabs: [Tab] = []
+    @Published var closedTabs: [ClosedTabSnapshot] = []
 
     private var modelContext: ModelContext?
     private weak var webViewManager: WebViewManager?
@@ -39,12 +47,13 @@ class TabManager: ObservableObject {
     }
 
     func closeTab(_ tab: Tab, tabs: [Tab]) {
-        if tabs.count > 1 {
-            // Clean up the web view for this tab
-            webViewManager?.removeWebView(for: tab.id)
+        // Snapshot before any mutation/deletion so reopen works safely
+        closedTabs.append(ClosedTabSnapshot(title: tab.title, url: tab.url, historyStrings: tab.historyStrings))
 
-            // Store the tab in closed tabs list for potential reopening
-            closedTabs.append(tab)
+        // Clean up the web view for this tab
+        webViewManager?.removeWebView(for: tab.id)
+
+        if tabs.count > 1 {
             modelContext?.delete(tab)
             if selectedTabId == tab.id {
                 selectedTabId = tabs.filter { $0.id != tab.id }.first?.id
@@ -52,27 +61,13 @@ class TabManager: ObservableObject {
             // Ensure there's always a selected tab after closing
             ensureSelectedTab(from: tabs.filter { $0.id != tab.id })
         } else {
-            Logger.log("TabManager closeTab: Closing last tab, converting to history tab", type: "TabManager")
-            // Handle closing the last tab - convert the existing tab to a history tab instead of creating a new one
-            // This ensures there's always at least one tab open, showing browsing history
-
-            // Clean up the web view for this tab
-            webViewManager?.removeWebView(for: tab.id)
-
-            // Store the tab in closed tabs list (but don't delete it from the model)
-            closedTabs.append(tab)
-
-            // Convert the existing tab to a history tab by changing its properties
-            Logger.log("TabManager closeTab: Converting tab \(tab.id) to history tab", type: "TabManager")
-            tab.title = "History"
-            tab.url = URL(string: "about:history")
-            tab.historyStrings = [] // Clear the history since we're showing all history
+            // Closing the last tab: reset it to a fresh New Tab instead of
+            // deleting it, so there is always one tab open
+            tab.title = "New Tab"
+            tab.url = nil
+            tab.historyStrings = []
             tab.currentHistoryIndex = -1
-            tab.lastAccessed = Date() // Update last accessed time
-
-            // Keep the same selectedTabId since we're modifying the existing tab
-            Logger.log("TabManager closeTab: Converted tab \(tab.id) to history tab with URL \(tab.url?.absoluteString ?? "nil")", type: "TabManager")
-            Logger.log("TabManager closeTab: selectedTabId remains \(selectedTabId?.uuidString ?? "nil")", type: "TabManager")
+            tab.lastAccessed = Date()
         }
     }
 
@@ -94,12 +89,12 @@ class TabManager: ObservableObject {
     }
 
     func reopenLastClosedTab() -> Tab? {
-        guard let lastClosedTab = closedTabs.popLast() else { return nil }
+        guard let snapshot = closedTabs.popLast() else { return nil }
 
         // Create a new tab with the same properties as the closed one
-        let newTab = Tab(title: lastClosedTab.title, url: lastClosedTab.url, isActive: true)
-        newTab.historyStrings = lastClosedTab.historyStrings
-        newTab.currentHistoryIndex = lastClosedTab.currentHistoryIndex
+        let newTab = Tab(title: snapshot.title, url: snapshot.url, isActive: true)
+        newTab.historyStrings = snapshot.historyStrings
+        newTab.currentHistoryIndex = snapshot.historyStrings.isEmpty ? -1 : snapshot.historyStrings.count - 1
 
         // Update the title to use the domain name
         newTab.updateTitleFromURL()
@@ -172,51 +167,6 @@ class TabManager: ObservableObject {
         }
 
         Logger.log("Reordered tabs: new order: \(reorderedTabs.map { $0.id })", type: "TabManager")
-    }
-
-    func collectBrowsingHistory(from tabs: [Tab]) -> [URL] {
-        var allHistory: [(url: URL, timestamp: Date)] = []
-
-        for tab in tabs {
-            // Add current URL if it exists
-            if let currentUrl = tab.url {
-                allHistory.append((url: currentUrl, timestamp: tab.lastAccessed))
-            }
-
-            // Add all URLs from history
-            for url in tab.history {
-                allHistory.append((url: url, timestamp: tab.lastAccessed))
-            }
-        }
-
-        // Also add closed tabs history
-        for closedTab in closedTabs {
-            if let currentUrl = closedTab.url {
-                allHistory.append((url: currentUrl, timestamp: closedTab.lastAccessed))
-            }
-
-            for url in closedTab.history {
-                allHistory.append((url: url, timestamp: closedTab.lastAccessed))
-            }
-        }
-
-        // Remove duplicates, keeping the most recent timestamp
-        var uniqueHistory: [URL: Date] = [:]
-        for (url, timestamp) in allHistory {
-            if let existingTimestamp = uniqueHistory[url] {
-                uniqueHistory[url] = max(existingTimestamp, timestamp)
-            } else {
-                uniqueHistory[url] = timestamp
-            }
-        }
-
-        // Sort by timestamp (most recent first) and return URLs
-        return uniqueHistory.sorted { $0.value > $1.value }.map { $0.key }
-    }
-
-    func createHistoryTab(tabs: [Tab]) -> Tab {
-        let historyTab = Tab(title: "History", url: URL(string: "straightup://history"), isActive: true)
-        return historyTab
     }
 
     /// Ensures there is always a selected tab when tabs are available

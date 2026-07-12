@@ -60,115 +60,7 @@ struct WebView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WebViewContainer {
         Logger.log("WebView makeNSView called for activeTabId: \(activeTabId?.uuidString ?? "nil")", type: "WebView")
-        let container = WebViewContainer(webViewManager: webViewManager, coordinator: context.coordinator)
-
-        // Add observer for progress changes - we'll add this to the container
-        container.addObserver(context.coordinator, forKeyPath: "estimatedProgress", options: .new, context: nil)
-
-        return container
-    }
-
-    static func dismantleNSView(_ nsView: WebViewContainer, coordinator: Coordinator) {
-        // Clean up observers
-        nsView.removeObserver(coordinator, forKeyPath: "estimatedProgress")
-    }
-
-    // Get the current active web view from the manager
-    private func getCurrentWebView() -> WKWebView {
-        Logger.log("WebView getCurrentWebView called with activeTabId: \(activeTabId?.uuidString ?? "nil")", type: "WebView")
-        if let activeTabId = activeTabId {
-            let webView = webViewManager?.getWebView(for: activeTabId) ?? WKWebView()
-            Logger.log("WebView getCurrentWebView: returning WebView \(Unmanaged.passUnretained(webView).toOpaque()) for tab \(activeTabId)", type: "WebView")
-            return webView
-        }
-        Logger.log("WebView getCurrentWebView: returning new WKWebView (no activeTabId)", type: "WebView")
-        return WKWebView()
-    }
-
-    private func configureWebView(_ webView: WKWebView) {
-        // Set realistic user agent string to avoid bot detection and browser warnings
-        // Using Chrome 141.0 on macOS (current as of January 2026)
-        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
-
-        // Configure cookie policy
-        let dataStore = WKWebsiteDataStore.default()
-        webView.configuration.websiteDataStore = dataStore
-
-        // Configure JavaScript settings
-        webView.configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
-        // Note: javaScriptEnabled is deprecated, using webpage preferences instead
-        webView.configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-
-        // Configure media playback policies
-        webView.configuration.mediaTypesRequiringUserActionForPlayback = .video
-
-        // Configure viewport and responsive design settings
-        configureViewportSettings(for: webView.configuration)
-
-        // Set up content blockers (basic ad blocking) - temporarily disabled for Google compatibility
-        // setupContentBlockers(for: webView.configuration)
-
-        // Set up custom URL scheme handlers
-        setupCustomURLSchemes(for: webView.configuration)
-
-        // Configure file access preferences (removed problematic private API calls)
-        // Note: File URL access preferences are handled by WebKit defaults
-    }
-
-    private func configureViewportSettings(for configuration: WKWebViewConfiguration) {
-        // Use desktop content mode for proper desktop interface rendering
-        if #available(macOS 12.0, *) {
-            configuration.defaultWebpagePreferences.preferredContentMode = .recommended
-        } else {
-            // Fallback for older macOS versions - use desktop mode
-            configuration.defaultWebpagePreferences.preferredContentMode = .desktop
-        }
-
-        // Allow content to adapt to different screen sizes
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-
-        // Ensure we don't override viewport settings that might confuse Google
-        // Remove any viewport manipulation that could trigger mobile interface
-    }
-
-    private func setupContentBlockers(for configuration: WKWebViewConfiguration) {
-        // Basic ad blocking rules
-        let blockRules = """
-        [
-            {
-                "trigger": {
-                    "url-filter": ".*googlesyndication\\.com.*",
-                    "resource-type": ["script", "image"]
-                },
-                "action": {
-                    "type": "block"
-                }
-            },
-            {
-                "trigger": {
-                    "url-filter": ".*doubleclick\\.net.*",
-                    "resource-type": ["script", "image"]
-                },
-                "action": {
-                    "type": "block"
-                }
-            }
-        ]
-        """
-
-        WKContentRuleListStore.default()?.compileContentRuleList(
-            forIdentifier: "AdBlockRules",
-            encodedContentRuleList: blockRules
-        ) { (contentRuleList, error) in
-            if let contentRuleList = contentRuleList {
-                configuration.userContentController.add(contentRuleList)
-            }
-        }
-    }
-
-    private func setupCustomURLSchemes(for configuration: WKWebViewConfiguration) {
-        // Handle custom URL schemes (e.g., app-specific protocols)
-        configuration.setURLSchemeHandler(CustomURLSchemeHandler(), forURLScheme: "straightup")
+        return WebViewContainer(webViewManager: webViewManager, coordinator: context.coordinator)
     }
 
     func updateNSView(_ nsView: WebViewContainer, context: Context) {
@@ -194,32 +86,22 @@ struct WebView: NSViewRepresentable {
 
         Logger.log("WebView updateNSView: activeWebView found: \(Unmanaged.passUnretained(activeWebView).toOpaque())", type: "WebView")
 
-        // Load the URL when it changes, but prevent rapid reloading
+        // Load the URL when it changes. Dedupe against what the webview already
+        // shows and what we already requested - no time-based throttle, which
+        // silently dropped legitimate navigations.
         let normalizedURL = Tab.normalizeURLForComparison(url)
         let normalizedWebViewURL = Tab.normalizeURLForComparison(activeWebView.url)
+        let normalizedRequestedURL = Tab.normalizeURLForComparison(context.coordinator.lastRequestedURL)
 
-        // Only load if the URL is different from what's currently displayed and not loading
-        // Also check if enough time has passed since last load to prevent rapid reloading
-        let timeSinceLastLoad = context.coordinator.lastLoadTime.map { Date().timeIntervalSince($0) } ?? Double.greatestFiniteMagnitude
-        let minLoadInterval: TimeInterval = 1.0 // 1 second minimum between loads
-
-        if let url = url, normalizedURL != normalizedWebViewURL, !activeWebView.isLoading, timeSinceLastLoad >= minLoadInterval {
+        if let url = url, normalizedURL != normalizedWebViewURL,
+           !(activeWebView.isLoading && normalizedURL == normalizedRequestedURL) {
             Logger.log("WebView loading URL: \(url.absoluteString) (current: \(activeWebView.url?.absoluteString ?? "nil"))", type: "WebView")
             context.coordinator.lastRequestedURL = url
-            context.coordinator.lastLoadTime = Date()
-            let request = URLRequest(url: url)
-            activeWebView.load(request)
+            activeWebView.load(URLRequest(url: url))
         } else if let url = url, normalizedURL == normalizedWebViewURL {
-            Logger.log("WebView skipping duplicate load: \(url.absoluteString)", type: "WebView")
             // Ensure lastRequestedURL is set correctly
             context.coordinator.lastRequestedURL = url
-        } else if activeWebView.isLoading {
-            Logger.log("WebView skipping load while already loading: \(url?.absoluteString ?? "nil")", type: "WebView")
-        } else if timeSinceLastLoad < minLoadInterval {
-            Logger.log("WebView skipping load - too soon since last load (\(timeSinceLastLoad)s < \(minLoadInterval)s)", type: "WebView")
         }
-
-        // Removed JavaScript injection that may interfere with user interactions
     }
 
     func makeCoordinator() -> Coordinator {
@@ -235,7 +117,6 @@ struct WebView: NSViewRepresentable {
         private var mixedContentWarningsShown = Set<String>()
         var lastRequestedURL: URL?
         var lastSuccessfullyLoadedURL: URL?
-        var lastLoadTime: Date?
         var lastViewSize: NSSize?
 
         // Redirect loop detection
@@ -320,18 +201,14 @@ struct WebView: NSViewRepresentable {
                    let activeTab = tabManager.getActiveTab(from: tabs) {
                     activeTab.url = currentURL
 
-                    // Add to history if this was user-initiated navigation (not from our binding)
-                    // We can detect this by checking if the navigation type was linkClicked
-                    // For now, we'll add it to history for any successful navigation that's different from current
+                    // Record the visit for omnibar suggestions; WKWebView owns back/forward
                     if activeTab.history.last != currentURL {
-                        activeTab.history.append(currentURL)
-                        activeTab.currentHistoryIndex = activeTab.history.count - 1
+                        activeTab.historyStrings.append(currentURL.absoluteString)
 
                         // Limit history size
-                        let maxHistorySize = 100 // Use a reasonable default
-                        if activeTab.history.count > maxHistorySize {
-                            let excess = activeTab.history.count - maxHistorySize
-                            activeTab.currentHistoryIndex = max(activeTab.history.count - 1, 0)
+                        let maxHistorySize = SettingsManager.shared.maxHistorySize
+                        if activeTab.historyStrings.count > maxHistorySize {
+                            activeTab.historyStrings.removeFirst(activeTab.historyStrings.count - maxHistorySize)
                         }
                     }
                 }
@@ -706,28 +583,6 @@ struct WebView: NSViewRepresentable {
             }
         }
 
-        private func triggerResponsiveLayout(in webView: WKWebView) {
-            // Trigger viewport resize event to ensure responsive design updates
-            let responsiveScript = """
-            // Trigger resize event for responsive design
-            window.dispatchEvent(new Event('resize'));
-
-            // Also trigger orientation change if viewport API is available
-            if (window.visualViewport) {
-                window.visualViewport.dispatchEvent(new Event('resize'));
-            }
-
-            // Force layout recalculation for CSS media queries
-            document.body.style.display = 'none';
-            document.body.offsetHeight; // Trigger reflow
-            document.body.style.display = '';
-            """
-
-            webView.evaluateJavaScript(responsiveScript) { _, _ in
-                // Layout triggered successfully
-            }
-        }
-
         override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
             if keyPath == "estimatedProgress", let webView = object as? WKWebView {
                 DispatchQueue.main.async {
@@ -764,16 +619,6 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            // Handle special browser URLs
-            if let url = navigationAction.request.url, url.scheme == "browser" {
-                if url.host == "history" {
-                    // Handle history page
-                    showHistoryPage(webView: webView)
-                    decisionHandler(.cancel)
-                    return
-                }
-            }
-
             // Track if current page is HTTPS for mixed content detection
             if let url = navigationAction.request.url {
                 currentPageIsHTTPS = (url.scheme == "https")
@@ -811,173 +656,6 @@ struct WebView: NSViewRepresentable {
                     showMixedContentWarning(for: resourceURL)
                 }
             }
-        }
-
-        private func showHistoryPage(webView: WKWebView) {
-            // Collect browsing history from all tabs
-            var allHistory: [(url: URL, timestamp: Date)] = []
-
-            if let tabs = tabs {
-                for tab in tabs {
-                    // Add current URL if it exists
-                    if let currentUrl = tab.url {
-                        allHistory.append((url: currentUrl, timestamp: tab.lastAccessed))
-                    }
-
-                    // Add all URLs from history
-                    for url in tab.history {
-                        allHistory.append((url: url, timestamp: tab.lastAccessed))
-                    }
-                }
-            }
-
-            // Also add closed tabs history
-            if let tabManager = tabManager {
-                for closedTab in tabManager.closedTabs {
-                    if let currentUrl = closedTab.url {
-                        allHistory.append((url: currentUrl, timestamp: closedTab.lastAccessed))
-                    }
-
-                    for url in closedTab.history {
-                        allHistory.append((url: url, timestamp: closedTab.lastAccessed))
-                    }
-                }
-            }
-
-            // Remove duplicates, keeping the most recent timestamp
-            var uniqueHistory: [URL: Date] = [:]
-            for (url, timestamp) in allHistory {
-                if let existingTimestamp = uniqueHistory[url] {
-                    uniqueHistory[url] = max(existingTimestamp, timestamp)
-                } else {
-                    uniqueHistory[url] = timestamp
-                }
-            }
-
-            // Sort by timestamp (most recent first)
-            let sortedHistory = uniqueHistory.sorted { $0.value > $1.value }
-
-            // Generate HTML content
-            let htmlContent = generateHistoryHTML(history: sortedHistory)
-            webView.loadHTMLString(htmlContent, baseURL: nil)
-        }
-
-        private func generateHistoryHTML(history: [(key: URL, value: Date)]) -> String {
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateStyle = .medium
-            dateFormatter.timeStyle = .short
-
-            var html = """
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Browsing History</title>
-                <style>
-                    body {
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                        margin: 0;
-                        padding: 20px;
-                        background-color: #f5f5f5;
-                    }
-                    .header {
-                        text-align: center;
-                        margin-bottom: 30px;
-                    }
-                    .header h1 {
-                        color: #333;
-                        margin: 0;
-                        font-size: 28px;
-                    }
-                    .history-item {
-                        background: white;
-                        border-radius: 8px;
-                        padding: 15px;
-                        margin-bottom: 10px;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                        display: flex;
-                        align-items: center;
-                        text-decoration: none;
-                        color: inherit;
-                        transition: transform 0.1s ease;
-                    }
-                    .history-item:hover {
-                        transform: translateY(-2px);
-                        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-                    }
-                    .favicon {
-                        width: 16px;
-                        height: 16px;
-                        margin-right: 12px;
-                        border-radius: 2px;
-                    }
-                    .url-info {
-                        flex: 1;
-                    }
-                    .url {
-                        font-size: 16px;
-                        color: #007aff;
-                        margin-bottom: 4px;
-                        word-break: break-all;
-                    }
-                    .domain {
-                        font-size: 14px;
-                        color: #666;
-                        margin-bottom: 2px;
-                    }
-                    .timestamp {
-                        font-size: 12px;
-                        color: #999;
-                    }
-                    .empty-state {
-                        text-align: center;
-                        padding: 60px 20px;
-                        color: #666;
-                    }
-                    .empty-state h2 {
-                        margin: 0 0 10px 0;
-                        font-size: 24px;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <h1>🕒 Browsing History</h1>
-                </div>
-            """
-
-            if history.isEmpty {
-                html += """
-                <div class="empty-state">
-                    <h2>No browsing history</h2>
-                    <p>Your browsing history will appear here as you visit websites.</p>
-                </div>
-                """
-            } else {
-                for (url, timestamp) in history {
-                    let domain = url.host ?? url.absoluteString
-                    let formattedDate = dateFormatter.string(from: timestamp)
-
-                    html += """
-                    <a href="\(url.absoluteString)" class="history-item">
-                        <img src="https://www.google.com/s2/favicons?domain=\(domain)&sz=16" class="favicon" onerror="this.style.display='none'">
-                        <div class="url-info">
-                            <div class="url">\(url.absoluteString)</div>
-                            <div class="domain">\(domain)</div>
-                            <div class="timestamp">\(formattedDate)</div>
-                        </div>
-                    </a>
-                    """
-                }
-            }
-
-            html += """
-            </body>
-            </html>
-            """
-
-            return html
         }
 
         private func showMixedContentWarning(for resourceURL: URL) {
@@ -1297,6 +975,9 @@ class WebViewContainer: NSView {
                 webView.navigationDelegate = coordinator
                 webView.uiDelegate = coordinator
 
+                // Observe real load progress; removed in willRemoveSubview
+                webView.addObserver(self, forKeyPath: "estimatedProgress", options: .new, context: nil)
+
                 // Add to container
                 self.addSubview(webView)
                 Logger.log("WebViewContainer: added new WebView for tab \(newTabId)", type: "WebView")
@@ -1360,50 +1041,21 @@ class WebViewContainer: NSView {
         }
     }
 
+    override func willRemoveSubview(_ subview: NSView) {
+        if let webView = subview as? WKWebView {
+            webView.removeObserver(self, forKeyPath: "estimatedProgress")
+            visibleWebViews.remove(webView)
+        }
+        super.willRemoveSubview(subview)
+    }
+
     // Forward KVO changes to the coordinator for the estimatedProgress property
     override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-        if keyPath == "estimatedProgress", let webView = object as? WKWebView {
+        if keyPath == "estimatedProgress", object is WKWebView {
             coordinator?.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
         } else {
             super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
         }
-    }
-}
-
-class CustomURLSchemeHandler: NSObject, WKURLSchemeHandler {
-    func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
-        // Handle custom URL schemes
-        let url = urlSchemeTask.request.url!
-
-        // For now, redirect to a default page or handle the scheme appropriately
-        if url.scheme == "straightup" {
-            // Handle app-specific URLs
-            let response = HTTPURLResponse(
-                url: url,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "text/html"]
-            )!
-
-            let html = """
-            <!DOCTYPE html>
-            <html>
-            <head><title>Browser</title></head>
-            <body>
-                <h1>Custom URL Scheme Handler</h1>
-                <p>Handled URL: \(url.absoluteString)</p>
-            </body>
-            </html>
-            """
-
-            urlSchemeTask.didReceive(response)
-            urlSchemeTask.didReceive(html.data(using: .utf8)!)
-            urlSchemeTask.didFinish()
-        }
-    }
-
-    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
-        // Handle stopping the URL scheme task
     }
 }
 #endif

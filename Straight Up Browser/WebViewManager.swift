@@ -16,9 +16,6 @@ class WebViewManager: ObservableObject {
     // Active web view for the currently selected tab
     @Published var activeWebView: WKWebView?
 
-    // Delegate for web view events
-    weak var delegate: WebViewManagerDelegate?
-
     init() {
         Logger.log("WebViewManager initialized", type: "WebViewManager")
     }
@@ -59,8 +56,11 @@ class WebViewManager: ObservableObject {
     // Remove a web view when a tab is closed
     func removeWebView(for tabId: UUID) {
         if let webView = webViews[tabId] {
-            // Stop any loading
+            // Stop any loading and detach so the view can actually deallocate
             webView.stopLoading()
+            webView.navigationDelegate = nil
+            webView.uiDelegate = nil
+            webView.removeFromSuperview()
 
             // Remove from storage
             webViews.removeValue(forKey: tabId)
@@ -78,8 +78,6 @@ class WebViewManager: ObservableObject {
     private func createWebView() -> WKWebView {
         let configuration = WKWebViewConfiguration()
 
-        // Configure user agent
-        configuration.defaultWebpagePreferences.preferredContentMode = .mobile
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.mediaTypesRequiringUserActionForPlayback = .video
@@ -163,13 +161,4 @@ class WebViewManager: ObservableObject {
         cleanup()
         Logger.log("WebViewManager deallocated", type: "WebViewManager")
     }
-}
-
-// Delegate protocol for web view events
-protocol WebViewManagerDelegate: AnyObject {
-    func webViewDidStartLoading(_ webView: WKWebView)
-    func webViewDidFinishLoading(_ webView: WKWebView)
-    func webViewDidFailLoading(_ webView: WKWebView, withError error: Error)
-    func webViewDidChangeURL(_ webView: WKWebView, url: URL?)
-    func webViewDidChangeTitle(_ webView: WKWebView, title: String?)
 }
