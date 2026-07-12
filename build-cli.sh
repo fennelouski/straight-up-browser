@@ -15,8 +15,8 @@ echo "Building Straight Up Browser CLI..."
 swiftc browser-cli/main.swift -o browser-cli-tool
 
 if [ $? -eq 0 ]; then
-    echo "CLI tool built successfully: ./browser-cli"
-    chmod +x ./browser-cli
+    echo "CLI tool built successfully: ./browser-cli-tool"
+    chmod +x ./browser-cli-tool
     echo "Made executable"
 else
     echo "Build failed"

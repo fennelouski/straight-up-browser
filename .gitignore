@@ -1,0 +1,6 @@
+.DS_Store
+xcuserdata/
+*.o
+build/
+DerivedData/
+browser-cli-tool
