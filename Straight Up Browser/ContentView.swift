@@ -798,47 +798,52 @@ struct ContentView: View {
         .ignoresSafeArea(.all) // Ignore safe areas to extend to edges
         .background(Color(.windowBackgroundColor)) // Set explicit background
         .onAppear {
-            initializeManagers()
-            loadWorkspacesFromDisk()
+            // One-time setup; onAppear can fire again (window reopen) and must
+            // not recreate managers or stack observers
+            if !managersInitialized {
+                initializeManagers()
+                loadWorkspacesFromDisk()
 
-            // Load favicons for all tabs BEFORE web views are loaded
-            preloadFaviconsForAllTabs()
+                // Load favicons for all tabs BEFORE web views are loaded
+                preloadFaviconsForAllTabs()
 
-            notificationManager?.setupNotificationObservers()
-            keyboardShortcutsManager?.setupKeyboardShortcuts()
-            windowManager?.configureWindow()
+                // Setup observer for tab title display mode changes
+                NotificationCenter.default.addObserver(
+                    forName: .browserTabTitleDisplayModeChanged,
+                    object: nil,
+                    queue: .main
+                ) { [self] _ in
+                    tabTitleDisplayRefreshTrigger = UUID()
+                }
 
-            // Setup observer for tab title display mode changes
-            NotificationCenter.default.addObserver(
-                forName: .browserTabTitleDisplayModeChanged,
-                object: nil,
-                queue: .main
-            ) { [self] _ in
-                tabTitleDisplayRefreshTrigger = UUID()
-            }
+                // Toggle tab bar between hidden and last visible width (Cmd+Shift+L)
+                NotificationCenter.default.addObserver(
+                    forName: .browserToggleTabBar,
+                    object: nil,
+                    queue: .main
+                ) { [self] _ in
+                    if tabBarWidth > 0 {
+                        UserDefaults.standard.set(tabBarWidth, forKey: "lastTabBarWidth")
+                        tabBarWidth = 0
+                    } else {
+                        let last = UserDefaults.standard.double(forKey: "lastTabBarWidth")
+                        tabBarWidth = last > 0 ? last : 200
+                    }
+                }
 
-            // Toggle tab bar between hidden and last visible width (Cmd+Shift+L)
-            NotificationCenter.default.addObserver(
-                forName: .browserToggleTabBar,
-                object: nil,
-                queue: .main
-            ) { [self] _ in
-                if tabBarWidth > 0 {
-                    UserDefaults.standard.set(tabBarWidth, forKey: "lastTabBarWidth")
-                    tabBarWidth = 0
+                // SwiftData is the session store: tabs are already loaded via @Query.
+                // Select the tab that was active last time, tabs load lazily on selection.
+                if tabs.isEmpty {
+                    _ = tabManager.createNewTab()
                 } else {
-                    let last = UserDefaults.standard.double(forKey: "lastTabBarWidth")
-                    tabBarWidth = last > 0 ? last : 200
+                    tabManager.selectedTabId = tabs.first(where: { $0.isActive })?.id ?? tabs.first?.id
                 }
             }
 
-            // SwiftData is the session store: tabs are already loaded via @Query.
-            // Select the tab that was active last time, tabs load lazily on selection.
-            if tabs.isEmpty {
-                _ = tabManager.createNewTab()
-            } else {
-                tabManager.selectedTabId = tabs.first(where: { $0.isActive })?.id ?? tabs.first?.id
-            }
+            // Safe to re-run: observer setup is balanced by cleanup/teardown in onDisappear
+            notificationManager?.setupNotificationObservers()
+            keyboardShortcutsManager?.setupKeyboardShortcuts()
+            windowManager?.configureWindow()
         }
         .onChange(of: tabManager.selectedTabId) { oldValue, newValue in
             Logger.log("ContentView onChange selectedTabId: \(oldValue?.uuidString ?? "nil") -> \(newValue?.uuidString ?? "nil")", type: "ContentView")

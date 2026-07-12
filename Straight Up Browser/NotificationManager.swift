@@ -63,6 +63,8 @@ class NotificationManager {
     }
 
     func setupNotificationObservers() {
+        guard observers.isEmpty else { return } // idempotent; cleanup() re-arms
+
         let openURLOobserver = NotificationCenter.default.addObserver(
             forName: .browserOpenURL,
             object: nil,

@@ -61,16 +61,27 @@ struct OmnibarTextField: NSViewRepresentable {
         // Focus and select all text when shouldFocus becomes true (only on initial open)
         if shouldFocus && !context.coordinator.hasFocused {
             DispatchQueue.main.async {
-                nsView.window?.makeFirstResponder(nsView)
-                if autoSelectAll {
-                    nsView.selectText(nil)
-                    context.coordinator.hasAutoSelected = true
-                }
-                context.coordinator.hasFocused = true
+                focusField(nsView, coordinator: context.coordinator, retriesLeft: 3)
             }
         } else if !shouldFocus {
             context.coordinator.hasFocused = false
             context.coordinator.hasAutoSelected = false
+        }
+    }
+
+    // makeFirstResponder silently fails if the overlay's window isn't key yet,
+    // leaving the caret nowhere - retry briefly instead of giving up
+    private func focusField(_ nsView: NSTextField, coordinator: Coordinator, retriesLeft: Int) {
+        if let window = nsView.window, window.makeFirstResponder(nsView) {
+            if autoSelectAll {
+                nsView.selectText(nil)
+                coordinator.hasAutoSelected = true
+            }
+            coordinator.hasFocused = true
+        } else if retriesLeft > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                focusField(nsView, coordinator: coordinator, retriesLeft: retriesLeft - 1)
+            }
         }
     }
 
@@ -322,23 +333,10 @@ struct OmnibarView: View {
                     .padding(.bottom, 8)
             }
         }
-        .frame(width: 600, height: 400, alignment: .top) // Fixed height prevents layout shifts
-        .background(Color.clear)
+        .frame(width: 600, alignment: .top) // Sized to content so the dimmer owns clicks below the bar
         .onAppear {
             inputText = urlString
-            // Trigger focus and text selection
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                shouldFocusTextField = true
-            }
-        }
-        .onChange(of: isPresented) { oldValue, newValue in
-            if newValue {
-                // Reset focus state when omnibar appears
-                shouldFocusTextField = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    shouldFocusTextField = true
-                }
-            }
+            shouldFocusTextField = true
         }
     }
 
@@ -350,17 +348,25 @@ struct OmnibarView: View {
 
         // Add https:// if no protocol is specified
         if !urlString.contains("://") {
-            // Check if it's a search query or URL
-            if urlString.contains(".") && !urlString.contains(" ") {
-                // Looks like a URL, add https
+            // URL-ish: no spaces and either a dot (example.com) or a colon (localhost:3000)
+            if !urlString.contains(" ") && (urlString.contains(".") || urlString.contains(":")) {
                 urlString = "https://" + urlString
             } else {
-                // Looks like a search query
-                urlString = "https://www.google.com/search?q=" + urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
+                let query = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString
+                urlString = searchURLPrefix + query
             }
         }
 
         onNavigate(urlString)
         isPresented = false
+    }
+
+    private var searchURLPrefix: String {
+        switch UserDefaults.standard.string(forKey: "searchEngine") {
+        case "DuckDuckGo": return "https://duckduckgo.com/?q="
+        case "Bing": return "https://www.bing.com/search?q="
+        case "Yahoo": return "https://search.yahoo.com/search?p="
+        default: return "https://www.google.com/search?q="
+        }
     }
 }
