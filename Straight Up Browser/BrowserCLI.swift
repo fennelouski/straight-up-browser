@@ -158,6 +158,9 @@ extension Notification.Name {
     static let showOmnibar = Notification.Name("showOmnibar")
     static let browserListTabs = Notification.Name("browserListTabs")
 
+    // Edit menu
+    static let browserFindInPage = Notification.Name("browserFindInPage")
+
     // View menu
     static let browserZoomIn = Notification.Name("browserZoomIn")
     static let browserZoomOut = Notification.Name("browserZoomOut")

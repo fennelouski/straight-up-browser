@@ -231,6 +231,11 @@ struct Straight_Up_BrowserApp: App {
 
             // Add omnibar shortcut and settings to menu
             CommandGroup(after: .textEditing) {
+                Button("Find...") {
+                    NotificationCenter.default.post(name: .browserFindInPage, object: nil)
+                }
+                .keyboardShortcut("f", modifiers: .command)
+
                 Button("Show Omnibar") {
                     NotificationCenter.default.post(name: .showOmnibar, object: nil)
                 }

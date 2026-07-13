@@ -148,6 +148,8 @@ struct ContentView: View {
 
     // UI State
     @State private var showOmnibar = false
+    @State private var showFindBar = false
+    @State private var findText = ""
     @State private var canGoBack = false
     @State private var canGoForward = false
     @State private var currentTitle = ""
@@ -520,6 +522,65 @@ struct ContentView: View {
         }
     }
 
+    private var findBarOverlay: some View {
+        Group {
+            if showFindBar {
+                VStack {
+                    HStack {
+                        Spacer()
+                        HStack(spacing: 4) {
+                            OmnibarTextField(
+                                text: $findText,
+                                placeholder: "Find in page",
+                                shouldFocus: true,
+                                onCommit: { performFind() },
+                                onCancel: { showFindBar = false }
+                            )
+                            .frame(width: 200)
+
+                            Button(action: { performFind(backwards: true) }) {
+                                Image(systemName: "chevron.up")
+                            }
+                            .buttonStyle(.plain)
+                            .help("Previous Match")
+
+                            Button(action: { performFind() }) {
+                                Image(systemName: "chevron.down")
+                            }
+                            .buttonStyle(.plain)
+                            .help("Next Match")
+
+                            Button(action: { showFindBar = false }) {
+                                Image(systemName: "xmark")
+                            }
+                            .buttonStyle(.plain)
+                            .help("Close")
+                        }
+                        .padding(8)
+                        .background(Color(.windowBackgroundColor))
+                        .cornerRadius(8)
+                        .shadow(radius: 4)
+                        .padding(.top, 8)
+                        .padding(.trailing, 8)
+                    }
+                    Spacer()
+                }
+                .onChange(of: findText) { _, _ in
+                    performFind() // incremental find while typing
+                }
+            }
+        }
+    }
+
+    private func performFind(backwards: Bool = false) {
+        guard let webView = webViewManager?.activeWebView, !findText.isEmpty else { return }
+        let configuration = WKFindConfiguration()
+        configuration.backwards = backwards
+        configuration.caseSensitive = false
+        configuration.wraps = true
+        webView.find(findText, configuration: configuration) { _ in }
+    }
+
     private var createGroupDialogOverlay: some View {
         Group {
             if showCreateGroupDialog {
@@ -689,6 +750,7 @@ struct ContentView: View {
         .overlay(progressBarOverlay.zIndex(1))
         .overlay(newTabPageOverlay.zIndex(2))
         .overlay(omnibarOverlay.zIndex(3))
+        .overlay(findBarOverlay.zIndex(3))
         .overlay(createGroupDialogOverlay.zIndex(4))
         .overlay(saveWorkspaceDialogOverlay.zIndex(5))
         .overlay(importBookmarksDialogOverlay.zIndex(6))
@@ -801,6 +863,15 @@ struct ContentView: View {
                     queue: .main
                 ) { [self] _ in
                     tabTitleDisplayRefreshTrigger = UUID()
+                }
+
+                // Find in page (Cmd+F)
+                NotificationCenter.default.addObserver(
+                    forName: .browserFindInPage,
+                    object: nil,
+                    queue: .main
+                ) { [self] _ in
+                    showFindBar.toggle()
                 }
 
                 // Toggle tab bar between hidden and last visible width (Cmd+Shift+L)
