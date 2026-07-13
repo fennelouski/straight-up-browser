@@ -113,10 +113,11 @@ struct WebView: NSViewRepresentable {
         return Coordinator(self, tabManager: tabManager, tabs: tabs)
     }
 
-    class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
         var parent: WebView
         var tabManager: TabManager?
         var tabs: [Tab]?
+        private var downloadDestinations: [WKDownload: URL] = [:]
         private var currentPageIsHTTPS = false
         private var mixedContentWarningsShown = Set<String>()
         var lastRequestedURL: URL?
@@ -623,6 +624,12 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            // <a download> links
+            if navigationAction.shouldPerformDownload {
+                decisionHandler(.download)
+                return
+            }
+
             // Track if current page is HTTPS for mixed content detection
             if let url = navigationAction.request.url {
                 currentPageIsHTTPS = (url.scheme == "https")
@@ -636,6 +643,12 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+            // Anything WebKit can't render inline (zip, dmg, attachments…) is a download
+            if !navigationResponse.canShowMIMEType {
+                decisionHandler(.download)
+                return
+            }
+
             // Check for mixed content warnings
             if let response = navigationResponse.response as? HTTPURLResponse,
                let url = response.url {
@@ -644,6 +657,70 @@ struct WebView: NSViewRepresentable {
             }
 
             decisionHandler(.allow)
+        }
+
+        // MARK: - Downloads
+
+        func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+            download.delegate = self
+            resetTabURLAfterDownload(webView)
+        }
+
+        func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+            download.delegate = self
+            resetTabURLAfterDownload(webView)
+        }
+
+        // A download is not a navigation. If the tab's URL points at the file
+        // (omnibar/CLI navigation straight to a zip), snap it back to the last
+        // page that actually loaded - otherwise updateNSView sees tab != webview
+        // and re-requests the file on every view update, downloading it forever.
+        // Note: webView.url is unusable here - it still holds the provisional
+        // (file) URL until the cancelled navigation unwinds.
+        private func resetTabURLAfterDownload(_ webView: WKWebView) {
+            parent.isLoading = false
+            lastRequestedURL = lastSuccessfullyLoadedURL
+            if let tabManager = tabManager, let tabs = tabs,
+               let activeTab = tabManager.getActiveTab(from: tabs),
+               Tab.normalizeURLForComparison(activeTab.url) != Tab.normalizeURLForComparison(lastSuccessfullyLoadedURL) {
+                activeTab.url = lastSuccessfullyLoadedURL
+            }
+        }
+
+        func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+            let configuredPath = UserDefaults.standard.string(forKey: "downloadsFolder") ?? ""
+            let folder = configuredPath.isEmpty
+                ? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+                : URL(fileURLWithPath: (configuredPath as NSString).expandingTildeInPath)
+
+            // Dedupe "name.ext" -> "name-2.ext" so WKDownload doesn't fail on collision
+            var destination = folder.appendingPathComponent(suggestedFilename)
+            let base = destination.deletingPathExtension().lastPathComponent
+            let ext = destination.pathExtension
+            var counter = 2
+            while FileManager.default.fileExists(atPath: destination.path) {
+                let name = ext.isEmpty ? "\(base)-\(counter)" : "\(base)-\(counter).\(ext)"
+                destination = folder.appendingPathComponent(name)
+                counter += 1
+            }
+
+            downloadDestinations[download] = destination
+            Logger.log("Download starting: \(destination.path)", type: "WebView")
+            completionHandler(destination)
+        }
+
+        func downloadDidFinish(_ download: WKDownload) {
+            if let url = downloadDestinations.removeValue(forKey: download) {
+                Logger.log("Download finished: \(url.path)", type: "WebView")
+                // ponytail: reveal in Finder is the entire downloads UI; build an
+                // overlay panel if this grates with multi-file downloads
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            }
+        }
+
+        func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+            downloadDestinations.removeValue(forKey: download)
+            Logger.log("Download failed: \(error.localizedDescription)", type: "WebView")
         }
 
         private func checkForMixedContent(_ resourceURL: URL) {
