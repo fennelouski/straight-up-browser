@@ -159,6 +159,10 @@ extension Notification.Name {
     static let browserListTabs = Notification.Name("browserListTabs")
 
     // View menu
+    static let browserZoomIn = Notification.Name("browserZoomIn")
+    static let browserZoomOut = Notification.Name("browserZoomOut")
+    static let browserZoomReset = Notification.Name("browserZoomReset")
+    static let browserPrint = Notification.Name("browserPrint")
     static let browserToggleTabBar = Notification.Name("browserToggleTabBar")
     static let browserHideTabBar = Notification.Name("browserHideTabBar")
     static let browserMinimalTabBar = Notification.Name("browserMinimalTabBar")

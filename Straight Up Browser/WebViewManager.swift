@@ -99,6 +99,10 @@ class WebViewManager: ObservableObject {
         webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsLinkPreview = true
+        if #available(macOS 13.3, *) {
+            // Right-click > Inspect Element via Safari Web Inspector
+            webView.isInspectable = true
+        }
     }
 
     // Navigation methods that delegate to the active web view

@@ -306,6 +306,23 @@ class NotificationManager {
         }
         observers.append(importBookmarksObserver)
 
+        // Zoom and print act on the active web view directly
+        observers.append(NotificationCenter.default.addObserver(
+            forName: .browserZoomIn, object: nil, queue: .main
+        ) { [weak self] _ in self?.scaleZoom(by: 1.1) })
+
+        observers.append(NotificationCenter.default.addObserver(
+            forName: .browserZoomOut, object: nil, queue: .main
+        ) { [weak self] _ in self?.scaleZoom(by: 1 / 1.1) })
+
+        observers.append(NotificationCenter.default.addObserver(
+            forName: .browserZoomReset, object: nil, queue: .main
+        ) { [weak self] _ in self?.setZoom(1.0) })
+
+        observers.append(NotificationCenter.default.addObserver(
+            forName: .browserPrint, object: nil, queue: .main
+        ) { [weak self] _ in self?.printCurrentPage() })
+
         let getPageDataObserver = NotificationCenter.default.addObserver(
             forName: .browserGetPageData,
             object: nil,
@@ -325,6 +342,33 @@ class NotificationManager {
             }
         }
         observers.append(getPageDataObserver)
+    }
+
+    private func scaleZoom(by factor: Double) {
+        guard let webView = webViewManager.activeWebView else { return }
+        setZoom(min(4.0, max(0.25, webView.pageZoom * factor)))
+    }
+
+    private func setZoom(_ zoom: Double) {
+        guard let webView = webViewManager.activeWebView else { return }
+        webView.pageZoom = zoom
+        // Persist per tab; reapplied on tab switch in WebView.updateNSView
+        tabManager.getActiveTab(from: tabs())?.zoomLevel = zoom
+    }
+
+    private func printCurrentPage() {
+        guard let webView = webViewManager.activeWebView else { return }
+        let operation = webView.printOperation(with: NSPrintInfo.shared)
+        operation.showsPrintPanel = true
+        operation.showsProgressPanel = true
+        // WKWebView's print view comes back zero-sized; give it a frame or the
+        // print panel renders an empty page
+        operation.view?.frame = webView.bounds
+        if let window = webView.window {
+            operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+        } else {
+            operation.run()
+        }
     }
 
     private func extractCurrentPageData(responseFilePath: String? = nil) {

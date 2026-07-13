@@ -91,12 +91,36 @@ struct Straight_Up_BrowserApp: App {
                 .keyboardShortcut("l", modifiers: .command)
             }
 
+            CommandGroup(replacing: .printItem) {
+                Button("Print...") {
+                    NotificationCenter.default.post(name: .browserPrint, object: nil)
+                }
+                .keyboardShortcut("p", modifiers: .command)
+            }
+
             // View menu commands
             CommandGroup(after: .toolbar) {
                 Button("Reopen Last Closed Tab") {
                     NotificationCenter.default.post(name: .reopenLastClosedTab, object: nil)
                 }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Zoom In") {
+                    NotificationCenter.default.post(name: .browserZoomIn, object: nil)
+                }
+                .keyboardShortcut("=", modifiers: .command)
+
+                Button("Zoom Out") {
+                    NotificationCenter.default.post(name: .browserZoomOut, object: nil)
+                }
+                .keyboardShortcut("-", modifiers: .command)
+
+                Button("Actual Size") {
+                    NotificationCenter.default.post(name: .browserZoomReset, object: nil)
+                }
+                .keyboardShortcut("0", modifiers: .command)
 
                 Divider()
 

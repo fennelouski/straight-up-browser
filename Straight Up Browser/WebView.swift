@@ -90,6 +90,11 @@ struct WebView: NSViewRepresentable {
 
         Logger.log("WebView updateNSView: activeWebView found: \(Unmanaged.passUnretained(activeWebView).toOpaque())", type: "WebView")
 
+        // Reapply the tab's persisted zoom (the zoom menu items write it)
+        if let tab = tabs?.first(where: { $0.id == activeTabId }), activeWebView.pageZoom != tab.zoomLevel {
+            activeWebView.pageZoom = tab.zoomLevel
+        }
+
         // Load the URL when it changes. Dedupe against what the webview already
         // shows and what we already requested - no time-based throttle, which
         // silently dropped legitimate navigations.
