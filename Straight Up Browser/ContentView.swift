@@ -393,7 +393,6 @@ struct ContentView: View {
                         progressValue: $progressValue,
                         hasRenderedContent: $hasRenderedContent,
                         webViewManager: webViewManager,
-                        onPopupRequest: handlePopupRequest,
                         tabManager: tabManager,
                         tabs: tabs,
                         activeTabId: tabManager.selectedTabId,
@@ -1255,13 +1254,6 @@ struct ContentView: View {
         if let activeTab = activeTab {
             tabManager.closeTab(activeTab, tabs: tabs)
         }
-    }
-
-    private func handlePopupRequest(url: URL, windowFeatures: Any?) {
-        // Create a new tab for the popup
-        let newTab = BrowserTab(title: "Popup", url: url, isActive: false)
-        modelContext.insert(newTab)
-        tabManager.selectedTabId = newTab.id
     }
 
 }

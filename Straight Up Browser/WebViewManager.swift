@@ -74,6 +74,14 @@ class WebViewManager: ObservableObject {
         }
     }
 
+    // Register an externally created web view (a window.open popup, which must
+    // be built from the configuration WebKit hands us) under a tab's ID.
+    func adoptWebView(_ webView: WKWebView, for tabId: UUID) {
+        applyStandardSetup(to: webView)
+        webViews[tabId] = webView
+        Logger.log("WebViewManager: adopted external WebView for tab \(tabId)", type: "WebViewManager")
+    }
+
     // Create a new WKWebView with proper configuration
     private func createWebView() -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -82,13 +90,15 @@ class WebViewManager: ObservableObject {
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.mediaTypesRequiringUserActionForPlayback = .video
 
-        // Create web view
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        applyStandardSetup(to: webView)
+        return webView
+    }
+
+    private func applyStandardSetup(to webView: WKWebView) {
         webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsLinkPreview = true
-
-        return webView
     }
 
     // Navigation methods that delegate to the active web view

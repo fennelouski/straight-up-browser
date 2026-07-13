@@ -22,7 +22,6 @@ struct WebView: NSViewRepresentable {
     @Binding var hasRenderedContent: Bool
 
     var webViewManager: WebViewManager?
-    var onPopupRequest: ((URL, WKWindowFeatures?) -> Void)?
     var tabManager: TabManager?
     var tabs: [Tab]?
     var activeTabId: UUID?
@@ -36,7 +35,6 @@ struct WebView: NSViewRepresentable {
          progressValue: Binding<Double>,
          hasRenderedContent: Binding<Bool>,
          webViewManager: WebViewManager?,
-         onPopupRequest: ((URL, WKWindowFeatures?) -> Void)?,
          tabManager: TabManager?,
          tabs: [Tab]?,
          activeTabId: UUID?,
@@ -49,7 +47,6 @@ struct WebView: NSViewRepresentable {
         self._progressValue = progressValue
         self._hasRenderedContent = hasRenderedContent
         self.webViewManager = webViewManager
-        self.onPopupRequest = onPopupRequest
         self.tabManager = tabManager
         self.tabs = tabs
         self.activeTabId = activeTabId
@@ -776,102 +773,71 @@ struct WebView: NSViewRepresentable {
             }
         }
 
+        // window.open() / target="_blank": hand WebKit a real WKWebView built from
+        // its configuration so window.opener works (OAuth popup flows), displayed
+        // as a new tab. Non-user-gesture popups are already blocked by
+        // javaScriptCanOpenWindowsAutomatically = false, so no custom heuristics.
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-            // Handle new window requests (like target="_blank")
-            guard let url = navigationAction.request.url else { return nil }
+            guard let tabManager = tabManager, let webViewManager = parent.webViewManager else { return nil }
 
-            // Implement popup blocking logic
-            let isPopup = self.isPopupAttempt(windowFeatures)
-            let isWhitelisted = self.isDomainWhitelisted(url)
+            // WebKit drives the load; the tab's URL/title land via the navigation
+            // delegate once the popup web view becomes the active subview.
+            let popupWebView = WKWebView(frame: .zero, configuration: configuration)
+            let newTab = tabManager.createNewTab()
+            webViewManager.adoptWebView(popupWebView, for: newTab.id)
+            return popupWebView
+        }
 
-            if isPopup && !isWhitelisted {
-                // Show popup blocker dialog to user
-                self.showPopupBlockerDialog(for: url, windowFeatures: windowFeatures) { shouldAllow in
-                    if shouldAllow {
-                        // User allowed the popup - open in new tab
-                        self.parent.onPopupRequest?(url, windowFeatures)
-                    }
-                    // If not allowed, do nothing (popup is blocked)
-                }
+        // MARK: - JS dialogs and file uploads
+
+        private func presentSheet(_ alert: NSAlert, over webView: WKWebView, completion: @escaping (NSApplication.ModalResponse) -> Void) {
+            if let window = webView.window {
+                alert.beginSheetModal(for: window, completionHandler: completion)
             } else {
-                // Allow the popup or redirect to new tab
-                self.parent.onPopupRequest?(url, windowFeatures)
+                completion(alert.runModal())
             }
-
-            return nil // Always return nil to prevent WebKit from creating its own window
         }
 
-        private func isPopupAttempt(_ windowFeatures: WKWindowFeatures) -> Bool {
-            // Analyze window features to determine if this is likely a popup/advertisement
-
-            // Check size - very small windows are likely popups
-            if let width = windowFeatures.width?.doubleValue, width < 400 { return true }
-            if let height = windowFeatures.height?.doubleValue, height < 300 { return true }
-
-            // Check for unusual positioning (negative coordinates or off-screen)
-            if let x = windowFeatures.x?.doubleValue, x < 0 { return true }
-            if let y = windowFeatures.y?.doubleValue, y < 0 { return true }
-
-            // Check for zero size (some popups specify 0,0)
-            if let width = windowFeatures.width?.doubleValue, width <= 0 { return true }
-            if let height = windowFeatures.height?.doubleValue, height <= 0 { return true }
-
-            // Check for extreme sizes that indicate ads
-            if let width = windowFeatures.width?.doubleValue, width > 2000 { return true }
-            if let height = windowFeatures.height?.doubleValue, height > 1500 { return true }
-
-            // Consider windows without standard features as suspicious
-            // Note: Some WKWindowFeatures properties may not be available in current WebKit
-
-            return false // Not detected as popup
-        }
-
-        private func isDomainWhitelisted(_ url: URL) -> Bool {
-            // Basic whitelist for trusted domains
-            let whitelistedDomains = [
-                "github.com",
-                "stackoverflow.com",
-                "developer.apple.com",
-                "docs.swift.org"
-            ]
-
-            if let host = url.host {
-                return whitelistedDomains.contains { host.contains($0) }
-            }
-            return false
-        }
-
-        private func showPopupBlockerDialog(for url: URL, windowFeatures: WKWindowFeatures?, completion: @escaping (Bool) -> Void) {
+        private func makeDialogAlert(message: String, frame: WKFrameInfo) -> NSAlert {
             let alert = NSAlert()
-            alert.messageText = "Popup Blocked"
-            alert.informativeText = "A popup window was blocked from \(url.host ?? "unknown site").\n\nURL: \(url.absoluteString)"
+            alert.messageText = frame.request.url?.host ?? "This page"
+            alert.informativeText = message
+            return alert
+        }
 
-            // Add window feature details if available
-            if let features = windowFeatures {
-                var details = "\n\nWindow details:"
-                if let width = features.width?.doubleValue {
-                    details += "\nWidth: \(Int(width))px"
-                }
-                if let height = features.height?.doubleValue {
-                    details += "\nHeight: \(Int(height))px"
-                }
-                if let x = features.x?.doubleValue {
-                    details += "\nPosition X: \(Int(x))"
-                }
-                if let y = features.y?.doubleValue {
-                    details += "\nPosition Y: \(Int(y))"
-                }
-                alert.informativeText += details
-            }
+        func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+            let alert = makeDialogAlert(message: message, frame: frame)
+            alert.addButton(withTitle: "OK")
+            presentSheet(alert, over: webView) { _ in completionHandler() }
+        }
 
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "Allow")
-            alert.addButton(withTitle: "Block")
+        func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+            let alert = makeDialogAlert(message: message, frame: frame)
+            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: "Cancel")
+            presentSheet(alert, over: webView) { completionHandler($0 == .alertFirstButtonReturn) }
+        }
 
-            // Run on main thread
-            DispatchQueue.main.async {
-                let response = alert.runModal()
-                completion(response == .alertFirstButtonReturn)
+        func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+            let alert = makeDialogAlert(message: prompt, frame: frame)
+            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: "Cancel")
+            let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+            input.stringValue = defaultText ?? ""
+            alert.accessoryView = input
+            alert.window.initialFirstResponder = input
+            presentSheet(alert, over: webView) { completionHandler($0 == .alertFirstButtonReturn ? input.stringValue : nil) }
+        }
+
+        func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = parameters.allowsDirectories
+            panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+            if let window = webView.window {
+                panel.beginSheetModal(for: window) { completionHandler($0 == .OK ? panel.urls : nil) }
+            } else {
+                completionHandler(panel.runModal() == .OK ? panel.urls : nil)
             }
         }
     }
