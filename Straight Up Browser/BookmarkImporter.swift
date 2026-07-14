@@ -8,68 +8,36 @@
 import Foundation
 import AppKit
 
+// Safari (needs manual HTML export) and Firefox (places.sqlite) are not
+// supported - only browsers we can actually import from are offered.
 enum BrowserType: String, CaseIterable {
-    case safari = "Safari"
     case chrome = "Google Chrome"
-    case firefox = "Firefox"
     case edge = "Microsoft Edge"
 
     var displayName: String {
         switch self {
-        case .safari: return "Safari"
         case .chrome: return "Google Chrome"
-        case .firefox: return "Mozilla Firefox"
         case .edge: return "Microsoft Edge"
         }
     }
 
     var bundleIdentifier: String {
         switch self {
-        case .safari: return "com.apple.Safari"
         case .chrome: return "com.google.Chrome"
-        case .firefox: return "org.mozilla.firefox"
         case .edge: return "com.microsoft.edgemac"
         }
     }
 
     var bookmarkFilePath: String? {
-        let fileManager = FileManager.default
         let homeDirectory = NSHomeDirectory()
-
+        let path: String
         switch self {
-        case .safari:
-            // Safari bookmarks require special access. We'll use AppleScript instead
-            // Return a dummy path that indicates Safari is available
-            return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) != nil ? "safari-script" : nil
-
         case .chrome:
-            let path = "\(homeDirectory)/Library/Application Support/Google/Chrome/Default/Bookmarks"
-            return fileManager.fileExists(atPath: path) ? path : nil
-
-        case .firefox:
-            // Firefox has profiles, we need to find the default profile
-            let profilesPath = "\(homeDirectory)/Library/Application Support/Firefox/Profiles"
-            if fileManager.fileExists(atPath: profilesPath) {
-                do {
-                    let profileDirs = try fileManager.contentsOfDirectory(atPath: profilesPath)
-                    for profileDir in profileDirs {
-                        if profileDir.hasSuffix(".default") || profileDir.hasSuffix(".default-release") {
-                            let bookmarkPath = "\(profilesPath)/\(profileDir)/places.sqlite"
-                            if fileManager.fileExists(atPath: bookmarkPath) {
-                                return bookmarkPath
-                            }
-                        }
-                    }
-                } catch {
-                    Logger.log("Error reading Firefox profiles: \(error)", type: "BookmarkImporter")
-                }
-            }
-            return nil
-
+            path = "\(homeDirectory)/Library/Application Support/Google/Chrome/Default/Bookmarks"
         case .edge:
-            let path = "\(homeDirectory)/Library/Application Support/Microsoft Edge/Default/Bookmarks"
-            return fileManager.fileExists(atPath: path) ? path : nil
+            path = "\(homeDirectory)/Library/Application Support/Microsoft Edge/Default/Bookmarks"
         }
+        return FileManager.default.fileExists(atPath: path) ? path : nil
     }
 }
 
@@ -102,29 +70,9 @@ class BookmarkImporter {
         }
 
         switch browser {
-        case .safari:
-            return importSafariBookmarks(from: filePath)
         case .chrome, .edge:
             return importChromeBookmarks(from: filePath)
-        case .firefox:
-            return importFirefoxBookmarks(from: filePath)
         }
-    }
-
-    private static func importSafariBookmarks(from filePath: String) -> [ImportedBookmark] {
-        let bookmarks: [ImportedBookmark] = []
-
-        // Direct access to Safari's bookmark file is restricted by macOS privacy policies
-        // We cannot access ~/Library/Safari/Bookmarks.plist without special entitlements
-        // or user permission. Safari also doesn't expose bookmarks via AppleScript.
-
-        // For now, return empty array with a note that Safari import requires manual export
-        Logger.log("Safari bookmark import requires manual export: File > Export Bookmarks... then import the HTML file", type: "BookmarkImporter")
-
-        // TODO: Add support for importing Safari's exported HTML bookmark files
-        // Safari can export bookmarks as HTML, which we could parse
-
-        return bookmarks
     }
 
     private static func importChromeBookmarks(from filePath: String) -> [ImportedBookmark] {
@@ -166,12 +114,5 @@ class BookmarkImporter {
                 parseChromeBookmarks(child, bookmarks: &bookmarks)
             }
         }
-    }
-
-    private static func importFirefoxBookmarks(from filePath: String) -> [ImportedBookmark] {
-        // Firefox uses SQLite database, which is more complex to parse
-        // For now, we'll return an empty array and note that Firefox import requires additional setup
-        Logger.log("Firefox bookmark import requires SQLite parsing which is not implemented yet", type: "BookmarkImporter")
-        return []
     }
 }

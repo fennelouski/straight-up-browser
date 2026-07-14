@@ -1272,11 +1272,7 @@ struct ContentView: View {
         guard !importedBookmarks.isEmpty else {
             let alert = NSAlert()
             alert.messageText = "No Bookmarks Found"
-            if browser == .safari {
-                alert.informativeText = "Safari bookmarks cannot be imported automatically due to macOS privacy restrictions. To import Safari bookmarks:\n\n1. Open Safari\n2. Go to File > Export Bookmarks...\n3. Save the bookmarks as an HTML file\n4. Use a bookmark import tool that supports HTML files"
-            } else {
-                alert.informativeText = "No bookmarks were found in \(browser.displayName)."
-            }
+            alert.informativeText = "No bookmarks were found in \(browser.displayName)."
             alert.alertStyle = .informational
             alert.addButton(withTitle: "OK")
             alert.runModal()
