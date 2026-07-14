@@ -46,12 +46,6 @@ struct SettingsWindow: View {
                     Label("Advanced", systemImage: "wrench.fill")
                 }
                 .tag(4)
-
-            ExtensionsSettingsView()
-                .tabItem {
-                    Label("Extensions", systemImage: "puzzlepiece.fill")
-                }
-                .tag(5)
         }
         .frame(width: 600, height: 400)
         .padding()
@@ -61,8 +55,6 @@ struct SettingsWindow: View {
 
 // MARK: - General Settings
 struct GeneralSettingsView: View {
-    @AppStorage("homePage") private var homePage = "https://www.google.com"
-    @AppStorage("newTabPage") private var newTabPage = "https://www.google.com"
     @AppStorage("searchEngine") private var searchEngine = "Google"
 
     let searchEngines = ["Google", "DuckDuckGo", "Bing", "Yahoo"]
@@ -72,23 +64,6 @@ struct GeneralSettingsView: View {
             Text("General")
                 .font(.title)
                 .fontWeight(.bold)
-
-            GroupBox(label: Text("Startup")) {
-                VStack(alignment: .leading, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Home page")
-                        TextField("Home page URL", text: $homePage)
-                            .textFieldStyle(.roundedBorder)
-                    }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("New tab page")
-                        TextField("New tab page URL", text: $newTabPage)
-                            .textFieldStyle(.roundedBorder)
-                    }
-                }
-                .padding()
-            }
 
             GroupBox(label: Text("Search")) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -113,10 +88,6 @@ struct GeneralSettingsView: View {
 
 // MARK: - Privacy Settings
 struct PrivacySettingsView: View {
-    @AppStorage("blockCookies") private var blockCookies = false
-    @AppStorage("blockTracking") private var blockTracking = true
-    @AppStorage("doNotTrack") private var doNotTrack = true
-
     @State private var showClearDataDialog = false
     @State private var clearHistory = true
     @State private var clearCookies = true
@@ -130,17 +101,6 @@ struct PrivacySettingsView: View {
             Text("Privacy")
                 .font(.title)
                 .fontWeight(.bold)
-
-            GroupBox(label: Text("Tracking & Cookies")) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle("Block third-party cookies", isOn: $blockCookies)
-
-                    Toggle("Block tracking scripts", isOn: $blockTracking)
-
-                    Toggle("Send Do Not Track header", isOn: $doNotTrack)
-                }
-                .padding()
-            }
 
             GroupBox(label: Text("Data Management")) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -371,7 +331,6 @@ struct CookieManagerDialog: View {
 // MARK: - Security Settings
 struct SecuritySettingsView: View {
     @AppStorage("sslStrictMode") private var sslStrictMode = true
-    @AppStorage("mixedContentBlock") private var mixedContentBlock = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -381,22 +340,10 @@ struct SecuritySettingsView: View {
 
             GroupBox(label: Text("SSL/TLS")) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Toggle("Use strict SSL mode", isOn: $sslStrictMode)
-
-                    Toggle("Block mixed content", isOn: $mixedContentBlock)
-                }
-                .padding()
-            }
-
-            GroupBox(label: Text("Certificates")) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Button("Manage certificates...") {
-                        // TODO: Implement certificate management
-                    }
-
-                    Button("View certificate exceptions...") {
-                        // TODO: Implement certificate exceptions
-                    }
+                    Toggle("Refuse invalid certificates (strict SSL)", isOn: $sslStrictMode)
+                    Text("When off, you'll be asked whether to proceed on certificate errors.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 .padding()
             }
@@ -409,16 +356,10 @@ struct SecuritySettingsView: View {
 
 // MARK: - Appearance Settings
 struct AppearanceSettingsView: View {
-    @State private var theme = SettingsManager.shared.theme {
-        didSet {
-            SettingsManager.shared.theme = theme
-        }
-    }
-    @AppStorage("fontSize") private var fontSize = 14.0
-    @AppStorage("tabLayout") private var tabLayout = "Horizontal"
+    // Same "theme" defaults key SettingsManager reads - one store, no desync
+    @AppStorage("theme") private var theme = "System"
 
     let themes = ["Light", "Dark", "System"]
-    let tabLayouts = ["Horizontal", "Vertical"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -438,26 +379,6 @@ struct AppearanceSettingsView: View {
                 .padding()
             }
 
-            GroupBox(label: Text("Layout")) {
-                VStack(alignment: .leading, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Font size: \(Int(fontSize))pt")
-                        Slider(value: $fontSize, in: 10...24, step: 1)
-                    }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Tab layout")
-                        Picker("Tab Layout", selection: $tabLayout) {
-                            ForEach(tabLayouts, id: \.self) { layout in
-                                Text(layout)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                }
-                .padding()
-            }
-
             Spacer()
         }
         .padding()
@@ -467,7 +388,6 @@ struct AppearanceSettingsView: View {
 // MARK: - Advanced Settings
 struct AdvancedSettingsView: View {
     @AppStorage("javaScriptEnabled") private var javaScriptEnabled = true
-    @AppStorage("pluginsEnabled") private var pluginsEnabled = true
     @AppStorage("downloadsFolder") private var downloadsFolder = ""
 
     var body: some View {
@@ -479,8 +399,9 @@ struct AdvancedSettingsView: View {
             GroupBox(label: Text("Content")) {
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle("Enable JavaScript", isOn: $javaScriptEnabled)
-
-                    Toggle("Enable plugins", isOn: $pluginsEnabled)
+                    Text("Applies to newly loaded pages.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 .padding()
             }
@@ -508,33 +429,6 @@ struct AdvancedSettingsView: View {
                 }
                 .padding()
             }
-
-            Spacer()
-        }
-        .padding()
-    }
-}
-
-// MARK: - Extensions Settings
-struct ExtensionsSettingsView: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("Extensions")
-                .font(.title)
-                .fontWeight(.bold)
-
-            VStack(spacing: 12) {
-                Text("No extensions installed")
-                    .foregroundColor(.secondary)
-
-                Button("Get extensions...") {
-                    if let url = URL(string: "https://chrome.google.com/webstore") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding()
 
             Spacer()
         }

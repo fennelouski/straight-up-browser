@@ -123,8 +123,6 @@ struct WebView: NSViewRepresentable {
         var tabManager: TabManager?
         var tabs: [Tab]?
         private var downloadDestinations: [WKDownload: URL] = [:]
-        private var currentPageIsHTTPS = false
-        private var mixedContentWarningsShown = Set<String>()
         var lastRequestedURL: URL?
         var lastSuccessfullyLoadedURL: URL?
 
@@ -354,23 +352,21 @@ struct WebView: NSViewRepresentable {
             handleAuthenticationChallenge(challenge, completionHandler: completionHandler)
         }
 
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, preferences: WKWebpagePreferences, decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
             // <a download> links
             if navigationAction.shouldPerformDownload {
-                decisionHandler(.download)
+                decisionHandler(.download, preferences)
                 return
             }
 
-            // Track if current page is HTTPS for mixed content detection
-            if let url = navigationAction.request.url {
-                currentPageIsHTTPS = (url.scheme == "https")
-                if currentPageIsHTTPS && navigationAction.navigationType == .other {
-                    // Reset warnings for new HTTPS page
-                    mixedContentWarningsShown.removeAll()
-                }
-            }
+            // Settings toggle; unset means enabled. Per-navigation is the path
+            // WebKit actually honors - defaultWebpagePreferences on the
+            // configuration doesn't reliably stick.
+            preferences.allowsContentJavaScript =
+                UserDefaults.standard.object(forKey: "javaScriptEnabled") == nil
+                || UserDefaults.standard.bool(forKey: "javaScriptEnabled")
 
-            decisionHandler(.allow)
+            decisionHandler(.allow, preferences)
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
@@ -378,13 +374,6 @@ struct WebView: NSViewRepresentable {
             if !navigationResponse.canShowMIMEType {
                 decisionHandler(.download)
                 return
-            }
-
-            // Check for mixed content warnings
-            if let response = navigationResponse.response as? HTTPURLResponse,
-               let url = response.url {
-
-                checkForMixedContent(url)
             }
 
             decisionHandler(.allow)
@@ -454,40 +443,6 @@ struct WebView: NSViewRepresentable {
             Logger.log("Download failed: \(error.localizedDescription)", type: "WebView")
         }
 
-        private func checkForMixedContent(_ resourceURL: URL) {
-            // Only warn about mixed content on HTTPS pages
-            guard currentPageIsHTTPS else { return }
-
-            // Check if this resource is loaded over HTTP (insecure)
-            if resourceURL.scheme == "http" {
-                let warningKey = resourceURL.absoluteString
-
-                // Only show each warning once per page load
-                if !mixedContentWarningsShown.contains(warningKey) {
-                    mixedContentWarningsShown.insert(warningKey)
-                    showMixedContentWarning(for: resourceURL)
-                }
-            }
-        }
-
-        private func showMixedContentWarning(for resourceURL: URL) {
-            let alert = NSAlert()
-            alert.messageText = "Mixed Content Warning"
-            alert.informativeText = "This secure HTTPS page is loading an insecure HTTP resource:\n\n\(resourceURL.absoluteString)\n\nThis may expose your connection to eavesdropping or man-in-the-middle attacks."
-
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "Continue")
-            alert.showsSuppressionButton = true
-            alert.suppressionButton?.title = "Don't show this warning again for this site"
-
-            DispatchQueue.main.async {
-                let response = alert.runModal()
-                // Note: In a production app, you might want to store user preferences
-                // about suppressing mixed content warnings for specific sites
-                _ = response // Use response if needed for future enhancement
-            }
-        }
-
         private func handleAuthenticationChallenge(_ challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
             if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
                 // SSL/TLS certificate challenge
@@ -516,6 +471,14 @@ struct WebView: NSViewRepresentable {
                         let credential = URLCredential(trust: serverTrust)
                         completionHandler(.useCredential, credential)
                     default:
+                        // Strict SSL (settings toggle, default on): refuse invalid certs outright
+                        let strict = UserDefaults.standard.object(forKey: "sslStrictMode") == nil
+                            || UserDefaults.standard.bool(forKey: "sslStrictMode")
+                        if strict {
+                            completionHandler(.cancelAuthenticationChallenge, nil)
+                            return
+                        }
+
                         // Certificate is invalid - show warning but allow user to proceed
                         showSSLErrorDialog(for: host, trustResult: trustResult) { shouldProceed in
                             if shouldProceed {
