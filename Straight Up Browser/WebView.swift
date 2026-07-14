@@ -127,7 +127,6 @@ struct WebView: NSViewRepresentable {
         private var mixedContentWarningsShown = Set<String>()
         var lastRequestedURL: URL?
         var lastSuccessfullyLoadedURL: URL?
-        var lastViewSize: NSSize?
 
         // Redirect loop detection
         private var navigationHistory: [(url: URL, timestamp: Date)] = []
@@ -242,7 +241,7 @@ struct WebView: NSViewRepresentable {
         }
 
         private func loadFavicon(for webView: WKWebView) {
-            // JavaScript to find the favicon URL - check multiple possible rel values
+            // Standard source: <link rel="icon"...>, else /favicon.ico
             let faviconScript = """
             (function() {
                 var links = document.getElementsByTagName('link');
@@ -260,277 +259,41 @@ struct WebView: NSViewRepresentable {
                     }
                 }
 
-                // Fallback to default favicon location
                 return window.location.origin + '/favicon.ico';
             })();
             """
 
-            webView.evaluateJavaScript(faviconScript) { [weak self] result, error in
+            webView.evaluateJavaScript(faviconScript) { [weak self] result, _ in
                 guard let self = self else { return }
 
                 if let faviconURLString = result as? String,
-                   let faviconURL = URL(string: faviconURLString),
-                   let baseURL = webView.url {
-                    // Resolve relative URLs
-                    let resolvedURL = faviconURL.scheme != nil ? faviconURL : URL(string: faviconURLString, relativeTo: baseURL)?.absoluteURL
-
-                    Logger.log("Favicon debug: Found favicon URL: \(resolvedURL?.absoluteString ?? "nil") for page: \(baseURL.absoluteString)", type: "WebView")
-
-                    if let finalURL = resolvedURL {
-                        self.downloadFavicon(from: finalURL, webView: webView)
-                    }
+                   let baseURL = webView.url,
+                   let faviconURL = URL(string: faviconURLString, relativeTo: baseURL)?.absoluteURL {
+                    self.downloadFavicon(from: faviconURL, webView: webView)
                 } else {
-                    Logger.log("Favicon debug: No favicon URL found for page: \(webView.url?.absoluteString ?? "nil"), trying alternative images", type: "WebView")
-                    // Try to find alternative images as fallback - dispatch to main thread
-                    DispatchQueue.main.async {
-                        self.findAlternativeImage(for: webView)
-                    }
-                }
-            }
-        }
-
-        private func downloadFavicon(from url: URL, webView: WKWebView? = nil) {
-            Logger.log("Favicon debug: Attempting to download favicon from: \(url.absoluteString)", type: "WebView")
-
-            // First check if favicon is already cached
-            if let cachedData = FaviconCache.shared.getFavicon(for: url) {
-                Logger.log("Favicon debug: Found cached favicon for: \(url.absoluteString), size: \(cachedData.count) bytes", type: "WebView")
-                // Use cached favicon
-                DispatchQueue.main.async {
-                    if let tabManager = self.tabManager,
-                       let tabs = self.tabs,
-                       let activeTab = tabManager.getActiveTab(from: tabs) {
-                        activeTab.favicon = cachedData
-                    }
-                }
-                return
-            }
-
-            Logger.log("Favicon debug: No cached favicon found, downloading from: \(url.absoluteString)", type: "WebView")
-
-            // Download favicon if not in cache
-            URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
-                guard let self = self else { return }
-
-                Logger.log("Favicon debug: Download completed for \(url.absoluteString) - data size: \(data?.count ?? 0), error: \(error?.localizedDescription ?? "none")", type: "WebView")
-
-                if let data = data,
-                   let httpResponse = response as? HTTPURLResponse {
-                    Logger.log("Favicon debug: HTTP status: \(httpResponse.statusCode), content type: \(httpResponse.allHeaderFields["Content-Type"] ?? "unknown")", type: "WebView")
-
-                    if httpResponse.statusCode == 200, data.count > 0 {
-                        Logger.log("Favicon debug: Successfully downloaded favicon, caching and setting for tab", type: "WebView")
-
-                        // Validate that it's actually an image
-                        if let _ = NSImage(data: data) {
-                            Logger.log("Favicon debug: Valid image data, proceeding with caching", type: "WebView")
-
-                            // Cache the favicon
-                            FaviconCache.shared.setFavicon(data, for: url)
-
-                            // Update the tab's favicon on the main thread
-                            DispatchQueue.main.async {
-                                // Find the active tab and update its favicon
-                                if let tabManager = self.tabManager,
-                                   let tabs = self.tabs,
-                                   let activeTab = tabManager.getActiveTab(from: tabs) {
-                                    activeTab.favicon = data
-                                }
-                            }
-                        } else {
-                            Logger.log("Favicon debug: Downloaded data is not a valid image", type: "WebView")
-                            // Try alternative images if this was the favicon attempt
-                            if webView != nil {
-                                DispatchQueue.main.async {
-                                    self.findAlternativeImage(for: webView!)
-                                }
-                            }
-                        }
-                    } else {
-                        Logger.log("Favicon debug: Failed to download favicon - status: \(httpResponse.statusCode), data size: \(data.count)", type: "WebView")
-                        // Try alternative images if this was the favicon attempt
-                        if webView != nil {
-                            DispatchQueue.main.async {
-                                self.findAlternativeImage(for: webView!)
-                            }
-                        }
-                    }
-                } else {
-                    Logger.log("Favicon debug: No response data received", type: "WebView")
-                    // Try alternative images if this was the favicon attempt
-                    if webView != nil {
-                        DispatchQueue.main.async {
-                            self.findAlternativeImage(for: webView!)
-                        }
-                    }
-                }
-            }.resume()
-        }
-
-        private func findAlternativeImage(for webView: WKWebView) {
-            Logger.log("Favicon debug: Looking for alternative images for page: \(webView.url?.absoluteString ?? "unknown")", type: "WebView")
-
-            // JavaScript to find alternative images from meta tags and header
-            let alternativeImageScript = """
-            (function() {
-                // Check meta tags for Open Graph, Twitter, and other social media images
-                var metaTags = document.getElementsByTagName('meta');
-                for (var i = 0; i < metaTags.length; i++) {
-                    var meta = metaTags[i];
-                    var property = meta.getAttribute('property') || meta.getAttribute('name');
-                    var content = meta.getAttribute('content');
-
-                    if (property && content) {
-                        property = property.toLowerCase();
-                        // Open Graph image
-                        if (property === 'og:image' || property === 'og:image:secure_url') {
-                            return content;
-                        }
-                        // Twitter image
-                        if (property === 'twitter:image' || property === 'twitter:image:src') {
-                            return content;
-                        }
-                    }
-                }
-
-                // Look for structured data (JSON-LD)
-                var scripts = document.getElementsByTagName('script');
-                for (var i = 0; i < scripts.length; i++) {
-                    var script = scripts[i];
-                    if (script.type === 'application/ld+json') {
-                        try {
-                            var data = JSON.parse(script.textContent || script.innerText);
-                            if (data.logo) {
-                                if (typeof data.logo === 'string') {
-                                    return data.logo;
-                                } else if (data.logo.url) {
-                                    return data.logo.url;
-                                }
-                            }
-                            if (data.image) {
-                                if (typeof data.image === 'string') {
-                                    return data.image;
-                                } else if (Array.isArray(data.image) && data.image.length > 0) {
-                                    return data.image[0];
-                                }
-                            }
-                        } catch (e) {
-                            // Ignore JSON parsing errors
-                        }
-                    }
-                }
-
-                // Look for common logo selectors in header
-                var selectors = [
-                    'header img[src*="logo"]',
-                    'header .logo img',
-                    '.site-header img[src*="logo"]',
-                    '.navbar-brand img',
-                    '.brand img',
-                    'h1 img',
-                    '.logo img',
-                    'header img:first-child',
-                    '.site-logo img'
-                ];
-
-                for (var i = 0; i < selectors.length; i++) {
-                    var element = document.querySelector(selectors[i]);
-                    if (element && element.src) {
-                        return element.src;
-                    }
-                }
-
-                // Last resort: look for any reasonably sized image in the header
-                var headerImages = document.querySelectorAll('header img, .header img, .site-header img');
-                for (var i = 0; i < headerImages.length; i++) {
-                    var img = headerImages[i];
-                    if (img.src && img.naturalWidth >= 32 && img.naturalHeight >= 32) {
-                        return img.src;
-                    }
-                }
-
-                return null;
-            })();
-            """
-
-            webView.evaluateJavaScript(alternativeImageScript) { [weak self] result, error in
-                guard let self = self else { return }
-
-                Logger.log("Favicon debug: Alternative image search result: \(result ?? "nil"), error: \(error?.localizedDescription ?? "none")", type: "WebView")
-
-                if let imageURLString = result as? String,
-                   let imageURL = URL(string: imageURLString),
-                   let baseURL = webView.url {
-                    // Resolve relative URLs
-                    let resolvedURL = imageURL.scheme != nil ? imageURL : URL(string: imageURLString, relativeTo: baseURL)?.absoluteURL
-
-                    Logger.log("Favicon debug: Found alternative image URL: \(resolvedURL?.absoluteString ?? "nil")", type: "WebView")
-
-                    if let finalURL = resolvedURL {
-                        self.downloadAndResizeAlternativeImage(from: finalURL, for: webView)
-                    }
-                } else {
-                    Logger.log("Favicon debug: No alternative image found, trying domain initial", type: "WebView")
-                    // Final fallback: generate domain initial
                     self.generateDomainInitial(for: webView)
                 }
             }
         }
 
-        private func downloadAndResizeAlternativeImage(from url: URL, for webView: WKWebView) {
-            Logger.log("Favicon debug: Downloading alternative image from: \(url.absoluteString)", type: "WebView")
-
-            // Check if we already have this alternative image cached
-            // Use a safer approach for the cache key to avoid URL parsing issues
-            let cacheKey = "alt_\(url.absoluteString)".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "alt_\(url.absoluteString.hashValue)"
-            if let cacheURL = URL(string: cacheKey), let cachedData = FaviconCache.shared.getFavicon(for: cacheURL) {
-                Logger.log("Favicon debug: Found cached alternative image, size: \(cachedData.count) bytes", type: "WebView")
-                DispatchQueue.main.async {
-                    if let tabManager = self.tabManager,
-                       let tabs = self.tabs,
-                       let activeTab = tabManager.getActiveTab(from: tabs) {
-                        activeTab.favicon = cachedData
-                    }
-                }
+        // ponytail: no OG/JSON-LD/header-logo scraping tiers; a declared icon,
+        // favicon.ico, or the generated domain initial covers real sites
+        private func downloadFavicon(from url: URL, webView: WKWebView) {
+            if let cachedData = FaviconCache.shared.getFavicon(for: url) {
+                setActiveTabFavicon(cachedData)
                 return
             }
 
-            URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+            URLSession.shared.dataTask(with: url) { [weak self] data, response, _ in
                 guard let self = self else { return }
-
-                Logger.log("Favicon debug: Alternative image download completed - data size: \(data?.count ?? 0), error: \(error?.localizedDescription ?? "none")", type: "WebView")
 
                 if let data = data,
                    let httpResponse = response as? HTTPURLResponse,
-                   httpResponse.statusCode == 200,
-                   data.count > 0,
-                   let originalImage = NSImage(data: data) {
-
-                    Logger.log("Favicon debug: Successfully downloaded alternative image, resizing for favicon use", type: "WebView")
-
-                    // Resize the image to favicon size (16x16 for tabs, but we'll keep it at 32x32 for better quality)
-                    let resizedData = self.resizeImage(originalImage, to: NSSize(width: 32, height: 32))
-
-                    if let resizedData = resizedData {
-                        // Cache the resized alternative image with a special key
-                        if let cacheURL = URL(string: cacheKey) {
-                            FaviconCache.shared.setFavicon(resizedData, for: cacheURL)
-                        }
-
-                        // Update the tab's favicon on the main thread
-                        DispatchQueue.main.async {
-                            if let tabManager = self.tabManager,
-                               let tabs = self.tabs,
-                               let activeTab = tabManager.getActiveTab(from: tabs) {
-                                activeTab.favicon = resizedData
-                            }
-                        }
-                    } else {
-                        Logger.log("Favicon debug: Failed to resize alternative image", type: "WebView")
-                    }
+                   httpResponse.statusCode == 200, data.count > 0,
+                   NSImage(data: data) != nil {
+                    FaviconCache.shared.setFavicon(data, for: url)
+                    self.setActiveTabFavicon(data)
                 } else {
-                    Logger.log("Favicon debug: Failed to download or validate alternative image", type: "WebView")
-                    // Final fallback: generate domain initial - dispatch to main thread
                     DispatchQueue.main.async {
                         self.generateDomainInitial(for: webView)
                     }
@@ -538,58 +301,21 @@ struct WebView: NSViewRepresentable {
             }.resume()
         }
 
-        private func resizeImage(_ image: NSImage, to targetSize: NSSize) -> Data? {
-            // Create a new image with the target size
-            let newImage = NSImage(size: targetSize)
-
-            newImage.lockFocus()
-
-            // Calculate the aspect ratio and draw the image centered
-            let imageSize = image.size
-            let aspectRatio = min(targetSize.width / imageSize.width, targetSize.height / imageSize.height)
-            let scaledSize = NSSize(width: imageSize.width * aspectRatio, height: imageSize.height * aspectRatio)
-            let drawRect = NSRect(
-                x: (targetSize.width - scaledSize.width) / 2,
-                y: (targetSize.height - scaledSize.height) / 2,
-                width: scaledSize.width,
-                height: scaledSize.height
-            )
-
-            image.draw(in: drawRect, from: NSRect(origin: .zero, size: imageSize), operation: .copy, fraction: 1.0)
-
-            newImage.unlockFocus()
-
-            // Convert to PNG data
-            if let tiffData = newImage.tiffRepresentation,
-               let bitmapImageRep = NSBitmapImageRep(data: tiffData) {
-                return bitmapImageRep.representation(using: .png, properties: [:])
+        private func setActiveTabFavicon(_ data: Data) {
+            DispatchQueue.main.async {
+                if let tabManager = self.tabManager,
+                   let tabs = self.tabs,
+                   let activeTab = tabManager.getActiveTab(from: tabs) {
+                    activeTab.favicon = data
+                }
             }
-
-            return nil
         }
 
         private func generateDomainInitial(for webView: WKWebView) {
-            guard let url = webView.url, let domain = url.host else {
-                Logger.log("Favicon debug: Cannot generate domain initial - no URL or host", type: "WebView")
-                return
-            }
+            guard let url = webView.url, let domain = url.host else { return }
 
-            Logger.log("Favicon debug: Generating domain initial for: \(domain)", type: "WebView")
-
-            // Generate the initial image
             if let initialImageData = DomainInitialsGenerator.shared.generateInitialImage(for: domain) {
-                Logger.log("Favicon debug: Successfully generated domain initial, size: \(initialImageData.count) bytes", type: "WebView")
-
-                // Update the tab's favicon on the main thread
-                DispatchQueue.main.async {
-                    if let tabManager = self.tabManager,
-                       let tabs = self.tabs,
-                       let activeTab = tabManager.getActiveTab(from: tabs) {
-                        activeTab.favicon = initialImageData
-                    }
-                }
-            } else {
-                Logger.log("Favicon debug: Failed to generate domain initial", type: "WebView")
+                setActiveTabFavicon(initialImageData)
             }
         }
 
@@ -971,14 +697,6 @@ class WebViewContainer: NSView {
         self.wantsLayer = true
         self.layer?.backgroundColor = NSColor.clear.cgColor
         self.layer?.masksToBounds = true // Ensure subviews are clipped to bounds
-
-        // Add observer for frame changes to trigger responsive layout
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(webViewFrameDidChange),
-            name: NSView.frameDidChangeNotification,
-            object: self
-        )
     }
 
     required init?(coder: NSCoder) {
@@ -1064,35 +782,6 @@ class WebViewContainer: NSView {
             if let webView = subview as? WKWebView {
                 webView.frame = self.bounds
             }
-        }
-    }
-
-    @objc func webViewFrameDidChange(_ notification: Notification) {
-        // Trigger responsive layout on the active web view
-        if let activeWebView = activeWebView {
-            triggerResponsiveLayout(in: activeWebView)
-        }
-    }
-
-    private func triggerResponsiveLayout(in webView: WKWebView) {
-        // Trigger viewport resize event to ensure responsive design updates
-        let responsiveScript = """
-        // Trigger resize event for responsive design
-        window.dispatchEvent(new Event('resize'));
-
-        // Also trigger orientation change if viewport API is available
-        if (window.visualViewport) {
-            window.visualViewport.dispatchEvent(new Event('resize'));
-        }
-
-        // Force layout recalculation for CSS media queries
-        document.body.style.display = 'none';
-        document.body.offsetHeight; // Trigger reflow
-        document.body.style.display = '';
-        """
-
-        webView.evaluateJavaScript(responsiveScript) { _, _ in
-            // Layout triggered successfully
         }
     }
 

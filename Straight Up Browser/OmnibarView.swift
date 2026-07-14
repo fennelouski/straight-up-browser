@@ -149,13 +149,16 @@ struct OmnibarView: View {
     @State private var showSuggestions: Bool = false
     @State private var shouldFocusTextField: Bool = false
 
-    // Get all unique URLs from browsing history across all tabs
-    private var allHistoryURLs: [URL] {
+    // All unique history URLs, computed once when the omnibar opens - not per
+    // keystroke, which scanned every tab's full history on each character
+    @State private var allHistoryURLs: [URL] = []
+
+    private func loadHistoryURLs() {
         var urls = Set<URL>()
         for tab in tabs {
             urls.formUnion(tab.history)
         }
-        return Array(urls)
+        allHistoryURLs = Array(urls)
     }
 
     // Get bookmark URLs
@@ -337,6 +340,7 @@ struct OmnibarView: View {
         .onAppear {
             inputText = urlString
             shouldFocusTextField = true
+            loadHistoryURLs()
         }
     }
 
