@@ -344,6 +344,23 @@ struct WebView: NSViewRepresentable {
                 DispatchQueue.main.async {
                     self.parent.progressValue = webView.estimatedProgress
                 }
+            } else if keyPath == #keyPath(WKWebView.url), let webView = object as? WKWebView {
+                // The page changed its own URL (pushState/replaceState/hash) -
+                // no delegate callback fires for these. Sync the tab, or the
+                // next view update sees tab != webview and re-loads the stale
+                // URL: the "page randomly reloads a few seconds after loading"
+                // bug. Deliberately leaves lastSuccessfullyLoadedURL alone -
+                // the download path needs it pointing at a real page.
+                guard let newURL = webView.url else { return }
+                DispatchQueue.main.async {
+                    if self.isActiveWebView(webView) {
+                        self.lastRequestedURL = newURL
+                    }
+                    if let tab = self.tab(for: webView),
+                       Tab.normalizeURLForComparison(tab.url) != Tab.normalizeURLForComparison(newURL) {
+                        tab.url = newURL
+                    }
+                }
             }
         }
 
@@ -755,6 +772,12 @@ class WebViewContainer: NSView {
                 // Observe real load progress; removed in willRemoveSubview
                 webView.addObserver(self, forKeyPath: "estimatedProgress", options: .new, context: nil)
 
+                // Observe the page rewriting its own URL (history.pushState/
+                // replaceState, hash jumps) - none of those fire a navigation
+                // delegate callback, so this is the only signal. The Obj-C
+                // keypath is "URL", not "url" - #keyPath gets it right.
+                webView.addObserver(self, forKeyPath: #keyPath(WKWebView.url), options: .new, context: nil)
+
                 // Add to container
                 self.addSubview(webView)
                 Logger.log("WebViewContainer: added new WebView for tab \(newTabId)", type: "WebView")
@@ -799,14 +822,15 @@ class WebViewContainer: NSView {
     override func willRemoveSubview(_ subview: NSView) {
         if let webView = subview as? WKWebView {
             webView.removeObserver(self, forKeyPath: "estimatedProgress")
+            webView.removeObserver(self, forKeyPath: #keyPath(WKWebView.url))
             visibleWebViews.remove(webView)
         }
         super.willRemoveSubview(subview)
     }
 
-    // Forward KVO changes to the coordinator for the estimatedProgress property
+    // Forward KVO changes to the coordinator
     override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-        if keyPath == "estimatedProgress", object is WKWebView {
+        if keyPath == "estimatedProgress" || keyPath == #keyPath(WKWebView.url), object is WKWebView {
             coordinator?.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
         } else {
             super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
