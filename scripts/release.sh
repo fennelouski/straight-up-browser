@@ -56,6 +56,13 @@ DMG="$BUILD/Internet.dmg"
 mkdir -p "$STAGE"
 cp -R "$BUILD/export/Internet.app" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
+
+# Notarize and staple the app itself before it goes into the DMG, so a
+# first launch works offline; the DMG gets its own ticket below.
+ditto -c -k --keepParent "$STAGE/Internet.app" "$BUILD/Internet.zip"
+xcrun notarytool submit "$BUILD/Internet.zip" --keychain-profile "$PROFILE" --wait
+xcrun stapler staple "$STAGE/Internet.app"
+
 hdiutil create -volname "Internet" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 
 codesign --force --sign "Developer ID Application" "$DMG"
