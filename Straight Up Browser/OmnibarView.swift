@@ -236,7 +236,7 @@ struct OmnibarView: View {
 
                 OmnibarTextField(
                     text: $inputText,
-                    placeholder: "Search or enter address",
+                    placeholder: String(localized: "Search or enter address"),
                     autoSelectAll: true,
                     shouldFocus: shouldFocusTextField,
                     onArrowUp: {

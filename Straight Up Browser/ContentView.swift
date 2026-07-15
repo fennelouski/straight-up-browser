@@ -188,6 +188,9 @@ struct ContentView: View {
     // Show progress as a ring around the favicon in the tab bar
     @AppStorage("progressFaviconRing") private var progressFaviconRing = false
 
+    // Memory saving: release background tabs from RAM under memory pressure
+    @AppStorage("memorySaverEnabled") private var memorySaverEnabled = false
+
     // Hold-Cmd+Q-to-quit progress (0 = hidden)
     @State private var quitHoldProgress: Double = 0
 
@@ -201,6 +204,53 @@ struct ContentView: View {
     init() {
         // CLI is now initialized lazily when first used
         _tabManager = StateObject(wrappedValue: TabManager())
+    }
+
+    // MARK: - Memory pressure
+
+    private func handleMemoryPressure(critical: Bool) {
+        guard memorySaverEnabled else {
+            maybeNudgeMemorySaver()
+            return
+        }
+        let activeId = tabManager.selectedTabId
+        for tab in tabs where tab.id != activeId && Self.shouldUnload(tab.memoryPolicy, critical: critical) {
+            webViewManager?.unloadWebView(for: tab.id)
+        }
+    }
+
+    // ponytail: macOS only exposes warning/critical, so "always" and "whenNeeded"
+    // both release at warning; "lastResort" waits for critical; "never" never.
+    static func shouldUnload(_ policy: MemoryPolicy, critical: Bool) -> Bool {
+        switch policy {
+        case .never: return false
+        case .lastResort: return critical
+        case .always, .whenNeeded: return true
+        }
+    }
+
+    // At most once a week, when memory is tight and the feature is off, offer to enable it.
+    private func maybeNudgeMemorySaver() {
+        let key = "memorySaverPromptLastShown"
+        let last = UserDefaults.standard.object(forKey: key) as? Date ?? .distantPast
+        guard Date().timeIntervalSince(last) > 7 * 24 * 3600 else { return }
+        UserDefaults.standard.set(Date(), forKey: key)
+
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Running low on memory?")
+        alert.informativeText = String(localized: "Internet can free up RAM by releasing background tabs you're not using and reloading them instantly when you return. You choose which tabs stay live. Turn on Memory Saving?")
+        alert.addButton(withTitle: String(localized: "Enable Memory Saving"))
+        alert.addButton(withTitle: String(localized: "Not Now"))
+        let handle: (NSApplication.ModalResponse) -> Void = { response in
+            if response == .alertFirstButtonReturn {
+                UserDefaults.standard.set(true, forKey: "memorySaverEnabled")
+            }
+        }
+        if let window = webViewManager?.activeWebView?.window {
+            alert.beginSheetModal(for: window, completionHandler: handle)
+        } else {
+            handle(alert.runModal())
+        }
     }
 
 
@@ -576,7 +626,7 @@ struct ContentView: View {
                         HStack(spacing: 4) {
                             OmnibarTextField(
                                 text: $findText,
-                                placeholder: "Find in page",
+                                placeholder: String(localized: "Find in page"),
                                 shouldFocus: true,
                                 onCommit: { performFind() },
                                 onCancel: {
@@ -895,16 +945,16 @@ struct ContentView: View {
                             VStack(alignment: .leading, spacing: 16) {
                                 ForEach(column, id: \.0) { title, shortcuts in
                                     VStack(alignment: .leading, spacing: 5) {
-                                        Text(title)
+                                        Text(title.localized)
                                             .font(.system(size: 11, weight: .semibold))
                                             .foregroundStyle(.secondary)
                                             .textCase(.uppercase)
                                         Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 3) {
                                             ForEach(shortcuts, id: \.0) { name, keys in
                                                 GridRow {
-                                                    Text(name).font(.system(size: 12))
+                                                    Text(name.localized).font(.system(size: 12))
                                                         .frame(maxWidth: .infinity, alignment: .leading)
-                                                    Text(keys)
+                                                    Text(keys.localized)
                                                         .font(.system(size: 12, design: .monospaced))
                                                         .foregroundStyle(.secondary)
                                                 }
@@ -1141,6 +1191,10 @@ struct ContentView: View {
             // Update the WebViewManager with the new active tab. The WebView's
             // URL binding reads from the active tab, so nothing else to sync.
             webViewManager?.setActiveTab(newValue)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .memoryPressure)) { note in
+            let critical = (note.userInfo?["critical"] as? Bool) ?? false
+            handleMemoryPressure(critical: critical)
         }
         .onChange(of: isLoading) { oldValue, newValue in
             if newValue {
@@ -1477,10 +1531,10 @@ struct ContentView: View {
         } else {
             // Show alert that no browsers were found
             let alert = NSAlert()
-            alert.messageText = "No Browsers Found"
-            alert.informativeText = "No compatible browsers with bookmarks were found on your system."
+            alert.messageText = String(localized: "No Browsers Found")
+            alert.informativeText = String(localized: "No compatible browsers with bookmarks were found on your system.")
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: String(localized: "OK"))
             alert.runModal()
         }
     }
@@ -1491,10 +1545,10 @@ struct ContentView: View {
         let importedBookmarks = BookmarkImporter.importBookmarks(from: browser)
         guard !importedBookmarks.isEmpty else {
             let alert = NSAlert()
-            alert.messageText = "No Bookmarks Found"
-            alert.informativeText = "No bookmarks were found in \(browser.displayName)."
+            alert.messageText = String(localized: "No Bookmarks Found")
+            alert.informativeText = String(localized: "No bookmarks were found in \(browser.displayName).")
             alert.alertStyle = .informational
-            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: String(localized: "OK"))
             alert.runModal()
             return
         }
@@ -1506,10 +1560,11 @@ struct ContentView: View {
 
         // Show success message
         let alert = NSAlert()
-        alert.messageText = "Import Complete"
-        alert.informativeText = "Imported \(addedCount) new bookmarks from \(browser.displayName) (\(importedBookmarks.count - addedCount) already existed)."
+        alert.messageText = String(localized: "Import Complete")
+        // ponytail: simple %lld interpolation, not per-language plural rules — one-time import dialog; add plural variants if it matters
+        alert.informativeText = String(localized: "Imported \(addedCount) new bookmarks from \(browser.displayName) (\(importedBookmarks.count - addedCount) already existed).")
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: String(localized: "OK"))
         alert.runModal()
     }
 

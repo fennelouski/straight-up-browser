@@ -69,12 +69,95 @@ class WebViewManager: NSObject, ObservableObject {
     // Store web views per tab ID
     private var webViews: [UUID: WKWebView] = [:]
 
+    // Saved WKWebView.interactionState for tabs unloaded under memory pressure,
+    // consumed when the tab is reactivated (restores scroll + back/forward).
+    private var savedInteractionStates: [UUID: Any] = [:]
+
     // Active web view for the currently selected tab
     @Published var activeWebView: WKWebView?
 
     override init() {
         super.init()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(adBlockSettingChanged), name: .adBlockChanged, object: nil)
+        startMemoryPressureMonitoring()
         Logger.log("WebViewManager initialized", type: "WebViewManager")
+    }
+
+    // MARK: - Memory pressure
+
+    // The OS signals when memory is tight; we relay it so ContentView (which
+    // knows each tab's policy) decides what to unload. ponytail: macOS exposes
+    // only .warning/.critical, so "always" and "when needed" share the warning
+    // trigger. Upgrade path: poll os_proc_available_memory() for finer tiers.
+    private var memoryPressureSource: DispatchSourceMemoryPressure?
+
+    private func startMemoryPressureMonitoring() {
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+        source.setEventHandler { [weak source] in
+            let critical = source?.data.contains(.critical) ?? false
+            Logger.log("Memory pressure relayed (critical=\(critical))", type: "WebViewManager")
+            NotificationCenter.default.post(name: .memoryPressure, object: nil, userInfo: ["critical": critical])
+        }
+        source.resume()
+        memoryPressureSource = source
+    }
+
+    // MARK: - Ad blocking (WKContentRuleList)
+
+    // ponytail: built-in list of the biggest ad/tracker networks, not EasyList.
+    // Swap in a downloaded filter list if users want deeper coverage.
+    private static let adHosts = [
+        "doubleclick.net", "googlesyndication.com", "googleadservices.com",
+        "google-analytics.com", "adservice.google.com", "2mdn.net",
+        "amazon-adsystem.com", "adnxs.com", "adsrvr.org", "criteo.com",
+        "criteo.net", "taboola.com", "outbrain.com", "rubiconproject.com",
+        "pubmatic.com", "openx.net", "moatads.com", "scorecardresearch.com",
+        "adsafeprotected.com", "doubleverify.com", "smartadserver.com",
+        "casalemedia.com", "33across.com", "quantserve.com", "yieldmo.com",
+        "media.net", "teads.tv", "sharethrough.com", "spotxchange.com",
+        "indexexchange.com",
+    ]
+
+    private static var adBlockList: WKContentRuleList?
+
+    private static func compileAdBlockList(_ completion: @escaping (WKContentRuleList?) -> Void) {
+        if let list = adBlockList { completion(list); return }
+        // Content-blocker regex has no alternation, so one block rule per host
+        let rules = adHosts.map { host in
+            let escaped = host.replacingOccurrences(of: ".", with: "\\\\.")
+            return #"{"trigger":{"url-filter":"^https?://([^/]+\\.)?\#(escaped)[:/]","load-type":["third-party"]},"action":{"type":"block"}}"#
+        }
+        WKContentRuleListStore.default().compileContentRuleList(
+            forIdentifier: "sub-adblock",
+            encodedContentRuleList: "[\(rules.joined(separator: ","))]"
+        ) { list, error in
+            if let error {
+                Logger.log("Ad block rule compile failed: \(error)", type: "WebViewManager")
+            }
+            adBlockList = list
+            completion(list)
+        }
+    }
+
+    @objc private func adBlockSettingChanged() {
+        if UserDefaults.standard.bool(forKey: "adBlockEnabled") {
+            Self.compileAdBlockList { [weak self] list in
+                guard let self, let list else { return }
+                for webView in self.webViews.values {
+                    let controller = webView.configuration.userContentController
+                    controller.remove(list) // avoid double-add
+                    controller.add(list)
+                }
+                self.reloadAllTabs()
+            }
+        } else {
+            guard let list = Self.adBlockList else { return }
+            for webView in webViews.values {
+                webView.configuration.userContentController.remove(list)
+            }
+            reloadAllTabs()
+        }
     }
 
     // Get or create a web view for a specific tab
@@ -88,6 +171,11 @@ class WebViewManager: NSObject, ObservableObject {
         Logger.log("WebViewManager: Creating new WKWebView for tab \(tabId)", type: "WebViewManager")
         let webView = createWebView()
         webViews[tabId] = webView
+        MainActor.assumeIsolated { WebExtensionManager.shared.tabOpened(tabId) }
+        // Restore scroll + back/forward if this tab was unloaded under memory pressure
+        if #available(macOS 12.0, *), let state = savedInteractionStates.removeValue(forKey: tabId) {
+            webView.interactionState = state
+        }
         Logger.log("WebViewManager: Created new WebView \(Unmanaged.passUnretained(webView).toOpaque()) for tab \(tabId)", type: "WebViewManager")
         return webView
     }
@@ -100,11 +188,13 @@ class WebViewManager: NSObject, ObservableObject {
             return
         }
 
+        let previousTabId = activeTabId
         let webView = getWebView(for: tabId)
         Logger.log("WebViewManager setActiveTab: got WebView for tab \(tabId): \(Unmanaged.passUnretained(webView).toOpaque())", type: "WebViewManager")
         if activeWebView !== webView {
             Logger.log("WebViewManager: Switching active web view for tab \(tabId)", type: "WebViewManager")
             activeWebView = webView
+            MainActor.assumeIsolated { WebExtensionManager.shared.activeTabChanged(to: tabId, from: previousTabId) }
         } else {
             Logger.log("WebViewManager setActiveTab: activeWebView already correct for tab \(tabId)", type: "WebViewManager")
         }
@@ -116,8 +206,15 @@ class WebViewManager: NSObject, ObservableObject {
         webViews.first(where: { $0.value === webView })?.key
     }
 
-    // Remove a web view when a tab is closed
-    func removeWebView(for tabId: UUID) {
+    // Live tab state read by the web extension bridge (WebExtension.swift).
+    var liveTabIds: [UUID] { Array(webViews.keys) }
+    func existingWebView(for id: UUID) -> WKWebView? { webViews[id] }
+    var activeTabId: UUID? { activeWebView.flatMap { tabId(for: $0) } }
+
+    // Remove a web view. `notifyClosed` is true for a real tab close and false
+    // for a memory unload (the tab lives on), so the extension bridge only sees
+    // genuine closes rather than unload/reactivate churn.
+    func removeWebView(for tabId: UUID, notifyClosed: Bool = true) {
         if let webView = webViews[tabId] {
             // Stop any loading and detach so the view can actually deallocate
             webView.stopLoading()
@@ -127,14 +224,30 @@ class WebViewManager: NSObject, ObservableObject {
 
             // Remove from storage
             webViews.removeValue(forKey: tabId)
+            savedInteractionStates.removeValue(forKey: tabId)
 
             // If this was the active web view, clear it
             if activeWebView === webView {
                 activeWebView = nil
             }
 
+            if notifyClosed {
+                MainActor.assumeIsolated { WebExtensionManager.shared.tabClosed(tabId) }
+            }
             Logger.log("Removed web view for tab \(tabId)", type: "WebViewManager")
         }
+    }
+
+    // Release a tab's web view (and its content process) to reclaim RAM. Saves
+    // interaction state (scroll + back/forward) so getWebView restores it when
+    // the tab is reactivated. The tab stays open; only its RAM is freed.
+    func unloadWebView(for tabId: UUID) {
+        guard let webView = webViews[tabId] else { return }
+        var state: Any?
+        if #available(macOS 12.0, *) { state = webView.interactionState }
+        removeWebView(for: tabId, notifyClosed: false)  // unload, not close: keep the extension's tab
+
+        if let state { savedInteractionStates[tabId] = state }  // set AFTER teardown clears it
     }
 
     // Register an externally created web view (a window.open popup, which must
@@ -142,6 +255,7 @@ class WebViewManager: NSObject, ObservableObject {
     func adoptWebView(_ webView: WKWebView, for tabId: UUID) {
         applyStandardSetup(to: webView)
         webViews[tabId] = webView
+        MainActor.assumeIsolated { WebExtensionManager.shared.tabOpened(tabId) }
         Logger.log("WebViewManager: adopted external WebView for tab \(tabId)", type: "WebViewManager")
     }
 
@@ -158,9 +272,23 @@ class WebViewManager: NSObject, ObservableObject {
         // ponytail: the content controller retains us (handler) and we retain
         // the webviews - a cycle, but WebViewManager lives for the app lifetime
         configuration.userContentController.add(self, name: "sub")
+        if UserDefaults.standard.bool(forKey: "adBlockEnabled") {
+            let controller = configuration.userContentController
+            Self.compileAdBlockList { list in
+                if let list { controller.add(list) }
+            }
+        }
         configuration.userContentController.addUserScript(
             WKUserScript(source: Self.pageScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         )
+
+        // Attach the app-wide web extension controller so any loaded extension's
+        // content scripts run in this tab. Inert when no extension is loaded, but
+        // must be set before the web view exists — it can't be added later.
+        MainActor.assumeIsolated {
+            configuration.webExtensionController = WebExtensionManager.shared.controller
+            WebExtensionManager.shared.register(self)
+        }
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         applyStandardSetup(to: webView)

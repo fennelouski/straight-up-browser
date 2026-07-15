@@ -1,18 +1,10 @@
 #!/bin/bash
 
-# TODO: Enhance build script
-# - Cross-platform compilation support
-# - Code signing for distribution
-# - Automatic version numbering
-# - Build artifacts archiving
-# - Integration with CI/CD pipelines
-# - Dependency management
-# - Build optimization flags
-
-# Build the browser CLI tool
+# Dev-loop build of the CLI tool. The app's Xcode build compiles and signs
+# this same source into Internet.app/Contents/Helpers/browser-cli.
 echo "Building Straight Up Browser CLI..."
 
-swiftc browser-cli/main.swift -o browser-cli-tool
+swiftc -O browser-cli/main.swift -o browser-cli-tool
 
 if [ $? -eq 0 ]; then
     echo "CLI tool built successfully: ./browser-cli-tool"

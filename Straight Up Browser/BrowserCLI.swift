@@ -86,6 +86,15 @@ class BrowserCLI {
         }
     }
 
+    // Every response the app writes lives inside its own responses/ dir.
+    // Errors and acks share one JSON shape: {"ok":true,...} or {"error":"..."}.
+    static func writeResponse(_ dict: [String: Any], to path: String?) {
+        guard let path = path else { return }
+        if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
+        }
+    }
+
     private func handleCommand(_ command: String) {
         Logger.log("BrowserCLI handleCommand: \(command)", type: "BrowserCLI")
 
@@ -108,24 +117,103 @@ class BrowserCLI {
             }
         }
 
+        // Same cold-launch race App Intents guard against: observers attach in
+        // ContentView.onAppear. We're on the dedicated pipe thread and commands
+        // are serial, so a bounded blocking wait is fine.
+        if !NotificationManager.observersReady {
+            for _ in 0..<100 where !NotificationManager.observersReady {
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+            if !NotificationManager.observersReady {
+                Self.writeResponse(["error": "Browser window not ready (first-run EULA screen?)"], to: responseFilePath)
+                return
+            }
+        }
+
+        var newTab = false
+        if let newFlagIndex = commandParts.firstIndex(of: "--new") {
+            commandParts.remove(at: newFlagIndex)
+            newTab = true
+        }
+
         let action = commandParts.first?.lowercased()
         let parameter = commandParts.count > 1 ? commandParts[1..<commandParts.count].joined(separator: " ") : nil
 
+        // Acks mean "accepted for execution on the main queue" - agents follow
+        // navigation with `wait`. Commands that can fail respond from their
+        // observer instead.
         switch action {
         case "open":
             if let urlString = parameter {
-                NotificationCenter.default.post(name: .browserOpenURL, object: nil, userInfo: ["url": urlString])
+                var userInfo: [String: Any] = ["url": urlString]
+                if newTab { userInfo["newTab"] = true }
+                NotificationCenter.default.post(name: .browserOpenURL, object: nil, userInfo: userInfo)
+                Self.writeResponse(["ok": true], to: responseFilePath)
+            } else {
+                Self.writeResponse(["error": "open requires a URL"], to: responseFilePath)
             }
         case "search":
             if let query = parameter {
                 let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
                 NotificationCenter.default.post(name: .browserOpenURL, object: nil,
                                                 userInfo: ["url": "https://www.google.com/search?q=" + encoded])
+                Self.writeResponse(["ok": true], to: responseFilePath)
+            } else {
+                Self.writeResponse(["error": "search requires a query"], to: responseFilePath)
             }
         case "new":
             NotificationCenter.default.post(name: .browserNewTab, object: nil)
+            Self.writeResponse(["ok": true], to: responseFilePath)
         case "close":
             NotificationCenter.default.post(name: .browserCloseTab, object: nil)
+            Self.writeResponse(["ok": true], to: responseFilePath)
+        case "back", "forward", "reload":
+            NotificationCenter.default.post(name: .browserNavigate, object: nil, userInfo: ["action": action!])
+            Self.writeResponse(["ok": true], to: responseFilePath)
+        case "switch":
+            if let parameter = parameter, let index = Int(parameter) {
+                var userInfo: [String: Any] = ["index": index]
+                if let responseFilePath = responseFilePath { userInfo["responseFilePath"] = responseFilePath }
+                NotificationCenter.default.post(name: .browserSwitchTab, object: nil, userInfo: userInfo)
+            } else {
+                Self.writeResponse(["error": "switch requires a tab index (1-based, see `tabs`)"], to: responseFilePath)
+            }
+        case "wait":
+            let timeout = parameter.flatMap(Double.init) ?? 15
+            var userInfo: [String: Any] = ["timeout": timeout]
+            if let responseFilePath = responseFilePath { userInfo["responseFilePath"] = responseFilePath }
+            NotificationCenter.default.post(name: .browserWaitForLoad, object: nil, userInfo: userInfo)
+        case "js":
+            // Code is base64'd by the CLI so newlines/spaces survive the
+            // one-line pipe protocol
+            if let encoded = parameter, let data = Data(base64Encoded: encoded),
+               let script = String(data: data, encoding: .utf8) {
+                var userInfo: [String: Any] = ["script": script]
+                if let responseFilePath = responseFilePath { userInfo["responseFilePath"] = responseFilePath }
+                NotificationCenter.default.post(name: .browserRunJS, object: nil, userInfo: userInfo)
+            } else {
+                Self.writeResponse(["error": "js requires base64-encoded code"], to: responseFilePath)
+            }
+        case "realclick":
+            if let encoded = parameter, let data = Data(base64Encoded: encoded),
+               let selector = String(data: data, encoding: .utf8) {
+                var userInfo: [String: Any] = ["selector": selector]
+                if let responseFilePath = responseFilePath { userInfo["responseFilePath"] = responseFilePath }
+                NotificationCenter.default.post(name: .browserRealClick, object: nil, userInfo: userInfo)
+            } else {
+                Self.writeResponse(["error": "realclick requires a base64-encoded selector"], to: responseFilePath)
+            }
+        case "screenshot":
+            var userInfo: [String: Any] = [:]
+            if let responseFilePath = responseFilePath { userInfo["responseFilePath"] = responseFilePath }
+            NotificationCenter.default.post(name: .browserScreenshot, object: nil, userInfo: userInfo)
+        case "notify":
+            NotificationCenter.default.post(name: .browserNotifyUser, object: nil,
+                                            userInfo: ["message": parameter ?? "The browser needs your attention."])
+            Self.writeResponse(["ok": true], to: responseFilePath)
+        case "focus":
+            NotificationCenter.default.post(name: .browserFocusWindow, object: nil)
+            Self.writeResponse(["ok": true], to: responseFilePath)
         case "tabs":
             var userInfo: [String: Any] = [:]
             if let responseFilePath = responseFilePath {
@@ -145,6 +233,7 @@ class BrowserCLI {
             NotificationCenter.default.post(name: .browserGetPageData, object: nil, userInfo: userInfo)
         default:
             Logger.log("Unknown CLI command: \(command)", type: "BrowserCLI")
+            Self.writeResponse(["error": "unknown command: \(action ?? "")"], to: responseFilePath)
         }
     }
 }
@@ -177,6 +266,11 @@ extension Notification.Name {
 
     // Hold-Cmd+Q-to-quit progress (userInfo["progress"]: Double, 0 = cancelled)
     static let browserQuitHoldProgress = Notification.Name("browserQuitHoldProgress")
+
+    // Ad blocker toggled in Settings
+    static let adBlockChanged = Notification.Name("adBlockChanged")
+    // System memory pressure (userInfo["critical"]: Bool)
+    static let memoryPressure = Notification.Name("memoryPressure")
     // Cmd+Shift+H shortcut cheat-sheet overlay
     static let browserToggleShortcutOverlay = Notification.Name("browserToggleShortcutOverlay")
     static let browserToggleTabBar = Notification.Name("browserToggleTabBar")
@@ -209,4 +303,15 @@ extension Notification.Name {
 
     // CLI data command
     static let browserGetPageData = Notification.Name("browserGetPageData")
+
+    // CLI agent commands (userInfo carries responseFilePath where the
+    // observer writes the JSON result)
+    static let browserNavigate = Notification.Name("browserNavigate") // userInfo["action"]: back|forward|reload
+    static let browserSwitchTab = Notification.Name("browserSwitchTab") // userInfo["index"]: 1-based
+    static let browserRunJS = Notification.Name("browserRunJS") // userInfo["script"]
+    static let browserWaitForLoad = Notification.Name("browserWaitForLoad") // userInfo["timeout"]
+    static let browserScreenshot = Notification.Name("browserScreenshot")
+    static let browserRealClick = Notification.Name("browserRealClick") // userInfo["selector"]
+    static let browserNotifyUser = Notification.Name("browserNotifyUser") // userInfo["message"]
+    static let browserFocusWindow = Notification.Name("browserFocusWindow")
 }

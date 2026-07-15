@@ -134,8 +134,9 @@ class NotificationManager {
             queue: .main
         ) { [weak self] notification in
             let tabs = self?.tabs() ?? []
-            let tabList: [[String: Any]] = tabs.map { tab in
+            let tabList: [[String: Any]] = tabs.enumerated().map { index, tab in
                 [
+                    "index": index + 1, // 1-based, matches `switch <index>`
                     "title": tab.title,
                     "url": tab.url?.absoluteString ?? "",
                     "active": tab.isActive
@@ -359,6 +360,220 @@ class NotificationManager {
             }
         }
         observers.append(getPageDataObserver)
+
+        // CLI agent commands - each writes its JSON result to the response
+        // file the CLI is polling (BrowserCLI.writeResponse no-ops on nil path)
+        observers.append(NotificationCenter.default.addObserver(
+            forName: .browserNavigate, object: nil, queue: .main
+        ) { [weak self] notification in
+            switch notification.userInfo?["action"] as? String {
+            case "back": self?.webViewManager.goBack()
+            case "forward": self?.webViewManager.goForward()
+            case "reload": self?.webViewManager.reload()
+            default: break
+            }
+        })
+
+        observers.append(NotificationCenter.default.addObserver(
+            forName: .browserSwitchTab, object: nil, queue: .main
+        ) { [weak self] notification in
+            let path = notification.userInfo?["responseFilePath"] as? String
+            guard let self = self else { return }
+            let count = self.tabs().count
+            if let index = notification.userInfo?["index"] as? Int, index >= 1, index <= count {
+                self.switchToTabAction(index - 1)
+                BrowserCLI.writeResponse(["ok": true], to: path)
+            } else {
+                BrowserCLI.writeResponse(["error": "no tab at that index (\(count) open, indices are 1-based)"], to: path)
+            }
+        })
+
+        observers.append(NotificationCenter.default.addObserver(
+            forName: .browserRunJS, object: nil, queue: .main
+        ) { [weak self] notification in
+            let path = notification.userInfo?["responseFilePath"] as? String
+            guard let script = notification.userInfo?["script"] as? String else { return }
+            guard let webView = self?.webViewManager.activeWebView else {
+                BrowserCLI.writeResponse(["error": "no active tab"], to: path)
+                return
+            }
+            self?.runJS(script, in: webView, responseFilePath: path)
+        })
+
+        observers.append(NotificationCenter.default.addObserver(
+            forName: .browserWaitForLoad, object: nil, queue: .main
+        ) { [weak self] notification in
+            let path = notification.userInfo?["responseFilePath"] as? String
+            let timeout = notification.userInfo?["timeout"] as? Double ?? 15
+            guard let self = self, let webView = self.webViewManager.activeWebView else {
+                BrowserCLI.writeResponse(["error": "no active tab"], to: path)
+                return
+            }
+            self.waitForLoad(webView, timeout: timeout) { loaded in
+                if loaded {
+                    BrowserCLI.writeResponse([
+                        "ok": true,
+                        "url": webView.url?.absoluteString ?? "",
+                        "title": webView.title ?? ""
+                    ], to: path)
+                } else {
+                    BrowserCLI.writeResponse(["error": "timeout waiting for page load"], to: path)
+                }
+            }
+        })
+
+        observers.append(NotificationCenter.default.addObserver(
+            forName: .browserScreenshot, object: nil, queue: .main
+        ) { [weak self] notification in
+            let path = notification.userInfo?["responseFilePath"] as? String
+            guard let webView = self?.webViewManager.activeWebView else {
+                BrowserCLI.writeResponse(["error": "no active tab"], to: path)
+                return
+            }
+            webView.takeSnapshot(with: nil) { image, error in
+                guard let path = path else { return }
+                guard let image = image,
+                      let tiff = image.tiffRepresentation,
+                      let rep = NSBitmapImageRep(data: tiff),
+                      let png = rep.representation(using: .png, properties: [:]) else {
+                    BrowserCLI.writeResponse(["error": error?.localizedDescription ?? "snapshot failed"], to: path)
+                    return
+                }
+                // Binary PNG straight into the response file; the CLI sniffs
+                // the magic bytes and moves it to the requested path
+                try? png.write(to: URL(fileURLWithPath: path), options: .atomic)
+            }
+        })
+
+        observers.append(NotificationCenter.default.addObserver(
+            forName: .browserRealClick, object: nil, queue: .main
+        ) { [weak self] notification in
+            let path = notification.userInfo?["responseFilePath"] as? String
+            guard let selector = notification.userInfo?["selector"] as? String else { return }
+            self?.performRealClick(selector: selector, responseFilePath: path)
+        })
+
+        observers.append(NotificationCenter.default.addObserver(
+            forName: .browserNotifyUser, object: nil, queue: .main
+        ) { [weak self] notification in
+            let message = notification.userInfo?["message"] as? String ?? "The browser needs your attention."
+            self?.focusWindow()
+            NSApp.requestUserAttention(.criticalRequest)
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Your browser needs a human")
+            alert.informativeText = message
+            if let window = self?.webViewManager.activeWebView?.window {
+                alert.beginSheetModal(for: window)
+            } else {
+                alert.runModal()
+            }
+        })
+
+        observers.append(NotificationCenter.default.addObserver(
+            forName: .browserFocusWindow, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.focusWindow()
+        })
+    }
+
+    private func focusWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        (webViewManager.activeWebView?.window ?? NSApp.windows.first)?.makeKeyAndOrderFront(nil)
+    }
+
+    // ponytail: 0.2s poll on isLoading, not KVO/delegate - one code path for
+    // `wait` and background `get`. 0.3s grace so a just-issued load() that
+    // hasn't flipped isLoading yet doesn't return instantly.
+    private func waitForLoad(_ webView: WKWebView, timeout: TimeInterval, completion: @escaping (Bool) -> Void) {
+        let deadline = Date().addingTimeInterval(timeout)
+        func poll() {
+            if !webView.isLoading { completion(true); return }
+            if Date() >= deadline { completion(false); return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: poll)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: poll)
+    }
+
+    private func runJS(_ code: String, in webView: WKWebView, responseFilePath: String?) {
+        // eval the code as-is (last expression is the result) inside a wrapper
+        // that JSON-serializes success or the thrown error
+        guard let escapedData = try? JSONSerialization.data(withJSONObject: code, options: .fragmentsAllowed),
+              let escaped = String(data: escapedData, encoding: .utf8) else {
+            BrowserCLI.writeResponse(["error": "could not encode script"], to: responseFilePath)
+            return
+        }
+        let wrapper = "(function(){try{var r=eval(\(escaped));return JSON.stringify({ok:true,result:r===undefined?null:r})}catch(e){return JSON.stringify({error:String(e)})}})()"
+        webView.evaluateJavaScript(wrapper) { result, error in
+            if let json = result as? String, let responseFilePath = responseFilePath {
+                try? json.write(toFile: responseFilePath, atomically: true, encoding: .utf8)
+            } else if result == nil {
+                BrowserCLI.writeResponse(["error": error?.localizedDescription ?? "JavaScript evaluation failed"], to: responseFilePath)
+            }
+        }
+    }
+
+    private func performRealClick(selector: String, responseFilePath: String?) {
+        guard UserDefaults.standard.bool(forKey: "cliRealEventsEnabled") else {
+            BrowserCLI.writeResponse(["error": "Real input events are disabled. Ask the user to enable Settings > Security > CLI Automation."], to: responseFilePath)
+            return
+        }
+        // macOS silently drops CGEvents from untrusted processes; surface the
+        // system prompt instead of a click that goes nowhere
+        guard AXIsProcessTrusted() else {
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+            AXIsProcessTrustedWithOptions(options)
+            BrowserCLI.writeResponse(["error": "macOS blocked the synthetic click. Ask the user to allow Internet under System Settings > Privacy & Security > Accessibility (a prompt was just shown), then relaunch the browser and retry."], to: responseFilePath)
+            return
+        }
+        guard let webView = webViewManager.activeWebView, let window = webView.window else {
+            BrowserCLI.writeResponse(["error": "no active tab"], to: responseFilePath)
+            return
+        }
+        focusWindow()
+
+        guard let selectorData = try? JSONSerialization.data(withJSONObject: selector, options: .fragmentsAllowed),
+              let escapedSelector = String(data: selectorData, encoding: .utf8) else {
+            BrowserCLI.writeResponse(["error": "could not encode selector"], to: responseFilePath)
+            return
+        }
+        // scrollIntoView forces synchronous layout, so the rect read after it
+        // is already settled - one JS round-trip
+        let script = """
+        (function() {
+            var el = document.querySelector(\(escapedSelector));
+            if (!el) return null;
+            el.scrollIntoView({block: 'center'});
+            var r = el.getBoundingClientRect();
+            return [r.left + r.width / 2, r.top + r.height / 2];
+        })()
+        """
+
+        // Give activation a beat so the click lands on our window - CGEvents
+        // hit whatever is frontmost at those screen coordinates
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            webView.evaluateJavaScript(script) { result, error in
+                guard let coords = result as? [Double], coords.count == 2 else {
+                    let message = error?.localizedDescription ?? "no element matches selector"
+                    BrowserCLI.writeResponse(["error": message], to: responseFilePath)
+                    return
+                }
+                // ponytail: zoom != 1 is approximate; CSS px -> view points
+                let viewPoint = NSPoint(x: coords[0] * webView.pageZoom, y: coords[1] * webView.pageZoom)
+                let windowPoint = webView.convert(viewPoint, to: nil)
+                let screenPoint = window.convertPoint(toScreen: windowPoint)
+                // Cocoa screen coords are bottom-left origin; CG events want
+                // top-left origin relative to the primary screen
+                let cgPoint = CGPoint(x: screenPoint.x, y: NSScreen.screens[0].frame.maxY - screenPoint.y)
+
+                CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown,
+                        mouseCursorPosition: cgPoint, mouseButton: .left)?.post(tap: .cghidEventTap)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp,
+                            mouseCursorPosition: cgPoint, mouseButton: .left)?.post(tap: .cghidEventTap)
+                    BrowserCLI.writeResponse(["ok": true, "x": cgPoint.x, "y": cgPoint.y], to: responseFilePath)
+                }
+            }
+        }
     }
 
     private func scaleZoom(by factor: Double) {
@@ -419,6 +634,7 @@ class NotificationManager {
 
         guard let activeTab = activeTab else {
             Logger.log("Error: No active tab available", type: "NotificationManager")
+            BrowserCLI.writeResponse(["error": "no active tab"], to: responseFilePath)
             return
         }
 
@@ -429,46 +645,22 @@ class NotificationManager {
     }
 
     private func extractPageData(from urlString: String, responseFilePath: String? = nil) {
-        // Try to use the active webview first, fallback to background webview
-        let activeTab = tabManager.getActiveTab(from: tabs())
-        var targetWebView: WKWebView?
-        var shouldLoadURL = false
-
-        if let activeTab = activeTab {
-            // Get the webview for the active tab
-            targetWebView = webViewManager.getWebView(for: activeTab.id)
-            Logger.log("Using active tab webview for data extraction", type: "NotificationManager")
+        // Always load the requested URL in the offscreen background webview -
+        // `get <url>` must return that page, not whatever tab happens to be
+        // active, and must not disturb the user's tabs
+        guard let webView = backgroundWebView else {
+            BrowserCLI.writeResponse(["error": "no background webview available"], to: responseFilePath)
+            return
         }
-
-        if targetWebView == nil {
-            targetWebView = backgroundWebView
-            shouldLoadURL = true
-            Logger.log("Using background webview for data extraction", type: "NotificationManager")
-        }
-
-        guard let webView = targetWebView else {
-            Logger.log("Error: No webview available for data extraction", type: "NotificationManager")
+        guard let url = URL(string: urlString), url.scheme != nil else {
+            BrowserCLI.writeResponse(["error": "invalid URL (include the scheme, e.g. https://): \(urlString)"], to: responseFilePath)
             return
         }
 
-        if shouldLoadURL {
-            // If using background webview, we need to load the URL first
-            guard let url = URL(string: urlString) else {
-                Logger.log("Error: Invalid URL", type: "NotificationManager")
-                return
-            }
-
-            let request = URLRequest(url: url)
-            webView.load(request)
-
-            // Wait for background webview to load
-            DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
-                self?.extractDataFromLoadedPage(urlString: urlString, webView: webView, responseFilePath: responseFilePath)
-            }
-        } else {
-            // Extract data from the current page in the active webview
-            Logger.log("About to extract data from active webview", type: "NotificationManager")
-            extractDataFromLoadedPage(urlString: urlString, webView: webView, responseFilePath: responseFilePath)
+        webView.load(URLRequest(url: url))
+        // Extract whatever we have on timeout, matching the old fixed-delay behavior
+        waitForLoad(webView, timeout: 12) { [weak self] _ in
+            self?.extractDataFromLoadedPage(urlString: urlString, webView: webView, responseFilePath: responseFilePath)
         }
     }
 

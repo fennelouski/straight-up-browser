@@ -574,12 +574,12 @@ struct WebView: NSViewRepresentable {
 
         private func showSSLErrorDialog(for host: String, trustResult: SecTrustResultType, completion: @escaping (Bool) -> Void) {
             let alert = NSAlert()
-            alert.messageText = "SSL Certificate Warning"
-            alert.informativeText = "The certificate for \(host) could not be verified.\n\nTrust Result: \(trustResultDescription(trustResult))\n\nThis may indicate a security risk. Do you want to proceed anyway?"
+            alert.messageText = String(localized: "SSL Certificate Warning")
+            alert.informativeText = String(localized: "The certificate for \(host) could not be verified.\n\nTrust Result: \(trustResultDescription(trustResult))\n\nThis may indicate a security risk. Do you want to proceed anyway?")
 
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "Proceed")
-            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: String(localized: "Proceed"))
+            alert.addButton(withTitle: String(localized: "Cancel"))
 
             DispatchQueue.main.async {
                 let response = alert.runModal()
@@ -627,28 +627,28 @@ struct WebView: NSViewRepresentable {
 
         private func makeDialogAlert(message: String, frame: WKFrameInfo) -> NSAlert {
             let alert = NSAlert()
-            alert.messageText = frame.request.url?.host ?? "This page"
+            alert.messageText = frame.request.url?.host ?? String(localized: "This page")
             alert.informativeText = message
             return alert
         }
 
         func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
             let alert = makeDialogAlert(message: message, frame: frame)
-            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: String(localized: "OK"))
             presentSheet(alert, over: webView) { _ in completionHandler() }
         }
 
         func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
             let alert = makeDialogAlert(message: message, frame: frame)
-            alert.addButton(withTitle: "OK")
-            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: String(localized: "OK"))
+            alert.addButton(withTitle: String(localized: "Cancel"))
             presentSheet(alert, over: webView) { completionHandler($0 == .alertFirstButtonReturn) }
         }
 
         func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
             let alert = makeDialogAlert(message: prompt, frame: frame)
-            alert.addButton(withTitle: "OK")
-            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: String(localized: "OK"))
+            alert.addButton(withTitle: String(localized: "Cancel"))
             let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
             input.stringValue = defaultText ?? ""
             alert.accessoryView = input

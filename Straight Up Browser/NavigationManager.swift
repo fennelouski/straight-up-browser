@@ -19,7 +19,7 @@ class NavigationManager: ObservableObject {
         omnibarError = nil
 
         guard let url = URL(string: urlString) else {
-            omnibarError = "Invalid URL"
+            omnibarError = String(localized: "Invalid URL")
             return nil
         }
 

@@ -39,7 +39,9 @@ class TabManager: ObservableObject {
 
     @discardableResult
     func createNewTab(url: URL? = nil, select: Bool = true) -> Tab {
-        let newTab = Tab(title: "New Tab", url: url, isActive: false)
+        let newTab = Tab(title: String(localized: "New Tab"), url: url, isActive: false)
+        newTab.memoryPolicy = MemoryPolicy(rawValue:
+            UserDefaults.standard.string(forKey: "memorySaverDefaultPolicy") ?? "") ?? .whenNeeded
         if url != nil {
             newTab.updateTitleFromURL()
         }
@@ -69,7 +71,7 @@ class TabManager: ObservableObject {
         } else {
             // Closing the last tab: reset it to a fresh New Tab instead of
             // deleting it, so there is always one tab open
-            tab.title = "New Tab"
+            tab.title = String(localized: "New Tab")
             tab.url = nil
             tab.historyStrings = []
             tab.currentHistoryIndex = -1
@@ -80,6 +82,7 @@ class TabManager: ObservableObject {
 
     func duplicateTab(_ tab: Tab) -> Tab {
         let newTab = Tab(title: tab.title + " Copy", url: tab.url, isActive: false)
+        newTab.memoryPolicy = tab.memoryPolicy
         // Update the title to use the domain name
         newTab.updateTitleFromURL()
         modelContext?.insert(newTab)

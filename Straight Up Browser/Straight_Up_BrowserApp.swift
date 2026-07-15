@@ -38,8 +38,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Returns true if the user accepted.
     private func runEULAAlert() -> Bool {
         let alert = NSAlert()
-        alert.messageText = "License Agreement"
-        alert.informativeText = "Before you open your window to the Internet, please accept the End User License Agreement."
+        alert.messageText = String(localized: "License Agreement")
+        alert.informativeText = String(localized: "Before you open your window to the Internet, please accept the End User License Agreement.")
 
         let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 460, height: 220))
         textView.string = Self.eulaText
@@ -54,8 +54,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         scrollView.borderType = .bezelBorder
         alert.accessoryView = scrollView
 
-        alert.addButton(withTitle: "Accept")
-        alert.addButton(withTitle: "Decline")
+        alert.addButton(withTitle: String(localized: "Accept"))
+        alert.addButton(withTitle: String(localized: "Decline"))
         return alert.runModal() == .alertFirstButtonReturn
     }
 
@@ -172,8 +172,10 @@ struct Straight_Up_BrowserApp: App {
         Window("Settings", id: "settings") {
             SettingsWindow()
         }
+        .modelContainer(sharedModelContainer)
         .windowStyle(.automatic)
-        .defaultSize(width: 600, height: 400)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 780, height: 560)
         .windowResizability(.contentSize)
 
         Window("Help", id: "help") {
@@ -392,6 +394,16 @@ struct Straight_Up_BrowserApp: App {
                     NotificationCenter.default.post(name: .browserShowSettings, object: nil)
                 }
                 .keyboardShortcut(",", modifiers: .command)
+            }
+
+            CommandMenu("Extensions") {
+                Button("Load Extension…") {
+                    WebExtensionManager.shared.presentLoadPanel()
+                }
+                Button("Open Extension Popup") {
+                    WebExtensionManager.shared.showPopup()
+                }
+                .keyboardShortcut("e", modifiers: [.command, .option])
             }
 
             CommandGroup(replacing: .help) {

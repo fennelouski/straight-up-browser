@@ -46,19 +46,23 @@ Back and forward also work with the standard two-finger trackpad swipe.
 
 ## Command Line Interface
 
-See [CLI_USAGE.md](CLI_USAGE.md) for the full guide.
+Full browser control from the terminal, designed for AI agents: navigate,
+snapshot, click, type, screenshot, and hand off to a human when needed. See
+[CLI_USAGE.md](CLI_USAGE.md), or run `browser-cli docs` for the complete
+agent-oriented guide. The tool ships inside the app bundle:
 
 ```bash
-./build-cli.sh                              # build ./browser-cli-tool
+sudo ln -sf "/Applications/Internet.app/Contents/Helpers/browser-cli" /usr/local/bin/browser-cli
 
-./browser-cli-tool open https://example.com
-./browser-cli-tool search "swift concurrency"
-./browser-cli-tool tabs                     # JSON list of open tabs
-./browser-cli-tool get current              # JSON page data
+browser-cli open https://example.com && browser-cli wait
+browser-cli snapshot                        # compact page outline + selectors
+browser-cli click '#more-info' && browser-cli wait
+browser-cli screenshot page.png
+browser-cli notify "Please solve the captcha"
 ```
 
-The browser must be running with its window open. Commands travel over an
-owner-only named pipe at
+The browser launches automatically if it isn't running. Commands travel over
+an owner-only named pipe at
 `~/Library/Application Support/Straight Up Browser/cli.pipe` — filesystem
 permissions are the authentication, so only your user can send commands.
 

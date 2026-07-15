@@ -149,13 +149,13 @@ private struct ShortcutsHelpView: View {
                     .fontWeight(.bold)
 
                 ForEach(ShortcutReference.sections, id: \.0) { title, shortcuts in
-                    GroupBox(label: Text(title)) {
+                    GroupBox(label: Text(title.localized)) {
                         Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 6) {
                             ForEach(shortcuts, id: \.0) { name, keys in
                                 GridRow {
-                                    Text(name)
+                                    Text(name.localized)
                                         .frame(maxWidth: .infinity, alignment: .leading)
-                                    Text(keys)
+                                    Text(keys.localized)
                                         .font(.system(.body, design: .monospaced))
                                         .foregroundStyle(.secondary)
                                 }
@@ -206,7 +206,7 @@ private struct CLIHelpView: View {
                                 GridRow {
                                     Text(command)
                                         .font(.system(.body, design: .monospaced))
-                                    Text(purpose)
+                                    Text(purpose.localized)
                                         .foregroundStyle(.secondary)
                                 }
                             }
