@@ -397,6 +397,13 @@ struct AppearanceSettingsView: View {
     // Same "theme" defaults key SettingsManager reads - one store, no desync
     @AppStorage("theme") private var theme = "System"
 
+    // Load progress indicators (any combination)
+    @AppStorage("progressBarTop") private var progressBarTop = true
+    @AppStorage("progressBarBottom") private var progressBarBottom = false
+    @AppStorage("progressBarLeft") private var progressBarLeft = false
+    @AppStorage("progressBarRight") private var progressBarRight = false
+    @AppStorage("progressFaviconRing") private var progressFaviconRing = false
+
     let themes = ["Light", "Dark", "System"]
 
     var body: some View {
@@ -413,6 +420,21 @@ struct AppearanceSettingsView: View {
                         }
                     }
                     .pickerStyle(.radioGroup)
+                }
+                .padding()
+            }
+
+            GroupBox(label: Text("Loading Progress")) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Show the progress bar on these window edges:")
+                    HStack(spacing: 16) {
+                        Toggle("Top", isOn: $progressBarTop)
+                        Toggle("Bottom", isOn: $progressBarBottom)
+                        Toggle("Left", isOn: $progressBarLeft)
+                        Toggle("Right", isOn: $progressBarRight)
+                    }
+                    Divider()
+                    Toggle("Show progress as a ring around the favicon in the tab bar", isOn: $progressFaviconRing)
                 }
                 .padding()
             }

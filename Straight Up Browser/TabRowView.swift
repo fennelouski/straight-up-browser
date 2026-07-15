@@ -55,9 +55,44 @@ struct TabRowView: View {
     let tabBarWidth: CGFloat
     let onSelect: () -> Void
     let onReorder: ((UUID, UUID) -> Void)? // sourceTabId, targetTabId
+    var loadingProgress: Double? = nil // non-nil draws a progress ring around the favicon
 
     private var isSelected: Bool {
         selectedTabId == tab.id
+    }
+
+    // Favicon (or placeholder icon) with an optional loading ring around it
+    @ViewBuilder
+    private func faviconView(placeholderSize: CGFloat) -> some View {
+        ZStack {
+            if let faviconData = tab.favicon, let nsImage = NSImage(data: faviconData) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 16, height: 16)
+                    .clipped()
+            } else if tab.url != nil {
+                Image(systemName: "globe")
+                    .font(.system(size: placeholderSize))
+                    .foregroundColor(isSelected ? .blue : .gray)
+            } else {
+                Image(systemName: "plus.circle")
+                    .font(.system(size: placeholderSize))
+                    .foregroundColor(isSelected ? .blue : .gray)
+            }
+
+            if let progress = loadingProgress {
+                Circle()
+                    .stroke(Color.gray.opacity(0.2), lineWidth: 1.5)
+                    .frame(width: 21, height: 21)
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(Color.blue, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: 21, height: 21)
+                    .animation(.linear(duration: 0.1), value: progress)
+            }
+        }
     }
 
     // SwiftUI's .lineLimit(1)/.truncationMode(.tail) handles width truncation
@@ -76,24 +111,7 @@ struct TabRowView: View {
                 if showOnlyIcons {
                     // Centered favicon layout for icon-only mode
                     // Use ZStack with explicit frame to ensure content stays within tab bar bounds
-                    ZStack {
-                        // Show favicon if available, otherwise show default icon
-                        if let faviconData = tab.favicon, let nsImage = NSImage(data: faviconData) {
-                            Image(nsImage: nsImage)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 16, height: 16)
-                                .clipped()
-                        } else if tab.url != nil {
-                            Image(systemName: "globe")
-                                .font(.system(size: 14))
-                                .foregroundColor(isSelected ? .blue : .gray)
-                        } else {
-                            Image(systemName: "plus.circle")
-                                .font(.system(size: 14))
-                                .foregroundColor(isSelected ? .blue : .gray)
-                        }
-                    }
+                    faviconView(placeholderSize: 14)
                     .frame(width: availableWidth, height: 32)
                     .background(isSelected ? Color.blue.opacity(0.15) : Color(.windowBackgroundColor).opacity(0.01))
                     .contentShape(Rectangle())
@@ -101,20 +119,7 @@ struct TabRowView: View {
                 } else {
                     // Standard layout with icon and text
                     HStack(spacing: 4) {
-                        // Show favicon if available, otherwise show default icon
-                        if let faviconData = tab.favicon, let nsImage = NSImage(data: faviconData) {
-                            Image(nsImage: nsImage)
-                                .resizable()
-                                .frame(width: 16, height: 16)
-                        } else if tab.url != nil {
-                            Image(systemName: "globe")
-                                .font(.system(size: 12))
-                                .foregroundColor(isSelected ? .blue : .gray)
-                        } else {
-                            Image(systemName: "plus.circle")
-                                .font(.system(size: 12))
-                                .foregroundColor(isSelected ? .blue : .gray)
-                        }
+                        faviconView(placeholderSize: 12)
 
                         Text(displayTitle)
                             .font(.system(size: 11))

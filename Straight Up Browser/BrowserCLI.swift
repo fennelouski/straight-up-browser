@@ -177,6 +177,8 @@ extension Notification.Name {
 
     // Hold-Cmd+Q-to-quit progress (userInfo["progress"]: Double, 0 = cancelled)
     static let browserQuitHoldProgress = Notification.Name("browserQuitHoldProgress")
+    // Cmd+Shift+H shortcut cheat-sheet overlay
+    static let browserToggleShortcutOverlay = Notification.Name("browserToggleShortcutOverlay")
     static let browserToggleTabBar = Notification.Name("browserToggleTabBar")
     static let browserHideTabBar = Notification.Name("browserHideTabBar")
     static let browserMinimalTabBar = Notification.Name("browserMinimalTabBar")

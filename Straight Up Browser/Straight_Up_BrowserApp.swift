@@ -399,6 +399,11 @@ struct Straight_Up_BrowserApp: App {
                     openWindow(id: "help")
                 }
                 .keyboardShortcut("?", modifiers: .command)
+
+                Button("Keyboard Shortcuts") {
+                    NotificationCenter.default.post(name: .browserToggleShortcutOverlay, object: nil)
+                }
+                .keyboardShortcut("h", modifiers: [.command, .shift])
             }
         }
     }

@@ -180,8 +180,19 @@ struct ContentView: View {
     @State private var progressValue: Double = 0.0
     @State private var hasRenderedContent = false
 
+    // Which window edges show the load progress bar (any combination)
+    @AppStorage("progressBarTop") private var progressBarTop = true
+    @AppStorage("progressBarBottom") private var progressBarBottom = false
+    @AppStorage("progressBarLeft") private var progressBarLeft = false
+    @AppStorage("progressBarRight") private var progressBarRight = false
+    // Show progress as a ring around the favicon in the tab bar
+    @AppStorage("progressFaviconRing") private var progressFaviconRing = false
+
     // Hold-Cmd+Q-to-quit progress (0 = hidden)
     @State private var quitHoldProgress: Double = 0
+
+    // Cmd+Shift+H shortcut cheat sheet
+    @State private var showShortcutCheatSheet = false
 
     private var currentURL: URL? { activeTab?.url }
 
@@ -331,7 +342,9 @@ struct ContentView: View {
                             },
                             onReorder: { sourceTabId, targetTabId in
                                 tabManager.reorderTabs(sourceTabId: sourceTabId, targetTabId: targetTabId, tabs: tabs)
-                            }
+                            },
+                            loadingProgress: progressFaviconRing && showProgressBar
+                                && tab.id == tabManager.selectedTabId ? progressValue : nil
                         )
                         .contextMenu {
                             Button("Close Tab", action: { tabManager.closeTab(tab, tabs: tabs) })
@@ -468,11 +481,21 @@ struct ContentView: View {
     }
 
     private var progressBarOverlay: some View {
-        VStack(spacing: 0) {
-            progressBar
-            Spacer()
+        ZStack {
+            if progressBarTop {
+                VStack(spacing: 0) { horizontalProgressBar; Spacer() }
+            }
+            if progressBarBottom {
+                VStack(spacing: 0) { Spacer(); horizontalProgressBar }
+            }
+            if progressBarLeft {
+                HStack(spacing: 0) { verticalProgressBar; Spacer() }
+            }
+            if progressBarRight {
+                HStack(spacing: 0) { Spacer(); verticalProgressBar }
+            }
         }
-        .edgesIgnoringSafeArea(.top)
+        .edgesIgnoringSafeArea(.all)
     }
 
     private var newTabPageOverlay: some View {
@@ -853,13 +876,61 @@ struct ContentView: View {
         .overlay(saveWorkspaceDialogOverlay.zIndex(5))
         .overlay(importBookmarksDialogOverlay.zIndex(6))
         .overlay(quitHoldOverlay.zIndex(7))
+        .overlay(shortcutCheatSheetOverlay.zIndex(8))
+    }
+
+    // Full shortcut reference, toggled with Cmd+Shift+H (or Esc/click to close)
+    private var shortcutCheatSheetOverlay: some View {
+        Group {
+            if showShortcutCheatSheet {
+                ZStack {
+                    Color.black.opacity(0.25)
+                        .contentShape(Rectangle())
+                        .onTapGesture { showShortcutCheatSheet = false }
+
+                    HStack(alignment: .top, spacing: 28) {
+                        let sections = ShortcutReference.sections
+                        let mid = (sections.count + 1) / 2
+                        ForEach([Array(sections.prefix(mid)), Array(sections.suffix(from: mid))], id: \.first?.0) { column in
+                            VStack(alignment: .leading, spacing: 16) {
+                                ForEach(column, id: \.0) { title, shortcuts in
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text(title)
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundStyle(.secondary)
+                                            .textCase(.uppercase)
+                                        Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 3) {
+                                            ForEach(shortcuts, id: \.0) { name, keys in
+                                                GridRow {
+                                                    Text(name).font(.system(size: 12))
+                                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                                    Text(keys)
+                                                        .font(.system(size: 12, design: .monospaced))
+                                                        .foregroundStyle(.secondary)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            .frame(width: 290, alignment: .topLeading)
+                        }
+                    }
+                    .padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .shadow(radius: 14)
+                }
+                .transition(.opacity)
+                .onExitCommand { showShortcutCheatSheet = false }
+            }
+        }
     }
 
     private var colorScheme: ColorScheme? {
         SettingsManager.shared.colorScheme
     }
 
-    private var progressBar: some View {
+    private var horizontalProgressBar: some View {
         GeometryReader { geometry in
             if showProgressBar {
                 ZStack(alignment: .leading) {
@@ -879,6 +950,27 @@ struct ContentView: View {
             }
         }
         .frame(height: showProgressBar ? 1 : 0)
+    }
+
+    // Same bar rotated onto a side edge; fills top-down
+    private var verticalProgressBar: some View {
+        GeometryReader { geometry in
+            if showProgressBar {
+                ZStack(alignment: .top) {
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.2))
+                        .frame(width: 1)
+
+                    Rectangle()
+                        .fill(Color.blue)
+                        .frame(width: 1, height: max(0, progressValue * geometry.size.height))
+                        .animation(.linear(duration: max(0.02, 0.1)), value: progressValue)
+                }
+                .transition(.opacity.animation(.easeIn(duration: max(0.02, 0.2))))
+                .frame(width: 1)
+            }
+        }
+        .frame(width: showProgressBar ? 1 : 0)
     }
 
     var body: some View {
@@ -1000,6 +1092,15 @@ struct ContentView: View {
                     queue: .main
                 ) { [self] notification in
                     quitHoldProgress = notification.userInfo?["progress"] as? Double ?? 0
+                }
+
+                // Cmd+Shift+H shortcut cheat sheet
+                NotificationCenter.default.addObserver(
+                    forName: .browserToggleShortcutOverlay,
+                    object: nil,
+                    queue: .main
+                ) { [self] _ in
+                    showShortcutCheatSheet.toggle()
                 }
 
                 // Toggle tab bar between hidden and last visible width (Cmd+Shift+L)

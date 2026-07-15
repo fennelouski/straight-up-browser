@@ -93,8 +93,10 @@ private struct GettingStartedView: View {
 }
 
 // MARK: - Keyboard Shortcuts
-private struct ShortcutsHelpView: View {
-    private static let sections: [(String, [(String, String)])] = [
+// Single source of truth for the shortcut list; the Help window and the
+// in-browser cheat sheet (⇧⌘H) both render it.
+enum ShortcutReference {
+    static let sections: [(String, [(String, String)])] = [
         ("Tabs", [
             ("New Tab", "⌘T or ⌘N"),
             ("Close Tab", "⌘W"),
@@ -130,12 +132,15 @@ private struct ShortcutsHelpView: View {
         ("App", [
             ("Omnibar", "⌃Space or ⌘K"),
             ("Omnibar from any app", "⌥Space (configurable)"),
+            ("Shortcut cheat sheet", "⇧⌘H"),
             ("Settings", "⌘,"),
             ("Help", "⌘?"),
             ("Quit", "hold ⌘Q for 2s"),
         ]),
     ]
+}
 
+private struct ShortcutsHelpView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -143,7 +148,7 @@ private struct ShortcutsHelpView: View {
                     .font(.title)
                     .fontWeight(.bold)
 
-                ForEach(Self.sections, id: \.0) { title, shortcuts in
+                ForEach(ShortcutReference.sections, id: \.0) { title, shortcuts in
                     GroupBox(label: Text(title)) {
                         Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 6) {
                             ForEach(shortcuts, id: \.0) { name, keys in
