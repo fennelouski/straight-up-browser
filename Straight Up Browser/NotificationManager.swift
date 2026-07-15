@@ -8,6 +8,7 @@
 import SwiftUI
 import Foundation
 import WebKit
+import UniformTypeIdentifiers
 
 class NotificationManager {
     private var tabManager: TabManager
@@ -62,8 +63,13 @@ class NotificationManager {
         self.backgroundWebView = WKWebView()
     }
 
+    // App Intents poll this before posting: a notification sent before
+    // ContentView.onAppear wires the observers would be silently dropped.
+    static var observersReady = false
+
     func setupNotificationObservers() {
         guard observers.isEmpty else { return } // idempotent; cleanup() re-arms
+        defer { Self.observersReady = true }
 
         let openURLOobserver = NotificationCenter.default.addObserver(
             forName: .browserOpenURL,
@@ -71,7 +77,14 @@ class NotificationManager {
             queue: .main
         ) { [weak self] notification in
             if let urlString = notification.userInfo?["url"] as? String {
-                _ = self?.navigationManager.navigateToURL(urlString, activeTab: self?.tabManager.getActiveTab(from: self?.tabs() ?? []))
+                // The global omnibar asks for a new tab so it never clobbers
+                // the page the user was reading; CLI posts keep the old
+                // navigate-the-active-tab behavior.
+                if notification.userInfo?["newTab"] as? Bool == true, let url = URL(string: urlString) {
+                    self?.tabManager.createNewTab(url: url, select: true)
+                } else {
+                    _ = self?.navigationManager.navigateToURL(urlString, activeTab: self?.tabManager.getActiveTab(from: self?.tabs() ?? []))
+                }
             }
         }
         observers.append(openURLOobserver)
@@ -323,6 +336,10 @@ class NotificationManager {
             forName: .browserPrint, object: nil, queue: .main
         ) { [weak self] _ in self?.printCurrentPage() })
 
+        observers.append(NotificationCenter.default.addObserver(
+            forName: .browserExportPDF, object: nil, queue: .main
+        ) { [weak self] _ in self?.exportPDF() })
+
         let getPageDataObserver = NotificationCenter.default.addObserver(
             forName: .browserGetPageData,
             object: nil,
@@ -368,6 +385,31 @@ class NotificationManager {
             operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
         } else {
             operation.run()
+        }
+    }
+
+    private func exportPDF() {
+        guard let webView = webViewManager.activeWebView else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        let title = webView.title?.isEmpty == false ? webView.title! : "Page"
+        panel.nameFieldStringValue = title + ".pdf"
+
+        let save: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let url = panel.url else { return }
+            webView.createPDF { result in
+                if case .success(let data) = result {
+                    try? data.write(to: url)
+                } else {
+                    Logger.log("PDF export failed", type: "NotificationManager")
+                }
+            }
+        }
+
+        if let window = webView.window {
+            panel.beginSheetModal(for: window, completionHandler: save)
+        } else {
+            save(panel.runModal())
         }
     }
 
@@ -496,6 +538,7 @@ class NotificationManager {
     }
 
     func cleanup() {
+        Self.observersReady = false
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         observers.removeAll()
     }

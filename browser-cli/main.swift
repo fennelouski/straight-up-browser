@@ -59,7 +59,7 @@ func printUsage() {
 func sendCommand(_ command: String) {
     let fd = open(pipePath, O_WRONLY | O_NONBLOCK)
     guard fd >= 0 else {
-        print("Error: Could not reach the browser. Make sure Straight Up Browser is running.")
+        print("Error: Could not reach the browser. Make sure your Internet browser is running.")
         exit(1)
     }
     let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)

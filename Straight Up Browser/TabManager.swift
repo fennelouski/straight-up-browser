@@ -37,12 +37,18 @@ class TabManager: ObservableObject {
         self.webViewManager = webViewManager
     }
 
-    func createNewTab() -> Tab {
-        let newTab = Tab()
+    @discardableResult
+    func createNewTab(url: URL? = nil, select: Bool = true) -> Tab {
+        let newTab = Tab(title: "New Tab", url: url, isActive: false)
+        if url != nil {
+            newTab.updateTitleFromURL()
+        }
         if let modelContext = modelContext {
             modelContext.insert(newTab)
         }
-        selectedTabId = newTab.id
+        if select {
+            selectedTabId = newTab.id
+        }
         return newTab
     }
 

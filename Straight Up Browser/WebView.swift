@@ -163,6 +163,17 @@ struct WebView: NSViewRepresentable {
             self.tabs = tabs
         }
 
+        // Resolve which tab a delegate callback belongs to. All webviews share
+        // this coordinator, so "the active tab" is wrong for background loads.
+        private func tab(for webView: WKWebView) -> Tab? {
+            guard let tabId = parent.webViewManager?.tabId(for: webView) else { return nil }
+            return tabs?.first(where: { $0.id == tabId })
+        }
+
+        private func isActiveWebView(_ webView: WKWebView) -> Bool {
+            webView === parent.webViewManager?.activeWebView
+        }
+
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             // Check for redirect loops before starting navigation
             if let url = webView.url, isRedirectLoop(url) {
@@ -171,23 +182,44 @@ struct WebView: NSViewRepresentable {
                 return
             }
 
-            parent.isLoading = true
-            parent.hasRenderedContent = false
-            parent.progressValue = 0.0
-            // Update lastRequestedURL to reflect what we're actually loading
+            if isActiveWebView(webView) {
+                parent.isLoading = true
+                parent.hasRenderedContent = false
+                parent.progressValue = 0.0
+            }
             if let url = webView.url {
                 Logger.log("WebView didStartProvisionalNavigation: setting lastRequestedURL to \(url.absoluteString)", type: "WebView")
-                lastRequestedURL = url
+                if isActiveWebView(webView) {
+                    lastRequestedURL = url
+                }
                 recordNavigation(url)
+
+                // Sync the tab's URL as soon as the webview starts navigating.
+                // Without this, a link click triggers a view update while the
+                // tab still holds the old URL, and updateNSView re-loads the old
+                // URL - cancelling the click and "refreshing" the page instead.
+                if let tab = tab(for: webView),
+                   Tab.normalizeURLForComparison(tab.url) != Tab.normalizeURLForComparison(url) {
+                    tab.url = url
+                }
             }
         }
 
+        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            // Push the current spacebar-scroll percentage into the new page;
+            // the injected user script reads it on each keypress
+            let pct = UserDefaults.standard.object(forKey: "spaceScrollPercent") as? Double ?? 90
+            webView.evaluateJavaScript("window.__subSpacePct = \(pct)")
+        }
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            parent.isLoading = false
-            parent.hasRenderedContent = true
-            parent.canGoBack = webView.canGoBack
-            parent.canGoForward = webView.canGoForward
-            parent.title = webView.title ?? ""
+            if isActiveWebView(webView) {
+                parent.isLoading = false
+                parent.hasRenderedContent = true
+                parent.canGoBack = webView.canGoBack
+                parent.canGoForward = webView.canGoForward
+                parent.title = webView.title ?? ""
+            }
 
             // Track the URL that successfully loaded
             if let url = webView.url {
@@ -197,26 +229,20 @@ struct WebView: NSViewRepresentable {
             // Clear navigation history on successful page load to reset loop detection
             navigationHistory.removeAll()
 
-            // Update the tab's URL if it changed (e.g., user clicked a link)
-            let normalizedCurrentURL = Tab.normalizeURLForComparison(webView.url)
-            let normalizedParentURL = Tab.normalizeURLForComparison(parent.url)
-            if let currentURL = webView.url, normalizedCurrentURL != normalizedParentURL {
-                Logger.log("WebView didFinish: updating tab URL to \(currentURL.absoluteString)", type: "WebView")
-                // Update the tab URL directly without triggering navigateTo to avoid recursion
-                if let tabManager = self.tabManager,
-                   let tabs = self.tabs,
-                   let activeTab = tabManager.getActiveTab(from: tabs) {
-                    activeTab.url = currentURL
+            if let currentURL = webView.url, let tab = tab(for: webView) {
+                if Tab.normalizeURLForComparison(tab.url) != Tab.normalizeURLForComparison(currentURL) {
+                    Logger.log("WebView didFinish: updating tab URL to \(currentURL.absoluteString)", type: "WebView")
+                    tab.url = currentURL
+                }
 
-                    // Record the visit for omnibar suggestions; WKWebView owns back/forward
-                    if activeTab.history.last != currentURL {
-                        activeTab.historyStrings.append(currentURL.absoluteString)
+                // Record the visit for omnibar suggestions; WKWebView owns back/forward
+                if tab.historyStrings.last != currentURL.absoluteString {
+                    tab.historyStrings.append(currentURL.absoluteString)
 
-                        // Limit history size
-                        let maxHistorySize = SettingsManager.shared.maxHistorySize
-                        if activeTab.historyStrings.count > maxHistorySize {
-                            activeTab.historyStrings.removeFirst(activeTab.historyStrings.count - maxHistorySize)
-                        }
+                    // Limit history size
+                    let maxHistorySize = SettingsManager.shared.maxHistorySize
+                    if tab.historyStrings.count > maxHistorySize {
+                        tab.historyStrings.removeFirst(tab.historyStrings.count - maxHistorySize)
                     }
                 }
 
@@ -278,7 +304,7 @@ struct WebView: NSViewRepresentable {
         // favicon.ico, or the generated domain initial covers real sites
         private func downloadFavicon(from url: URL, webView: WKWebView) {
             if let cachedData = FaviconCache.shared.getFavicon(for: url) {
-                setActiveTabFavicon(cachedData)
+                setFavicon(cachedData, for: webView)
                 return
             }
 
@@ -290,7 +316,7 @@ struct WebView: NSViewRepresentable {
                    httpResponse.statusCode == 200, data.count > 0,
                    NSImage(data: data) != nil {
                     FaviconCache.shared.setFavicon(data, for: url)
-                    self.setActiveTabFavicon(data)
+                    self.setFavicon(data, for: webView)
                 } else {
                     DispatchQueue.main.async {
                         self.generateDomainInitial(for: webView)
@@ -299,13 +325,9 @@ struct WebView: NSViewRepresentable {
             }.resume()
         }
 
-        private func setActiveTabFavicon(_ data: Data) {
+        private func setFavicon(_ data: Data, for webView: WKWebView) {
             DispatchQueue.main.async {
-                if let tabManager = self.tabManager,
-                   let tabs = self.tabs,
-                   let activeTab = tabManager.getActiveTab(from: tabs) {
-                    activeTab.favicon = data
-                }
+                self.tab(for: webView)?.favicon = data
             }
         }
 
@@ -313,7 +335,7 @@ struct WebView: NSViewRepresentable {
             guard let url = webView.url, let domain = url.host else { return }
 
             if let initialImageData = DomainInitialsGenerator.shared.generateInitialImage(for: domain) {
-                setActiveTabFavicon(initialImageData)
+                setFavicon(initialImageData, for: webView)
             }
         }
 
@@ -357,6 +379,23 @@ struct WebView: NSViewRepresentable {
             if navigationAction.shouldPerformDownload {
                 decisionHandler(.download, preferences)
                 return
+            }
+
+            if navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url {
+                let mods = navigationAction.modifierFlags
+
+                // Cmd+click: open in a new tab (background; add Shift to focus it)
+                if mods.contains(.command) {
+                    _ = tabManager?.createNewTab(url: url, select: mods.contains(.shift))
+                    decisionHandler(.cancel, preferences)
+                    return
+                }
+
+                // Option+click: download the link target (settings-gated)
+                if mods.contains(.option), SettingsManager.shared.optionClickShouldDownload(url, isImage: false) {
+                    decisionHandler(.download, preferences)
+                    return
+                }
             }
 
             // Settings toggle; unset means enabled. Per-navigation is the path
@@ -669,6 +708,8 @@ class WebViewContainer: NSView {
     func setActiveTab(_ tabId: UUID?) {
         Logger.log("WebViewContainer setActiveTab called with tabId: \(tabId?.uuidString ?? "nil")", type: "WebView")
 
+        let tabChanged = activeTabId != tabId
+
         // Update active tab first
         activeTabId = tabId
 
@@ -731,6 +772,13 @@ class WebViewContainer: NSView {
             webView.allowsBackForwardNavigationGestures = true
             webView.allowsMagnification = true
             webView.allowsLinkPreview = true
+
+            // Give the page key focus so arrow keys / space / cmd+arrows scroll
+            // it. Only on a real tab change (or when nothing has focus) so
+            // routine SwiftUI updates don't steal focus from the omnibar.
+            if let window = self.window, tabChanged || window.firstResponder === window {
+                window.makeFirstResponder(webView)
+            }
 
             Logger.log("WebViewContainer: showed WebView \(Unmanaged.passUnretained(webView).toOpaque()) for tab \(newTabId)", type: "WebView")
         } else {

@@ -3,6 +3,13 @@
 A chromeless web browser for macOS. No toolbar, no title bar — the page fills
 the window. Tabs live in a thin vertical sidebar you can hide entirely.
 
+## Download
+
+Just want to try it? Download the notarized app from
+[nathanfennel.com](https://nathanfennel.com) — no build required. Drag
+`Browser` to Applications, launch it, and accept the license agreement on
+first run.
+
 ## Features
 
 - **No chrome**: no toolbar, no title bar, no traffic lights. Web content runs
@@ -11,6 +18,8 @@ the window. Tabs live in a thin vertical sidebar you can hide entirely.
   of a horizontal tab strip that eats page height.
 - **Popup omnibar**: `⌃Space` to navigate or search; it appears over the page and
   gets out of the way.
+- **Global omnibar**: `⌥Space` from *any* app summons a floating omnibar over
+  whatever you're doing — search or enter a URL and it opens in a new tab.
 - **Command-line interface**: drive the running browser from the terminal.
 
 ### Keyboard Shortcuts
@@ -18,6 +27,7 @@ the window. Tabs live in a thin vertical sidebar you can hide entirely.
 | Shortcut | Action |
 |---|---|
 | `⌃Space` | Show omnibar |
+| `⌥Space` | Global omnibar, from any app (configurable in Settings) |
 | `⌘L` | Show omnibar (Open Location) |
 | `⌘T` / `⌘N` | New tab |
 | `⌘W` | Close current tab |
@@ -57,6 +67,10 @@ permissions are the authentication, so only your user can send commands.
 ```bash
 xcodebuild -project "Straight Up Browser.xcodeproj" -scheme Browser -configuration Release build
 ```
+
+To produce the signed, notarized DMG for distribution, run
+`./scripts/release.sh` (one-time credential setup is documented in the
+script header).
 
 ## Architecture
 
@@ -194,4 +208,4 @@ See the TODO comments throughout the codebase for specific implementation detail
 
 ## License
 
-This project is open source. Feel free to use and modify as needed.
+Proprietary. © 2026 Nathan Fennel. All rights reserved. See [EULA.md](EULA.md).

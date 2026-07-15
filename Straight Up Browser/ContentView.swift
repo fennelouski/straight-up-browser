@@ -34,10 +34,15 @@ struct FloatingFaviconOverlay: View {
                         onTabSelect(tab.id)
                     }) {
                         ZStack {
-                            // Background circle - sized to provide 4 points buffer around 18x18 favicon (26x26 circle)
+                            // Neutral background so favicons of any color stay
+                            // readable; selection is a ring, not a colored fill
                             Circle()
-                                .fill(isSelected ? Color.blue.opacity(0.8) : Color.black.opacity(0.6))
+                                .fill(Color(.windowBackgroundColor))
                                 .frame(width: 26, height: 26)
+                                .overlay(
+                                    Circle()
+                                        .stroke(isSelected ? Color.blue : Color.gray.opacity(0.4), lineWidth: isSelected ? 2 : 1)
+                                )
 
                             // Favicon or default icon
                             if let faviconData = tab.favicon, let nsImage = NSImage(data: faviconData) {
@@ -49,11 +54,11 @@ struct FloatingFaviconOverlay: View {
                             } else if tab.url != nil {
                                 Image(systemName: "globe")
                                     .font(.system(size: 14))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(.primary)
                             } else {
                                 Image(systemName: "plus.circle")
                                     .font(.system(size: 14))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(.primary)
                             }
                         }
                         .frame(width: 26, height: 26)
@@ -138,6 +143,7 @@ struct ContentView: View {
 
     // Managers
     @StateObject private var tabManager: TabManager
+    @StateObject private var linkPreview = LinkPreviewManager()
     @State private var navigationManager: NavigationManager?
     @State private var windowManager: WindowManager?
     @State private var notificationManager: NotificationManager?
@@ -172,8 +178,10 @@ struct ContentView: View {
     // Progress Bar State
     @State private var showProgressBar = false
     @State private var progressValue: Double = 0.0
-    @State private var progressTimer: Timer?
     @State private var hasRenderedContent = false
+
+    // Hold-Cmd+Q-to-quit progress (0 = hidden)
+    @State private var quitHoldProgress: Double = 0
 
     private var currentURL: URL? { activeTab?.url }
 
@@ -486,6 +494,16 @@ struct ContentView: View {
         }
     }
 
+    // Fraction of the window height above the omnibar. Fixed (not centered)
+    // so the bar never moves while suggestions appear below it.
+    private var omnibarTopFraction: CGFloat {
+        switch UserDefaults.standard.string(forKey: "omnibarPosition") {
+        case "Top": return 0.08
+        case "Center": return 0.45
+        default: return 0.25 // "Upper": about 3/4 of the way up the window
+        }
+    }
+
     private var omnibarOverlay: some View {
         Group {
             if showOmnibar {
@@ -497,25 +515,29 @@ struct ContentView: View {
                             showOmnibar = false
                         }
 
-                    VStack {
-                        Spacer()
-                        OmnibarView(
-                            isPresented: $showOmnibar,
-                            urlString: .constant(currentURL?.absoluteString ?? ""),
-                            onNavigate: { urlString in
-                                if let navigationManager = navigationManager {
-                                    _ = navigationManager.navigateToURL(urlString, activeTab: activeTab)
-                                    if let activeTab = activeTab {
-                                        tabManager.updateTabTitle(activeTab)
+                    GeometryReader { geometry in
+                        VStack(spacing: 0) {
+                            Spacer()
+                                .frame(height: geometry.size.height * omnibarTopFraction)
+                            OmnibarView(
+                                isPresented: $showOmnibar,
+                                urlString: .constant(currentURL?.absoluteString ?? ""),
+                                onNavigate: { urlString in
+                                    if let navigationManager = navigationManager {
+                                        _ = navigationManager.navigateToURL(urlString, activeTab: activeTab)
+                                        if let activeTab = activeTab {
+                                            tabManager.updateTabTitle(activeTab)
+                                        }
                                     }
-                                }
-                            },
-                            errorMessage: navigationManager?.omnibarError,
-                            tabs: tabs,
-                            bookmarkSuggestions: bookmarkSuggestions
-                        )
-                        .allowsHitTesting(true)
-                        Spacer()
+                                },
+                                errorMessage: navigationManager?.omnibarError,
+                                tabs: tabs,
+                                bookmarkSuggestions: bookmarkSuggestions
+                            )
+                            .allowsHitTesting(true)
+                            Spacer(minLength: 0)
+                        }
+                        .frame(maxWidth: .infinity)
                     }
                 }
             }
@@ -534,7 +556,10 @@ struct ContentView: View {
                                 placeholder: "Find in page",
                                 shouldFocus: true,
                                 onCommit: { performFind() },
-                                onCancel: { showFindBar = false }
+                                onCancel: {
+                                    showFindBar = false
+                                    clearFindHighlights()
+                                }
                             )
                             .frame(width: 200)
 
@@ -550,7 +575,10 @@ struct ContentView: View {
                             .buttonStyle(.plain)
                             .help("Next Match")
 
-                            Button(action: { showFindBar = false }) {
+                            Button(action: {
+                                showFindBar = false
+                                clearFindHighlights()
+                            }) {
                                 Image(systemName: "xmark")
                             }
                             .buttonStyle(.plain)
@@ -565,8 +593,12 @@ struct ContentView: View {
                     }
                     Spacer()
                 }
-                .onChange(of: findText) { _, _ in
-                    performFind() // incremental find while typing
+                .onChange(of: findText) { _, newValue in
+                    if newValue.isEmpty {
+                        clearFindHighlights() // emptied field: drop the highlight
+                    } else {
+                        performFind() // incremental find while typing
+                    }
                 }
             }
         }
@@ -578,7 +610,37 @@ struct ContentView: View {
         configuration.backwards = backwards
         configuration.caseSensitive = false
         configuration.wraps = true
-        webView.find(findText, configuration: configuration) { _ in }
+        webView.find(findText, configuration: configuration) { result in
+            if result.matchFound {
+                flashFoundMatch(in: webView)
+            }
+        }
+    }
+
+    // Pulse a ring around the found match so the eye can locate it
+    private func flashFoundMatch(in webView: WKWebView) {
+        let js = """
+        (function() {
+            var sel = window.getSelection();
+            if (!sel.rangeCount) return;
+            var r = sel.getRangeAt(0).getBoundingClientRect();
+            var d = document.createElement('div');
+            d.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;' +
+                'left:' + (r.left - 5) + 'px;top:' + (r.top - 5) + 'px;' +
+                'width:' + (r.width + 10) + 'px;height:' + (r.height + 10) + 'px;' +
+                'border:2px solid #FFD60A;border-radius:5px;box-shadow:0 0 12px #FFD60A;' +
+                'opacity:1;transition:opacity 0.6s ease-out;';
+            document.body.appendChild(d);
+            setTimeout(function() { d.style.opacity = '0'; }, 400);
+            setTimeout(function() { d.remove(); }, 1100);
+        })();
+        """
+        webView.evaluateJavaScript(js)
+    }
+
+    // The native find API highlights via the selection; clearing it un-highlights
+    private func clearFindHighlights() {
+        webViewManager?.activeWebView?.evaluateJavaScript("window.getSelection().removeAllRanges()")
     }
 
     private var createGroupDialogOverlay: some View {
@@ -742,6 +804,41 @@ struct ContentView: View {
         }
     }
 
+    private var linkPreviewOverlay: some View {
+        Group {
+            if linkPreview.isShowing {
+                ZStack {
+                    Color.black.opacity(0.3)
+                        .edgesIgnoringSafeArea(.all)
+                        .onTapGesture {
+                            linkPreview.dismiss()
+                        }
+
+                    StaticWebView(webView: linkPreview.webView)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .shadow(radius: 20)
+                        .padding(60)
+                }
+            }
+        }
+    }
+
+    private var quitHoldOverlay: some View {
+        Group {
+            if quitHoldProgress > 0 {
+                VStack(spacing: 12) {
+                    Text("Keep holding ⌘Q to quit")
+                        .font(.headline)
+                    ProgressView(value: min(quitHoldProgress, 1))
+                        .frame(width: 220)
+                }
+                .padding(24)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .shadow(radius: 10)
+            }
+        }
+    }
+
     private var mainContent: some View {
         ZStack {
             webViewContent
@@ -749,11 +846,13 @@ struct ContentView: View {
         }
         .overlay(progressBarOverlay.zIndex(1))
         .overlay(newTabPageOverlay.zIndex(2))
+        .overlay(linkPreviewOverlay.zIndex(3))
         .overlay(omnibarOverlay.zIndex(3))
         .overlay(findBarOverlay.zIndex(3))
         .overlay(createGroupDialogOverlay.zIndex(4))
         .overlay(saveWorkspaceDialogOverlay.zIndex(5))
         .overlay(importBookmarksDialogOverlay.zIndex(6))
+        .overlay(quitHoldOverlay.zIndex(7))
     }
 
     private var colorScheme: ColorScheme? {
@@ -872,6 +971,35 @@ struct ContentView: View {
                     queue: .main
                 ) { [self] _ in
                     showFindBar.toggle()
+                    if !showFindBar {
+                        clearFindHighlights()
+                    }
+                }
+
+                // Cmd+G / Cmd+Shift+G cycle through matches
+                NotificationCenter.default.addObserver(
+                    forName: .browserFindNext,
+                    object: nil,
+                    queue: .main
+                ) { [self] _ in
+                    performFind()
+                }
+
+                NotificationCenter.default.addObserver(
+                    forName: .browserFindPrevious,
+                    object: nil,
+                    queue: .main
+                ) { [self] _ in
+                    performFind(backwards: true)
+                }
+
+                // Hold-Cmd+Q progress HUD
+                NotificationCenter.default.addObserver(
+                    forName: .browserQuitHoldProgress,
+                    object: nil,
+                    queue: .main
+                ) { [self] notification in
+                    quitHoldProgress = notification.userInfo?["progress"] as? Double ?? 0
                 }
 
                 // Toggle tab bar between hidden and last visible width (Cmd+Shift+L)
@@ -915,23 +1043,13 @@ struct ContentView: View {
         }
         .onChange(of: isLoading) { oldValue, newValue in
             if newValue {
-                // Page started loading
-                showProgressBar = false
+                // Page started loading: show the loading bar right away
                 hasRenderedContent = false
-                progressTimer?.invalidate()
-
-                // Start timer to show progress bar after 500ms
-                progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
-                    if self.isLoading && !self.hasRenderedContent {
-                        withAnimation(.easeIn(duration: max(0.02, 0.2))) {
-                            self.showProgressBar = true
-                        }
-                    }
+                withAnimation(.easeIn(duration: 0.2)) {
+                    showProgressBar = true
                 }
             } else {
                 // Page finished loading
-                progressTimer?.invalidate()
-                progressTimer = nil
                 if showProgressBar {
                     // First animate progress to 100% if not already complete
                     if progressValue < 1.0 {
@@ -1011,6 +1129,7 @@ struct ContentView: View {
         keyboardShortcutsManager = KeyboardShortcutsManager(
             showOmnibar: $showOmnibar,
             reloadAction: { self.reload() },
+            hardReloadAction: { self.hardReload() },
             reloadAllTabsAction: { self.reloadAllTabs() },
             goBackAction: { self.goBack() },
             goForwardAction: { self.goForward() }

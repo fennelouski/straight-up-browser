@@ -47,7 +47,7 @@ struct SettingsWindow: View {
                 }
                 .tag(4)
         }
-        .frame(width: 600, height: 400)
+        .frame(width: 600, height: 560)
         .padding()
         .preferredColorScheme(colorScheme)
     }
@@ -56,8 +56,13 @@ struct SettingsWindow: View {
 // MARK: - General Settings
 struct GeneralSettingsView: View {
     @AppStorage("searchEngine") private var searchEngine = "Google"
+    @AppStorage("omnibarPosition") private var omnibarPosition = "Upper"
+    @AppStorage("spaceScrollPercent") private var spaceScrollPercent = 90.0
+    @AppStorage("cmdPExportsPDF") private var cmdPExportsPDF = true
+    @AppStorage(GlobalOmnibarHotkey.defaultsKey) private var globalOmnibarHotkey = GlobalOmnibarHotkey.defaultChord
 
     let searchEngines = ["Google", "DuckDuckGo", "Bing", "Yahoo"]
+    let omnibarPositions = ["Top", "Upper", "Center"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -76,6 +81,39 @@ struct GeneralSettingsView: View {
                         }
                         .pickerStyle(.menu)
                     }
+
+                    Picker("Omnibar position", selection: $omnibarPosition) {
+                        ForEach(omnibarPositions, id: \.self) { position in
+                            Text(position)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+                .padding()
+            }
+
+            GroupBox(label: Text("Behavior")) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Spacebar scrolls \(Int(spaceScrollPercent))% of a page")
+                        Slider(value: $spaceScrollPercent, in: 10...100, step: 5)
+                            .frame(width: 180)
+                    }
+                    Text("Applies to newly loaded pages.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Toggle("⌘P creates a PDF (Print is ⇧⌘P)", isOn: $cmdPExportsPDF)
+
+                    Picker("Global omnibar hotkey", selection: $globalOmnibarHotkey) {
+                        Text("⌥ Space").tag("optSpace")
+                        Text("⌃⌥ Space").tag("ctrlOptSpace")
+                        Text("Off").tag("off")
+                    }
+                    .pickerStyle(.menu)
+                    Text("Opens the omnibar from any app, even when Browser isn't focused.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 .padding()
             }
@@ -389,6 +427,12 @@ struct AppearanceSettingsView: View {
 struct AdvancedSettingsView: View {
     @AppStorage("javaScriptEnabled") private var javaScriptEnabled = true
     @AppStorage("downloadsFolder") private var downloadsFolder = ""
+    @AppStorage("optionClickDownloadEnabled") private var optionClickDownloadEnabled = true
+    @AppStorage("optionClickDownloadLinks") private var optionClickDownloadLinks = true
+    @AppStorage("optionClickDownloadImages") private var optionClickDownloadImages = true
+    @AppStorage("optionClickFileTypes") private var optionClickFileTypes = ""
+    @AppStorage("optionClickAlwaysDomains") private var optionClickAlwaysDomains = ""
+    @AppStorage("optionClickNeverDomains") private var optionClickNeverDomains = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -408,6 +452,31 @@ struct AdvancedSettingsView: View {
 
             GroupBox(label: Text("Downloads")) {
                 VStack(alignment: .leading, spacing: 12) {
+                    Toggle("Option-click downloads the linked file", isOn: $optionClickDownloadEnabled)
+
+                    if optionClickDownloadEnabled {
+                        Toggle("Apply to links", isOn: $optionClickDownloadLinks)
+                        Toggle("Apply to images", isOn: $optionClickDownloadImages)
+
+                        HStack {
+                            Text("File types:")
+                            TextField("e.g. jpg png gif pdf (empty = all)", text: $optionClickFileTypes)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        HStack {
+                            Text("Always on:")
+                            TextField("domains, comma or space separated", text: $optionClickAlwaysDomains)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        HStack {
+                            Text("Never on:")
+                            TextField("domains, comma or space separated", text: $optionClickNeverDomains)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                    }
+
+                    Divider()
+
                     HStack {
                         Text("Download folder:")
                         TextField("Downloads folder path", text: $downloadsFolder)

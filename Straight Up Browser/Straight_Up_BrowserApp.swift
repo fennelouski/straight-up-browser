@@ -11,6 +11,11 @@ import AppKit
 
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    private let globalOmnibar = GlobalOmnibarController()
+
+    // Keep in sync with EULA.md; bump the version to re-prompt existing users.
+    private let eulaVersion = 1
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Disable automatic window tabbing
         NSWindow.allowsAutomaticWindowTabbing = false
@@ -18,12 +23,115 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Initialize CLI interface
         _ = BrowserCLI.shared
     }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        if UserDefaults.standard.integer(forKey: "acceptedEULAVersion") < eulaVersion {
+            guard runEULAAlert() else {
+                NSApp.terminate(nil)
+                return
+            }
+            UserDefaults.standard.set(eulaVersion, forKey: "acceptedEULAVersion")
+        }
+        registerGlobalHotkey()
+    }
+
+    // Returns true if the user accepted.
+    private func runEULAAlert() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "License Agreement"
+        alert.informativeText = "Before you open your window to the Internet, please accept the End User License Agreement."
+
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 460, height: 220))
+        textView.string = Self.eulaText
+        textView.isEditable = false
+        textView.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        textView.textContainerInset = NSSize(width: 6, height: 6)
+        textView.autoresizingMask = [.width]
+
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 460, height: 220))
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .bezelBorder
+        alert.accessoryView = scrollView
+
+        alert.addButton(withTitle: "Accept")
+        alert.addButton(withTitle: "Decline")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    // Registered only after the EULA gate passes, so the global omnibar is
+    // inert until the terms are accepted.
+    private func registerGlobalHotkey() {
+        GlobalOmnibarHotkey.install { [weak self] in
+            // Browser already frontmost with a window: use the in-app overlay
+            // instead of stacking a second omnibar on top of it.
+            if NSApp.isActive, let keyWindow = NSApp.keyWindow, !(keyWindow is NSPanel) {
+                NotificationCenter.default.post(name: .showOmnibar, object: nil)
+            } else {
+                self?.globalOmnibar.toggle()
+            }
+        }
+        GlobalOmnibarHotkey.applyFromDefaults()
+        NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { GlobalOmnibarHotkey.applyFromDefaults() }
+        }
+    }
+
+    // Keep in sync with EULA.md.
+    private static let eulaText = """
+    END USER LICENSE AGREEMENT
+    EULA version 1 — © 2026 Nathan Fennel. All rights reserved.
+
+    This Agreement is between you and Nathan Fennel ("the Author") and governs \
+    your use of the Internet browser application, also known as Straight Up \
+    Browser ("the Software"). By \
+    clicking Accept, or by installing or using the Software, you agree to this \
+    Agreement. If you do not agree, do not use the Software.
+
+    1. LICENSE. The Author grants you a personal, non-exclusive, \
+    non-transferable, revocable license to install and use the Software for \
+    your own use. You may not redistribute, sell, rent, sublicense, modify, or \
+    reverse engineer the Software, in whole or in part, except where such \
+    restriction is prohibited by applicable law.
+
+    2. NO WARRANTY. THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", \
+    WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT \
+    LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR \
+    PURPOSE, ACCURACY, RELIABILITY, SECURITY, OR NON-INFRINGEMENT. THE AUTHOR \
+    DOES NOT WARRANT THAT THE SOFTWARE WILL BE ERROR-FREE OR UNINTERRUPTED, OR \
+    THAT DEFECTS WILL BE CORRECTED.
+
+    3. LIMITATION OF LIABILITY. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE \
+    AUTHOR SHALL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, \
+    CONSEQUENTIAL, OR EXEMPLARY DAMAGES WHATSOEVER — INCLUDING BUT NOT LIMITED \
+    TO LOSS OF DATA, LOSS OF PROFITS, BUSINESS INTERRUPTION, DEVICE DAMAGE, OR \
+    PERSONAL INJURY — ARISING OUT OF OR RELATED TO YOUR USE OF OR INABILITY TO \
+    USE THE SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES. YOUR \
+    SOLE AND EXCLUSIVE REMEDY IS TO STOP USING THE SOFTWARE.
+
+    4. YOUR RESPONSIBILITY. The Software is a web browser. You are solely \
+    responsible for the websites you visit, the content you view, the files \
+    you download, the information you transmit, and your compliance with all \
+    applicable laws. The Author has no control over, and assumes no \
+    responsibility for, any third-party websites, content, or services \
+    accessed through the Software.
+
+    5. TERMINATION. This license terminates automatically if you breach this \
+    Agreement. Upon termination you must stop using and delete the Software.
+
+    6. CHANGES. The Author may update this Agreement in future versions of \
+    the Software. Continued use after an update constitutes acceptance of the \
+    revised terms.
+    """
 }
 
 @main
 struct Straight_Up_BrowserApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var showSettings = false
+    @AppStorage("cmdPExportsPDF") private var cmdPExportsPDF = true
     @Environment(\.openWindow) private var openWindow
     private var colorScheme: ColorScheme? {
         SettingsManager.shared.colorScheme
@@ -67,6 +175,12 @@ struct Straight_Up_BrowserApp: App {
         .windowStyle(.automatic)
         .defaultSize(width: 600, height: 400)
         .windowResizability(.contentSize)
+
+        Window("Help", id: "help") {
+            HelpWindow()
+        }
+        .windowStyle(.automatic)
+        .windowResizability(.contentSize)
         .commands {
             // Add standard browser commands
             CommandGroup(replacing: .newItem) {
@@ -95,7 +209,19 @@ struct Straight_Up_BrowserApp: App {
                 Button("Print...") {
                     NotificationCenter.default.post(name: .browserPrint, object: nil)
                 }
-                .keyboardShortcut("p", modifiers: .command)
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+
+                // Cmd+P makes a PDF (toggleable in Settings > General)
+                if cmdPExportsPDF {
+                    Button("Export as PDF...") {
+                        NotificationCenter.default.post(name: .browserExportPDF, object: nil)
+                    }
+                    .keyboardShortcut("p", modifiers: .command)
+                } else {
+                    Button("Export as PDF...") {
+                        NotificationCenter.default.post(name: .browserExportPDF, object: nil)
+                    }
+                }
             }
 
             // View menu commands
@@ -104,6 +230,11 @@ struct Straight_Up_BrowserApp: App {
                     NotificationCenter.default.post(name: .reopenLastClosedTab, object: nil)
                 }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
+
+                Button("Toggle Full Screen") {
+                    (NSApp.keyWindow ?? NSApp.mainWindow)?.toggleFullScreen(nil)
+                }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
 
                 Divider()
 
@@ -236,15 +367,38 @@ struct Straight_Up_BrowserApp: App {
                 }
                 .keyboardShortcut("f", modifiers: .command)
 
+                Button("Find Next") {
+                    NotificationCenter.default.post(name: .browserFindNext, object: nil)
+                }
+                .keyboardShortcut("g", modifiers: .command)
+
+                Button("Find Previous") {
+                    NotificationCenter.default.post(name: .browserFindPrevious, object: nil)
+                }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+
                 Button("Show Omnibar") {
                     NotificationCenter.default.post(name: .showOmnibar, object: nil)
                 }
                 .keyboardShortcut(" ", modifiers: .control)
 
+                // Slack-style quick open; same omnibar, second shortcut
+                Button("Quick Open") {
+                    NotificationCenter.default.post(name: .showOmnibar, object: nil)
+                }
+                .keyboardShortcut("k", modifiers: .command)
+
                 Button("Settings...") {
                     NotificationCenter.default.post(name: .browserShowSettings, object: nil)
                 }
                 .keyboardShortcut(",", modifiers: .command)
+            }
+
+            CommandGroup(replacing: .help) {
+                Button("Internet Help") {
+                    openWindow(id: "help")
+                }
+                .keyboardShortcut("?", modifiers: .command)
             }
         }
     }

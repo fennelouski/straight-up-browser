@@ -6,7 +6,7 @@
 //
 
 import Testing
-@testable import Straight_Up_Browser
+@testable import Internet
 
 struct Straight_Up_BrowserTests {
 

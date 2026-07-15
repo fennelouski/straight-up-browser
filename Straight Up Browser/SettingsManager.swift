@@ -93,4 +93,34 @@ class SettingsManager {
         }
     }
 
+    // MARK: - Option-Click Download
+
+    /// Should an option-click on this URL trigger a download?
+    /// Rules: master toggle -> never-domains -> per-kind toggle -> always-domains -> file types.
+    func optionClickShouldDownload(_ url: URL, isImage: Bool) -> Bool {
+        // Bool settings default to on when unset
+        func boolOn(_ key: String) -> Bool {
+            userDefaults.object(forKey: key) == nil || userDefaults.bool(forKey: key)
+        }
+        func list(_ key: String) -> [String] {
+            (userDefaults.string(forKey: key) ?? "")
+                .lowercased()
+                .split(whereSeparator: { $0 == "," || $0.isWhitespace })
+                .map(String.init)
+        }
+
+        guard boolOn("optionClickDownloadEnabled") else { return false }
+
+        let host = (url.host ?? "").lowercased()
+        func matches(_ domain: String) -> Bool { host == domain || host.hasSuffix("." + domain) }
+
+        if list("optionClickNeverDomains").contains(where: matches) { return false }
+        guard boolOn(isImage ? "optionClickDownloadImages" : "optionClickDownloadLinks") else { return false }
+        if list("optionClickAlwaysDomains").contains(where: matches) { return true }
+
+        let types = list("optionClickFileTypes")
+        guard !types.isEmpty else { return true } // empty = all file types
+        return types.contains(url.pathExtension.lowercased())
+    }
+
 }

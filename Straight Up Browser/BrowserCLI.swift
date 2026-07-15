@@ -160,12 +160,23 @@ extension Notification.Name {
 
     // Edit menu
     static let browserFindInPage = Notification.Name("browserFindInPage")
+    static let browserFindNext = Notification.Name("browserFindNext")
+    static let browserFindPrevious = Notification.Name("browserFindPrevious")
 
     // View menu
     static let browserZoomIn = Notification.Name("browserZoomIn")
     static let browserZoomOut = Notification.Name("browserZoomOut")
     static let browserZoomReset = Notification.Name("browserZoomReset")
     static let browserPrint = Notification.Name("browserPrint")
+    static let browserExportPDF = Notification.Name("browserExportPDF")
+
+    // Link preview (long-press) signals from the injected page script
+    static let browserLinkPreviewDown = Notification.Name("browserLinkPreviewDown")
+    static let browserLinkPreviewLongPress = Notification.Name("browserLinkPreviewLongPress")
+    static let browserLinkPreviewUp = Notification.Name("browserLinkPreviewUp")
+
+    // Hold-Cmd+Q-to-quit progress (userInfo["progress"]: Double, 0 = cancelled)
+    static let browserQuitHoldProgress = Notification.Name("browserQuitHoldProgress")
     static let browserToggleTabBar = Notification.Name("browserToggleTabBar")
     static let browserHideTabBar = Notification.Name("browserHideTabBar")
     static let browserMinimalTabBar = Notification.Name("browserMinimalTabBar")
