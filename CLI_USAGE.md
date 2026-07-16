@@ -1,4 +1,4 @@
-# Internet browser CLI
+# Browser CLI
 
 Control the browser from the terminal — built so an AI agent can drive it
 end-to-end (navigate, read pages, click, type, screenshot) and hand off to a

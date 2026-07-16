@@ -1,6 +1,6 @@
 //
 //  Settings_iOS.swift
-//  Internet (iPadOS)
+//  Browser (iPadOS)
 //
 //  iPad settings, presented as a sheet. Bound to the same @AppStorage keys the
 //  Mac settings panes use, so preferences read identically across platforms.
@@ -14,6 +14,10 @@ import WebKit
 
 struct Settings_iOS: View {
     @Environment(\.dismiss) private var dismiss
+
+    @AppStorage(TabSync.Key.enabled) private var tabSyncEnabled = false
+    @AppStorage(TabSync.Key.mode) private var tabSyncMode = TabSyncMode.openOnly.rawValue
+    @AppStorage(TabSync.Key.cacheState) private var tabSyncCacheState = false
 
     @AppStorage("searchEngine") private var searchEngine = "Google"
     @AppStorage("spaceScrollPercent") private var spaceScrollPercent = 90.0
@@ -34,10 +38,28 @@ struct Settings_iOS: View {
 
     @State private var showClearConfirm = false
     @State private var clearedNote = false
+    @State private var iCloudAvailable = false
 
     var body: some View {
         NavigationStack {
             Form {
+                // Only offered when the user's iCloud account can back sync.
+                if iCloudAvailable {
+                    Section {
+                        Toggle("Sync tabs across your devices", isOn: $tabSyncEnabled)
+                        if tabSyncEnabled {
+                            Picker("Sync", selection: $tabSyncMode) {
+                                ForEach(TabSyncMode.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
+                            }
+                            Toggle("Also sync page state (scroll, history, forms)", isOn: $tabSyncCacheState)
+                        }
+                    } header: {
+                        Text("Sync")
+                    } footer: {
+                        Text("Uses iCloud. “Just opening tabs” shares the tabs you open but keeps closing a tab a per-device choice; “Opening and closing” keeps one shared set across devices. Page state syncs each tab's scroll position, history, and form fields. Turning sync on or off takes effect after you relaunch.")
+                    }
+                }
+
                 Section("Search") {
                     Picker("Search engine", selection: $searchEngine) {
                         ForEach(["Google", "DuckDuckGo", "Bing", "Yahoo"], id: \.self) { Text($0).tag($0) }
@@ -110,6 +132,7 @@ struct Settings_iOS: View {
                     Text("Removes history, cookies, caches, and local storage.")
                 }
             }
+            .task { iCloudAvailable = await TabSync.iCloudAvailable() }
             .navigationTitle("Settings")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .confirmationDialog("Clear all browsing data?", isPresented: $showClearConfirm, titleVisibility: .visible) {

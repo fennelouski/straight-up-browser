@@ -1,6 +1,6 @@
 //
 //  BrowserView_iOS.swift
-//  Internet (iPadOS)
+//  Browser (iPadOS)
 //
 //  The iPad browser: a NavigationSplitView tab sidebar plus a full-bleed web view
 //  with no persistent chrome — the omnibar is summoned on demand (⌘L / new tab) as
@@ -9,7 +9,7 @@
 //  / NavigationManager / BookmarkManager exactly as the Mac ContentView does.
 //
 //  Keyboard commands are posted as notifications by the app's .commands block
-//  (InternetApp_iOS) and handled here — the same decoupling the Mac app uses.
+//  (BrowserApp_iOS) and handled here — the same decoupling the Mac app uses.
 //
 
 import SwiftUI
@@ -158,7 +158,7 @@ struct BrowserView_iOS: View {
         }
         .sheet(isPresented: $showShortcutSheet) { ShortcutCheatSheet_iOS() }
         .sheet(isPresented: $showSettings) { Settings_iOS() }
-        // Keyboard commands (posted by InternetApp_iOS.commands), handled through
+        // Keyboard commands (posted by BrowserApp_iOS.commands), handled through
         // one merged publisher — a chain of ~16 .onReceive modifiers overwhelms
         // the SwiftUI type-checker.
         .onReceive(commandPublisher) { handleCommand($0) }

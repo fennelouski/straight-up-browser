@@ -15,6 +15,7 @@
 import Foundation
 import SwiftData
 import WebKit
+import CloudKit
 
 enum TabSyncMode: String, CaseIterable {
     case openOnly    // just opening syncs; closes are local to each device (default)
@@ -49,6 +50,18 @@ enum TabSync {
     /// DB when sync is on, or none (local only) when off.
     static var cloudKitDatabase: ModelConfiguration.CloudKitDatabase {
         enabled ? .private(containerID) : .none
+    }
+
+    /// Whether the user's iCloud account can actually back CloudKit sync (signed
+    /// in and usable). The settings UI hides the sync controls when this is false,
+    /// so we never offer a setting that can't work. Also covers the case where the
+    /// CloudKit container isn't provisioned yet (the check errors → false).
+    static func iCloudAvailable() async -> Bool {
+        do {
+            return try await CKContainer(identifier: containerID).accountStatus() == .available
+        } catch {
+            return false
+        }
     }
 
     // MARK: Open-only local closes

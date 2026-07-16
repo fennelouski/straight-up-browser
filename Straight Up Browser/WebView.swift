@@ -95,6 +95,15 @@ struct WebView: NSViewRepresentable {
             activeWebView.pageZoom = tab.zoomLevel
         }
 
+        // Cache-state sync: restore a synced tab's page state into a fresh web view
+        // (scroll + history), then skip the plain URL load.
+        if activeWebView.url == nil,
+           let tab = tabs?.first(where: { $0.id == activeTabId }),
+           TabSync.restoreInteractionState(tab, into: activeWebView) {
+            context.coordinator.lastRequestedURL = tab.url
+            return
+        }
+
         // Load the URL when it changes. Dedupe against what the webview already
         // shows and what we already requested - no time-based throttle, which
         // silently dropped legitimate navigations.
@@ -210,6 +219,7 @@ struct WebView: NSViewRepresentable {
             // the injected user script reads it on each keypress
             let pct = UserDefaults.standard.object(forKey: "spaceScrollPercent") as? Double ?? 90
             webView.evaluateJavaScript("window.__subSpacePct = \(pct)")
+            if let tab = tab(for: webView) { TabSync.restoreSessionStorage(tab, into: webView) }
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -252,6 +262,7 @@ struct WebView: NSViewRepresentable {
 
             // Load favicon for the current page
             loadFavicon(for: webView)
+            if let tab = tab(for: webView) { TabSync.captureCacheState(from: webView, into: tab) }
 
             // Ensure WebView remains interactive after loading
             DispatchQueue.main.async {

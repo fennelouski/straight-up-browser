@@ -8,7 +8,7 @@
 
 import Foundation
 
-// Command line interface for the Internet browser (Straight Up Browser).
+// Command line interface for Browser (Straight Up Browser).
 // Usage: browser-cli <command> [arguments]
 // Run `browser-cli docs` for the full agent-oriented guide.
 //
@@ -51,7 +51,7 @@ func openPipe() -> FileHandle? {
 }
 
 func launchApp() {
-    // This binary ships at Internet.app/Contents/Helpers/browser-cli - walk
+    // This binary ships at Browser.app/Contents/Helpers/browser-cli - walk
     // up to the bundle so we launch the exact copy we belong to. Fall back to
     // Launch Services by name for dev builds living outside a bundle.
     let exe = (Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0]))
@@ -59,7 +59,7 @@ func launchApp() {
     let bundle = exe
         .deletingLastPathComponent() // Helpers
         .deletingLastPathComponent() // Contents
-        .deletingLastPathComponent() // Internet.app
+        .deletingLastPathComponent() // Browser.app
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
     process.arguments = bundle.pathExtension == "app" ? [bundle.path] : ["-b", "com.nathanfennel.Straight-Up-Browser"]
@@ -233,7 +233,7 @@ lines.join('\n')
 
 func printUsage() {
     print("""
-    Internet browser CLI (Straight Up Browser)
+    Browser CLI (Straight Up Browser)
 
     Usage: browser-cli <command> [arguments]
 
@@ -288,14 +288,14 @@ func printUsage() {
 }
 
 let agentDocs = #"""
-# browser-cli — driving the Internet browser from the terminal
+# browser-cli — driving Browser from the terminal
 
 This guide is written for AI agents. It is complete: everything you need to
 control the browser is here, no repo access required.
 
 ## What this is
 
-`browser-cli` remote-controls **Internet** (a real macOS WebKit browser with a
+`browser-cli` remote-controls **Browser** (a real macOS WebKit browser with a
 visible window). You automate it; a human can see the same window and take
 over at any time - that's the point. Pages behave exactly as they do for a
 person: real cookies, real sessions, real rendering.

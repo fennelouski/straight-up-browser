@@ -1,6 +1,6 @@
 //
 //  TabSidebar_iOS.swift
-//  Internet (iPadOS)
+//  Browser (iPadOS)
 //
 //  The NavigationSplitView sidebar: the tab list grouped by TabGroup, with a
 //  new-tab button and group/workspace menu. Uses a native List so a hardware
@@ -71,7 +71,7 @@ struct TabSidebar_iOS: View {
             }
         }
         .listStyle(.sidebar)
-        .navigationTitle("Internet")
+        .navigationTitle("Browser")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button(action: onNewTab) { Image(systemName: "plus") }

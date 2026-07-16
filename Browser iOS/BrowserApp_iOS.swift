@@ -1,6 +1,6 @@
 //
-//  InternetApp_iOS.swift
-//  Internet (iPadOS)
+//  BrowserApp_iOS.swift
+//  Browser (iPadOS)
 //
 //  Keyboard-first iPad browser. Shares the model/manager core with the Mac app
 //  (Tab, TabManager, WebViewManager, SettingsManager, …) and brings its own
@@ -11,7 +11,7 @@ import SwiftUI
 import SwiftData
 
 @main
-struct InternetApp: App {
+struct BrowserApp: App {
     // Same SwiftData schema as the Mac app (Straight_Up_BrowserApp.swift). `Tab`
     // is the @Model class; the `BrowserTab` typealias lives in the Mac-only
     // ContentView, so iOS code refers to `Tab` directly.

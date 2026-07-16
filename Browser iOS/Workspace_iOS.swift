@@ -1,6 +1,6 @@
 //
 //  Workspace_iOS.swift
-//  Internet (iPadOS)
+//  Browser (iPadOS)
 //
 //  Saved-workspace value types (a named snapshot of the current tabs + groups),
 //  mirroring the Mac ContentView's SavedWorkspace/SavedTabGroup/SavedWorkspaceTab.

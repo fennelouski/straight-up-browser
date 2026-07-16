@@ -21,11 +21,34 @@ struct GeneralSettingsView: View {
     @AppStorage("cmdPExportsPDF") private var cmdPExportsPDF = true
     @AppStorage(GlobalOmnibarHotkey.defaultsKey) private var globalOmnibarHotkey = GlobalOmnibarHotkey.defaultChord
 
+    @AppStorage(TabSync.Key.enabled) private var tabSyncEnabled = false
+    @AppStorage(TabSync.Key.mode) private var tabSyncMode = TabSyncMode.openOnly.rawValue
+    @AppStorage(TabSync.Key.cacheState) private var tabSyncCacheState = false
+    @State private var iCloudAvailable = false
+
     private let searchEngines = ["Google", "DuckDuckGo", "Bing", "Yahoo"]
     private let omnibarPositions = ["Top", "Upper", "Center"]
 
     var body: some View {
         Form {
+            // Only offered when the user's iCloud account can back sync.
+            if iCloudAvailable {
+                Section {
+                    Toggle("Sync tabs across your devices", isOn: $tabSyncEnabled)
+                    if tabSyncEnabled {
+                        Picker("Sync", selection: $tabSyncMode) {
+                            ForEach(TabSyncMode.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
+                        }
+                        Toggle("Also sync page state (scroll, history, forms)", isOn: $tabSyncCacheState)
+                    }
+                } header: {
+                    SettingsLabel("Sync", systemImage: "arrow.triangle.2.circlepath", tint: SettingsTint.general)
+                } footer: {
+                    Text("Uses iCloud. “Just opening tabs” shares the tabs you open but keeps closing a tab a per-device choice; “Opening and closing” keeps one shared set across devices. Turning sync on or off takes effect after you relaunch.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
             Section {
                 Picker("Default search engine", selection: $searchEngine) {
                     ForEach(searchEngines, id: \.self) { Text($0) }
@@ -88,6 +111,7 @@ struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .task { iCloudAvailable = await TabSync.iCloudAvailable() }
     }
 }
 

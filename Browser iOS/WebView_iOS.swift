@@ -1,6 +1,6 @@
 //
 //  WebView_iOS.swift
-//  Internet (iPadOS)
+//  Browser (iPadOS)
 //
 //  UIKit twin of the Mac WebView.swift. The heavy lifting (WKWebView ownership,
 //  ad-block, memory-pressure unload) lives in the shared WebViewManager; this is

@@ -16,7 +16,7 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "5799E6C8B0A6D3D0970EB02B"
                BuildableName = "Browser.app"
-               BlueprintName = "Internet iOS"
+               BlueprintName = "Browser iOS"
                ReferencedContainer = "container:Straight Up Browser.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -46,7 +46,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "5799E6C8B0A6D3D0970EB02B"
             BuildableName = "Browser.app"
-            BlueprintName = "Internet iOS"
+            BlueprintName = "Browser iOS"
             ReferencedContainer = "container:Straight Up Browser.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -63,7 +63,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "5799E6C8B0A6D3D0970EB02B"
             BuildableName = "Browser.app"
-            BlueprintName = "Internet iOS"
+            BlueprintName = "Browser iOS"
             ReferencedContainer = "container:Straight Up Browser.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Dev-loop build of the CLI tool. The app's Xcode build compiles and signs
-# this same source into Internet.app/Contents/Helpers/browser-cli.
+# this same source into Browser.app/Contents/Helpers/browser-cli.
 echo "Building Straight Up Browser CLI..."
 
 swiftc -O browser-cli/main.swift -o browser-cli-tool

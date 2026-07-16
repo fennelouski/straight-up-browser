@@ -36,7 +36,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		9ACE3A8A2F43D2753F34F544 /* Exceptions for "Straight Up Browser" folder in "Internet iOS" target */ = {
+		9ACE3A8A2F43D2753F34F544 /* Exceptions for "Straight Up Browser" folder in "Browser iOS" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Assets.xcassets,
@@ -60,7 +60,7 @@
 				WebView.swift,
 				WindowManager.swift,
 			);
-			target = 5799E6C8B0A6D3D0970EB02B /* Internet iOS */;
+			target = 5799E6C8B0A6D3D0970EB02B /* Browser iOS */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -68,30 +68,24 @@
 		803E20692F11607F00A31C8D /* Straight Up Browser */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				9ACE3A8A2F43D2753F34F544 /* Exceptions for "Straight Up Browser" folder in "Internet iOS" target */,
+				9ACE3A8A2F43D2753F34F544 /* Exceptions for "Straight Up Browser" folder in "Browser iOS" target */,
 			);
 			path = "Straight Up Browser";
 			sourceTree = "<group>";
 		};
 		803E20792F11608100A31C8D /* Straight Up BrowserTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = "Straight Up BrowserTests";
 			sourceTree = "<group>";
 		};
 		803E20832F11608100A31C8D /* Straight Up BrowserUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = "Straight Up BrowserUITests";
 			sourceTree = "<group>";
 		};
-		CACF1DAAEDABC0FCAEF39F90 /* Internet iOS */ = {
+		CACF1DAAEDABC0FCAEF39F90 /* Browser iOS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
-			path = "Internet iOS";
+			path = "Browser iOS";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -145,7 +139,7 @@
 				803E20832F11608100A31C8D /* Straight Up BrowserUITests */,
 				803E20682F11607F00A31C8D /* Products */,
 				FA1CB873CAF1477E1979F61B /* Frameworks */,
-				CACF1DAAEDABC0FCAEF39F90 /* Internet iOS */,
+				CACF1DAAEDABC0FCAEF39F90 /* Browser iOS */,
 			);
 			sourceTree = "<group>";
 		};
@@ -171,9 +165,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		5799E6C8B0A6D3D0970EB02B /* Internet iOS */ = {
+		5799E6C8B0A6D3D0970EB02B /* Browser iOS */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 9D256FC2A98C0DD0DB2020B1 /* Build configuration list for PBXNativeTarget "Internet iOS" */;
+			buildConfigurationList = 9D256FC2A98C0DD0DB2020B1 /* Build configuration list for PBXNativeTarget "Browser iOS" */;
 			buildPhases = (
 				2BA0BF16E83FD7391746FDB3 /* Sources */,
 				A5972A50C46376EF4AEBBF74 /* Frameworks */,
@@ -185,10 +179,10 @@
 			);
 			fileSystemSynchronizedGroups = (
 				803E20692F11607F00A31C8D /* Straight Up Browser */,
-				CACF1DAAEDABC0FCAEF39F90 /* Internet iOS */,
+				CACF1DAAEDABC0FCAEF39F90 /* Browser iOS */,
 			);
-			name = "Internet iOS";
-			productName = "Internet iOS";
+			name = "Browser iOS";
+			productName = "Browser iOS";
 			productReference = 58AA1C45E6DEE7337895173D /* Browser.app */;
 			productType = "com.apple.product-type.application";
 		};
@@ -334,7 +328,7 @@
 				803E20662F11607F00A31C8D /* Browser */,
 				803E20752F11608100A31C8D /* Straight Up BrowserTests */,
 				803E207F2F11608100A31C8D /* Straight Up BrowserUITests */,
-				5799E6C8B0A6D3D0970EB02B /* Internet iOS */,
+				5799E6C8B0A6D3D0970EB02B /* Browser iOS */,
 			);
 		};
 /* End PBXProject section */
@@ -444,7 +438,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
-				CODE_SIGN_ENTITLEMENTS = "Internet iOS.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "Browser iOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
@@ -677,7 +671,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Internet.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Internet";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Browser.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Browser";
 			};
 			name = Debug;
 		};
@@ -698,7 +692,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Internet.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Internet";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Browser.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Browser";
 			};
 			name = Release;
 		};
@@ -746,7 +740,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
-				CODE_SIGN_ENTITLEMENTS = "Internet iOS.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "Browser iOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
@@ -816,7 +810,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		9D256FC2A98C0DD0DB2020B1 /* Build configuration list for PBXNativeTarget "Internet iOS" */ = {
+		9D256FC2A98C0DD0DB2020B1 /* Build configuration list for PBXNativeTarget "Browser iOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A2925710064FA6BC8E00F638 /* Release */,

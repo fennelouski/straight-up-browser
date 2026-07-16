@@ -1,6 +1,6 @@
 //
 //  Omnibar_iOS.swift
-//  Internet (iPadOS)
+//  Browser (iPadOS)
 //
 //  The iPad omnibar: an always-visible address/search field in the toolbar
 //  (⌘L focuses it) plus a suggestions panel drawn under it. The input-resolution
