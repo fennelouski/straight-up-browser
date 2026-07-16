@@ -273,6 +273,8 @@ func printUsage() {
     Docs:
       help                     This overview
       docs                     Full guide for AI agents (schemas, patterns)
+      install-skill            Install a Claude Code skill so Claude discovers
+                               this browser on its own (~/.claude/skills/browser)
 
     Examples:
       browser-cli open https://example.com && browser-cli wait
@@ -388,10 +390,76 @@ When you hit something only a human can do:
 - **Selectors from `snapshot`** are `#id` when available, else a
   `tag:nth-of-type` path. They're valid `document.querySelector` input.
 - **Real clicks don't land** - the human may need to grant macOS
-  Accessibility permission to the Internet app (System Settings >
+  Accessibility permission to Browser (System Settings >
   Privacy & Security > Accessibility), and the window must be frontmost.
 - **State lives in the app** - cookies/sessions persist across commands like
   a normal browser. You're sharing the human's browser: be a good guest.
+"""#
+
+// MARK: - Claude Code skill
+
+// Shipped in the binary for the same reason agentDocs is: someone who installed
+// the app has no repo to copy from. `install-skill` drops this into
+// ~/.claude/skills/browser/ and Claude Code discovers the browser on its own.
+// It deliberately defers to `browser-cli docs` instead of restating it, so the
+// skill cannot drift out of sync with the binary.
+let claudeSkill = #"""
+---
+name: browser
+description: Drive a real macOS browser window (Straight Up Browser) from the terminal with browser-cli — open pages, read them with snapshot, click/type/run JavaScript, screenshot, and hand off to a human for captchas or logins. Use when a task needs a real browser: checking a live page, filling a form, working behind a login, or verifying a deployed site.
+---
+
+# Browser
+
+`browser-cli` drives a real macOS browser window. Every command prints JSON to
+stdout and exits 0 on success; errors print `{"error":"..."}` to stderr and exit
+1. The app launches automatically if it isn't running.
+
+## Read the real docs first
+
+```sh
+browser-cli docs
+```
+
+That prints the full agent guide: every command, its JSON schema, and the usual
+patterns. It ships with the binary, so it is the source of truth. This file is
+only the pointer.
+
+## The loop
+
+```sh
+browser-cli open --new https://example.com
+browser-cli wait
+browser-cli snapshot                            # title, text, CSS selectors
+browser-cli click '#more-info' && browser-cli wait
+browser-cli snapshot                            # observe what changed
+```
+
+`snapshot` is how you see a page cheaply: a compact outline with selectors for
+everything interactive, not a megabyte of raw HTML. Reach for `get` only when
+you genuinely need the full page JSON.
+
+Interacting: `click <selector>`, `type <selector> <text>`, `js <code>`.
+
+## Hand off to the human
+
+When you hit a captcha, a login, or 2FA, do not guess. Ask:
+
+```sh
+browser-cli notify "Please solve the captcha, then leave the window open"
+```
+
+Then poll until they're done and continue. It is a real window, so a person can
+take over and hand it back.
+
+## Notes
+
+- Commands act on the ACTIVE tab. `browser-cli tabs` lists them (1-based
+  `index`); `browser-cli switch <index>` targets another.
+- `browser-cli wait [seconds]` blocks until the page loads. Use it after
+  anything that navigates, before you snapshot.
+- You are sharing a person's real browser: real cookies, real sessions. Be a
+  good guest.
 """#
 
 // MARK: - Main
@@ -408,6 +476,25 @@ case "help", "--help", "-h":
 
 case "docs":
     print(agentDocs)
+
+case "install-skill":
+    // Default to the personal skills dir; accept a directory argument for a
+    // project-scoped install (<repo>/.claude/skills).
+    let skillsRoot = arguments.count >= 3
+        ? URL(fileURLWithPath: arguments[2]).appendingPathComponent(".claude/skills")
+        : FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/skills")
+    let skillDir = skillsRoot.appendingPathComponent("browser")
+    let skillFile = skillDir.appendingPathComponent("SKILL.md")
+    do {
+        try FileManager.default.createDirectory(at: skillDir, withIntermediateDirectories: true)
+        try claudeSkill.write(to: skillFile, atomically: true, encoding: .utf8)
+    } catch {
+        fail("Error: could not write the skill to \(skillFile.path): \(error.localizedDescription)")
+    }
+    printResponse(try! JSONSerialization.data(
+        withJSONObject: ["ok": true, "path": skillFile.path],
+        options: [.prettyPrinted]
+    ))
 
 case "open":
     var rest = Array(arguments.dropFirst(2))

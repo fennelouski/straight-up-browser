@@ -10,18 +10,25 @@ all the pieces below are for.
 
 ## Claude Code
 
-Install the skill so Claude reaches for the browser on its own:
+The skill ships inside the binary, so there is nothing to clone. Install it:
 
 ```sh
-mkdir -p ~/.claude/skills/browser
-cp integrations/claude-skill/SKILL.md ~/.claude/skills/browser/SKILL.md
+browser-cli install-skill
 ```
 
-Personal (above) applies everywhere. For one repo instead, copy it to
-`<repo>/.claude/skills/browser/SKILL.md`.
+That writes `~/.claude/skills/browser/SKILL.md`, and Claude Code discovers the
+browser from then on. Ask it to check a live page, fill a form, or verify a
+deploy, and it reaches for `browser-cli` on its own.
 
-Then ask it to check a live page, fill a form, or verify a deploy, and it will
-use `browser-cli`.
+Scoped to one repo instead of everywhere:
+
+```sh
+browser-cli install-skill /path/to/repo     # -> <repo>/.claude/skills/browser/
+```
+
+The skill is deliberately thin: it points at `browser-cli docs` rather than
+restating it, so it cannot drift from the binary. Its source is `claudeSkill` in
+`browser-cli/main.swift`.
 
 ## Codex, Gemini CLI, Cursor, and other shell-capable agents
 

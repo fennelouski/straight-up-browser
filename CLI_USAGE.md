@@ -69,8 +69,15 @@ browser-cli js 'document.querySelector(".g-recaptcha") === null'
 ## Wiring it into an AI tool
 
 `browser-cli docs` is self-contained, so any agent that can run a shell command
-needs nothing installed. For a Claude Code skill (so it discovers the browser on
-its own) and notes on other tools, see [integrations/](integrations/README.md).
+needs nothing installed. For Claude Code, one command teaches it the browser
+exists:
+
+```bash
+browser-cli install-skill        # writes ~/.claude/skills/browser/SKILL.md
+```
+
+See [integrations/](integrations/README.md) for notes on Codex, Gemini CLI,
+Cursor, and why there's no MCP server.
 
 ## How it works
 
