@@ -266,8 +266,9 @@ struct ContentView: View {
     private var groupedTabs: [(group: TabGroup?, tabs: [BrowserTab])] {
         var result: [(group: TabGroup?, tabs: [BrowserTab])] = []
 
-        // Group tabs by groupId
-        let groupedById = Dictionary(grouping: tabs) { $0.groupId }
+        // Group tabs by groupId (dropping open-only local closes, which keep their
+        // CloudKit record so they stay open on other devices).
+        let groupedById = Dictionary(grouping: TabSync.visible(tabs)) { $0.groupId }
 
         // Add tabs without groups first (ungrouped tabs)
         if let ungroupedTabs = groupedById[nil] {

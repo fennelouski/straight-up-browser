@@ -61,13 +61,25 @@ class TabManager: ObservableObject {
         // Clean up the web view for this tab
         webViewManager?.removeWebView(for: tab.id)
 
+        let remaining = tabs.filter { $0.id != tab.id }
+
+        // Open-only tab sync: don't delete the record (deleting would propagate the
+        // close to your other devices). Hide it on this device via the local
+        // closed-set instead, and keep the always-one-tab invariant.
+        if TabSync.enabled && TabSync.mode == .openOnly {
+            TabSync.markLocallyClosed(tab.id)
+            if selectedTabId == tab.id { selectedTabId = remaining.first?.id }
+            if remaining.isEmpty { _ = createNewTab() } else { ensureSelectedTab(from: remaining) }
+            return
+        }
+
         if tabs.count > 1 {
             modelContext?.delete(tab)
             if selectedTabId == tab.id {
-                selectedTabId = tabs.filter { $0.id != tab.id }.first?.id
+                selectedTabId = remaining.first?.id
             }
             // Ensure there's always a selected tab after closing
-            ensureSelectedTab(from: tabs.filter { $0.id != tab.id })
+            ensureSelectedTab(from: remaining)
         } else {
             // Closing the last tab: reset it to a fresh New Tab instead of
             // deleting it, so there is always one tab open

@@ -10,10 +10,11 @@ import SwiftData
 
 @Model
 final class Bookmark {
-    var id: UUID
-    var title: String
-    var url: URL
-    var createdAt: Date
+    // Defaults required for SwiftData+CloudKit compatibility.
+    var id: UUID = UUID()
+    var title: String = ""
+    var url: URL = URL(string: "about:blank")!
+    var createdAt: Date = Date()
     var lastVisited: Date?
     var favicon: Data?
     var category: String?

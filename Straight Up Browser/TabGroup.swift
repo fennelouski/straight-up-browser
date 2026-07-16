@@ -11,11 +11,12 @@ import SwiftData
 
 @Model
 final class TabGroup {
-    var id: UUID
-    var name: String
-    var colorHex: String
-    var createdAt: Date
-    var orderIndex: Int
+    // Defaults required for SwiftData+CloudKit compatibility.
+    var id: UUID = UUID()
+    var name: String = ""
+    var colorHex: String = "#007AFF"
+    var createdAt: Date = Date()
+    var orderIndex: Int = 0
 
     init(name: String, color: Color, orderIndex: Int = 0) {
         self.id = UUID()
@@ -37,8 +38,12 @@ final class TabGroup {
 // Extension to convert Color to hex and vice versa
 extension Color {
     func toHex() -> String? {
-        let uiColor = NSColor(self)
-        guard let components = uiColor.cgColor.components, components.count >= 3 else {
+        #if canImport(AppKit)
+        let platformColor = NSColor(self)
+        #else
+        let platformColor = UIColor(self)
+        #endif
+        guard let components = platformColor.cgColor.components, components.count >= 3 else {
             return nil
         }
         let r = Float(components[0])

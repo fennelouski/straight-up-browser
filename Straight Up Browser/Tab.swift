@@ -36,12 +36,14 @@ enum MemoryPolicy: String, Codable, CaseIterable {
 
 @Model
 final class Tab {
-    var id: UUID
-    var title: String
+    // Defaults on every stored attribute: SwiftData+CloudKit requires each
+    // non-relationship attribute to be optional or have a default value.
+    var id: UUID = UUID()
+    var title: String = ""
     var url: URL?
-    var isActive: Bool
-    var createdAt: Date
-    var lastAccessed: Date
+    var isActive: Bool = false
+    var createdAt: Date = Date()
+    var lastAccessed: Date = Date()
     var historyStrings: [String] = []
     var currentHistoryIndex: Int = -1 // ponytail: unused since back/forward moved to WKWebView, kept for store compatibility
 
@@ -67,6 +69,11 @@ final class Tab {
     var isMuted: Bool = false
     var lastThumbnail: Data?
     var favicon: Data?
+    // Cache-state sync (opt-in): archived WKWebView.interactionState (scroll +
+    // back/forward history + much form state) and a best-effort sessionStorage
+    // snapshot, so a synced tab resumes where you left off on another device.
+    var interactionStateData: Data? = nil
+    var sessionStorageData: Data? = nil
     var loadingProgress: Double = 0.0
     var securityLevel: SecurityLevel = SecurityLevel.secure
     // Persisted as the raw string, not the enum. Adding a non-optional enum column to a

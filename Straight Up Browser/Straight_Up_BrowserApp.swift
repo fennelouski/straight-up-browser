@@ -138,11 +138,15 @@ struct Straight_Up_BrowserApp: App {
     }
 
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Tab.self,
-            Bookmark.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        // TabGroup included so the CloudKit record types match the iPad app.
+        let schema = Schema([Tab.self, TabGroup.self, Bookmark.self])
+        // Tab sync (Settings → Sync) selects the CloudKit private DB; off = local.
+        // Read at launch, so toggling sync takes effect after relaunch.
+        let modelConfiguration = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: false,
+            cloudKitDatabase: TabSync.cloudKitDatabase
+        )
 
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
