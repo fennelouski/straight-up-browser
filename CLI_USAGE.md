@@ -66,6 +66,12 @@ browser-cli notify "Please solve the captcha, then leave the window open"
 browser-cli js 'document.querySelector(".g-recaptcha") === null'
 ```
 
+## Wiring it into an AI tool
+
+`browser-cli docs` is self-contained, so any agent that can run a shell command
+needs nothing installed. For a Claude Code skill (so it discovers the browser on
+its own) and notes on other tools, see [integrations/](integrations/README.md).
+
 ## How it works
 
 The app creates a named pipe (FIFO) at:
