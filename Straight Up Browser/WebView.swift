@@ -111,8 +111,17 @@ struct WebView: NSViewRepresentable {
         let normalizedWebViewURL = Tab.normalizeURLForComparison(activeWebView.url)
         let normalizedRequestedURL = Tab.normalizeURLForComparison(context.coordinator.lastRequestedURL)
 
+        // Guard against in-flight navigations that the webview itself kicked off
+        // (e.g. the user clicking a link). In that case webView.url/lastRequestedURL
+        // race ahead of the SwiftUI `url` binding - which only catches up once
+        // didFinish updates activeTab.url - so comparing the *stale* `url` binding
+        // against lastRequestedURL here would wrongly conclude "this is a new
+        // request" and re-`load()` the old URL, cancelling the link navigation and
+        // making it look like the page just refreshed. Compare the webview's live
+        // URL instead: if it's already loading toward what we last requested, don't
+        // issue a second, stale load.
         if let url = url, normalizedURL != normalizedWebViewURL,
-           !(activeWebView.isLoading && normalizedURL == normalizedRequestedURL) {
+           !(activeWebView.isLoading && normalizedWebViewURL == normalizedRequestedURL) {
             Logger.log("WebView loading URL: \(url.absoluteString) (current: \(activeWebView.url?.absoluteString ?? "nil"))", type: "WebView")
             context.coordinator.lastRequestedURL = url
             activeWebView.load(URLRequest(url: url))
@@ -624,6 +633,16 @@ struct WebView: NSViewRepresentable {
             let newTab = tabManager.createNewTab()
             webViewManager.adoptWebView(popupWebView, for: newTab.id)
             return popupWebView
+        }
+
+        // WebKit's native right-click menu offers "Open Link in New Window" -
+        // we don't support multiple windows, and createWebViewWith above
+        // actually opens that link in a new tab. Relabel the item so it says
+        // what it does instead of advertising a window we never open.
+        func webView(_ webView: WKWebView, willOpenMenu menu: NSMenu, with event: NSEvent) {
+            for item in menu.items where item.title == "Open Link in New Window" {
+                item.title = "Open Link in New Tab"
+            }
         }
 
         // MARK: - JS dialogs and file uploads
