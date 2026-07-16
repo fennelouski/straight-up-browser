@@ -522,7 +522,7 @@ class NotificationManager {
         guard AXIsProcessTrusted() else {
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
             AXIsProcessTrustedWithOptions(options)
-            BrowserCLI.writeResponse(["error": "macOS blocked the synthetic click. Ask the user to allow Internet under System Settings > Privacy & Security > Accessibility (a prompt was just shown), then relaunch the browser and retry."], to: responseFilePath)
+            BrowserCLI.writeResponse(["error": "macOS blocked the synthetic click. Ask the user to allow Browser under System Settings > Privacy & Security > Accessibility (a prompt was just shown), then relaunch the browser and retry."], to: responseFilePath)
             return
         }
         guard let webView = webViewManager.activeWebView, let window = webView.window else {

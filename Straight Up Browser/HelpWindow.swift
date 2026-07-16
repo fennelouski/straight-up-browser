@@ -193,14 +193,14 @@ private struct CLIHelpView: View {
                     .fontWeight(.bold)
 
                 GroupBox(label: Text("Shortcuts & Siri")) {
-                    Text("Your browser's actions — Open URL, Search the Web, New Tab — appear in the Shortcuts app, Spotlight, and Siri. Try saying “New tab in Internet.”")
+                    Text("Your browser's actions — Open URL, Search the Web, New Tab — appear in the Shortcuts app, Spotlight, and Siri. Try saying “New tab in Browser.”")
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)
                 }
 
                 GroupBox(label: Text("Command Line")) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Your Internet browser can be driven from the terminal with browser-cli (see CLI_USAGE.md in the project for setup):")
+                        Text("Your browser can be driven from the terminal with browser-cli (see CLI_USAGE.md in the project for setup):")
                         Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 6) {
                             ForEach(Self.commands, id: \.0) { command, purpose in
                                 GridRow {

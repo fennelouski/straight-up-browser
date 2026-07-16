@@ -62,7 +62,7 @@ func launchApp() {
         .deletingLastPathComponent() // Internet.app
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    process.arguments = bundle.pathExtension == "app" ? [bundle.path] : ["-a", "Internet"]
+    process.arguments = bundle.pathExtension == "app" ? [bundle.path] : ["-b", "com.nathanfennel.Straight-Up-Browser"]
     try? process.run()
     process.waitUntilExit()
 }
@@ -81,7 +81,7 @@ func sendCommand(_ command: String) {
         }
     }
     guard let handle = handle else {
-        fail("Error: Could not reach the browser. Open the Internet app manually and retry (first launch may be waiting on the EULA).")
+        fail("Error: Could not reach the browser. Open the Browser app manually and retry (first launch may be waiting on the EULA).")
     }
     // One command per line; strip any stray newlines (structured payloads are base64)
     let line = command
@@ -283,7 +283,7 @@ func printUsage() {
       browser-cli notify "Please solve the captcha in the browser window"
 
     Install on PATH (tool ships inside the app bundle):
-      sudo ln -sf "/Applications/Internet.app/Contents/Helpers/browser-cli" /usr/local/bin/browser-cli
+      sudo ln -sf "/Applications/Browser.app/Contents/Helpers/browser-cli" /usr/local/bin/browser-cli
     """)
 }
 
@@ -314,7 +314,7 @@ person: real cookies, real sessions, real rendering.
 
 ## Setup (once)
 
-    sudo ln -sf "/Applications/Internet.app/Contents/Helpers/browser-cli" /usr/local/bin/browser-cli
+    sudo ln -sf "/Applications/Browser.app/Contents/Helpers/browser-cli" /usr/local/bin/browser-cli
 
 ## Command reference
 

@@ -3,7 +3,7 @@
 **EULA version 1** — © 2026 Nathan Fennel. All rights reserved.
 
 This End User License Agreement ("Agreement") is between you and Nathan Fennel
-("the Author") and governs your use of the Internet browser application, also
+("the Author") and governs your use of the browser application, also
 known as Straight Up Browser ("the Software"). By clicking Accept, or by
 installing or using the Software,
 you agree to this Agreement. If you do not agree, do not use the Software.

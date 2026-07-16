@@ -238,7 +238,7 @@ struct ContentView: View {
 
         let alert = NSAlert()
         alert.messageText = String(localized: "Running low on memory?")
-        alert.informativeText = String(localized: "Internet can free up RAM by releasing background tabs you're not using and reloading them instantly when you return. You choose which tabs stay live. Turn on Memory Saving?")
+        alert.informativeText = String(localized: "Browser can free up RAM by releasing background tabs you're not using and reloading them instantly when you return. You choose which tabs stay live. Turn on Memory Saving?")
         alert.addButton(withTitle: String(localized: "Enable Memory Saving"))
         alert.addButton(withTitle: String(localized: "Not Now"))
         let handle: (NSApplication.ModalResponse) -> Void = { response in

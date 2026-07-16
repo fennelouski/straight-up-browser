@@ -10,7 +10,7 @@ agent guide; this file is the human-oriented version.
 The tool ships inside the app bundle. Put it on your PATH once:
 
 ```bash
-sudo ln -sf "/Applications/Internet.app/Contents/Helpers/browser-cli" /usr/local/bin/browser-cli
+sudo ln -sf "/Applications/Browser.app/Contents/Helpers/browser-cli" /usr/local/bin/browser-cli
 ```
 
 For development, `./build-cli.sh` still produces a standalone `./browser-cli-tool`.
@@ -93,7 +93,7 @@ echo "open https://example.com" > ~/Library/Application\ Support/Straight\ Up\ B
 ## Build
 
 The Xcode build compiles and signs the helper into
-`Internet.app/Contents/Helpers/browser-cli` automatically (Run Script phase
+`Browser.app/Contents/Helpers/browser-cli` automatically (Run Script phase
 "Build browser-cli helper"). For a quick standalone binary:
 
 ```bash

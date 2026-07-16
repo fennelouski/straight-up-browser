@@ -407,7 +407,7 @@ struct Straight_Up_BrowserApp: App {
             }
 
             CommandGroup(replacing: .help) {
-                Button("Internet Help") {
+                Button("Browser Help") {
                     openWindow(id: "help")
                 }
                 .keyboardShortcut("?", modifiers: .command)

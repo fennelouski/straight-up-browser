@@ -52,7 +52,7 @@ snapshot, click, type, screenshot, and hand off to a human when needed. See
 agent-oriented guide. The tool ships inside the app bundle:
 
 ```bash
-sudo ln -sf "/Applications/Internet.app/Contents/Helpers/browser-cli" /usr/local/bin/browser-cli
+sudo ln -sf "/Applications/Browser.app/Contents/Helpers/browser-cli" /usr/local/bin/browser-cli
 
 browser-cli open https://example.com && browser-cli wait
 browser-cli snapshot                        # compact page outline + selectors
