@@ -48,6 +48,9 @@ class KeyboardShortcutsManager {
         monitorToken = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
             guard let self = self else { return event }
 
+            // Feed the responsive ⇧⌘H cheat sheet; no-op unless it's on screen.
+            LiveKeyState.shared.update(from: event)
+
             // Quit-hold bookkeeping runs regardless of omnibar state
             switch event.type {
             case .keyUp:
@@ -66,9 +69,11 @@ class KeyboardShortcutsManager {
             }
 
             let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
+            let store = ShortcutStore.shared
 
             // Cmd+Q must be held for 2s; swallow the event (including key
-            // repeats) so the Quit menu item never fires from the keyboard
+            // repeats) so the Quit menu item never fires from the keyboard.
+            // The hold gate isn't a normal binding, so it stays a literal.
             if mods == .command && event.charactersIgnoringModifiers == "q" {
                 if self.quitHoldStart == nil {
                     self.startQuitHold()
@@ -76,8 +81,8 @@ class KeyboardShortcutsManager {
                 return nil
             }
 
-            // Ctrl+Space toggles the omnibar
-            if mods == .control && event.charactersIgnoringModifiers == " " {
+            // Omnibar toggle (rebindable)
+            if store.shortcut(for: .omnibar).matches(event) {
                 self.showOmnibar.wrappedValue.toggle()
                 return nil
             }
@@ -88,41 +93,41 @@ class KeyboardShortcutsManager {
                 return event
             }
 
-            // Ctrl+Tab / Ctrl+Shift+Tab cycle tabs
-            if mods.contains(.control) && (event.keyCode == 48 || event.charactersIgnoringModifiers == "\t") {
-                let name: Notification.Name = mods.contains(.shift) ? .browserPreviousTab : .browserNextTab
-                NotificationCenter.default.post(name: name, object: nil)
+            // The shortcuts the menu bar can't own reliably, each read live from
+            // the store so a rebinding in Settings takes effect immediately.
+            if store.shortcut(for: .nextTab).matches(event) {
+                NotificationCenter.default.post(name: .browserNextTab, object: nil)
                 return nil
             }
-
-            if mods == .command {
-                switch event.charactersIgnoringModifiers {
-                case "n": // Cmd+N is a second New Tab shortcut (Cmd+T is the menu item)
-                    NotificationCenter.default.post(name: .browserNewTab, object: nil)
-                    return nil
-                case "r":
-                    self.reloadAction()
-                    return nil
-                case "[":
-                    self.goBackAction()
-                    return nil
-                case "]":
-                    self.goForwardAction()
-                    return nil
-                default:
-                    break
-                }
+            if store.shortcut(for: .previousTab).matches(event) {
+                NotificationCenter.default.post(name: .browserPreviousTab, object: nil)
+                return nil
             }
-
-            if event.charactersIgnoringModifiers?.lowercased() == "r" {
-                if mods == [.command, .shift] {
-                    self.hardReloadAction()
-                    return nil
-                }
-                if mods == [.command, .shift, .option] {
-                    self.reloadAllTabsAction()
-                    return nil
-                }
+            // ponytail: ⌘N stays a fixed second New Tab alias; only the primary
+            // (⌘T) is rebindable, via the menu item.
+            if mods == .command && event.charactersIgnoringModifiers == "n" {
+                NotificationCenter.default.post(name: .browserNewTab, object: nil)
+                return nil
+            }
+            if store.shortcut(for: .reload).matches(event) {
+                self.reloadAction()
+                return nil
+            }
+            if store.shortcut(for: .back).matches(event) {
+                self.goBackAction()
+                return nil
+            }
+            if store.shortcut(for: .forward).matches(event) {
+                self.goForwardAction()
+                return nil
+            }
+            if store.shortcut(for: .hardReload).matches(event) {
+                self.hardReloadAction()
+                return nil
+            }
+            if store.shortcut(for: .reloadAll).matches(event) {
+                self.reloadAllTabsAction()
+                return nil
             }
 
             return event

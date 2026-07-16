@@ -17,6 +17,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let eulaVersion = 1
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        ShortcutStore.selfCheck()
+        #endif
+
         // Disable automatic window tabbing
         NSWindow.allowsAutomaticWindowTabbing = false
 
@@ -132,9 +136,19 @@ struct Straight_Up_BrowserApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var showSettings = false
     @AppStorage("cmdPExportsPDF") private var cmdPExportsPDF = true
+    // Reading this in the .commands builder (via `sc`) makes the menu bar rebuild
+    // its key equivalents whenever a shortcut is rebound — same invalidation the
+    // cmdPExportsPDF toggle relies on.
+    @AppStorage(ShortcutStore.revisionKey) private var shortcutsRevision = 0
     @Environment(\.openWindow) private var openWindow
     private var colorScheme: ColorScheme? {
         SettingsManager.shared.colorScheme
+    }
+
+    // Current shortcut for a command, read live from the store.
+    private func sc(_ command: ShortcutCommand) -> KeyboardShortcut {
+        _ = shortcutsRevision
+        return ShortcutStore.shared.shortcut(for: command).keyboardShortcut
     }
 
     var sharedModelContainer: ModelContainer = {
@@ -193,14 +207,14 @@ struct Straight_Up_BrowserApp: App {
                 Button("New Tab") {
                     NotificationCenter.default.post(name: .browserNewTab, object: nil)
                 }
-                .keyboardShortcut("t", modifiers: .command)
+                .keyboardShortcut(sc(.newTab))
             }
 
             CommandGroup(after: .newItem) {
                 Button("Close Tab") {
                     NotificationCenter.default.post(name: .browserCloseTab, object: nil)
                 }
-                .keyboardShortcut("w", modifiers: .command)
+                .keyboardShortcut(sc(.closeTab))
             }
 
             // File menu commands
@@ -208,21 +222,21 @@ struct Straight_Up_BrowserApp: App {
                 Button("Open Location...") {
                     NotificationCenter.default.post(name: .showOmnibar, object: nil)
                 }
-                .keyboardShortcut("l", modifiers: .command)
+                .keyboardShortcut(sc(.openLocation))
             }
 
             CommandGroup(replacing: .printItem) {
                 Button("Print...") {
                     NotificationCenter.default.post(name: .browserPrint, object: nil)
                 }
-                .keyboardShortcut("p", modifiers: [.command, .shift])
+                .keyboardShortcut(sc(.printPage))
 
                 // Cmd+P makes a PDF (toggleable in Settings > General)
                 if cmdPExportsPDF {
                     Button("Export as PDF...") {
                         NotificationCenter.default.post(name: .browserExportPDF, object: nil)
                     }
-                    .keyboardShortcut("p", modifiers: .command)
+                    .keyboardShortcut(sc(.exportPDF))
                 } else {
                     Button("Export as PDF...") {
                         NotificationCenter.default.post(name: .browserExportPDF, object: nil)
@@ -235,56 +249,56 @@ struct Straight_Up_BrowserApp: App {
                 Button("Reopen Last Closed Tab") {
                     NotificationCenter.default.post(name: .reopenLastClosedTab, object: nil)
                 }
-                .keyboardShortcut("t", modifiers: [.command, .shift])
+                .keyboardShortcut(sc(.reopenTab))
 
                 Button("Toggle Full Screen") {
                     (NSApp.keyWindow ?? NSApp.mainWindow)?.toggleFullScreen(nil)
                 }
-                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .keyboardShortcut(sc(.fullScreen))
 
                 Divider()
 
                 Button("Zoom In") {
                     NotificationCenter.default.post(name: .browserZoomIn, object: nil)
                 }
-                .keyboardShortcut("=", modifiers: .command)
+                .keyboardShortcut(sc(.zoomIn))
 
                 Button("Zoom Out") {
                     NotificationCenter.default.post(name: .browserZoomOut, object: nil)
                 }
-                .keyboardShortcut("-", modifiers: .command)
+                .keyboardShortcut(sc(.zoomOut))
 
                 Button("Actual Size") {
                     NotificationCenter.default.post(name: .browserZoomReset, object: nil)
                 }
-                .keyboardShortcut("0", modifiers: .command)
+                .keyboardShortcut(sc(.actualSize))
 
                 Divider()
 
                 Button("Toggle Tab Bar") {
                     NotificationCenter.default.post(name: .browserToggleTabBar, object: nil)
                 }
-                .keyboardShortcut("l", modifiers: [.command, .shift])
+                .keyboardShortcut(sc(.toggleTabBar))
 
                 Button("Hide Tab Bar") {
                     NotificationCenter.default.post(name: .browserHideTabBar, object: nil)
                 }
-                .keyboardShortcut("`", modifiers: [.command, .option])
+                .keyboardShortcut(sc(.hideTabBar))
 
                 Button("Minimal Tab Bar") {
                     NotificationCenter.default.post(name: .browserMinimalTabBar, object: nil)
                 }
-                .keyboardShortcut("1", modifiers: [.command, .option])
+                .keyboardShortcut(sc(.minimalTabBar))
 
                 Button("Compact Tab Bar") {
                     NotificationCenter.default.post(name: .browserCompactTabBar, object: nil)
                 }
-                .keyboardShortcut("2", modifiers: [.command, .option])
+                .keyboardShortcut(sc(.compactTabBar))
 
                 Button("Wide Tab Bar") {
                     NotificationCenter.default.post(name: .browserWideTabBar, object: nil)
                 }
-                .keyboardShortcut("3", modifiers: [.command, .option])
+                .keyboardShortcut(sc(.wideTabBar))
             }
 
             // Bookmarks menu commands
@@ -292,12 +306,12 @@ struct Straight_Up_BrowserApp: App {
                 Button("Show Bookmarks") {
                     NotificationCenter.default.post(name: .browserShowBookmarks, object: nil)
                 }
-                .keyboardShortcut("b", modifiers: [.command, .shift])
+                .keyboardShortcut(sc(.showBookmarks))
 
                 Button("Add Bookmark") {
                     NotificationCenter.default.post(name: .browserAddBookmark, object: nil)
                 }
-                .keyboardShortcut("d", modifiers: .command)
+                .keyboardShortcut(sc(.addBookmark))
 
                 Divider()
 
@@ -311,59 +325,22 @@ struct Straight_Up_BrowserApp: App {
                 Button("Show Next Tab") {
                     NotificationCenter.default.post(name: .browserNextTab, object: nil)
                 }
-                .keyboardShortcut(.tab, modifiers: .control)
+                .keyboardShortcut(sc(.nextTab))
 
                 Button("Show Previous Tab") {
                     NotificationCenter.default.post(name: .browserPreviousTab, object: nil)
                 }
-                .keyboardShortcut(.tab, modifiers: [.control, .shift])
+                .keyboardShortcut(sc(.previousTab))
 
                 Divider()
 
-                Button("Show Tab 1") {
-                    NotificationCenter.default.post(name: .browserSwitchToTab1, object: nil)
+                ForEach(Array(ShortcutCommand.switchTabs.enumerated()), id: \.element.id) { index, command in
+                    Button("Show Tab \(index + 1)") {
+                        NotificationCenter.default.post(
+                            name: Notification.Name("browserSwitchToTab\(index + 1)"), object: nil)
+                    }
+                    .keyboardShortcut(sc(command))
                 }
-                .keyboardShortcut("1", modifiers: .command)
-
-                Button("Show Tab 2") {
-                    NotificationCenter.default.post(name: .browserSwitchToTab2, object: nil)
-                }
-                .keyboardShortcut("2", modifiers: .command)
-
-                Button("Show Tab 3") {
-                    NotificationCenter.default.post(name: .browserSwitchToTab3, object: nil)
-                }
-                .keyboardShortcut("3", modifiers: .command)
-
-                Button("Show Tab 4") {
-                    NotificationCenter.default.post(name: .browserSwitchToTab4, object: nil)
-                }
-                .keyboardShortcut("4", modifiers: .command)
-
-                Button("Show Tab 5") {
-                    NotificationCenter.default.post(name: .browserSwitchToTab5, object: nil)
-                }
-                .keyboardShortcut("5", modifiers: .command)
-
-                Button("Show Tab 6") {
-                    NotificationCenter.default.post(name: .browserSwitchToTab6, object: nil)
-                }
-                .keyboardShortcut("6", modifiers: .command)
-
-                Button("Show Tab 7") {
-                    NotificationCenter.default.post(name: .browserSwitchToTab7, object: nil)
-                }
-                .keyboardShortcut("7", modifiers: .command)
-
-                Button("Show Tab 8") {
-                    NotificationCenter.default.post(name: .browserSwitchToTab8, object: nil)
-                }
-                .keyboardShortcut("8", modifiers: .command)
-
-                Button("Show Tab 9") {
-                    NotificationCenter.default.post(name: .browserSwitchToTab9, object: nil)
-                }
-                .keyboardShortcut("9", modifiers: .command)
             }
 
             // Add omnibar shortcut and settings to menu
@@ -371,33 +348,33 @@ struct Straight_Up_BrowserApp: App {
                 Button("Find...") {
                     NotificationCenter.default.post(name: .browserFindInPage, object: nil)
                 }
-                .keyboardShortcut("f", modifiers: .command)
+                .keyboardShortcut(sc(.findInPage))
 
                 Button("Find Next") {
                     NotificationCenter.default.post(name: .browserFindNext, object: nil)
                 }
-                .keyboardShortcut("g", modifiers: .command)
+                .keyboardShortcut(sc(.findNext))
 
                 Button("Find Previous") {
                     NotificationCenter.default.post(name: .browserFindPrevious, object: nil)
                 }
-                .keyboardShortcut("g", modifiers: [.command, .shift])
+                .keyboardShortcut(sc(.findPrevious))
 
                 Button("Show Omnibar") {
                     NotificationCenter.default.post(name: .showOmnibar, object: nil)
                 }
-                .keyboardShortcut(" ", modifiers: .control)
+                .keyboardShortcut(sc(.omnibar))
 
                 // Slack-style quick open; same omnibar, second shortcut
                 Button("Quick Open") {
                     NotificationCenter.default.post(name: .showOmnibar, object: nil)
                 }
-                .keyboardShortcut("k", modifiers: .command)
+                .keyboardShortcut(sc(.quickOpen))
 
                 Button("Settings...") {
                     NotificationCenter.default.post(name: .browserShowSettings, object: nil)
                 }
-                .keyboardShortcut(",", modifiers: .command)
+                .keyboardShortcut(sc(.settings))
             }
 
             CommandMenu("Extensions") {
@@ -407,19 +384,19 @@ struct Straight_Up_BrowserApp: App {
                 Button("Open Extension Popup") {
                     WebExtensionManager.shared.showPopup()
                 }
-                .keyboardShortcut("e", modifiers: [.command, .option])
+                .keyboardShortcut(sc(.extensionPopup))
             }
 
             CommandGroup(replacing: .help) {
                 Button("Browser Help") {
                     openWindow(id: "help")
                 }
-                .keyboardShortcut("?", modifiers: .command)
+                .keyboardShortcut(sc(.help))
 
                 Button("Keyboard Shortcuts") {
                     NotificationCenter.default.post(name: .browserToggleShortcutOverlay, object: nil)
                 }
-                .keyboardShortcut("h", modifiers: [.command, .shift])
+                .keyboardShortcut(sc(.shortcutOverlay))
             }
         }
     }

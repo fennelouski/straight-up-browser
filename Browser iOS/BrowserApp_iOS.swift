@@ -31,9 +31,13 @@ struct BrowserApp: App {
         }
     }()
 
+    // Rebuilds the keyboard commands when a shortcut (or preset) changes.
+    @AppStorage(ShortcutStore.revisionKey) private var shortcutsRevision = 0
+
     init() {
         #if DEBUG
         OmnibarInput.selfCheck()
+        ShortcutStore.selfCheck()
         #endif
     }
 
@@ -51,49 +55,54 @@ struct BrowserApp: App {
     @CommandsBuilder
     private var browserCommands: some Commands {
         CommandMenu("File") {
-            cmd("New Tab", .browserNewTab, "t")
-            cmd("Close Tab", .browserCloseTab, "w")
-            cmd("Reopen Closed Tab", .reopenLastClosedTab, "t", [.command, .shift])
+            cmd("New Tab", .browserNewTab, .newTab)
+            cmd("Close Tab", .browserCloseTab, .closeTab)
+            cmd("Reopen Closed Tab", .reopenLastClosedTab, .reopenTab)
             Divider()
-            cmd("Open Location…", .showOmnibar, "l")
+            cmd("Open Location…", .showOmnibar, .openLocation)
         }
         CommandMenu("Go") {
-            cmd("Back", .browserGoBack, "[")
-            cmd("Forward", .browserGoForward, "]")
-            cmd("Reload", .browserReload, "r")
+            cmd("Back", .browserGoBack, .back)
+            cmd("Forward", .browserGoForward, .forward)
+            cmd("Reload", .browserReload, .reload)
             Divider()
-            cmd("Find…", .browserFindInPage, "f")
+            cmd("Find…", .browserFindInPage, .findInPage)
         }
         CommandMenu("View") {
-            cmd("Toggle Sidebar", .browserToggleTabBar, "l", [.command, .shift])
+            cmd("Toggle Sidebar", .browserToggleTabBar, .toggleTabBar)
             Divider()
-            cmd("Zoom In", .browserZoomIn, "=")
-            cmd("Zoom Out", .browserZoomOut, "-")
-            cmd("Actual Size", .browserZoomReset, "0")
+            cmd("Zoom In", .browserZoomIn, .zoomIn)
+            cmd("Zoom Out", .browserZoomOut, .zoomOut)
+            cmd("Actual Size", .browserZoomReset, .actualSize)
             Divider()
-            cmd("Settings…", .browserShowSettings, ",")
-            cmd("Keyboard Shortcuts", .browserToggleShortcutOverlay, "h", [.command, .shift])
+            cmd("Settings…", .browserShowSettings, .settings)
+            cmd("Keyboard Shortcuts", .browserToggleShortcutOverlay, .shortcutOverlay)
         }
         CommandMenu("Bookmarks") {
-            cmd("Add Bookmark", .browserAddBookmark, "d")
+            cmd("Add Bookmark", .browserAddBookmark, .addBookmark)
         }
         CommandMenu("Tabs") {
-            cmd("Show Next Tab", .browserNextTab, .tab, .control)
-            cmd("Show Previous Tab", .browserPreviousTab, .tab, [.control, .shift])
+            cmd("Show Next Tab", .browserNextTab, .nextTab)
+            cmd("Show Previous Tab", .browserPreviousTab, .previousTab)
             Divider()
-            ForEach(1...9, id: \.self) { i in
-                Button("Show Tab \(i)") {
-                    NotificationCenter.default.post(name: .browserSwitchTab, object: nil, userInfo: ["index": i])
+            ForEach(Array(ShortcutCommand.switchTabs.enumerated()), id: \.element.id) { index, command in
+                Button("Show Tab \(index + 1)") {
+                    NotificationCenter.default.post(name: .browserSwitchTab, object: nil, userInfo: ["index": index + 1])
                 }
-                .keyboardShortcut(KeyEquivalent(Character("\(i)")), modifiers: .command)
+                .keyboardShortcut(shortcut(command))
             }
         }
     }
 
-    // A command button that posts a notification with a ⌘-shortcut.
-    private func cmd(_ title: String, _ name: Notification.Name, _ key: KeyEquivalent,
-                     _ modifiers: EventModifiers = .command) -> some View {
+    // A command button that posts a notification, keyed by the store's current
+    // shortcut for `command` so presets/rebindings take effect live.
+    private func cmd(_ title: String, _ name: Notification.Name, _ command: ShortcutCommand) -> some View {
         Button(title) { NotificationCenter.default.post(name: name, object: nil) }
-            .keyboardShortcut(key, modifiers: modifiers)
+            .keyboardShortcut(shortcut(command))
+    }
+
+    private func shortcut(_ command: ShortcutCommand) -> KeyboardShortcut {
+        _ = shortcutsRevision
+        return ShortcutStore.shared.shortcut(for: command).keyboardShortcut
     }
 }

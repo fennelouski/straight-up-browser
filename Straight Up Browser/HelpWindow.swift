@@ -93,54 +93,12 @@ private struct GettingStartedView: View {
 }
 
 // MARK: - Keyboard Shortcuts
-// Single source of truth for the shortcut list; the Help window and the
-// in-browser cheat sheet (⇧⌘H) both render it.
-enum ShortcutReference {
-    static let sections: [(String, [(String, String)])] = [
-        ("Tabs", [
-            ("New Tab", "⌘T or ⌘N"),
-            ("Close Tab", "⌘W"),
-            ("Reopen Last Closed Tab", "⇧⌘T"),
-            ("Next / Previous Tab", "⌃Tab / ⌃⇧Tab"),
-            ("Jump to Tab 1–9", "⌘1 – ⌘9"),
-        ]),
-        ("Navigation", [
-            ("Open Location", "⌘L"),
-            ("Back / Forward", "⌘[ / ⌘]"),
-            ("Reload", "⌘R"),
-            ("Hard Reload (bypass cache)", "⇧⌘R"),
-            ("Reload All Tabs", "⌥⇧⌘R"),
-        ]),
-        ("Page", [
-            ("Find on Page", "⌘F"),
-            ("Find Next / Previous", "⌘G / ⇧⌘G"),
-            ("Zoom In / Out", "⌘= / ⌘-"),
-            ("Actual Size", "⌘0"),
-            ("Print", "⇧⌘P"),
-            ("Export as PDF", "⌘P"),
-            ("Toggle Full Screen", "⇧⌘F"),
-        ]),
-        ("Tab Bar", [
-            ("Toggle Tab Bar", "⇧⌘L"),
-            ("Hide Tab Bar", "⌥⌘`"),
-            ("Minimal / Compact / Wide", "⌥⌘1 / ⌥⌘2 / ⌥⌘3"),
-        ]),
-        ("Bookmarks", [
-            ("Add Bookmark", "⌘D"),
-            ("Show Bookmarks", "⇧⌘B"),
-        ]),
-        ("App", [
-            ("Omnibar", "⌃Space or ⌘K"),
-            ("Omnibar from any app", "⌥Space (configurable)"),
-            ("Shortcut cheat sheet", "⇧⌘H"),
-            ("Settings", "⌘,"),
-            ("Help", "⌘?"),
-            ("Quit", "hold ⌘Q for 2s"),
-        ]),
-    ]
-}
-
+// Rendered from ShortcutStore so the list always reflects the live (and
+// customizable) bindings — see ShortcutCommand.swift. Customize any of these in
+// Settings → Shortcuts.
 private struct ShortcutsHelpView: View {
+    private let store = ShortcutStore.shared
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -148,14 +106,14 @@ private struct ShortcutsHelpView: View {
                     .font(.title)
                     .fontWeight(.bold)
 
-                ForEach(ShortcutReference.sections, id: \.0) { title, shortcuts in
-                    GroupBox(label: Text(title.localized)) {
+                ForEach(ShortcutSection.allCases, id: \.self) { section in
+                    GroupBox(label: Text(section.title)) {
                         Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 6) {
-                            ForEach(shortcuts, id: \.0) { name, keys in
+                            ForEach(store.cheatRows(for: section)) { row in
                                 GridRow {
-                                    Text(name.localized)
+                                    Text(row.title)
                                         .frame(maxWidth: .infinity, alignment: .leading)
-                                    Text(keys.localized)
+                                    Text(row.keys)
                                         .font(.system(.body, design: .monospaced))
                                         .foregroundStyle(.secondary)
                                 }
@@ -165,12 +123,61 @@ private struct ShortcutsHelpView: View {
                     }
                 }
 
-                Text("⌘P prints instead of exporting a PDF if you turn off “⌘P exports PDF” in Settings → General.")
+                Text("The omnibar also opens from any app with ⌥Space (configurable), and quitting holds ⌘Q for two seconds. Customize any shortcut in Settings → Shortcuts.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             .padding()
         }
+    }
+}
+
+// MARK: - Responsive cheat-sheet cells (⇧⌘H overlay)
+// Leaf views that observe LiveKeyState.shared, so only the changed cell
+// re-renders as keys are pressed — never the whole ContentView.
+
+struct HighlightedChord: View {
+    let shortcut: Shortcut
+    private var live: LiveKeyState { .shared }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(shortcut.displayTokens.enumerated()), id: \.offset) { _, token in
+                let held = live.isActive && live.isHeld(token, in: shortcut)
+                Text(token)
+                    .foregroundStyle(held ? Color.accentColor : Color.secondary)
+                    .fontWeight(held ? .bold : .regular)
+            }
+        }
+        .font(.system(size: 12, design: .monospaced))
+    }
+}
+
+struct CheatSheetKeysCell: View {
+    let row: CheatRow
+
+    var body: some View {
+        if let shortcut = row.shortcut {
+            HighlightedChord(shortcut: shortcut)
+        } else {
+            Text(row.keys)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct CheatSheetTitleCell: View {
+    let row: CheatRow
+    private var live: LiveKeyState { .shared }
+
+    var body: some View {
+        let held = row.shortcut.map { live.isActive && live.fullyHeld($0) } ?? false
+        Text(row.title)
+            .font(.system(size: 12))
+            .fontWeight(held ? .semibold : .regular)
+            .foregroundStyle(held ? Color.accentColor : Color.primary)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

@@ -74,6 +74,22 @@ struct Settings_iOS: View {
                     }
                 }
 
+                Section {
+                    Menu {
+                        ForEach(ShortcutPreset.allCases) { preset in
+                            Button(preset.title) { ShortcutStore.shared.apply(preset: preset) }
+                        }
+                        Divider()
+                        Button("Reset to Defaults") { ShortcutStore.shared.resetAll() }
+                    } label: {
+                        Label("Match another browser…", systemImage: "keyboard")
+                    }
+                } header: {
+                    Text("Keyboard Shortcuts")
+                } footer: {
+                    Text("Adopt another browser's keyboard shortcut scheme on this device. See ⇧⌘H for the full list.")
+                }
+
                 Section("Web Content") {
                     Toggle("Enable JavaScript", isOn: $javaScriptEnabled)
                 }

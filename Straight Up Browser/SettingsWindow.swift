@@ -26,6 +26,7 @@ enum SettingsTint {
     static let security = Color.orange
     static let privacy = Color.indigo
     static let memory = Color.mint
+    static let shortcuts = Color.green
 }
 
 /// A settings row or section header: title in the standard text colour, icon in its area's tint.
@@ -231,6 +232,7 @@ struct TokenField: NSViewRepresentable {
 
 enum SettingsPane: String, CaseIterable, Identifiable {
     case general
+    case shortcuts
     case content
     case downloads
     case appearance
@@ -243,6 +245,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: return String(localized: "General")
+        case .shortcuts: return String(localized: "Shortcuts")
         case .content: return String(localized: "Content")
         case .downloads: return String(localized: "Downloads")
         case .appearance: return String(localized: "Appearance")
@@ -257,6 +260,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .general: return String(localized: "Search, omnibar, hotkey")
+        case .shortcuts: return String(localized: "Customize keyboard shortcuts")
         case .content: return String(localized: "JavaScript and page content")
         case .downloads: return String(localized: "Option-click downloads, folder")
         case .appearance: return String(localized: "Theme and loading progress")
@@ -269,6 +273,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .general: return "gearshape"
+        case .shortcuts: return "keyboard"
         case .content: return "curlybraces"
         case .downloads: return "arrow.down.circle"
         case .appearance: return "paintbrush"
@@ -281,6 +286,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var tint: Color {
         switch self {
         case .general: return SettingsTint.general
+        case .shortcuts: return SettingsTint.shortcuts
         case .content: return SettingsTint.content
         case .downloads: return SettingsTint.downloads
         case .appearance: return SettingsTint.appearance
@@ -376,6 +382,7 @@ struct SettingsWindow: View {
     private var detail: some View {
         switch pane {
         case .general: GeneralSettingsView()
+        case .shortcuts: ShortcutsSettingsView()
         case .content: ContentSettingsView()
         case .downloads: DownloadsSettingsView()
         case .appearance: AppearanceSettingsView()

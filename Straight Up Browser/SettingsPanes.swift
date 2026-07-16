@@ -115,6 +115,142 @@ struct GeneralSettingsView: View {
     }
 }
 
+// MARK: - Shortcuts
+
+struct ShortcutsSettingsView: View {
+    private var store: ShortcutStore { .shared }
+
+    var body: some View {
+        // Commands sharing a chord get flagged; nothing collides by default, so
+        // a warning only appears once the user creates the overlap.
+        let conflictIDs = Set(store.conflicts().map(\.id))
+        Form {
+            Section {
+                HStack(alignment: .top) {
+                    Text("Click a shortcut and press the new keys. Esc cancels. Shortcuts need a modifier — ⌘, ⌥, ⌃, or ⇧.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 12)
+                    Menu("Import from…") {
+                        ForEach(ShortcutPreset.allCases) { preset in
+                            Button(preset.title) { store.apply(preset: preset) }
+                        }
+                    }
+                    .fixedSize()
+                    Button("Reset All") { store.resetAll() }
+                        .disabled(store.custom.isEmpty)
+                }
+            } header: {
+                SettingsLabel("Keyboard Shortcuts", systemImage: "keyboard", tint: SettingsTint.shortcuts)
+            }
+
+            ForEach(ShortcutSection.allCases, id: \.self) { section in
+                Section {
+                    ForEach(ShortcutCommand.all.filter { $0.section == section }) { command in
+                        shortcutRow(command, conflicting: conflictIDs.contains(command.id))
+                    }
+                } header: {
+                    Text(section.title)
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func shortcutRow(_ command: ShortcutCommand, conflicting: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text(command.title)
+            if store.isCustomized(command) {
+                Button { store.reset(command) } label: {
+                    Image(systemName: "arrow.uturn.backward").font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .help(String(localized: "Reset to default"))
+            }
+            Spacer(minLength: 12)
+            if conflicting {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .help(String(localized: "This shortcut is used by more than one command"))
+            } else if let systemName = store.systemConflict(store.shortcut(for: command)) {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(.yellow)
+                    .help(String(localized: "May conflict with the macOS \(systemName) shortcut"))
+            }
+            ShortcutRecorder(command: command)
+        }
+    }
+}
+
+// A key-cap-style control: shows the current chord; click to record the next
+// one. Reads/writes ShortcutStore.shared so the rest of the app updates live.
+struct ShortcutRecorder: View {
+    let command: ShortcutCommand
+    @State private var recorder = KeyRecorder()
+
+    var body: some View {
+        let shortcut = ShortcutStore.shared.shortcut(for: command)
+        Button {
+            if recorder.isRecording {
+                recorder.stop()
+            } else {
+                recorder.start { ShortcutStore.shared.rebind(command, to: $0) }
+            }
+        } label: {
+            Text(recorder.isRecording ? String(localized: "Press keys…") : shortcut.displayString)
+                .font(.system(.body, design: .monospaced))
+                .frame(minWidth: 96)
+                .padding(.vertical, 4)
+                .padding(.horizontal, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(recorder.isRecording ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.06))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(recorder.isRecording ? Color.accentColor : Color.primary.opacity(0.12), lineWidth: 1)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onDisappear { recorder.stop() }
+    }
+}
+
+// Captures one chord via a temporary local event monitor. Swallows keys while
+// recording so nothing else fires; Esc cancels. Only one recorder is ever
+// active — starting a new one stops the previous.
+@Observable
+final class KeyRecorder {
+    static weak var active: KeyRecorder?
+
+    var isRecording = false
+    private var monitor: Any?
+
+    func start(onCapture: @escaping (Shortcut) -> Void) {
+        KeyRecorder.active?.stop()
+        KeyRecorder.active = self
+        isRecording = true
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            guard let self else { return event }
+            if event.keyCode == 53 { self.stop(); return nil } // Esc cancels
+            // ponytail: require a modifier so a bare letter can't hijack typing.
+            if let shortcut = Shortcut(event: event), shortcut.hasModifier {
+                onCapture(shortcut)
+                self.stop()
+            }
+            return nil // swallow everything while recording
+        }
+    }
+
+    func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
+        isRecording = false
+        if KeyRecorder.active === self { KeyRecorder.active = nil }
+    }
+}
+
 // MARK: - Content
 
 struct ContentSettingsView: View {

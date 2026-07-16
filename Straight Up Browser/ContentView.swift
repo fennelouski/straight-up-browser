@@ -940,24 +940,21 @@ struct ContentView: View {
                         .onTapGesture { showShortcutCheatSheet = false }
 
                     HStack(alignment: .top, spacing: 28) {
-                        let sections = ShortcutReference.sections
+                        let sections = ShortcutSection.allCases
                         let mid = (sections.count + 1) / 2
-                        ForEach([Array(sections.prefix(mid)), Array(sections.suffix(from: mid))], id: \.first?.0) { column in
+                        ForEach([Array(sections.prefix(mid)), Array(sections.suffix(from: mid))], id: \.first) { column in
                             VStack(alignment: .leading, spacing: 16) {
-                                ForEach(column, id: \.0) { title, shortcuts in
+                                ForEach(column, id: \.self) { section in
                                     VStack(alignment: .leading, spacing: 5) {
-                                        Text(title.localized)
+                                        Text(section.title)
                                             .font(.system(size: 11, weight: .semibold))
                                             .foregroundStyle(.secondary)
                                             .textCase(.uppercase)
                                         Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 3) {
-                                            ForEach(shortcuts, id: \.0) { name, keys in
+                                            ForEach(ShortcutStore.shared.cheatRows(for: section)) { row in
                                                 GridRow {
-                                                    Text(name.localized).font(.system(size: 12))
-                                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                                    Text(keys.localized)
-                                                        .font(.system(size: 12, design: .monospaced))
-                                                        .foregroundStyle(.secondary)
+                                                    CheatSheetTitleCell(row: row)
+                                                    CheatSheetKeysCell(row: row)
                                                 }
                                             }
                                         }
@@ -973,6 +970,8 @@ struct ContentView: View {
                 }
                 .transition(.opacity)
                 .onExitCommand { showShortcutCheatSheet = false }
+                .onAppear { LiveKeyState.shared.activate() }
+                .onDisappear { LiveKeyState.shared.deactivate() }
             }
         }
     }

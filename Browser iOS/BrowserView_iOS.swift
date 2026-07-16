@@ -459,29 +459,27 @@ struct BrowserView_iOS: View {
     }
 }
 
-// A compact, keyboard-first shortcut reference (⇧⌘H).
+// A compact, keyboard-first shortcut reference (⇧⌘H), rendered from the shared
+// ShortcutStore so it reflects the current (customizable) bindings.
 struct ShortcutCheatSheet_iOS: View {
     @Environment(\.dismiss) private var dismiss
-    private let rows: [(String, String)] = [
-        ("⌘L", "Focus the address bar"),
-        ("⌘T", "New tab"),
-        ("⌘W", "Close tab"),
-        ("⇧⌘T", "Reopen closed tab"),
-        ("⌘R", "Reload / Stop"),
-        ("⌘[  ⌘]", "Back / Forward"),
-        ("⌘1–9", "Switch to tab"),
-        ("⌃Tab", "Next / Previous tab"),
-        ("⌘D", "Bookmark this page"),
-        ("⌘+  ⌘−  ⌘0", "Zoom in / out / reset"),
-        ("⇧⌘L", "Toggle the sidebar"),
-        ("⇧⌘H", "This cheat sheet"),
-    ]
+    private let store = ShortcutStore.shared
+
     var body: some View {
         NavigationStack {
-            List(rows, id: \.0) { row in
-                HStack {
-                    Text(row.0).font(.system(.body, design: .monospaced)).frame(width: 120, alignment: .leading)
-                    Text(row.1).foregroundStyle(.secondary)
+            List {
+                ForEach(ShortcutSection.allCases, id: \.self) { section in
+                    Section {
+                        ForEach(store.cheatRows(for: section)) { row in
+                            HStack {
+                                Text(row.keys).font(.system(.body, design: .monospaced))
+                                    .frame(width: 120, alignment: .leading)
+                                Text(row.title).foregroundStyle(.secondary)
+                            }
+                        }
+                    } header: {
+                        Text(section.title)
+                    }
                 }
             }
             .navigationTitle("Keyboard Shortcuts")
