@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Builds, signs, notarizes, and staples a distributable Internet.dmg.
+# Builds, signs, notarizes, and staples a distributable Browser.dmg.
 #
 # One-time setup:
 #   1. Create a "Developer ID Application" certificate:
@@ -9,7 +9,7 @@
 #      xcrun notarytool store-credentials notary --apple-id nathanfennel@gmail.com --team-id EJLR2RPSV2
 #
 # Usage: ./scripts/release.sh          (override profile with NOTARY_PROFILE=name)
-# Output: build/release/Internet.dmg — upload this to the website.
+# Output: build/release/Browser.dmg — upload this to the website.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -52,18 +52,18 @@ xcodebuild -exportArchive -archivePath "$BUILD/Browser.xcarchive" \
     -allowProvisioningUpdates
 
 STAGE="$BUILD/dmg"
-DMG="$BUILD/Internet.dmg"
+DMG="$BUILD/Browser.dmg"
 mkdir -p "$STAGE"
 cp -R "$BUILD/export/Browser.app" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 
 # Notarize and staple the app itself before it goes into the DMG, so a
 # first launch works offline; the DMG gets its own ticket below.
-ditto -c -k --keepParent "$STAGE/Browser.app" "$BUILD/Internet.zip"
-xcrun notarytool submit "$BUILD/Internet.zip" --keychain-profile "$PROFILE" --wait
+ditto -c -k --keepParent "$STAGE/Browser.app" "$BUILD/Browser.zip"
+xcrun notarytool submit "$BUILD/Browser.zip" --keychain-profile "$PROFILE" --wait
 xcrun stapler staple "$STAGE/Browser.app"
 
-hdiutil create -volname "Internet" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+hdiutil create -volname "Browser" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 
 codesign --force --sign "Developer ID Application" "$DMG"
 xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait

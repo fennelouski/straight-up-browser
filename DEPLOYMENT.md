@@ -1,8 +1,8 @@
 # Deploying a new release
 
-The public release is a signed, **notarized** `Internet.dmg` served from
+The public release is a signed, **notarized** `Browser.dmg` served from
 nathanfennel.com (Next.js on Vercel, auto-deploys `main`). The download button lives at
-`/internet` → `src/app/internet/page.tsx` → `/downloads/Internet.dmg`.
+`/internet` → `src/app/internet/page.tsx` → `/downloads/Browser.dmg`.
 
 ## One-time setup
 
@@ -31,16 +31,16 @@ nathanfennel.com (Next.js on Vercel, auto-deploys `main`). The download button l
    ```
 
    Archives → exports Developer ID → notarizes + staples the app → builds, signs,
-   notarizes + staples the DMG. Output: `build/release/Internet.dmg`. Takes a few minutes
+   notarizes + staples the DMG. Output: `build/release/Browser.dmg`. Takes a few minutes
    (two notarization round-trips to Apple). Override the profile with `NOTARY_PROFILE=name`.
 
 3. **Publish to the website:**
 
    ```
-   cp build/release/Internet.dmg ~/Documents/GitHub/nathanfennel.com/public/downloads/Internet.dmg
+   cp build/release/Browser.dmg ~/Documents/GitHub/nathanfennel.com/public/downloads/Browser.dmg
    cd ~/Documents/GitHub/nathanfennel.com
-   git add public/downloads/Internet.dmg
-   git commit -m "Update Internet.dmg to 1.x (build N)"
+   git add public/downloads/Browser.dmg
+   git commit -m "Update Browser.dmg to 1.x (build N)"
    git push                     # Vercel auto-deploys main
    ```
 
