@@ -23,9 +23,10 @@ final class LinkPreviewManager: NSObject, ObservableObject, WKNavigationDelegate
 
     override init() {
         // Plain configuration: no page script, so previews can't nest previews
-        webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        let configuration = WKWebViewConfiguration()
+        configuration.applicationNameForUserAgent = WebViewManager.userAgentAppName
+        webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
-        webView.customUserAgent = WebViewManager.userAgent
         webView.navigationDelegate = self
 
         let center = NotificationCenter.default

@@ -503,11 +503,19 @@ class NotificationManager {
             return
         }
         let wrapper = "(function(){try{var r=eval(\(escaped));return JSON.stringify({ok:true,result:r===undefined?null:r})}catch(e){return JSON.stringify({error:String(e)})}})()"
-        webView.evaluateJavaScript(wrapper) { result, error in
-            if let json = result as? String, let responseFilePath = responseFilePath {
-                try? json.write(toFile: responseFilePath, atomically: true, encoding: .utf8)
-            } else if result == nil {
-                BrowserCLI.writeResponse(["error": error?.localizedDescription ?? "JavaScript evaluation failed"], to: responseFilePath)
+        // Run in an isolated content world, not the page world: pages that ship a
+        // Trusted Types CSP (require-trusted-types-for 'script') otherwise refuse
+        // the eval and every js/click/type/snapshot fails. The isolated world is
+        // exempt from the page CSP but shares the same DOM, which is all these
+        // commands touch. Trade-off: page JS globals aren't visible here.
+        webView.evaluateJavaScript(wrapper, in: nil, in: .defaultClient) { result in
+            switch result {
+            case .success(let value):
+                if let json = value as? String, let responseFilePath = responseFilePath {
+                    try? json.write(toFile: responseFilePath, atomically: true, encoding: .utf8)
+                }
+            case .failure(let error):
+                BrowserCLI.writeResponse(["error": error.localizedDescription], to: responseFilePath)
             }
         }
     }

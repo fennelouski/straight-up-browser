@@ -10,7 +10,24 @@ import WebKit
 import Combine
 
 class WebViewManager: NSObject, ObservableObject {
-    static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+    // Claiming to be Chrome while running WebKit gets us flagged as an unsafe
+    // embedded webview by Google sign-in (no Sec-CH-UA client hints to back it
+    // up). Appending Safari's tokens makes WebKit build a genuine Safari UA and
+    // fill in the OS/WebKit versions itself.
+    static let userAgentAppName = "Version/26.4 Safari/605.1.15"
+
+    // WebKit exposes the WebAuthn API in WKWebView but leaves it non-functional
+    // without the Apple-gated com.apple.developer.web-browser.public-key-credential
+    // entitlement: isUserVerifyingPlatformAuthenticatorAvailable() reports false and
+    // no ceremony can complete. Advertising an API we can't honor makes sites offer
+    // passkey sign-in that dead-ends (Google loops on it), so we hide it and let them
+    // fall back to password. navigator.credentials stays for password autofill.
+    // ponytail: delete this if the entitlement is ever granted.
+    private static let hideWebAuthnScript = """
+    delete window.PublicKeyCredential;
+    delete window.AuthenticatorAttestationResponse;
+    delete window.AuthenticatorAssertionResponse;
+    """
 
     // Injected into every page: alt-click image download, long-press link
     // preview signals, and percentage-based spacebar scrolling. Native side
@@ -270,6 +287,8 @@ class WebViewManager: NSObject, ObservableObject {
     // Create a new WKWebView with proper configuration
     private func createWebView() -> WKWebView {
         let configuration = WKWebViewConfiguration()
+        // Popups adopted via adoptWebView inherit this from the opener's config
+        configuration.applicationNameForUserAgent = Self.userAgentAppName
 
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         // JS on/off is decided per navigation in the policy delegate - the
@@ -288,6 +307,11 @@ class WebViewManager: NSObject, ObservableObject {
         }
         configuration.userContentController.addUserScript(
             WKUserScript(source: Self.pageScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        )
+        // Must run before any page code so feature detection sees the truth, and
+        // in subframes because sign-in flows are often framed.
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: Self.hideWebAuthnScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
         )
 
         // Attach the app-wide web extension controller so any loaded extension's
@@ -308,7 +332,6 @@ class WebViewManager: NSObject, ObservableObject {
     }
 
     private func applyStandardSetup(to webView: WKWebView) {
-        webView.customUserAgent = Self.userAgent
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsLinkPreview = true
         if #available(macOS 13.3, *) {
