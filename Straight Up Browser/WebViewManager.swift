@@ -101,6 +101,15 @@ class WebViewManager: NSObject, ObservableObject {
     // Store web views per tab ID
     private var webViews: [UUID: WKWebView] = [:]
 
+    // Session isolation (see SessionKind). A tab's session is registered here so
+    // getWebView can pick its WKWebsiteDataStore when the web view is first built.
+    // Absent => normal (shared default store). Populated on tab creation and synced
+    // from the tab list (syncSessions) so container tabs restored at launch are known.
+    private var tabSessions: [UUID: (kind: SessionKind, sessionId: UUID?)] = [:]
+    // Ephemeral incognito stores, held so every tab in one incognito session shares a
+    // jar. Dropped (and thus wiped) when a session's last tab closes; all die on quit.
+    private var incognitoStores: [UUID: WKWebsiteDataStore] = [:]
+
     // Saved WKWebView.interactionState for tabs unloaded under memory pressure,
     // consumed when the tab is reactivated (restores scroll + back/forward).
     private var savedInteractionStates: [UUID: Any] = [:]
@@ -155,12 +164,14 @@ class WebViewManager: NSObject, ObservableObject {
     @objc private func persistInteractionStates() {
         guard #available(macOS 12.0, *), let url = Self.interactionStateFileURL else { return }
         var out: [String: Data] = [:]
-        for (id, state) in savedInteractionStates {
+        // Never persist incognito tabs' page state — that would write a private URL
+        // (and form/scroll state) to disk, defeating the point of incognito.
+        for (id, state) in savedInteractionStates where !isIncognito(id) {
             if let data = try? NSKeyedArchiver.archivedData(withRootObject: state, requiringSecureCoding: false) {
                 out[id.uuidString] = data
             }
         }
-        for (id, webView) in webViews {
+        for (id, webView) in webViews where !isIncognito(id) {
             if let state = webView.interactionState,
                let data = try? NSKeyedArchiver.archivedData(withRootObject: state, requiringSecureCoding: false) {
                 out[id.uuidString] = data
@@ -256,7 +267,7 @@ class WebViewManager: NSObject, ObservableObject {
         }
 
         Logger.log("WebViewManager: Creating new WKWebView for tab \(tabId)", type: "WebViewManager")
-        let webView = createWebView()
+        let webView = createWebView(for: tabId)
         webViews[tabId] = webView
         #if canImport(AppKit)
         MainActor.assumeIsolated { WebExtensionManager.shared.tabOpened(tabId) }
@@ -316,6 +327,9 @@ class WebViewManager: NSObject, ObservableObject {
             // Remove from storage
             webViews.removeValue(forKey: tabId)
             savedInteractionStates.removeValue(forKey: tabId)
+            // Keep the session across a memory unload (the tab reactivates and must
+            // rebuild in the same store); drop it only on a genuine close.
+            if notifyClosed { tabSessions.removeValue(forKey: tabId) }
 
             // If this was the active web view, clear it
             if activeWebView === webView {
@@ -354,9 +368,68 @@ class WebViewManager: NSObject, ObservableObject {
         Logger.log("WebViewManager: adopted external WebView for tab \(tabId)", type: "WebViewManager")
     }
 
+    // MARK: - Session isolation
+
+    // Record a tab's session so getWebView can pick its data store at creation.
+    func registerSession(for tabId: UUID, kind: SessionKind, sessionId: UUID?) {
+        if kind == .normal { tabSessions.removeValue(forKey: tabId) }
+        else { tabSessions[tabId] = (kind, sessionId) }
+    }
+
+    // Rebuild the map from the current tab list. Covers container tabs restored from
+    // SwiftData at launch, which must be known before their web views are built.
+    func syncSessions(from tabs: [Tab]) {
+        for tab in tabs where tab.sessionKind != .normal {
+            tabSessions[tab.id] = (tab.sessionKind, tab.sessionId)
+        }
+    }
+
+    // The WKWebsiteDataStore (cookie/cache/storage jar) a tab browses in. See SessionKind.
+    private func dataStore(for tabId: UUID) -> WKWebsiteDataStore {
+        guard let session = tabSessions[tabId] else { return .default() }
+        switch session.kind {
+        case .normal:
+            return .default()
+        case .container:
+            guard let id = session.sessionId else { return .default() }
+            return WKWebsiteDataStore(forIdentifier: id)
+        case .incognito:
+            let id = session.sessionId ?? tabId
+            if let store = incognitoStores[id] { return store }
+            let store = WKWebsiteDataStore.nonPersistent()
+            incognitoStores[id] = store
+            return store
+        }
+    }
+
+    // The store a live tab is using, for scoped cache clearing. Reads the web view's
+    // own config when built; otherwise resolves from the registry.
+    func dataStore(forTab tabId: UUID) -> WKWebsiteDataStore {
+        webViews[tabId]?.configuration.websiteDataStore ?? dataStore(for: tabId)
+    }
+
+    // Drop (and thus wipe) an incognito session's jar once its last tab is gone.
+    func discardIncognitoStore(_ sessionId: UUID) {
+        incognitoStores.removeValue(forKey: sessionId)
+    }
+
+    // Whether a tab is incognito (its page state must never be persisted to disk).
+    private func isIncognito(_ tabId: UUID) -> Bool {
+        tabSessions[tabId]?.kind == .incognito
+    }
+
+    // A tab's session, for inheriting it onto a new tab (Cmd+T, window.open popups).
+    func session(for tabId: UUID) -> (kind: SessionKind, sessionId: UUID?) {
+        tabSessions[tabId] ?? (.normal, nil)
+    }
+
     // Create a new WKWebView with proper configuration
-    private func createWebView() -> WKWebView {
+    private func createWebView(for tabId: UUID) -> WKWebView {
         let configuration = WKWebViewConfiguration()
+        // The tab's session decides its cookie/cache/storage jar. Normal tabs get the
+        // shared default store (unchanged); containers/incognito get isolated stores.
+        // Popups adopted via adoptWebView inherit the opener's store from its config.
+        configuration.websiteDataStore = dataStore(for: tabId)
         // Popups adopted via adoptWebView inherit this from the opener's config
         configuration.applicationNameForUserAgent = Self.userAgentAppName
 

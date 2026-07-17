@@ -34,6 +34,18 @@ enum MemoryPolicy: String, Codable, CaseIterable {
     }
 }
 
+// Which data store (cookie/cache/storage jar) a tab browses in.
+// normal    = the shared default persistent store (every tab, today).
+// container = a named persistent isolated store keyed by sessionId (a BrowserSession),
+//             so you can stay logged into one site under different accounts side by side.
+// incognito = an ephemeral in-memory store that dies with its tabs; incognito tabs are
+//             held in memory only (never persisted/synced), see TabManager.incognitoTabs.
+enum SessionKind: String, Codable {
+    case normal
+    case container
+    case incognito
+}
+
 @Model
 final class Tab {
     // Defaults on every stored attribute: SwiftData+CloudKit requires each
@@ -64,6 +76,13 @@ final class Tab {
         set { memoryPolicyRaw = newValue.rawValue }
     }
 
+    // Typed accessor over sessionKindRaw. Stores nil for .normal so existing rows
+    // (and every normal tab) stay clean and don't need migration.
+    var sessionKind: SessionKind {
+        get { sessionKindRaw.flatMap(SessionKind.init(rawValue:)) ?? .normal }
+        set { sessionKindRaw = newValue == .normal ? nil : newValue.rawValue }
+    }
+
     // Additional tab properties
     var isPinned: Bool = false
     var isMuted: Bool = false
@@ -84,6 +103,11 @@ final class Tab {
     var zoomLevel: Double = 1.0
     var orderIndex: Int = 0
     var groupId: UUID? = nil
+    // Session isolation. nil sessionKindRaw => normal (shared default store). For a
+    // container tab, sessionId is its BrowserSession.id. For an incognito tab, sessionId
+    // identifies which ephemeral store its tabs share (the tab itself lives in memory only).
+    var sessionId: UUID? = nil
+    var sessionKindRaw: String? = nil   // optional String for clean SwiftData migration (see memoryPolicyRaw)
 
     init(title: String = String(localized: "New Tab"), url: URL? = nil, isActive: Bool = false) {
         self.id = UUID()

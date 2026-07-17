@@ -153,7 +153,7 @@ struct Straight_Up_BrowserApp: App {
 
     var sharedModelContainer: ModelContainer = {
         // TabGroup included so the CloudKit record types match the iPad app.
-        let schema = Schema([Tab.self, TabGroup.self, Bookmark.self])
+        let schema = Schema([Tab.self, TabGroup.self, Bookmark.self, BrowserSession.self])
         // Tab sync (Settings → Sync) selects the CloudKit private DB; off = local.
         // Read at launch, so toggling sync takes effect after relaunch.
         let modelConfiguration = ModelConfiguration(
@@ -217,15 +217,13 @@ struct Straight_Up_BrowserApp: App {
                 .keyboardShortcut(sc(.newTab))
             }
 
+            // File menu commands (one group: @CommandsBuilder caps top-level children at 10)
             CommandGroup(after: .newItem) {
                 Button("Close Tab") {
                     NotificationCenter.default.post(name: .browserCloseTab, object: nil)
                 }
                 .keyboardShortcut(sc(.closeTab))
-            }
 
-            // File menu commands
-            CommandGroup(after: .newItem) {
                 Button("Open Location...") {
                     NotificationCenter.default.post(name: .showOmnibar, object: nil)
                 }
@@ -253,6 +251,32 @@ struct Straight_Up_BrowserApp: App {
                     Button("Export as PDF...") {
                         NotificationCenter.default.post(name: .browserExportPDF, object: nil)
                     }
+                }
+            }
+
+            CommandMenu("Privacy") {
+                Button("New Incognito Tab") {
+                    NotificationCenter.default.post(name: .browserNewIncognitoTab, object: nil)
+                }
+                .keyboardShortcut(sc(.newIncognitoTab))
+
+                Button("New Regular Tab") {
+                    NotificationCenter.default.post(name: .browserNewRegularTab, object: nil)
+                }
+
+                Divider()
+
+                Button("Clear This Site's Data…") {
+                    NotificationCenter.default.post(name: .browserClearSiteData, object: nil)
+                }
+                .keyboardShortcut(sc(.clearSiteData))
+
+                Button("Clear This Session's Data…") {
+                    NotificationCenter.default.post(name: .browserClearSessionData, object: nil)
+                }
+
+                Button("Clear All Browsing Data…") {
+                    NotificationCenter.default.post(name: .browserClearAllData, object: nil)
                 }
             }
 
