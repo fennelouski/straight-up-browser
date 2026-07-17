@@ -122,7 +122,7 @@ enum TabSync {
     @discardableResult
     static func restoreInteractionState(_ tab: Tab, into webView: WKWebView) -> Bool {
         guard cacheStateEnabled, let data = tab.interactionStateData,
-              let state = try? NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(data) else { return false }
+              let state = NSKeyedUnarchiver.unarchiveTopLevelObject(from: data) else { return false }
         webView.interactionState = state
         return true
     }

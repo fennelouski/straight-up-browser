@@ -12,6 +12,18 @@ import Combine
 import AppKit
 #endif
 
+extension NSKeyedUnarchiver {
+    // Non-deprecated replacement for unarchiveTopLevelObjectWithData: decodes a
+    // root object archived without secure coding (e.g. WKWebView.interactionState,
+    // an opaque type). Returns nil instead of crashing on a corrupt archive.
+    static func unarchiveTopLevelObject(from data: Data) -> Any? {
+        guard let unarchiver = try? NSKeyedUnarchiver(forReadingFrom: data) else { return nil }
+        unarchiver.requiresSecureCoding = false
+        unarchiver.decodingFailurePolicy = .setErrorAndReturn
+        return unarchiver.decodeObject(forKey: NSKeyedArchiveRootObjectKey)
+    }
+}
+
 class WebViewManager: NSObject, ObservableObject {
     // Claiming to be Chrome while running WebKit gets us flagged as an unsafe
     // embedded webview by Google sign-in (no Sec-CH-UA client hints to back it
@@ -131,7 +143,7 @@ class WebViewManager: NSObject, ObservableObject {
         else { return }
         for (idString, stateData) in raw {
             guard let id = UUID(uuidString: idString),
-                  let state = try? NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(stateData) else { continue }
+                  let state = NSKeyedUnarchiver.unarchiveTopLevelObject(from: stateData) else { continue }
             savedInteractionStates[id] = state
         }
         Logger.log("Loaded \(savedInteractionStates.count) persisted interaction states", type: "WebViewManager")
