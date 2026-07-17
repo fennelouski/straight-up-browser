@@ -11,7 +11,7 @@ import Combine
 
 // Value snapshot of a closed tab. Holding the deleted SwiftData model itself
 // is undefined behavior once modelContext.delete runs.
-struct ClosedTabSnapshot {
+struct ClosedTabSnapshot: Codable {
     let title: String
     let url: URL?
     let historyStrings: [String]
@@ -19,7 +19,14 @@ struct ClosedTabSnapshot {
 
 class TabManager: ObservableObject {
     @Published var selectedTabId: UUID?
-    @Published var closedTabs: [ClosedTabSnapshot] = []
+    // Survives quit (persisted to UserDefaults) so Cmd+Shift+T can reopen tabs
+    // from the previous session, not just the current one.
+    @Published var closedTabs: [ClosedTabSnapshot] = [] {
+        didSet { persistClosedTabs() }
+    }
+
+    private static let closedTabsKey = "closedTabsStack"
+    private static let maxClosedTabs = 25
 
     private var modelContext: ModelContext?
     private weak var webViewManager: WebViewManager?
@@ -27,6 +34,19 @@ class TabManager: ObservableObject {
     init(modelContext: ModelContext? = nil, webViewManager: WebViewManager? = nil) {
         self.modelContext = modelContext
         self.webViewManager = webViewManager
+        if let data = UserDefaults.standard.data(forKey: Self.closedTabsKey),
+           let saved = try? JSONDecoder().decode([ClosedTabSnapshot].self, from: data) {
+            closedTabs = saved
+        }
+    }
+
+    // Keep only the most recent entries on disk; the in-session stack is small
+    // by nature (you'd have to close thousands of tabs to grow it).
+    private func persistClosedTabs() {
+        let capped = Array(closedTabs.suffix(Self.maxClosedTabs))
+        if let data = try? JSONEncoder().encode(capped) {
+            UserDefaults.standard.set(data, forKey: Self.closedTabsKey)
+        }
     }
 
     func setModelContext(_ modelContext: ModelContext) {

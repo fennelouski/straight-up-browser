@@ -8,6 +8,9 @@
 import SwiftUI
 import WebKit
 import Combine
+#if canImport(AppKit)
+import AppKit
+#endif
 
 class WebViewManager: NSObject, ObservableObject {
     // Claiming to be Chrome while running WebKit gets us flagged as an unsafe
@@ -97,8 +100,63 @@ class WebViewManager: NSObject, ObservableObject {
         super.init()
         NotificationCenter.default.addObserver(
             self, selector: #selector(adBlockSettingChanged), name: .adBlockChanged, object: nil)
+        // Restore last session's per-tab page state; getWebView consumes it the
+        // first time each tab is activated. Persist again when the app quits.
+        loadPersistedInteractionStates()
+        #if canImport(AppKit)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(persistInteractionStates),
+            name: NSApplication.willTerminateNotification, object: nil)
+        #endif
         startMemoryPressureMonitoring()
         Logger.log("WebViewManager initialized", type: "WebViewManager")
+    }
+
+    // MARK: - Session restore (local, per-tab scroll + in-page history)
+
+    // interactionState for open tabs, stashed between launches so a relaunch
+    // resumes each page where it was. Local (Application Support) on purpose: it
+    // never touches the iCloud cache-state column, so the sync privacy toggle
+    // stays authoritative for what leaves the device.
+    private static var interactionStateFileURL: URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("SessionInteractionState.plist")
+    }
+
+    private func loadPersistedInteractionStates() {
+        guard #available(macOS 12.0, *),
+              let url = Self.interactionStateFileURL,
+              let data = try? Data(contentsOf: url),
+              let raw = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Data]
+        else { return }
+        for (idString, stateData) in raw {
+            guard let id = UUID(uuidString: idString),
+                  let state = try? NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(stateData) else { continue }
+            savedInteractionStates[id] = state
+        }
+        Logger.log("Loaded \(savedInteractionStates.count) persisted interaction states", type: "WebViewManager")
+    }
+
+    // Archive every open tab's page state to disk. Live web views win over a
+    // stale saved copy for the same tab. ponytail: uncapped file; if heavy
+    // sessions bloat it, cap total bytes or drop the least-recently-used tabs.
+    @objc private func persistInteractionStates() {
+        guard #available(macOS 12.0, *), let url = Self.interactionStateFileURL else { return }
+        var out: [String: Data] = [:]
+        for (id, state) in savedInteractionStates {
+            if let data = try? NSKeyedArchiver.archivedData(withRootObject: state, requiringSecureCoding: false) {
+                out[id.uuidString] = data
+            }
+        }
+        for (id, webView) in webViews {
+            if let state = webView.interactionState,
+               let data = try? NSKeyedArchiver.archivedData(withRootObject: state, requiringSecureCoding: false) {
+                out[id.uuidString] = data
+            }
+        }
+        guard let plist = try? PropertyListSerialization.data(fromPropertyList: out, format: .binary, options: 0) else { return }
+        try? plist.write(to: url, options: .atomic)
+        Logger.log("Persisted \(out.count) interaction states", type: "WebViewManager")
     }
 
     // MARK: - Memory pressure
