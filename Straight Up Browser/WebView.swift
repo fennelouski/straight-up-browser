@@ -508,8 +508,9 @@ struct WebView: NSViewRepresentable {
         func downloadDidFinish(_ download: WKDownload) {
             if let url = downloadDestinations.removeValue(forKey: download) {
                 Logger.log("Download finished: \(url.path)", type: "WebView")
-                // ponytail: reveal in Finder is the entire downloads UI; build an
-                // overlay panel if this grates with multi-file downloads
+                DownloadManager.shared.record(url, kind: .download, source: download.originalRequest?.url)
+                // Reveal in Finder is the immediate "it's done" feedback; the
+                // browsable history lives in the Downloads window (File ▸ Show Downloads).
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             }
         }
@@ -691,10 +692,16 @@ struct WebView: NSViewRepresentable {
             panel.canChooseFiles = true
             panel.canChooseDirectories = parameters.allowsDirectories
             panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+            let site = webView.url
+            let finish: (NSApplication.ModalResponse) -> Void = { response in
+                let urls = response == .OK ? panel.urls : nil
+                urls?.forEach { DownloadManager.shared.record($0, kind: .upload, source: site) }
+                completionHandler(urls)
+            }
             if let window = webView.window {
-                panel.beginSheetModal(for: window) { completionHandler($0 == .OK ? panel.urls : nil) }
+                panel.beginSheetModal(for: window, completionHandler: finish)
             } else {
-                completionHandler(panel.runModal() == .OK ? panel.urls : nil)
+                finish(panel.runModal())
             }
         }
     }

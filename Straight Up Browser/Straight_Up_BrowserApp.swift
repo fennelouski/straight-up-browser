@@ -196,6 +196,13 @@ struct Straight_Up_BrowserApp: App {
         .defaultSize(width: 780, height: 560)
         .windowResizability(.contentSize)
 
+        Window("Downloads", id: "downloads") {
+            FilesWindow()
+        }
+        .windowStyle(.automatic)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 700, height: 540)
+
         Window("Help", id: "help") {
             HelpWindow()
         }
@@ -223,6 +230,11 @@ struct Straight_Up_BrowserApp: App {
                     NotificationCenter.default.post(name: .showOmnibar, object: nil)
                 }
                 .keyboardShortcut(sc(.openLocation))
+
+                Button("Show Downloads") {
+                    openWindow(id: "downloads")
+                }
+                .keyboardShortcut("j", modifiers: [.command, .shift])
             }
 
             CommandGroup(replacing: .printItem) {
