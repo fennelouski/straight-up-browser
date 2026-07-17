@@ -41,7 +41,8 @@ extension Notification.Name {
     static let browserLinkPreviewLongPress = Notification.Name("browserLinkPreviewLongPress")
     static let browserLinkPreviewUp = Notification.Name("browserLinkPreviewUp")
 
-    // Hold-Cmd+Q-to-quit progress (userInfo["progress"]: Double, 0 = cancelled)
+    // Hold-Cmd+Q-to-quit HUD (userInfo["progress"]: Double target, 0 = cancelled;
+    // userInfo["duration"]: Double seconds the view animates over)
     static let browserQuitHoldProgress = Notification.Name("browserQuitHoldProgress")
 
     // Ad blocker toggled in Settings

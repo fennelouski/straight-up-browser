@@ -191,8 +191,10 @@ struct ContentView: View {
     // Memory saving: release background tabs from RAM under memory pressure
     @AppStorage("memorySaverEnabled") private var memorySaverEnabled = false
 
-    // Hold-Cmd+Q-to-quit progress (0 = hidden)
+    // Hold-Cmd+Q-to-quit HUD. quitHoldActive gates the overlay; quitHoldProgress
+    // is animated 0→1 by Core Animation over the hold duration.
     @State private var quitHoldProgress: Double = 0
+    @State private var quitHoldActive = false
 
     // Cmd+Shift+H shortcut cheat sheet
     @State private var showShortcutCheatSheet = false
@@ -449,7 +451,11 @@ struct ContentView: View {
                     tabListView(geometry: geometry)
                 }
             }
-            .frame(minWidth: 80)
+            // Fill the width the call site sets (32 minimal / max(80, tabBarWidth) otherwise)
+            // and pin content to the leading edge. A previous `minWidth: 80` here fought that
+            // outer width in minimal mode and, on a persisted view (e.g. compact→minimal),
+            // center-aligned the favicons off to the right. ponytail: leading fill, not minWidth.
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(.windowBackgroundColor))
             .clipped() // Ensure content doesn't overflow beyond tab bar bounds
         }
@@ -899,7 +905,7 @@ struct ContentView: View {
 
     private var quitHoldOverlay: some View {
         Group {
-            if quitHoldProgress > 0 {
+            if quitHoldActive {
                 VStack(spacing: 12) {
                     Text("Keep holding ⌘Q to quit")
                         .font(.headline)
@@ -1135,13 +1141,29 @@ struct ContentView: View {
                     performFind(backwards: true)
                 }
 
-                // Hold-Cmd+Q progress HUD
+                // Hold-Cmd+Q progress HUD. The manager sends a target and the
+                // hold duration; Core Animation sweeps the bar smoothly, so it
+                // can't stutter the way the old per-frame feed did.
                 NotificationCenter.default.addObserver(
                     forName: .browserQuitHoldProgress,
                     object: nil,
                     queue: .main
                 ) { [self] notification in
-                    quitHoldProgress = notification.userInfo?["progress"] as? Double ?? 0
+                    let target = notification.userInfo?["progress"] as? Double ?? 0
+                    let duration = notification.userInfo?["duration"] as? Double ?? 0
+                    if target > 0 {
+                        // Mount the HUD at 0, then animate to full next tick — a
+                        // freshly inserted view won't animate from a value it
+                        // never had, so it would otherwise snap straight to full.
+                        quitHoldActive = true
+                        quitHoldProgress = 0
+                        DispatchQueue.main.async {
+                            withAnimation(.linear(duration: duration)) { quitHoldProgress = 1 }
+                        }
+                    } else {
+                        quitHoldActive = false
+                        quitHoldProgress = 0
+                    }
                 }
 
                 // Cmd+Shift+H shortcut cheat sheet

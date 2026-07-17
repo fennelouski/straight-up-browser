@@ -136,22 +136,26 @@ class KeyboardShortcutsManager {
 
     private func startQuitHold() {
         quitHoldStart = Date()
-        quitHoldTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            guard let self = self, let start = self.quitHoldStart else { return }
-            let progress = Date().timeIntervalSince(start) / Self.quitHoldDuration
-            NotificationCenter.default.post(name: .browserQuitHoldProgress, object: nil, userInfo: ["progress": progress])
-            if progress >= 1.0 {
-                self.quitHoldTimer?.invalidate()
-                NSApp.terminate(nil)
-            }
+        // The HUD animates itself 0→1 over the hold (Core Animation, immune to
+        // main-thread jitter), so we no longer feed per-frame progress — that
+        // irregular 30fps feed was what made the bar jumpy. Just fire one
+        // terminate at the end, in .common mode so a tracking run loop (menus,
+        // scrollbars) can't delay it.
+        let timer = Timer(timeInterval: Self.quitHoldDuration, repeats: false) { _ in
+            NSApp.terminate(nil)
         }
+        RunLoop.main.add(timer, forMode: .common)
+        quitHoldTimer = timer
+        NotificationCenter.default.post(name: .browserQuitHoldProgress, object: nil,
+            userInfo: ["progress": 1.0, "duration": Self.quitHoldDuration])
     }
 
     private func cancelQuitHold() {
         quitHoldTimer?.invalidate()
         quitHoldTimer = nil
         quitHoldStart = nil
-        NotificationCenter.default.post(name: .browserQuitHoldProgress, object: nil, userInfo: ["progress": 0.0])
+        NotificationCenter.default.post(name: .browserQuitHoldProgress, object: nil,
+            userInfo: ["progress": 0.0, "duration": 0.0])
     }
 
     func teardown() {
