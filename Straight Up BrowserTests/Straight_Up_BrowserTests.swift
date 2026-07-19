@@ -7,6 +7,7 @@
 
 import Testing
 import SwiftUI
+import SwiftData
 @testable import Browser
 
 struct Straight_Up_BrowserTests {
@@ -15,6 +16,104 @@ struct Straight_Up_BrowserTests {
         // Write your test here and use APIs like `#expect(...)` to check expected conditions.
     }
 
+}
+
+// TabManager works with webViewManager: nil (optional chaining) and needs no
+// modelContext for incognito, so its session logic is testable without a GUI.
+@Suite(.serialized)
+struct SessionIsolationTests {
+
+    @Test func sessionKindAccessorRoundTrips() {
+        let tab = Tab()
+        #expect(tab.sessionKind == .normal)
+        #expect(tab.sessionKindRaw == nil)
+
+        tab.sessionKind = .incognito
+        #expect(tab.sessionKind == .incognito)
+        #expect(tab.sessionKindRaw == "incognito")
+
+        // Normal stores nil, so existing rows never need migration.
+        tab.sessionKind = .normal
+        #expect(tab.sessionKindRaw == nil)
+    }
+
+    @Test func incognitoTabsAreInMemoryAndIsolated() {
+        let manager = TabManager()
+        let a = manager.createIncognitoTab()
+        let b = manager.createIncognitoTab()
+
+        // Held in the in-memory list (never inserted into SwiftData).
+        #expect(manager.incognitoTabs.count == 2)
+        #expect(a.sessionKind == .incognito && b.sessionKind == .incognito)
+        // Two fresh incognito tabs are isolated: different session jars.
+        #expect(a.sessionId != b.sessionId)
+
+        // Opening into an existing session shares its jar id.
+        let c = manager.createIncognitoTab(sessionId: a.sessionId)
+        #expect(c.sessionId == a.sessionId)
+    }
+
+    @Test func closingIncognitoTabRemovesItWithoutSnapshot() {
+        let manager = TabManager()
+        let a = manager.createIncognitoTab()
+        _ = manager.createIncognitoTab()
+        let before = manager.closedTabs.count
+
+        manager.closeTab(a, tabs: manager.incognitoTabs)
+        #expect(!manager.incognitoTabs.contains { $0.id == a.id })
+        #expect(manager.incognitoTabs.count == 1)
+        // Incognito closes never hit the reopen stack (ephemeral + private).
+        #expect(manager.closedTabs.count == before)
+    }
+
+    @Test func createTabInheritsSession() {
+        let manager = TabManager()
+
+        // Inheriting incognito → an incognito tab in the same session.
+        let sid = UUID()
+        let inc = manager.createTab(inheriting: (.incognito, sid))
+        #expect(inc.sessionKind == .incognito && inc.sessionId == sid)
+        #expect(manager.incognitoTabs.contains { $0.id == inc.id })
+
+        // Inheriting container → a container tab tagged with the session, not in the
+        // incognito list.
+        let csid = UUID()
+        let cont = manager.createTab(inheriting: (.container, csid))
+        #expect(cont.sessionKind == .container && cont.sessionId == csid)
+        #expect(!manager.incognitoTabs.contains { $0.id == cont.id })
+
+        // Inheriting normal → a plain tab.
+        let norm = manager.createTab(inheriting: (.normal, nil))
+        #expect(norm.sessionKind == .normal && norm.sessionId == nil)
+    }
+
+    @Test func incognitoColorIsStablePerSession() {
+        let id = UUID()
+        #expect(BrowserSession.incognitoColor(for: id) == BrowserSession.incognitoColor(for: id))
+    }
+
+    // Builds the real app schema (with the new BrowserSession model + Tab session
+    // fields) in memory to confirm it's valid and container tabs round-trip — a safe
+    // proxy for "the app still launches and migrates" without touching real data.
+    @Test func schemaBuildsAndPersistsContainerTabs() throws {
+        let schema = Schema([Tab.self, TabGroup.self, Bookmark.self, BrowserSession.self])
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: schema, configurations: [config])
+        let ctx = ModelContext(container)
+
+        let session = BrowserSession(name: "Work", color: .blue)
+        ctx.insert(session)
+        let tab = Tab()
+        tab.sessionKind = .container
+        tab.sessionId = session.id
+        ctx.insert(tab)
+        try ctx.save()
+
+        #expect(try ctx.fetch(FetchDescriptor<BrowserSession>()).count == 1)
+        let stored = try ctx.fetch(FetchDescriptor<Browser.Tab>()).first
+        #expect(stored?.sessionKind == .container)
+        #expect(stored?.sessionId == session.id)
+    }
 }
 
 // Serialized: these mutate the shared ShortcutStore singleton, so they must not
@@ -123,5 +222,139 @@ struct ShortcutTests {
 
         live.deactivate()
         #expect(!live.isActive)
+    }
+}
+
+// Split view is window view state on TabManager (docs/adr/0001): ordered member
+// ids + focused id, no SwiftData entity. Serialized: splitTabIds persists to
+// shared UserDefaults on every mutation.
+@Suite(.serialized)
+struct SplitViewTests {
+
+    private func makeTabs(_ n: Int) -> [Browser.Tab] {
+        (0..<n).map { i in
+            let tab = Browser.Tab()
+            tab.orderIndex = i
+            return tab
+        }
+    }
+
+    private func cleanup(_ manager: TabManager) {
+        manager.splitTabIds = []
+        UserDefaults.standard.removeObject(forKey: "splitTabIds")
+    }
+
+    @Test func toggleAddsRemovesAndCapsAtFour() {
+        let manager = TabManager()
+        let tabs = makeTabs(6)
+        manager.selectedTabId = tabs[0].id
+
+        // First shift-click: split of [selected, clicked], focus moves to clicked
+        manager.toggleSplitMembership(tabs[3], tabs: tabs)
+        #expect(manager.splitTabIds == [tabs[0].id, tabs[3].id])
+        #expect(manager.selectedTabId == tabs[3].id)
+
+        // Members append in add order; the fifth is a no-op (cap = 2x2 grid)
+        manager.toggleSplitMembership(tabs[1], tabs: tabs)
+        manager.toggleSplitMembership(tabs[4], tabs: tabs)
+        manager.toggleSplitMembership(tabs[5], tabs: tabs)
+        #expect(manager.splitTabIds == [tabs[0].id, tabs[3].id, tabs[1].id, tabs[4].id])
+
+        // Shift-click on a member removes its pane
+        manager.toggleSplitMembership(tabs[1], tabs: tabs)
+        #expect(manager.splitTabIds == [tabs[0].id, tabs[3].id, tabs[4].id])
+
+        // Removing down to one pane dissolves the split; focus stays on a survivor
+        manager.toggleSplitMembership(tabs[0], tabs: tabs)
+        manager.toggleSplitMembership(tabs[3], tabs: tabs)
+        #expect(manager.splitTabIds.isEmpty)
+        #expect(manager.selectedTabId == tabs[4].id)
+        cleanup(manager)
+    }
+
+    @Test func removingFocusedMemberMovesFocusToFirstRemaining() {
+        let manager = TabManager()
+        let tabs = makeTabs(3)
+        manager.selectedTabId = tabs[0].id
+        manager.toggleSplitMembership(tabs[1], tabs: tabs)
+        manager.toggleSplitMembership(tabs[2], tabs: tabs)
+
+        // tabs[2] is focused; removing it hands focus to the first remaining member
+        manager.toggleSplitMembership(tabs[2], tabs: tabs)
+        #expect(manager.splitTabIds == [tabs[0].id, tabs[1].id])
+        #expect(manager.selectedTabId == tabs[0].id)
+        cleanup(manager)
+    }
+
+    @Test func selectingNonMemberDissolvesSplit() {
+        let manager = TabManager()
+        let tabs = makeTabs(3)
+        manager.selectedTabId = tabs[0].id
+        manager.toggleSplitMembership(tabs[1], tabs: tabs)
+        #expect(!manager.splitTabIds.isEmpty)
+
+        // Any outside selection (click, Cmd+T, popup, tab cycling) returns to single view
+        manager.selectedTabId = tabs[2].id
+        #expect(manager.splitTabIds.isEmpty)
+        cleanup(manager)
+    }
+
+    @Test func gatheringReordersMembersAfterAnchor() {
+        let manager = TabManager()
+        let tabs = makeTabs(6)
+        manager.selectedTabId = tabs[1].id
+
+        // Anchor (tabs[1]) keeps its position; the new member moves next to it
+        manager.toggleSplitMembership(tabs[4], tabs: tabs)
+        let ordered: [UUID] = tabs.sorted { $0.orderIndex < $1.orderIndex }.map(\.id)
+        let expected: [UUID] = [0, 1, 4, 2, 3, 5].map { tabs[$0].id }
+        #expect(ordered == expected)
+        cleanup(manager)
+    }
+
+    @Test func closingMemberCollapsesOnlyItsPane() {
+        let manager = TabManager()
+        let tabs = makeTabs(3)
+        manager.selectedTabId = tabs[0].id
+        manager.toggleSplitMembership(tabs[1], tabs: tabs)
+        manager.toggleSplitMembership(tabs[2], tabs: tabs)
+
+        // Closing the focused member: its pane collapses, focus moves to a member,
+        // and the rest of the split survives
+        manager.closeTab(tabs[2], tabs: tabs)
+        #expect(manager.splitTabIds == [tabs[0].id, tabs[1].id])
+        #expect(manager.selectedTabId == tabs[0].id)
+
+        // Closing another member leaves one pane: back to a normal single view
+        let remaining = [tabs[0], tabs[1]]
+        manager.closeTab(tabs[1], tabs: remaining)
+        #expect(manager.splitTabIds.isEmpty)
+        #expect(manager.selectedTabId == tabs[0].id)
+        cleanup(manager)
+    }
+
+    @Test func restoreDropsUnresolvedIdsAndRealignsFocus() {
+        let tabs = makeTabs(3)
+        UserDefaults.standard.set(
+            [tabs[1].id.uuidString, UUID().uuidString, tabs[2].id.uuidString],
+            forKey: "splitTabIds")
+
+        let manager = TabManager()
+        manager.selectedTabId = tabs[0].id
+        manager.restoreSplit(from: tabs)
+        // The id closed on another device (or an incognito tab that died) is dropped
+        #expect(manager.splitTabIds == [tabs[1].id, tabs[2].id])
+        // The restored selection wasn't a member, so focus moves into the split
+        #expect(manager.selectedTabId == tabs[1].id)
+        cleanup(manager)
+
+        // Fewer than 2 survivors: no split, and the stale persisted value is cleared
+        UserDefaults.standard.set([UUID().uuidString, UUID().uuidString], forKey: "splitTabIds")
+        let manager2 = TabManager()
+        manager2.selectedTabId = tabs[0].id
+        manager2.restoreSplit(from: tabs)
+        #expect(manager2.splitTabIds.isEmpty)
+        #expect(UserDefaults.standard.stringArray(forKey: "splitTabIds") == nil)
+        cleanup(manager2)
     }
 }

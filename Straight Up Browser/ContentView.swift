@@ -140,6 +140,7 @@ struct ContentView: View {
     @Query(sort: \BrowserTab.orderIndex) private var tabs: [BrowserTab]
     @Query(sort: \TabGroup.orderIndex) private var tabGroups: [TabGroup]
     @Query(sort: \Bookmark.createdAt, order: .reverse) private var allBookmarks: [Bookmark]
+    @Query(sort: \BrowserSession.createdAt) private var browserSessions: [BrowserSession]
 
     // Managers
     @StateObject private var tabManager: TabManager
@@ -165,6 +166,9 @@ struct ContentView: View {
     @State private var showCreateGroupDialog = false
     @State private var newGroupName = ""
     @State private var newGroupColor = Color.blue
+    @State private var showCreateContainerDialog = false
+    @State private var newContainerName = ""
+    @State private var newContainerColor = Color.purple
     @State private var showWorkspaceMenu = false
     @State private var showSaveWorkspaceDialog = false
     @State private var workspaceName = ""
@@ -215,8 +219,10 @@ struct ContentView: View {
             maybeNudgeMemorySaver()
             return
         }
-        let activeId = tabManager.selectedTabId
-        for tab in tabs where tab.id != activeId && Self.shouldUnload(tab.memoryPolicy, critical: critical) {
+        // Exempt every displayed tab: in a split, the non-focused panes are
+        // visible too and must not go blank under pressure.
+        let displayed = displayedTabIds
+        for tab in tabs where !displayed.contains(tab.id) && Self.shouldUnload(tab.memoryPolicy, critical: critical) {
             webViewManager?.unloadWebView(for: tab.id)
         }
     }
@@ -265,12 +271,34 @@ struct ContentView: View {
         return bookmarks.map { (title: $0.title, url: $0.url) }
     }
 
+    // The working set of tabs: persisted normal/container tabs (SwiftData) plus the
+    // in-memory incognito tabs. Used for selection, switching, active-tab lookup, the
+    // web view coordinator, and rendering — everywhere except SwiftData-only concerns
+    // (empty-tab cleanup, workspace save) which stay on `tabs`.
+    private var allTabs: [BrowserTab] { tabs + tabManager.incognitoTabs }
+
+    // The tabs visible in the window: the split members, or just the focused tab.
+    private var displayedTabIds: [UUID] {
+        tabManager.splitTabIds.isEmpty ? [tabManager.selectedTabId].compactMap { $0 } : tabManager.splitTabIds
+    }
+
+    // The tint for a tab's isolated session (nil for a normal tab): a container's
+    // chosen color, or an auto hue for an incognito session.
+    private func sessionColor(for tab: BrowserTab) -> Color? {
+        switch tab.sessionKind {
+        case .normal: return nil
+        case .incognito: return tab.sessionId.map(BrowserSession.incognitoColor(for:))
+        case .container: return browserSessions.first { $0.id == tab.sessionId }?.color
+        }
+    }
+
     private var groupedTabs: [(group: TabGroup?, tabs: [BrowserTab])] {
         var result: [(group: TabGroup?, tabs: [BrowserTab])] = []
 
         // Group tabs by groupId (dropping open-only local closes, which keep their
-        // CloudKit record so they stay open on other devices).
-        let groupedById = Dictionary(grouping: TabSync.visible(tabs)) { $0.groupId }
+        // CloudKit record so they stay open on other devices). Incognito tabs aren't
+        // synced, so they bypass the visibility filter and always show.
+        let groupedById = Dictionary(grouping: TabSync.visible(tabs) + tabManager.incognitoTabs) { $0.groupId }
 
         // Add tabs without groups first (ungrouped tabs)
         if let ungroupedTabs = groupedById[nil] {
@@ -333,6 +361,34 @@ struct ContentView: View {
             .menuStyle(.borderlessButton)
             .help("Workspaces")
 
+            Menu {
+                Button("New Incognito Tab") {
+                    _ = tabManager.createIncognitoTab()
+                    showOmnibar = true
+                }
+                Divider()
+                ForEach(browserSessions) { session in
+                    Menu(session.name) {
+                        Button("Open Tab") {
+                            _ = tabManager.createTab(inheriting: (.container, session.id))
+                            showOmnibar = true
+                        }
+                        Button("Delete Container & Data", role: .destructive) {
+                            deleteContainer(session)
+                        }
+                    }
+                }
+                if !browserSessions.isEmpty { Divider() }
+                Button("New Container…") { showCreateContainerDialog = true }
+            } label: {
+                Image(systemName: "person.2")
+                    .font(.system(size: 12))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .help("Containers & Incognito")
+
             Spacer(minLength: 0)
         }
         .frame(height: 32)
@@ -388,20 +444,32 @@ struct ContentView: View {
                             showOnlyIcons: tabBarWidth <= 30,
                             tabBarWidth: tabBarWidth,
                             onSelect: {
-                                Logger.log("Tab clicked: \(tab.id), current selectedTabId: \(tabManager.selectedTabId?.uuidString ?? "nil")", type: "ContentView")
-                                Logger.log("Setting selectedTabId to: \(tab.id)", type: "ContentView")
-                                tabManager.selectedTabId = tab.id
-                                Logger.log("After setting, selectedTabId is now: \(tabManager.selectedTabId?.uuidString ?? "nil")", type: "ContentView")
+                                // Shift-click toggles split pane membership; plain click selects
+                                if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
+                                    tabManager.toggleSplitMembership(tab, tabs: allTabs)
+                                } else {
+                                    Logger.log("Tab clicked: \(tab.id), setting selectedTabId", type: "ContentView")
+                                    tabManager.selectedTabId = tab.id
+                                }
                             },
                             onReorder: { sourceTabId, targetTabId in
-                                tabManager.reorderTabs(sourceTabId: sourceTabId, targetTabId: targetTabId, tabs: tabs)
+                                tabManager.reorderTabs(sourceTabId: sourceTabId, targetTabId: targetTabId, tabs: allTabs)
                             },
                             loadingProgress: progressFaviconRing && showProgressBar
-                                && tab.id == tabManager.selectedTabId ? progressValue : nil
+                                && tab.id == tabManager.selectedTabId ? progressValue : nil,
+                            sessionColor: sessionColor(for: tab),
+                            isIncognito: tab.sessionKind == .incognito,
+                            isDisplayedInSplit: tabManager.splitTabIds.contains(tab.id)
                         )
                         .contextMenu {
-                            Button("Close Tab", action: { tabManager.closeTab(tab, tabs: tabs) })
+                            Button("Close Tab", action: { tabManager.closeTab(tab, tabs: allTabs) })
                             Button("Duplicate Tab", action: { _ = tabManager.duplicateTab(tab) })
+                            if tabManager.splitTabIds.contains(tab.id) {
+                                Button("Remove from Split", action: { tabManager.toggleSplitMembership(tab, tabs: allTabs) })
+                            } else if tabManager.splitTabIds.count < TabManager.maxSplitTabs {
+                                Button(tabManager.splitTabIds.isEmpty ? "Open in Split" : "Add to Split",
+                                       action: { tabManager.toggleSplitMembership(tab, tabs: allTabs) })
+                            }
                             Divider()
 
                             // Move to group submenu
@@ -436,13 +504,18 @@ struct ContentView: View {
                 if tabBarWidth <= 30 {
                     // Vertical favicon stack for compact mode
                     FloatingFaviconOverlay(
-                        tabs: tabs,
+                        tabs: allTabs,
                         selectedTabId: tabManager.selectedTabId,
                         onTabSelect: { tabId in
-                            tabManager.selectedTabId = tabId
+                            if NSApp.currentEvent?.modifierFlags.contains(.shift) == true,
+                               let tab = allTabs.first(where: { $0.id == tabId }) {
+                                tabManager.toggleSplitMembership(tab, tabs: allTabs)
+                            } else {
+                                tabManager.selectedTabId = tabId
+                            }
                         },
                             onReorder: { sourceTabId, targetTabId in
-                                tabManager.reorderTabs(sourceTabId: sourceTabId, targetTabId: targetTabId, tabs: tabs)
+                                tabManager.reorderTabs(sourceTabId: sourceTabId, targetTabId: targetTabId, tabs: allTabs)
                             },
                         tabManager: tabManager
                     )
@@ -474,8 +547,9 @@ struct ContentView: View {
                         hasRenderedContent: $hasRenderedContent,
                         webViewManager: webViewManager,
                         tabManager: tabManager,
-                        tabs: tabs,
+                        tabs: allTabs,
                         activeTabId: tabManager.selectedTabId,
+                        displayedTabIds: displayedTabIds,
                         onURLChange: { _ in })
                         .allowsHitTesting(true)
                         .focusable(true)
@@ -777,6 +851,64 @@ struct ContentView: View {
         }
     }
 
+    private var createContainerDialogOverlay: some View {
+        Group {
+            if showCreateContainerDialog {
+                Color.black.opacity(0.5)
+                    .edgesIgnoringSafeArea(.all)
+                    .onTapGesture { showCreateContainerDialog = false }
+
+                VStack {
+                    Spacer()
+                    VStack(spacing: 20) {
+                        Text("New Container")
+                            .font(.title2)
+                            .bold()
+
+                        Text("An isolated, persistent session with its own cookies and logins — stay signed in under a different account, side by side.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+
+                        VStack(spacing: 16) {
+                            TextField("Container Name", text: $newContainerName)
+                                .textFieldStyle(.roundedBorder)
+                                .padding(.horizontal)
+
+                            ColorPicker("Container Color", selection: $newContainerColor)
+                                .padding(.horizontal)
+                        }
+
+                        HStack(spacing: 16) {
+                            Button("Cancel") {
+                                showCreateContainerDialog = false
+                                newContainerName = ""
+                                newContainerColor = Color.purple
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("Create") {
+                                createContainer(name: newContainerName, color: newContainerColor)
+                                showCreateContainerDialog = false
+                                newContainerName = ""
+                                newContainerColor = Color.purple
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(newContainerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                    .padding(32)
+                    .background(Color(.windowBackgroundColor))
+                    .cornerRadius(12)
+                    .shadow(radius: 20)
+                    .frame(maxWidth: 300)
+                    Spacer()
+                }
+            }
+        }
+    }
+
     private var saveWorkspaceDialogOverlay: some View {
         Group {
             if showSaveWorkspaceDialog {
@@ -930,6 +1062,7 @@ struct ContentView: View {
         .overlay(omnibarOverlay.zIndex(3))
         .overlay(findBarOverlay.zIndex(3))
         .overlay(createGroupDialogOverlay.zIndex(4))
+        .overlay(createContainerDialogOverlay.zIndex(4))
         .overlay(saveWorkspaceDialogOverlay.zIndex(5))
         .overlay(importBookmarksDialogOverlay.zIndex(6))
         .overlay(quitHoldOverlay.zIndex(7))
@@ -1190,12 +1323,35 @@ struct ContentView: View {
                     }
                 }
 
+                // Privacy & session commands (Privacy menu + ⇧⌘N / ⇧⌘E)
+                NotificationCenter.default.addObserver(forName: .browserNewIncognitoTab, object: nil, queue: .main) { [self] _ in
+                    _ = tabManager.createIncognitoTab()   // fresh, isolated private session
+                    showOmnibar = true
+                }
+                NotificationCenter.default.addObserver(forName: .browserNewRegularTab, object: nil, queue: .main) { [self] _ in
+                    _ = tabManager.createNewTab()          // force a normal tab, leaving any session
+                    showOmnibar = true
+                }
+                NotificationCenter.default.addObserver(forName: .browserClearSiteData, object: nil, queue: .main) { [self] _ in
+                    clearActiveSite()
+                }
+                NotificationCenter.default.addObserver(forName: .browserClearSessionData, object: nil, queue: .main) { [self] _ in
+                    clearActiveSession()
+                }
+                NotificationCenter.default.addObserver(forName: .browserClearAllData, object: nil, queue: .main) { [self] _ in
+                    clearAllData()
+                }
+
                 // SwiftData is the session store: tabs are already loaded via @Query.
+                // Register any restored container tabs' sessions before they activate.
+                webViewManager?.syncSessions(from: tabs)
                 // Select the tab that was active last time, tabs load lazily on selection.
                 if tabs.isEmpty {
                     _ = tabManager.createNewTab()
                 } else {
                     tabManager.selectedTabId = tabs.first(where: { $0.isActive })?.id ?? tabs.first?.id
+                    // Restore last session's split (drops ids that no longer resolve)
+                    tabManager.restoreSplit(from: tabs)
                 }
             }
 
@@ -1208,7 +1364,7 @@ struct ContentView: View {
             Logger.log("ContentView onChange selectedTabId: \(oldValue?.uuidString ?? "nil") -> \(newValue?.uuidString ?? "nil")", type: "ContentView")
 
             // Persist which tab is active so relaunch restores the selection
-            tabManager.updateActiveTab(in: tabs)
+            tabManager.updateActiveTab(in: allTabs)
 
             // Update the WebViewManager with the new active tab. The WebView's
             // URL binding reads from the active tab, so nothing else to sync.
@@ -1249,8 +1405,10 @@ struct ContentView: View {
             }
         }
         .onChange(of: tabs) { oldTabs, newTabs in
-            // Ensure there's always a selected tab when tabs change
-            tabManager.ensureSelectedTab(from: newTabs)
+            // Keep container-tab sessions registered, and keep a valid selection across
+            // the merged working set (incognito tabs included).
+            webViewManager?.syncSessions(from: newTabs)
+            tabManager.ensureSelectedTab(from: allTabs)
         }
         .onDisappear {
             notificationManager?.cleanup()
@@ -1274,7 +1432,7 @@ struct ContentView: View {
             navigationManager: navigationManager,
             webViewManager: webViewManager,
             showOmnibar: $showOmnibar,
-            tabs: { self.tabs },
+            tabs: { self.allTabs },
             closeTabAction: { tab, tabs in
                 tabManager.closeTab(tab, tabs: tabs)
             },
@@ -1283,11 +1441,13 @@ struct ContentView: View {
                 let emptyTabs = self.tabs.filter { $0.url == nil }
                 for emptyTab in emptyTabs {
                     if emptyTab.id != tabManager.selectedTabId {
-                        tabManager.closeTab(emptyTab, tabs: tabs)
+                        tabManager.closeTab(emptyTab, tabs: allTabs)
                     }
                 }
 
-                _ = self.tabManager.createNewTab()
+                // Inherit the active tab's session so Cmd+T stays in the current
+                // container/incognito (a fresh incognito comes from ⇧⌘N instead).
+                _ = self.tabManager.createTab(inheriting: self.activeSession())
                 // Show omnibar when creating a new tab
                 self.showOmnibar = true
             },
@@ -1318,13 +1478,65 @@ struct ContentView: View {
         let emptyTabs = tabs.filter { $0.url == nil }
         for emptyTab in emptyTabs {
             if emptyTab.id != tabManager.selectedTabId {
-                tabManager.closeTab(emptyTab, tabs: tabs)
+                tabManager.closeTab(emptyTab, tabs: allTabs)
             }
         }
 
-        _ = tabManager.createNewTab()
+        // Inherit the active tab's session (matches Cmd+T).
+        _ = tabManager.createTab(inheriting: activeSession())
         // Show omnibar when creating a new tab
         showOmnibar = true
+    }
+
+    // The active tab's session, so a new tab (Cmd+T / +) stays in the same
+    // container/incognito.
+    private func activeSession() -> (kind: SessionKind, sessionId: UUID?) {
+        guard let active = tabManager.getActiveTab(from: allTabs) else { return (.normal, nil) }
+        return (active.sessionKind, active.sessionId)
+    }
+
+    // WebKit deletes are irreversible, so warn before any destructive clear.
+    private func confirmClear(_ message: String, informative: String, perform: @escaping () -> Void) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = informative
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: String(localized: "Clear"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        if alert.runModal() == .alertFirstButtonReturn { perform() }
+    }
+
+    private func clearActiveSite() {
+        guard let webView = webViewManager?.activeWebView, let host = webView.url?.host else { return }
+        confirmClear(
+            String(localized: "Clear data for \(host)?"),
+            informative: String(localized: "Removes cookies, cache, and storage for this site in the current session. This can’t be undone.")
+        ) {
+            BrowsingDataCleaner.clearSite(host: host, in: webView.configuration.websiteDataStore) {
+                DispatchQueue.main.async { webView.reloadFromOrigin() }
+            }
+        }
+    }
+
+    private func clearActiveSession() {
+        guard let webView = webViewManager?.activeWebView else { return }
+        confirmClear(
+            String(localized: "Clear this session’s data?"),
+            informative: String(localized: "Wipes all cookies, cache, and storage in the current tab’s session. This can’t be undone.")
+        ) {
+            BrowsingDataCleaner.clearStore(webView.configuration.websiteDataStore) {
+                DispatchQueue.main.async { webView.reloadFromOrigin() }
+            }
+        }
+    }
+
+    private func clearAllData() {
+        confirmClear(
+            String(localized: "Clear all browsing data?"),
+            informative: String(localized: "Removes cookies, cache, and storage for normal browsing. Container sessions keep their own data. This can’t be undone.")
+        ) {
+            BrowsingDataCleaner.clearDefaultEverything()
+        }
     }
 
     private func createTabGroup(name: String, color: Color) {
@@ -1333,6 +1545,24 @@ struct ContentView: View {
 
         let newGroup = TabGroup(name: trimmedName, color: color, orderIndex: tabGroups.count)
         modelContext.insert(newGroup)
+    }
+
+    private func createContainer(name: String, color: Color) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let session = BrowserSession(name: trimmed, color: color)
+        modelContext.insert(session)
+        _ = tabManager.createTab(inheriting: (.container, session.id))
+        showOmnibar = true
+    }
+
+    private func deleteContainer(_ session: BrowserSession) {
+        // Close its tabs, forget the definition, and wipe its on-disk jar.
+        let toClose = tabs.filter { $0.sessionKind == .container && $0.sessionId == session.id }
+        for tab in toClose { tabManager.closeTab(tab, tabs: allTabs) }
+        let id = session.id
+        modelContext.delete(session)
+        WKWebsiteDataStore.remove(forIdentifier: id) { _ in }
     }
 
     private func deleteGroup(_ group: TabGroup) {
@@ -1483,7 +1713,7 @@ struct ContentView: View {
     }
 
     private var activeTab: BrowserTab? {
-        let active = tabManager.getActiveTab(from: tabs)
+        let active = tabManager.getActiveTab(from: allTabs)
         if active == nil && tabManager.selectedTabId != nil {
             Logger.log("ContentView activeTab: selectedTabId is \(tabManager.selectedTabId?.uuidString ?? "nil") but no matching tab found in \(tabs.count) tabs", type: "ContentView")
             for tab in tabs {
@@ -1591,12 +1821,12 @@ struct ContentView: View {
     }
 
     private func switchToNextTab() {
-        tabManager.switchToNextTab(tabs: tabs)
+        tabManager.switchToNextTab(tabs: allTabs)
         // TabManager is now observed directly, no manual sync needed
     }
 
     private func switchToPreviousTab() {
-        tabManager.switchToPreviousTab(tabs: tabs)
+        tabManager.switchToPreviousTab(tabs: allTabs)
         // TabManager is now observed directly, no manual sync needed
     }
 
@@ -1605,7 +1835,7 @@ struct ContentView: View {
         for (i, tab) in tabs.enumerated() {
             Logger.log("  Tab \(i): id=\(tab.id), url=\(tab.url?.absoluteString ?? "nil")", type: "ContentView")
         }
-        tabManager.switchToTab(at: index, tabs: tabs)
+        tabManager.switchToTab(at: index, tabs: allTabs)
         // Also update our local state
         if index >= 0 && index < tabs.count {
             let targetTabId = tabs[index].id
@@ -1616,7 +1846,7 @@ struct ContentView: View {
 
     private func closeCurrentTab() {
         if let activeTab = activeTab {
-            tabManager.closeTab(activeTab, tabs: tabs)
+            tabManager.closeTab(activeTab, tabs: allTabs)
         }
     }
 

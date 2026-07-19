@@ -127,7 +127,7 @@ struct Shortcut: Codable, Equatable, Hashable {
 // MARK: - Sections
 
 enum ShortcutSection: String, CaseIterable {
-    case tabs, navigation, page, tabBar, bookmarks, app
+    case tabs, navigation, page, tabBar, bookmarks, privacy, app
 
     var title: LocalizedStringResource {
         switch self {
@@ -136,6 +136,7 @@ enum ShortcutSection: String, CaseIterable {
         case .page: return "Page"
         case .tabBar: return "Tab Bar"
         case .bookmarks: return "Bookmarks"
+        case .privacy: return "Privacy"
         case .app: return "App"
         }
     }
@@ -167,6 +168,10 @@ extension ShortcutCommand {
     static let reopenTab    = Self("reopenTab", "Reopen Last Closed Tab", .tabs, Shortcut(key: "t", command: true, shift: true))
     static let nextTab      = Self("nextTab", "Next Tab", .tabs, Shortcut(key: "\t", control: true))
     static let previousTab  = Self("previousTab", "Previous Tab", .tabs, Shortcut(key: "\t", shift: true, control: true))
+    static let newIncognitoTab = Self("newIncognitoTab", "New Incognito Tab", .tabs, Shortcut(key: "n", command: true, shift: true))
+
+    // Privacy
+    static let clearSiteData = Self("clearSiteData", "Clear This Site's Data", .privacy, Shortcut(key: "e", command: true, shift: true))
 
     // Navigation
     static let openLocation = Self("openLocation", "Open Location", .navigation, Shortcut(key: "l", command: true))
@@ -212,12 +217,12 @@ extension ShortcutCommand {
     }
 
     static let all: [ShortcutCommand] =
-        [newTab, closeTab, reopenTab, nextTab, previousTab]
+        [newTab, closeTab, reopenTab, nextTab, previousTab, newIncognitoTab]
         + switchTabs
         + [openLocation, back, forward, reload, hardReload, reloadAll,
            findInPage, findNext, findPrevious, zoomIn, zoomOut, actualSize, printPage, exportPDF, fullScreen,
            toggleTabBar, hideTabBar, minimalTabBar, compactTabBar, wideTabBar,
-           addBookmark, showBookmarks,
+           addBookmark, showBookmarks, clearSiteData,
            omnibar, quickOpen, shortcutOverlay, settings, help, extensionPopup]
 
     static func by(id: String) -> ShortcutCommand? { all.first { $0.id == id } }
@@ -333,6 +338,10 @@ extension ShortcutStore {
             }
             let s = shortcut(for: command)
             rows.append(CheatRow(id: command.id, title: command.title, keys: s.displayString, shortcut: s))
+        }
+        if section == .tabs {
+            // Not a rebindable command — a mouse gesture, documented here so it's discoverable
+            rows.append(CheatRow(id: "splitPane", title: "Add/Remove Split Pane", keys: "⇧Click", shortcut: nil))
         }
         return rows
     }

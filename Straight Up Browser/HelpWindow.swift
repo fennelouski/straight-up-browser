@@ -69,6 +69,15 @@ private struct GettingStartedView: View {
                     .padding(8)
                 }
 
+                GroupBox(label: Text("Split View")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("See two pages at once — mail next to your calendar, two documents side by side. Hold ⇧ (Shift) and click another tab to show it beside the current one. Add up to four: three tabs sit in columns, four make a 2×2 grid.")
+                        Text("Drag the divider between panes to resize them. Shift-click a shown tab to remove its pane, or click any tab normally to return to a single page. You can also right-click a tab and choose Open in Split.")
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                }
+
                 GroupBox(label: Text("Bookmarks")) {
                     Text("Bookmark the current page with ⌘D and browse your bookmarks with ⇧⌘B. You can import bookmarks from another browser via Bookmarks → Import Bookmarks.")
                         .frame(maxWidth: .infinity, alignment: .leading)

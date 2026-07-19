@@ -25,6 +25,8 @@ struct WebView: NSViewRepresentable {
     var tabManager: TabManager?
     var tabs: [Tab]?
     var activeTabId: UUID?
+    // Split view: all tabs shown as panes (ordered). Normally just [activeTabId].
+    var displayedTabIds: [UUID] = []
     var onURLChange: ((URL?) -> Void)?
 
     init(url: Binding<URL?>,
@@ -38,6 +40,7 @@ struct WebView: NSViewRepresentable {
          tabManager: TabManager?,
          tabs: [Tab]?,
          activeTabId: UUID?,
+         displayedTabIds: [UUID] = [],
          onURLChange: ((URL?) -> Void)?) {
         self._url = url
         self._canGoBack = canGoBack
@@ -50,6 +53,7 @@ struct WebView: NSViewRepresentable {
         self.tabManager = tabManager
         self.tabs = tabs
         self.activeTabId = activeTabId
+        self.displayedTabIds = displayedTabIds.isEmpty ? [activeTabId].compactMap { $0 } : displayedTabIds
         self.onURLChange = onURLChange
 
         Logger.log("WebView init: activeTabId=\(activeTabId?.uuidString ?? "nil")", type: "WebView")
@@ -70,8 +74,19 @@ struct WebView: NSViewRepresentable {
         context.coordinator.tabs = tabs
         context.coordinator.tabManager = tabManager
 
-        // Update the active tab in the container
-        nsView.setActiveTab(activeTabId)
+        // Update the displayed panes (one pane normally, 2–4 in a split)
+        nsView.onPaneFocus = { [tabManager] id in tabManager?.selectedTabId = id }
+        nsView.setDisplayedTabs(displayedTabIds, focusedTabId: activeTabId)
+
+        // Non-focused panes never go through the url-binding load path below, so a
+        // pane restored at launch would sit blank: load its tab's URL once here.
+        for id in displayedTabIds where id != activeTabId {
+            guard let paneWebView = webViewManager?.existingWebView(for: id),
+                  paneWebView.url == nil, !paneWebView.isLoading,
+                  let tab = tabs?.first(where: { $0.id == id }) else { continue }
+            if TabSync.restoreInteractionState(tab, into: paneWebView) { continue }
+            if let paneURL = tab.url { paneWebView.load(URLRequest(url: paneURL)) }
+        }
 
         // Log the active WebView after the update
         if let activeWebView = nsView.activeWebView {
@@ -362,7 +377,11 @@ struct WebView: NSViewRepresentable {
         override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
             if keyPath == "estimatedProgress", let webView = object as? WKWebView {
                 DispatchQueue.main.async {
-                    self.parent.progressValue = webView.estimatedProgress
+                    // Only the focused tab drives the chrome progress bar; a
+                    // background split pane loading shouldn't wiggle it.
+                    if self.isActiveWebView(webView) {
+                        self.parent.progressValue = webView.estimatedProgress
+                    }
                 }
             } else if keyPath == #keyPath(WKWebView.url), let webView = object as? WKWebView {
                 // The page changed its own URL (pushState/replaceState/hash) -
@@ -630,8 +649,12 @@ struct WebView: NSViewRepresentable {
 
             // WebKit drives the load; the tab's URL/title land via the navigation
             // delegate once the popup web view becomes the active subview.
+            // WebKit built the popup from the opener's configuration, so it already
+            // shares the opener's data store — keep the tab in the same session too, so
+            // an incognito/container popup doesn't leak out into a normal persisted tab.
             let popupWebView = WKWebView(frame: .zero, configuration: configuration)
-            let newTab = tabManager.createNewTab()
+            let openerSession = webViewManager.tabId(for: webView).map { webViewManager.session(for: $0) } ?? (.normal, nil)
+            let newTab = tabManager.createTab(inheriting: openerSession)
             webViewManager.adoptWebView(popupWebView, for: newTab.id)
             return popupWebView
         }
@@ -711,13 +734,24 @@ struct WebView: NSViewRepresentable {
 class WebViewContainer: NSView {
     private var webViewManager: WebViewManager?
     private weak var coordinator: WebView.Coordinator?
-    private var activeTabId: UUID?
+    private var focusedTabId: UUID?
+    private var displayedTabIds: [UUID] = []
     private var visibleWebViews: Set<WKWebView> = []
 
+    // Split pane geometry. colFractions are per-column width fractions for 2–3
+    // panes; for the 2×2 grid it's [leftColumnFraction] plus rowFraction (top row).
+    // Reset to equal whenever membership changes; deliberately not persisted.
+    private var colFractions: [CGFloat] = []
+    private var rowFraction: CGFloat = 0.5
+    private var dividers: [PaneDivider] = []
+    private var clickMonitor: Any?
+    // Clicking inside a non-focused pane moves focus there (sets selectedTabId).
+    var onPaneFocus: ((UUID) -> Void)?
+
     var activeWebView: WKWebView? {
-        // Return the WebView for the currently active tab, not necessarily the manager's activeWebView
-        if let activeTabId = activeTabId, let webViewManager = webViewManager {
-            return webViewManager.getWebView(for: activeTabId)
+        // Return the WebView for the currently focused tab, not necessarily the manager's activeWebView
+        if let focusedTabId = focusedTabId, let webViewManager = webViewManager {
+            return webViewManager.getWebView(for: focusedTabId)
         }
         return webViewManager?.activeWebView
     }
@@ -759,16 +793,18 @@ class WebViewContainer: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func setActiveTab(_ tabId: UUID?) {
-        Logger.log("WebViewContainer setActiveTab called with tabId: \(tabId?.uuidString ?? "nil")", type: "WebView")
+    func setDisplayedTabs(_ ids: [UUID], focusedTabId: UUID?) {
+        Logger.log("WebViewContainer setDisplayedTabs: \(ids.count) pane(s), focused \(focusedTabId?.uuidString ?? "nil")", type: "WebView")
 
-        let tabChanged = activeTabId != tabId
+        let tabChanged = self.focusedTabId != focusedTabId
+        if displayedTabIds != ids {
+            displayedTabIds = ids
+            resetFractions()
+        }
+        self.focusedTabId = focusedTabId
 
-        // Update active tab first
-        activeTabId = tabId
-
-        // Update the WebViewManager's active tab
-        webViewManager?.setActiveTab(tabId)
+        // Update the WebViewManager's active tab (the focused pane)
+        webViewManager?.setActiveTab(focusedTabId)
 
         // Hide all currently visible web views
         for webView in visibleWebViews {
@@ -776,55 +812,14 @@ class WebViewContainer: NSView {
         }
         visibleWebViews.removeAll()
 
-        // Update active tab
-        activeTabId = tabId
+        guard !ids.isEmpty, let webViewManager = webViewManager else {
+            Logger.log("WebViewContainer setDisplayedTabs: no tabs or webViewManager", type: "WebView")
+            return
+        }
 
-        // Show new active web view
-        if let newTabId = tabId, let webViewManager = webViewManager {
-            let webView = webViewManager.getWebView(for: newTabId)
-            Logger.log("WebViewContainer setActiveTab: got WebView \(Unmanaged.passUnretained(webView).toOpaque()) for tab \(newTabId)", type: "WebView")
-
-            // Verify this matches the WebViewManager's activeWebView
-            if let managerActiveWebView = webViewManager.activeWebView {
-                if webView !== managerActiveWebView {
-                    Logger.log("WebViewContainer setActiveTab: WARNING - WebView mismatch! Container got \(Unmanaged.passUnretained(webView).toOpaque()) but manager has \(Unmanaged.passUnretained(managerActiveWebView).toOpaque())", type: "WebView")
-                } else {
-                    Logger.log("WebViewContainer setActiveTab: WebView matches manager's activeWebView", type: "WebView")
-                }
-            }
-
-            // Configure the web view if it's not already a subview
-            if webView.superview !== self {
-                webView.frame = self.bounds
-                webView.autoresizingMask = [.width, .height]
-
-                // Ensure web view doesn't extend beyond container bounds
-                webView.wantsLayer = true
-                webView.layer?.masksToBounds = true
-
-                // Set up delegates
-                webView.navigationDelegate = coordinator
-                webView.uiDelegate = coordinator
-
-                // Observe real load progress; removed in willRemoveSubview
-                webView.addObserver(self, forKeyPath: "estimatedProgress", options: .new, context: nil)
-
-                // Observe the page rewriting its own URL (history.pushState/
-                // replaceState, hash jumps) - none of those fire a navigation
-                // delegate callback, so this is the only signal. The Obj-C
-                // keypath is "URL", not "url" - #keyPath gets it right.
-                webView.addObserver(self, forKeyPath: #keyPath(WKWebView.url), options: .new, context: nil)
-
-                // Add to container
-                self.addSubview(webView)
-                Logger.log("WebViewContainer: added new WebView for tab \(newTabId)", type: "WebView")
-            } else {
-                // Update frame if already a subview
-                webView.frame = self.bounds
-                Logger.log("WebViewContainer: updated frame for existing WebView for tab \(newTabId)", type: "WebView")
-            }
-
-            // Show the web view
+        for id in ids {
+            let webView = webViewManager.getWebView(for: id)
+            attach(webView)
             webView.isHidden = false
             visibleWebViews.insert(webView)
 
@@ -833,27 +828,155 @@ class WebViewContainer: NSView {
             webView.allowsMagnification = true
             webView.allowsLinkPreview = true
 
-            // Give the page key focus so arrow keys / space / cmd+arrows scroll
-            // it. Only on a real tab change (or when nothing has focus) so
-            // routine SwiftUI updates don't steal focus from the omnibar.
-            if let window = self.window, tabChanged || window.firstResponder === window {
-                window.makeFirstResponder(webView)
-            }
-
-            Logger.log("WebViewContainer: showed WebView \(Unmanaged.passUnretained(webView).toOpaque()) for tab \(newTabId)", type: "WebView")
-        } else {
-            Logger.log("WebViewContainer setActiveTab: no tabId or webViewManager", type: "WebView")
+            // Subtle accent border marks the focused pane — only while split
+            webView.layer?.borderWidth = (ids.count > 1 && id == focusedTabId) ? 2 : 0
+            webView.layer?.borderColor = NSColor.controlAccentColor.cgColor
         }
+
+        layoutPanes()
+
+        // Give the page key focus so arrow keys / space / cmd+arrows scroll
+        // it. Only on a real tab change (or when nothing has focus) so
+        // routine SwiftUI updates don't steal focus from the omnibar.
+        if let focusedTabId, let window = self.window, tabChanged || window.firstResponder === window {
+            window.makeFirstResponder(webViewManager.getWebView(for: focusedTabId))
+        }
+    }
+
+    // The one-time setup for a webview joining this container (delegates + KVO,
+    // balanced in willRemoveSubview). Frames are owned by layoutPanes.
+    private func attach(_ webView: WKWebView) {
+        guard webView.superview !== self else { return }
+        webView.autoresizingMask = []
+        webView.wantsLayer = true
+        webView.layer?.masksToBounds = true
+
+        webView.navigationDelegate = coordinator
+        webView.uiDelegate = coordinator
+
+        // Observe real load progress; removed in willRemoveSubview
+        webView.addObserver(self, forKeyPath: "estimatedProgress", options: .new, context: nil)
+
+        // Observe the page rewriting its own URL (history.pushState/
+        // replaceState, hash jumps) - none of those fire a navigation
+        // delegate callback, so this is the only signal. The Obj-C
+        // keypath is "URL", not "url" - #keyPath gets it right.
+        webView.addObserver(self, forKeyPath: #keyPath(WKWebView.url), options: .new, context: nil)
+
+        self.addSubview(webView)
+    }
+
+    // MARK: - Pane layout
+
+    private func resetFractions() {
+        let count = displayedTabIds.count
+        colFractions = count == 4 ? [0.5] : Array(repeating: 1.0 / CGFloat(max(count, 1)), count: max(count, 1))
+        rowFraction = 0.5
+    }
+
+    private func layoutPanes() {
+        guard let webViewManager = webViewManager, !displayedTabIds.isEmpty else { return }
+        let views = displayedTabIds.map { webViewManager.getWebView(for: $0) }
+        let b = bounds
+
+        if views.count == 4 {
+            // Rigid 2×2 grid in reading order: dividers span the full grid.
+            let leftWidth = floor(b.width * colFractions[0])
+            let topHeight = floor(b.height * rowFraction)
+            let topY = b.height - topHeight
+            views[0].frame = NSRect(x: 0, y: topY, width: leftWidth, height: topHeight)
+            views[1].frame = NSRect(x: leftWidth, y: topY, width: b.width - leftWidth, height: topHeight)
+            views[2].frame = NSRect(x: 0, y: 0, width: leftWidth, height: topY)
+            views[3].frame = NSRect(x: leftWidth, y: 0, width: b.width - leftWidth, height: topY)
+            ensureDividers([true, false])
+            dividers[0].frame = NSRect(x: leftWidth - 4, y: 0, width: 8, height: b.height)
+            dividers[1].frame = NSRect(x: 0, y: topY - 4, width: b.width, height: 8)
+        } else if views.count > 1 {
+            // 2–3 vertical columns
+            var x: CGFloat = 0
+            for (index, view) in views.enumerated() {
+                let width = index == views.count - 1 ? b.width - x : floor(b.width * colFractions[index])
+                view.frame = NSRect(x: x, y: 0, width: width, height: b.height)
+                x += width
+            }
+            ensureDividers(Array(repeating: true, count: views.count - 1))
+            var edge: CGFloat = 0
+            for (index, divider) in dividers.enumerated() {
+                edge += floor(b.width * colFractions[index])
+                divider.frame = NSRect(x: edge - 4, y: 0, width: 8, height: b.height)
+            }
+        } else {
+            views[0].frame = b
+            ensureDividers([])
+        }
+    }
+
+    // Rebuild divider views only when the shape changes; orientation per divider
+    // (true = vertical divider, i.e. drags horizontally).
+    private func ensureDividers(_ orientations: [Bool]) {
+        guard dividers.map(\.isVertical) != orientations else { return }
+        dividers.forEach { $0.removeFromSuperview() }
+        dividers = orientations.enumerated().map { index, isVertical in
+            let divider = PaneDivider(isVertical: isVertical)
+            divider.onDrag = { [weak self] delta in self?.dividerDragged(index: index, isVertical: isVertical, delta: delta) }
+            addSubview(divider, positioned: .above, relativeTo: nil)
+            return divider
+        }
+    }
+
+    private func dividerDragged(index: Int, isVertical: Bool, delta: CGFloat) {
+        let minFraction: CGFloat = 0.15
+        if displayedTabIds.count == 4 {
+            if isVertical {
+                colFractions[0] = min(max(colFractions[0] + delta / bounds.width, minFraction), 1 - minFraction)
+            } else {
+                // NSEvent deltaY is positive downward; dragging down grows the top row
+                rowFraction = min(max(rowFraction + delta / bounds.height, minFraction), 1 - minFraction)
+            }
+        } else {
+            let change = delta / bounds.width
+            let clamped = min(max(change, minFraction - colFractions[index]), colFractions[index + 1] - minFraction)
+            colFractions[index] += clamped
+            colFractions[index + 1] -= clamped
+        }
+        layoutPanes()
+    }
+
+    // MARK: - Pane focus on click
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            if let monitor = clickMonitor { NSEvent.removeMonitor(monitor); clickMonitor = nil }
+        } else if clickMonitor == nil {
+            // Webviews swallow mouse events, so watch clicks at the window level
+            // and move focus when one lands in a non-focused pane.
+            clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
+                self?.handlePaneClick(event)
+                return event
+            }
+        }
+    }
+
+    private func handlePaneClick(_ event: NSEvent) {
+        guard displayedTabIds.count > 1, event.window === window, let webViewManager = webViewManager else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        guard bounds.contains(point) else { return }
+        for id in displayedTabIds where id != focusedTabId {
+            if webViewManager.getWebView(for: id).frame.contains(point) {
+                DispatchQueue.main.async { self.onPaneFocus?(id) }
+                return
+            }
+        }
+    }
+
+    deinit {
+        if let monitor = clickMonitor { NSEvent.removeMonitor(monitor) }
     }
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        // Update all subview web view frames when container size changes
-        for subview in self.subviews {
-            if let webView = subview as? WKWebView {
-                webView.frame = self.bounds
-            }
-        }
+        layoutPanes()
     }
 
     override func willRemoveSubview(_ subview: NSView) {
@@ -872,6 +995,36 @@ class WebViewContainer: NSView {
         } else {
             super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
         }
+    }
+}
+
+// Draggable boundary between split panes: an 8pt grab strip drawing a 1pt
+// separator line. A vertical divider drags horizontally (and vice versa).
+final class PaneDivider: NSView {
+    let isVertical: Bool
+    var onDrag: ((CGFloat) -> Void)?
+
+    init(isVertical: Bool) {
+        self.isVertical = isVertical
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: isVertical ? .resizeLeftRight : .resizeUpDown)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        onDrag?(isVertical ? event.deltaX : event.deltaY)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.separatorColor.setFill()
+        let line = isVertical
+            ? NSRect(x: bounds.midX - 0.5, y: 0, width: 1, height: bounds.height)
+            : NSRect(x: 0, y: bounds.midY - 0.5, width: bounds.width, height: 1)
+        line.fill()
     }
 }
 #endif

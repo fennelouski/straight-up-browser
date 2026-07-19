@@ -56,10 +56,24 @@ struct TabRowView: View {
     let onSelect: () -> Void
     let onReorder: ((UUID, UUID) -> Void)? // sourceTabId, targetTabId
     var loadingProgress: Double? = nil // non-nil draws a progress ring around the favicon
+    var sessionColor: Color? = nil      // container/incognito session tint; nil = normal tab
+    var isIncognito: Bool = false
+    var isDisplayedInSplit: Bool = false // visible as a split pane (dimmer highlight + glyph)
 
     private var isSelected: Bool {
         selectedTabId == tab.id
     }
+
+    // Focused tab gets the full highlight; other displayed split members a dimmer one.
+    private var rowHighlight: Color? {
+        if isSelected { return accent.opacity(0.15) }
+        if isDisplayedInSplit { return accent.opacity(0.07) }
+        return nil
+    }
+
+    // The session tint drives the selection highlight so isolated sessions read as
+    // distinct; normal tabs keep the familiar blue.
+    private var accent: Color { sessionColor ?? .blue }
 
     // Favicon (or placeholder icon) with an optional loading ring around it
     @ViewBuilder
@@ -74,11 +88,11 @@ struct TabRowView: View {
             } else if tab.url != nil {
                 Image(systemName: "globe")
                     .font(.system(size: placeholderSize))
-                    .foregroundColor(isSelected ? .blue : .gray)
+                    .foregroundColor(isSelected ? accent : .gray)
             } else {
                 Image(systemName: "plus.circle")
                     .font(.system(size: placeholderSize))
-                    .foregroundColor(isSelected ? .blue : .gray)
+                    .foregroundColor(isSelected ? accent : .gray)
             }
 
             if let progress = loadingProgress {
@@ -87,10 +101,20 @@ struct TabRowView: View {
                     .frame(width: 21, height: 21)
                 Circle()
                     .trim(from: 0, to: progress)
-                    .stroke(Color.blue, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                    .stroke(accent, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .frame(width: 21, height: 21)
                     .animation(.linear(duration: 0.1), value: progress)
+            }
+
+            // Incognito badge on the favicon corner — visible in both layouts.
+            if isIncognito {
+                Image(systemName: "eye.slash.fill")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundColor(accent)
+                    .padding(1)
+                    .background(Circle().fill(Color(.windowBackgroundColor)))
+                    .offset(x: 7, y: 7)
             }
         }
     }
@@ -113,7 +137,7 @@ struct TabRowView: View {
                     // Use ZStack with explicit frame to ensure content stays within tab bar bounds
                     faviconView(placeholderSize: 14)
                     .frame(width: availableWidth, height: 32)
-                    .background(isSelected ? Color.blue.opacity(0.15) : Color(.windowBackgroundColor).opacity(0.01))
+                    .background(rowHighlight ?? Color(.windowBackgroundColor).opacity(0.01))
                     .contentShape(Rectangle())
                     .clipped() // Ensure content doesn't overflow
                 } else {
@@ -124,19 +148,35 @@ struct TabRowView: View {
                         Text(displayTitle)
                             .font(.system(size: 11))
                             .lineLimit(1)
-                            .foregroundColor(isSelected ? .blue : .primary)
+                            .foregroundColor(isSelected ? accent : .primary)
                             .truncationMode(.tail)
 
                         Spacer(minLength: 0)
+
+                        if isDisplayedInSplit {
+                            Image(systemName: "rectangle.split.2x1")
+                                .font(.system(size: 9))
+                                .foregroundColor(accent.opacity(isSelected ? 1 : 0.6))
+                        }
                     }
                     .padding(.vertical, 4)
                     .padding(.horizontal, 6)
-                    .background(isSelected ? Color.blue.opacity(0.15) : Color.clear)
+                    .background(rowHighlight ?? Color.clear)
                     .cornerRadius(4)
                     .contentShape(Rectangle())
                 }
             }
             .buttonStyle(.plain)
+        }
+        // Session tint stripe on the leading edge — makes container/incognito tabs
+        // obvious even when they aren't selected.
+        .overlay(alignment: .leading) {
+            if let sessionColor {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(sessionColor)
+                    .frame(width: 3)
+                    .padding(.vertical, 3)
+            }
         }
         .onDrag {
             Logger.log("TabRowView onDrag called for tab: \(tab.id)", type: "TabRowView")

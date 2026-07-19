@@ -18,7 +18,24 @@ struct ClosedTabSnapshot: Codable {
 }
 
 class TabManager: ObservableObject {
-    @Published var selectedTabId: UUID?
+    // The focused tab: owns the omnibar, title, and all key commands. In a split
+    // it is always one of splitTabIds; selecting any non-member dissolves the split
+    // (see docs/adr/0001-split-is-view-state.md).
+    @Published var selectedTabId: UUID? {
+        didSet {
+            if !splitTabIds.isEmpty, let id = selectedTabId, !splitTabIds.contains(id) {
+                splitTabIds = []
+            }
+        }
+    }
+    // Split view: ordered member tab ids (2–4; empty = normal single view).
+    // Window view state, not a SwiftData entity — persisted to UserDefaults only.
+    @Published var splitTabIds: [UUID] = [] {
+        didSet { UserDefaults.standard.set(splitTabIds.map(\.uuidString), forKey: Self.splitKey) }
+    }
+    // Incognito tabs live only in memory — never inserted into SwiftData — so a private
+    // URL never persists to disk or syncs to iCloud. They vanish when the app quits.
+    @Published var incognitoTabs: [Tab] = []
     // Survives quit (persisted to UserDefaults) so Cmd+Shift+T can reopen tabs
     // from the previous session, not just the current one.
     @Published var closedTabs: [ClosedTabSnapshot] = [] {
@@ -27,6 +44,8 @@ class TabManager: ObservableObject {
 
     private static let closedTabsKey = "closedTabsStack"
     private static let maxClosedTabs = 25
+    private static let splitKey = "splitTabIds"
+    static let maxSplitTabs = 4
 
     private var modelContext: ModelContext?
     private weak var webViewManager: WebViewManager?
@@ -74,7 +93,126 @@ class TabManager: ObservableObject {
         return newTab
     }
 
+    // Open an incognito tab. Pass an existing sessionId to join that private session
+    // (shares its ephemeral cookie jar); omit it for a fresh, isolated one.
+    @discardableResult
+    func createIncognitoTab(sessionId: UUID? = nil, select: Bool = true) -> Tab {
+        let tab = Tab(title: String(localized: "New Tab"), url: nil, isActive: false)
+        tab.sessionKind = .incognito
+        tab.sessionId = sessionId ?? UUID()
+        // In-memory only: never unload (there's no SwiftData row to restore from).
+        tab.memoryPolicy = .never
+        tab.orderIndex = (incognitoTabs.map(\.orderIndex).max() ?? 1_000_000) + 1
+        incognitoTabs.append(tab)
+        webViewManager?.registerSession(for: tab.id, kind: .incognito, sessionId: tab.sessionId)
+        if select { selectedTabId = tab.id }
+        return tab
+    }
+
+    // Create a tab in the given session, so a new tab (Cmd+T) or a window.open popup
+    // stays in the current container/incognito. Normal falls through to createNewTab.
+    @discardableResult
+    func createTab(inheriting session: (kind: SessionKind, sessionId: UUID?), url: URL? = nil, select: Bool = true) -> Tab {
+        switch session.kind {
+        case .normal:
+            return createNewTab(url: url, select: select)
+        case .incognito:
+            let tab = createIncognitoTab(sessionId: session.sessionId, select: select)
+            if let url { tab.navigateTo(url); tab.updateTitleFromURL() }
+            return tab
+        case .container:
+            let tab = createNewTab(url: url, select: select)
+            tab.sessionKind = .container
+            tab.sessionId = session.sessionId
+            webViewManager?.registerSession(for: tab.id, kind: .container, sessionId: session.sessionId)
+            return tab
+        }
+    }
+
+    // MARK: - Split view
+
+    // Shift-click / context-menu toggle: add the tab as a pane (focusing it) or
+    // remove its pane. Live — there is no separate selection/confirm step.
+    func toggleSplitMembership(_ tab: Tab, tabs: [Tab]) {
+        if splitTabIds.contains(tab.id) {
+            removeFromSplit(tab.id)
+        } else if splitTabIds.isEmpty {
+            guard let current = selectedTabId, current != tab.id else {
+                selectedTabId = tab.id
+                return
+            }
+            splitTabIds = [current, tab.id]
+            gatherSplitTabs(tabs: tabs)
+            selectedTabId = tab.id
+        } else if splitTabIds.count < Self.maxSplitTabs {
+            splitTabIds.append(tab.id)
+            gatherSplitTabs(tabs: tabs)
+            selectedTabId = tab.id
+        }
+        // At the cap (4): adding is a no-op.
+    }
+
+    private func removeFromSplit(_ tabId: UUID) {
+        let remaining = splitTabIds.filter { $0 != tabId }
+        splitTabIds = remaining.count >= 2 ? remaining : []
+        if selectedTabId == tabId {
+            selectedTabId = remaining.first ?? selectedTabId
+        }
+    }
+
+    // Gather members adjacent in the sidebar: a real reorder (orderIndex moves
+    // members after the first-added anchor, in pane order); on dissolve they stay
+    // where they gathered. ponytail: members in different TabGroups stay in their
+    // own sections — gathering only orders within a section.
+    private func gatherSplitTabs(tabs: [Tab]) {
+        guard let anchorId = splitTabIds.first else { return }
+        let ordered = tabs.sorted { $0.orderIndex < $1.orderIndex }
+        let members = splitTabIds.compactMap { id in ordered.first { $0.id == id } }
+        var rest = ordered.filter { $0.id == anchorId || !splitTabIds.contains($0.id) }
+        guard let anchorPos = rest.firstIndex(where: { $0.id == anchorId }) else { return }
+        rest.replaceSubrange(anchorPos...anchorPos, with: members)
+        for (index, tab) in rest.enumerated() where tab.orderIndex != index {
+            tab.orderIndex = index
+        }
+    }
+
+    // Restore the persisted split at launch. Unresolved ids (closed on another
+    // device, incognito tabs that died with the app) are silently dropped; fewer
+    // than 2 survivors means a plain single view.
+    func restoreSplit(from tabs: [Tab]) {
+        guard let strings = UserDefaults.standard.stringArray(forKey: Self.splitKey) else { return }
+        let ids = strings.compactMap(UUID.init(uuidString:)).filter { id in tabs.contains { $0.id == id } }
+        guard ids.count >= 2 else {
+            if !strings.isEmpty { UserDefaults.standard.removeObject(forKey: Self.splitKey) }
+            return
+        }
+        splitTabIds = ids
+        if let selected = selectedTabId, !ids.contains(selected) {
+            selectedTabId = ids.first
+        }
+    }
+
     func closeTab(_ tab: Tab, tabs: [Tab]) {
+        // Closing a split member collapses just its pane; focus moves to another
+        // member so the dissolve-on-outside-selection rule doesn't tear down the rest.
+        if splitTabIds.contains(tab.id) {
+            removeFromSplit(tab.id)
+        }
+
+        // Incognito tabs are in-memory and ephemeral: no closed-tab snapshot (privacy),
+        // just drop the tab and wipe its jar once the session has no tabs left.
+        if tab.sessionKind == .incognito {
+            webViewManager?.removeWebView(for: tab.id)
+            incognitoTabs.removeAll { $0.id == tab.id }
+            if let sid = tab.sessionId, !incognitoTabs.contains(where: { $0.sessionId == sid }) {
+                webViewManager?.discardIncognitoStore(sid)
+            }
+            let remaining = tabs.filter { $0.id != tab.id }
+            if selectedTabId == tab.id { selectedTabId = remaining.first?.id }
+            if remaining.isEmpty { _ = createNewTab() } else { ensureSelectedTab(from: remaining) }
+            return
+        }
+
         // Snapshot before any mutation/deletion so reopen works safely
         closedTabs.append(ClosedTabSnapshot(title: tab.title, url: tab.url, historyStrings: tab.historyStrings))
 
