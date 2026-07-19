@@ -75,6 +75,13 @@ extension Notification.Name {
     static let browserSwitchToTab8 = Notification.Name("browserSwitchToTab8")
     static let browserSwitchToTab9 = Notification.Name("browserSwitchToTab9")
 
+    // Privacy / sessions
+    static let browserNewIncognitoTab = Notification.Name("browserNewIncognitoTab")
+    static let browserNewRegularTab = Notification.Name("browserNewRegularTab")
+    static let browserClearSiteData = Notification.Name("browserClearSiteData")
+    static let browserClearSessionData = Notification.Name("browserClearSessionData")
+    static let browserClearAllData = Notification.Name("browserClearAllData")
+
     // Settings
     static let browserShowSettings = Notification.Name("browserShowSettings")
     static let browserTabTitleDisplayModeChanged = Notification.Name("browserTabTitleDisplayModeChanged")

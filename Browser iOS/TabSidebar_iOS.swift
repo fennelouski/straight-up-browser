@@ -16,6 +16,7 @@ struct TabSidebar_iOS: View {
     @ObservedObject var tabManager: TabManager
     let tabs: [Tab]
     let tabGroups: [TabGroup]
+    let sessionColor: (Tab) -> Color?
     let progressValue: Double
     let isLoading: Bool
     let onNewTab: () -> Void
@@ -26,7 +27,9 @@ struct TabSidebar_iOS: View {
     let onSaveWorkspace: () -> Void
     let onSettings: () -> Void
     let onShortcuts: () -> Void
+    let onGestures: () -> Void
     let workspaceMenu: AnyView
+    let containersMenu: AnyView
 
     private var groupedTabs: [(group: TabGroup?, tabs: [Tab])] {
         let byGroup = Dictionary(grouping: tabs) { $0.groupId }
@@ -82,10 +85,13 @@ struct TabSidebar_iOS: View {
                     Button(action: onNewGroup) { Label("New Group…", systemImage: "folder.badge.plus") }
                     Button(action: onSaveWorkspace) { Label("Save Workspace…", systemImage: "square.and.arrow.down") }
                     Divider()
+                    Menu { containersMenu } label: { Label("Containers & Incognito", systemImage: "person.2") }
+                    Divider()
                     workspaceMenu
                     Divider()
                     Button(action: onSettings) { Label("Settings", systemImage: "gearshape") }
                     Button(action: onShortcuts) { Label("Keyboard Shortcuts", systemImage: "keyboard") }
+                    Button(action: onGestures) { Label("Touch Gestures", systemImage: "hand.draw") }
                 } label: {
                     Image(systemName: "square.stack.3d.up")
                 }
@@ -98,6 +104,8 @@ struct TabSidebar_iOS: View {
         ForEach(rowTabs) { tab in
             TabRow_iOS(tab: tab,
                        isActive: tab.id == tabManager.selectedTabId,
+                       sessionColor: sessionColor(tab),
+                       isIncognito: tab.sessionKind == .incognito,
                        progressValue: progressValue,
                        isLoading: isLoading)
                 .tag(tab.id)
@@ -125,6 +133,8 @@ struct TabSidebar_iOS: View {
 struct TabRow_iOS: View {
     let tab: Tab
     let isActive: Bool
+    var sessionColor: Color? = nil   // container/incognito tint; nil = normal tab
+    var isIncognito: Bool = false
     let progressValue: Double
     let isLoading: Bool
 
@@ -139,12 +149,22 @@ struct TabRow_iOS: View {
             Text(displayTitle)
                 .lineLimit(1)
                 .font(.system(size: 15))
+                .foregroundStyle(sessionColor ?? .primary)
             Spacer(minLength: 0)
+            if isIncognito {
+                Image(systemName: "eye.slash.fill").font(.system(size: 10)).foregroundStyle(sessionColor ?? .secondary)
+            }
             if tab.isPinned {
                 Image(systemName: "pin.fill").font(.system(size: 10)).foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 2)
+        // Leading tint stripe so container/incognito tabs are obvious unselected.
+        .overlay(alignment: .leading) {
+            if let sessionColor {
+                RoundedRectangle(cornerRadius: 1.5).fill(sessionColor).frame(width: 3).padding(.vertical, 3)
+            }
+        }
     }
 }
 

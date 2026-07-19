@@ -16,7 +16,7 @@ struct BrowserApp: App {
     // is the @Model class; the `BrowserTab` typealias lives in the Mac-only
     // ContentView, so iOS code refers to `Tab` directly.
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema([Tab.self, TabGroup.self, Bookmark.self])
+        let schema = Schema([Tab.self, TabGroup.self, Bookmark.self, BrowserSession.self])
         // Tab sync (Settings → Sync) selects the CloudKit private DB; off = no
         // CloudKit. Read at launch, so toggling sync takes effect after relaunch.
         let config = ModelConfiguration(
@@ -56,6 +56,7 @@ struct BrowserApp: App {
     private var browserCommands: some Commands {
         CommandMenu("File") {
             cmd("New Tab", .browserNewTab, .newTab)
+            cmd("New Incognito Tab", .browserNewIncognitoTab, .newIncognitoTab)
             cmd("Close Tab", .browserCloseTab, .closeTab)
             cmd("Reopen Closed Tab", .reopenLastClosedTab, .reopenTab)
             Divider()

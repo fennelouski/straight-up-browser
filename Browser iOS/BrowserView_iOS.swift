@@ -16,11 +16,13 @@ import SwiftUI
 import SwiftData
 import WebKit
 import Combine
+import GameController  // GCKeyboard: detect a hardware keyboard to gate the touch guide
 
 struct BrowserView_iOS: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Tab.orderIndex) private var tabs: [Tab]
     @Query(sort: \TabGroup.orderIndex) private var tabGroups: [TabGroup]
+    @Query(sort: \BrowserSession.createdAt) private var browserSessions: [BrowserSession]
 
     @StateObject private var tabManager = TabManager()
     @State private var webViewManager: WebViewManager?
@@ -45,11 +47,14 @@ struct BrowserView_iOS: View {
 
     @State private var showSidebar = false
     @State private var showShortcutSheet = false
+    @State private var showGestureGuide = false
     @State private var showSettings = false
 
     // Group / workspace dialogs
     @State private var showNewGroup = false
     @State private var newGroupName = ""
+    @State private var showNewContainer = false
+    @State private var newContainerName = ""
     @State private var showSaveWorkspace = false
     @State private var workspaceName = ""
     @State private var savedWorkspaces: [SavedWorkspace] = []
@@ -62,11 +67,27 @@ struct BrowserView_iOS: View {
 
     // MARK: Derived
 
-    private var activeTab: Tab? { tabs.first { $0.id == tabManager.selectedTabId } }
+    // Working set: persisted (normal/container) tabs plus in-memory incognito tabs.
+    // Everything that selects, switches, closes, or renders a tab uses this so
+    // incognito tabs (never in @Query) are first-class. Mirrors ContentView.allTabs.
+    private var allTabs: [Tab] { tabs + tabManager.incognitoTabs }
+
+    private var activeTab: Tab? { allTabs.first { $0.id == tabManager.selectedTabId } }
 
     // Tabs shown on this device: drops open-only local closes (their records stay
-    // in the cloud so they remain open on your other devices).
-    private var visibleTabs: [Tab] { TabSync.visible(tabs) }
+    // in the cloud so they remain open on your other devices). Incognito isn't
+    // synced, so it bypasses the visibility filter and always shows.
+    private var visibleTabs: [Tab] { TabSync.visible(tabs) + tabManager.incognitoTabs }
+
+    // A tab's isolated-session tint (nil for normal): a container's chosen color,
+    // or an auto hue for an incognito session.
+    private func sessionColor(for tab: Tab) -> Color? {
+        switch tab.sessionKind {
+        case .normal: return nil
+        case .incognito: return tab.sessionId.map(BrowserSession.incognitoColor(for:))
+        case .container: return browserSessions.first { $0.id == tab.sessionId }?.color
+        }
+    }
 
     private var bookmarkPairs: [(title: String, url: URL)] {
         (bookmarkManager?.fetchAllBookmarks() ?? []).map { (title: $0.title, url: $0.url) }
@@ -110,7 +131,7 @@ struct BrowserView_iOS: View {
                            hasRenderedContent: $hasRenderedContent,
                            webViewManager: webViewManager,
                            tabManager: tabManager,
-                           tabs: tabs,
+                           tabs: allTabs,
                            activeTabId: tabManager.selectedTabId,
                            onURLChange: { _ in })
                     .ignoresSafeArea()
@@ -119,6 +140,12 @@ struct BrowserView_iOS: View {
             EdgeProgressBar(progress: progressValue, show: showProgressBar,
                             top: progressBarTop, bottom: progressBarBottom,
                             left: progressBarLeft, right: progressBarRight)
+
+            // Touch's stand-in for the keyboard (iPhone has no ⌘L / ⌘T). Hidden
+            // whenever the omnibar or sidebar is already up.
+            if managersInitialized && !showOmnibar && !showSidebar {
+                bottomGestureBar
+            }
 
             // Slide-in tab sidebar (⇧⌘L), dim backdrop, tap-out to close.
             if showSidebar {
@@ -138,18 +165,30 @@ struct BrowserView_iOS: View {
         .persistentSystemOverlays(.hidden)
         .onAppear(perform: firstAppear)
         .onChange(of: tabManager.selectedTabId) { _, newValue in
-            tabManager.updateActiveTab(in: tabs)
+            tabManager.updateActiveTab(in: allTabs)
             webViewManager?.setActiveTab(newValue)
             syncOmnibarToActiveTab()
             withAnimation { showSidebar = false }  // picking a tab dismisses the panel
         }
         .onChange(of: activeTab?.url) { _, _ in if !showOmnibar { syncOmnibarToActiveTab() } }
         .onChange(of: isLoading) { _, loading in withAnimation { showProgressBar = loading } }
-        .onChange(of: tabs) { _, newTabs in tabManager.ensureSelectedTab(from: TabSync.visible(newTabs)) }
+        .onChange(of: tabs) { _, newTabs in
+            // Keep restored container tabs' sessions registered, and keep a valid
+            // selection across the merged working set (incognito included).
+            webViewManager?.syncSessions(from: newTabs)
+            tabManager.ensureSelectedTab(from: TabSync.visible(newTabs) + tabManager.incognitoTabs)
+        }
         .alert("New Group", isPresented: $showNewGroup) {
             TextField("Group name", text: $newGroupName)
             Button("Create") { createGroup(newGroupName) }
             Button("Cancel", role: .cancel) {}
+        }
+        .alert("New Container", isPresented: $showNewContainer) {
+            TextField("Container name", text: $newContainerName)
+            Button("Create") { createContainer(newContainerName) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("An isolated, persistent session with its own cookies and logins — stay signed in under a different account, side by side.")
         }
         .alert("Save Workspace", isPresented: $showSaveWorkspace) {
             TextField("Workspace name", text: $workspaceName)
@@ -157,6 +196,9 @@ struct BrowserView_iOS: View {
             Button("Cancel", role: .cancel) {}
         }
         .sheet(isPresented: $showShortcutSheet) { ShortcutCheatSheet_iOS() }
+        .sheet(isPresented: $showGestureGuide) {
+            GestureGuide_iOS().presentationDetents([.medium, .large])
+        }
         .sheet(isPresented: $showSettings) { Settings_iOS() }
         // Keyboard commands (posted by BrowserApp_iOS.commands), handled through
         // one merged publisher — a chain of ~16 .onReceive modifiers overwhelms
@@ -166,7 +208,7 @@ struct BrowserView_iOS: View {
 
     private var commandPublisher: AnyPublisher<Notification, Never> {
         let names: [Notification.Name] = [
-            .browserNewTab, .browserCloseTab, .reopenLastClosedTab, .showOmnibar,
+            .browserNewTab, .browserNewIncognitoTab, .browserCloseTab, .reopenLastClosedTab, .showOmnibar,
             .browserGoBack, .browserGoForward, .browserReload,
             .browserNextTab, .browserPreviousTab, .browserSwitchTab, .browserAddBookmark,
             .browserZoomIn, .browserZoomOut, .browserZoomReset,
@@ -180,6 +222,7 @@ struct BrowserView_iOS: View {
     private func handleCommand(_ note: Notification) {
         switch note.name {
         case .browserNewTab: createNewTab()
+        case .browserNewIncognitoTab: _ = tabManager.createIncognitoTab(); focusOmnibar()
         case .browserCloseTab: closeActiveTab()
         case .reopenLastClosedTab: _ = tabManager.reopenLastClosedTab()
         case .showOmnibar: focusOmnibar()
@@ -215,6 +258,7 @@ struct BrowserView_iOS: View {
                 tabManager: tabManager,
                 tabs: visibleTabs,
                 tabGroups: tabGroups,
+                sessionColor: sessionColor,
                 progressValue: progressValue,
                 isLoading: isLoading,
                 onNewTab: createNewTab,
@@ -225,7 +269,9 @@ struct BrowserView_iOS: View {
                 onSaveWorkspace: { workspaceName = ""; showSaveWorkspace = true },
                 onSettings: { showSettings = true },
                 onShortcuts: { showShortcutSheet = true },
-                workspaceMenu: AnyView(workspaceMenu)
+                onGestures: { withAnimation { showSidebar = false }; showGestureGuide = true },
+                workspaceMenu: AnyView(workspaceMenu),
+                containersMenu: AnyView(containersMenu)
             )
         }
         .frame(width: 320)
@@ -297,6 +343,45 @@ struct BrowserView_iOS: View {
         .onChange(of: omnibarText) { _, _ in selectedSuggestion = -1 }
     }
 
+    // MARK: Bottom gesture bar (touch's stand-in for the keyboard)
+
+    // The one bit of persistent chrome for touch: a slim bottom handle that hosts
+    // the gestures a keyboard would drive. Tap → omnibar, swipe up → tab list,
+    // swipe ←/→ → next/previous tab, long-press → new tab. Back/forward stay on
+    // WebKit's native edge-swipe; reload is pull-to-refresh (see WebView_iOS).
+    // ponytail: always visible; auto-hide on scroll-down is the upgrade path if it
+    // reads as too much chrome.
+    private var bottomGestureBar: some View {
+        VStack {
+            Spacer()
+            Capsule()
+                .fill(Color.secondary.opacity(0.5))
+                .frame(width: 140, height: 5)
+                .padding(.vertical, 18)      // fat invisible hit area for the thumb
+                .padding(.horizontal, 40)
+                .contentShape(Rectangle())
+                .onTapGesture { focusOmnibar() }
+                .onLongPressGesture(minimumDuration: 0.4) { createNewTab() }
+                .highPriorityGesture(DragGesture(minimumDistance: 20).onEnded(handleBarSwipe))
+                .padding(.bottom, 6)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    // Dominant axis wins; the thresholds keep a near-still tap from reading as a
+    // swipe. ponytail: tune distances on device if the axes misfire.
+    private func handleBarSwipe(_ value: DragGesture.Value) {
+        let dx = value.translation.width, dy = value.translation.height
+        if dy < -30, abs(dy) > abs(dx) {
+            toggleSidebar()                                    // up → all tabs
+        } else if dx < -30, abs(dx) > abs(dy) {
+            tabManager.switchToNextTab(tabs: visibleTabs)      // left → next tab
+        } else if dx > 30, abs(dx) > abs(dy) {
+            tabManager.switchToPreviousTab(tabs: visibleTabs)  // right → previous tab
+        }
+    }
+
     // MARK: Workspace menu
 
     @ViewBuilder
@@ -310,6 +395,26 @@ struct BrowserView_iOS: View {
         }
     }
 
+    // Incognito + containers, injected into the sidebar menu (mirrors the Mac's
+    // person.2 menu). Incognito is ephemeral; containers are named persistent jars.
+    @ViewBuilder
+    private var containersMenu: some View {
+        Button { _ = tabManager.createIncognitoTab(); focusOmnibar() } label: {
+            Label("New Incognito Tab", systemImage: "eye.slash")
+        }
+        Divider()
+        ForEach(browserSessions) { session in
+            Menu(session.name) {
+                Button("Open Tab") { _ = tabManager.createTab(inheriting: (.container, session.id)); focusOmnibar() }
+                Button(role: .destructive) { deleteContainer(session) } label: { Text("Delete Container & Data") }
+            }
+        }
+        if !browserSessions.isEmpty { Divider() }
+        Button { newContainerName = ""; showNewContainer = true } label: {
+            Label("New Container…", systemImage: "person.2")
+        }
+    }
+
     // MARK: Actions
 
     private func firstAppear() {
@@ -320,15 +425,23 @@ struct BrowserView_iOS: View {
         bookmarkManager = BookmarkManager(modelContext: modelContext)
         tabManager.setModelContext(modelContext)
         tabManager.setWebViewManager(wvm)
+        // Register restored container tabs' sessions before their web views build,
+        // so each resumes in its own data store (not the default one).
+        wvm.syncSessions(from: tabs)
         managersInitialized = true
         savedWorkspaces = SavedWorkspace.loadAll()
+
+        // First run with no keyboard pops the touch guide; when it does, skip the
+        // omnibar auto-focus so the user reads "tap the bar" and then does it.
+        let showingGuide = maybeShowGestureGuide()
 
         if visibleTabs.isEmpty {
             let t = tabManager.createNewTab()
             #if DEBUG
-            if let url = debugLaunchURL() { t.navigateTo(url) } else { DispatchQueue.main.async { focusOmnibar() } }
+            if let url = debugLaunchURL() { t.navigateTo(url) }
+            else if !showingGuide { DispatchQueue.main.async { focusOmnibar() } }
             #else
-            DispatchQueue.main.async { focusOmnibar() }
+            if !showingGuide { DispatchQueue.main.async { focusOmnibar() } }
             #endif
         } else {
             tabManager.selectedTabId = visibleTabs.first(where: { $0.isActive })?.id ?? visibleTabs.first?.id
@@ -348,12 +461,34 @@ struct BrowserView_iOS: View {
     }
     #endif
 
+    // Show the touch guide on first launch when no hardware keyboard is attached
+    // (GCKeyboard) — the point is teaching the gestures that replace the chrome,
+    // which a keyboard user doesn't need. Shown once; reopen from the sidebar menu.
+    // Returns whether it will show, so firstAppear can skip the omnibar auto-focus.
+    // ponytail: drop the hasSeenGestureGuide check to show it on every launch.
+    @discardableResult
+    private func maybeShowGestureGuide() -> Bool {
+        guard GCKeyboard.coalesced == nil,
+              !UserDefaults.standard.bool(forKey: "hasSeenGestureGuide") else { return false }
+        UserDefaults.standard.set(true, forKey: "hasSeenGestureGuide")
+        DispatchQueue.main.async { showGestureGuide = true }
+        return true
+    }
+
     private func createNewTab() {
         for empty in tabs where empty.url == nil && empty.id != tabManager.selectedTabId {
-            tabManager.closeTab(empty, tabs: tabs)
+            tabManager.closeTab(empty, tabs: allTabs)
         }
-        _ = tabManager.createNewTab()
+        // Inherit the active tab's session so a new tab stays in the current
+        // container/incognito (a fresh incognito comes from ⇧⌘N).
+        _ = tabManager.createTab(inheriting: activeSession())
         focusOmnibar()
+    }
+
+    // The active tab's session, so a new tab (⌘T / +) stays in the same container.
+    private func activeSession() -> (kind: SessionKind, sessionId: UUID?) {
+        guard let active = activeTab else { return (.normal, nil) }
+        return (active.sessionKind, active.sessionId)
     }
 
     private func closeActiveTab() { if let t = activeTab { tabManager.closeTab(t, tabs: visibleTabs) } }
@@ -426,6 +561,33 @@ struct BrowserView_iOS: View {
         modelContext.insert(TabGroup(name: trimmed, color: .blue, orderIndex: tabGroups.count))
     }
 
+    private func createContainer(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let session = BrowserSession(name: trimmed, color: autoContainerColor(for: trimmed))
+        modelContext.insert(session)
+        _ = tabManager.createTab(inheriting: (.container, session.id))
+        focusOmnibar()
+    }
+
+    private func deleteContainer(_ session: BrowserSession) {
+        // Close its tabs, forget the definition, and wipe its on-disk jar.
+        for tab in tabs where tab.sessionKind == .container && tab.sessionId == session.id {
+            tabManager.closeTab(tab, tabs: allTabs)
+        }
+        let id = session.id
+        modelContext.delete(session)
+        WKWebsiteDataStore.remove(forIdentifier: id) { _ in }
+    }
+
+    // Auto tint from the name (djb2) so containers read as distinct without a
+    // color picker — the alert can't host one. ponytail: add a picker if asked.
+    private func autoContainerColor(for name: String) -> Color {
+        var hash = 5381
+        for scalar in name.unicodeScalars { hash = ((hash << 5) &+ hash) &+ Int(scalar.value) }
+        return Color(hue: Double(abs(hash) % 360) / 360.0, saturation: 0.55, brightness: 0.75)
+    }
+
     private func deleteGroup(_ group: TabGroup) {
         for tab in tabs where tab.groupId == group.id { tab.groupId = nil }
         modelContext.delete(group)
@@ -484,6 +646,54 @@ struct ShortcutCheatSheet_iOS: View {
             }
             .navigationTitle("Keyboard Shortcuts")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+    }
+}
+
+// The touch cheat sheet: how to drive the chromeless browser with no keyboard.
+// Auto-shown on first launch when no hardware keyboard is attached, and reopenable
+// from the sidebar menu. Mirrors the handle's gestures in BrowserView_iOS plus the
+// native ones (edge-swipe back/forward, pull-to-refresh).
+struct GestureGuide_iOS: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private struct Move: Identifiable {
+        let id = UUID(); let icon: String; let gesture: LocalizedStringKey; let action: LocalizedStringKey
+    }
+    private let moves: [Move] = [
+        .init(icon: "hand.tap",               gesture: "Tap the bar",            action: "Search or type a URL"),
+        .init(icon: "square.stack",           gesture: "Swipe up on the bar",    action: "Show all tabs"),
+        .init(icon: "arrow.left.arrow.right", gesture: "Swipe the bar sideways", action: "Switch tabs"),
+        .init(icon: "plus.square",            gesture: "Long-press the bar",     action: "New tab"),
+        .init(icon: "chevron.backward",       gesture: "Swipe from the screen edge", action: "Back and forward"),
+        .init(icon: "arrow.clockwise",        gesture: "Pull the page down",     action: "Reload"),
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    Text("The web fills the whole screen. A few gestures on the handle at the bottom edge do everything a toolbar would.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    ForEach(moves) { move in
+                        HStack(spacing: 16) {
+                            Image(systemName: move.icon)
+                                .font(.system(size: 22))
+                                .foregroundStyle(Color.accentColor)
+                                .frame(width: 34)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(move.gesture).font(.body.weight(.medium))
+                                Text(move.action).font(.subheadline).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .navigationTitle("Getting Around")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Got It") { dismiss() } } }
         }
     }
 }

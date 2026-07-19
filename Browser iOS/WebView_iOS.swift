@@ -227,6 +227,7 @@ struct TabWebView: UIViewRepresentable {
 
             loadFavicon(for: webView)
             if let tab = tab(for: webView) { TabSync.captureCacheState(from: webView, into: tab) }
+            webView.scrollView.refreshControl?.endRefreshing()
 
             DispatchQueue.main.async {
                 webView.allowsBackForwardNavigationGestures = true
@@ -236,12 +237,14 @@ struct TabWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             parent.isLoading = false
+            webView.scrollView.refreshControl?.endRefreshing()
             Logger.log("WebView navigation failed: \(error.localizedDescription)", type: "WebView")
             lastRequestedURL = nil
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             parent.isLoading = false
+            webView.scrollView.refreshControl?.endRefreshing()
             Logger.log("WebView provisional navigation failed: \(error.localizedDescription)", type: "WebView")
             lastRequestedURL = nil
         }
@@ -559,6 +562,14 @@ final class WebViewContainer_iOS: UIView {
             webView.navigationDelegate = coordinator
             webView.uiDelegate = coordinator
             webView.isFindInteractionEnabled = true  // native iOS find bar (⌘F)
+            // Pull-to-refresh = reload: the native mobile reload gesture, no chrome.
+            // Ended in the coordinator's didFinish/fail callbacks. weak so the
+            // control (owned by the scroll view, owned by the web view) can't cycle.
+            if webView.scrollView.refreshControl == nil {
+                webView.scrollView.refreshControl = UIRefreshControl()
+                webView.scrollView.refreshControl?.addAction(
+                    UIAction { [weak webView] _ in webView?.reload() }, for: .valueChanged)
+            }
             // Observe real load progress and page-driven URL rewrites (pushState/
             // replaceState/hash) — the only signal for the latter. Removed in
             // willRemoveSubview. The Obj-C keypath is "URL", not "url".
