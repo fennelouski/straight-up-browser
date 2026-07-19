@@ -654,9 +654,33 @@ struct WebView: NSViewRepresentable {
             // an incognito/container popup doesn't leak out into a normal persisted tab.
             let popupWebView = WKWebView(frame: .zero, configuration: configuration)
             let openerSession = webViewManager.tabId(for: webView).map { webViewManager.session(for: $0) } ?? (.normal, nil)
-            let newTab = tabManager.createTab(inheriting: openerSession)
+            // Create it unselected: a popup joins the opener in a split rather than
+            // replacing it. A popup that hides the page that opened it (OAuth consent,
+            // a payment sheet) reads as "nothing happened" — the opener is what gives
+            // the popup its meaning, so both stay on screen.
+            let newTab = tabManager.createTab(inheriting: openerSession, select: false)
             webViewManager.adoptWebView(popupWebView, for: newTab.id)
+            // ponytail: pairs with the *focused* tab, which is the opener in every case
+            // except a popup fired from a background pane — rare enough not to track
+            // opener identity for. At the 4-pane cap there's no room, so just focus it.
+            if tabManager.splitTabIds.count < TabManager.maxSplitTabs {
+                tabManager.toggleSplitMembership(newTab, tabs: tabs ?? [])
+            } else {
+                tabManager.selectedTabId = newTab.id
+            }
             return popupWebView
+        }
+
+        // window.close() from a popup: take its pane down with it. OAuth and payment
+        // popups close themselves once they've handed control back to the opener, and
+        // without this the finished popup just sits there as a dead pane.
+        func webViewDidClose(_ webView: WKWebView) {
+            guard let tabManager,
+                  let id = parent.webViewManager?.tabId(for: webView),
+                  let tab = (tabs ?? []).first(where: { $0.id == id })
+                    ?? tabManager.incognitoTabs.first(where: { $0.id == id })
+            else { return }
+            tabManager.closeTab(tab, tabs: tabs ?? [])
         }
 
         // WebKit's native right-click menu offers "Open Link in New Window" -

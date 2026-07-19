@@ -26,7 +26,7 @@ The tabs currently visible in the window — one normally, 2–4 in a split. The
 - Gathering is a real reorder (`orderIndex` moves members after the first-added anchor); on dissolve, tabs stay where they gathered
 - Sidebar order = pane order: dragging a member within the gathered block reorders panes; dragging a non-member into the block does not join it to the Split
 - A **Split** is per-window state; each window owns its own TabManager/WebViewManager, so one tab displayed in two windows is already two webviews
-- Selecting a non-member tab by any means (click, ⌘T, popup, tab cycling) dissolves the **Split** into a single view; only shift-click adds a member
+- Selecting a non-member tab by any means (click, ⌘T, tab cycling) dissolves the **Split** into a single view; shift-click adds a member, and so does a `window.open` popup — it opens as a pane beside the tab that opened it rather than replacing it (at the 4-pane cap it just takes focus)
 - Memory saver must exempt all **Displayed tabs**, not just the **Focused tab**
 - The **Split** arrangement (ordered member IDs + focused ID) persists in UserDefaults; on launch, unresolved IDs are dropped, and fewer than 2 survivors means a plain single view
 - Incognito tabs may join a **Split** (isolation is per-tab at the data-store level); they never survive relaunch, handled by the drop-unresolved rule

@@ -172,6 +172,7 @@ extension ShortcutCommand {
 
     // Privacy
     static let clearSiteData = Self("clearSiteData", "Clear This Site's Data", .privacy, Shortcut(key: "e", command: true, shift: true))
+    static let convertToIncognito = Self("convertToIncognito", "Switch Tab to Incognito", .privacy, Shortcut(key: "n", command: true, shift: true, option: true))
 
     // Navigation
     static let openLocation = Self("openLocation", "Open Location", .navigation, Shortcut(key: "l", command: true))
@@ -222,7 +223,7 @@ extension ShortcutCommand {
         + [openLocation, back, forward, reload, hardReload, reloadAll,
            findInPage, findNext, findPrevious, zoomIn, zoomOut, actualSize, printPage, exportPDF, fullScreen,
            toggleTabBar, hideTabBar, minimalTabBar, compactTabBar, wideTabBar,
-           addBookmark, showBookmarks, clearSiteData,
+           addBookmark, showBookmarks, clearSiteData, convertToIncognito,
            omnibar, quickOpen, shortcutOverlay, settings, help, extensionPopup]
 
     static func by(id: String) -> ShortcutCommand? { all.first { $0.id == id } }

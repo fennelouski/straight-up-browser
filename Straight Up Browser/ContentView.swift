@@ -146,7 +146,6 @@ struct ContentView: View {
     @StateObject private var tabManager: TabManager
     @StateObject private var linkPreview = LinkPreviewManager()
     @State private var navigationManager: NavigationManager?
-    @State private var windowManager: WindowManager?
     @State private var notificationManager: NotificationManager?
     @State private var keyboardShortcutsManager: KeyboardShortcutsManager?
     @State private var bookmarkManager: BookmarkManager?
@@ -1332,6 +1331,11 @@ struct ContentView: View {
                     _ = tabManager.createNewTab()          // force a normal tab, leaving any session
                     showOmnibar = true
                 }
+                NotificationCenter.default.addObserver(forName: .browserConvertTabToIncognito, object: nil, queue: .main) { [self] _ in
+                    if let tab = allTabs.first(where: { $0.id == tabManager.selectedTabId }) {
+                        tabManager.convertToIncognito(tab)
+                    }
+                }
                 NotificationCenter.default.addObserver(forName: .browserClearSiteData, object: nil, queue: .main) { [self] _ in
                     clearActiveSite()
                 }
@@ -1358,7 +1362,6 @@ struct ContentView: View {
             // Safe to re-run: observer setup is balanced by cleanup/teardown in onDisappear
             notificationManager?.setupNotificationObservers()
             keyboardShortcutsManager?.setupKeyboardShortcuts()
-            windowManager?.configureWindow()
         }
         .onChange(of: tabManager.selectedTabId) { oldValue, newValue in
             Logger.log("ContentView onChange selectedTabId: \(oldValue?.uuidString ?? "nil") -> \(newValue?.uuidString ?? "nil")", type: "ContentView")
@@ -1414,6 +1417,9 @@ struct ContentView: View {
             notificationManager?.cleanup()
             keyboardShortcutsManager?.teardown()
         }
+        // Hides the traffic lights and titlebar on the window actually hosting this
+        // view, once it has one — see WindowChrome for why this isn't done at onAppear.
+        .background(WindowChrome())
     }
 
     private func initializeManagers() {
@@ -1423,7 +1429,6 @@ struct ContentView: View {
         self.navigationManager = navigationManager
         tabManager.setModelContext(modelContext)
         tabManager.setWebViewManager(webViewManager)
-        windowManager = WindowManager()
         bookmarkManager = BookmarkManager(modelContext: modelContext)
         managersInitialized = true
 

@@ -85,6 +85,12 @@ class TabManager: ObservableObject {
             newTab.updateTitleFromURL()
         }
         if let modelContext = modelContext {
+            // Order before insert: without this every tab keeps orderIndex 0 and the
+            // sidebar sorts the whole pile arbitrarily. Popups were the visible
+            // symptom — one would appear at the top of the list, nowhere near the
+            // tab that opened it. Matches what createIncognitoTab already does.
+            let existing = (try? modelContext.fetch(FetchDescriptor<Tab>())) ?? []
+            newTab.orderIndex = (existing.map(\.orderIndex).max() ?? -1) + 1
             modelContext.insert(newTab)
         }
         if select {
@@ -126,6 +132,28 @@ class TabManager: ObservableObject {
             tab.sessionId = session.sessionId
             webViewManager?.registerSession(for: tab.id, kind: .container, sessionId: session.sessionId)
             return tab
+        }
+    }
+
+    // Switch a live normal/container tab into incognito: same page and login (its
+    // cookies are copied into a fresh ephemeral jar first), but everything from
+    // that point on — new cookies, cache, page state — lives only in memory and
+    // dies with the tab. The old SwiftData row is deleted outright (the tab went
+    // private, so it should vanish from other devices too) with no closed-tab
+    // snapshot, since the tab lives on as the incognito replacement.
+    func convertToIncognito(_ tab: Tab) {
+        guard tab.sessionKind != .incognito, let webViewManager else { return }
+        let url = tab.url
+        let sessionId = UUID()
+        webViewManager.prepareIncognitoStore(sessionId: sessionId, copyingCookiesFromTab: tab.id) { [weak self] in
+            guard let self else { return }
+            let newTab = self.createIncognitoTab(sessionId: sessionId)
+            if let url {
+                newTab.navigateTo(url)
+                newTab.updateTitleFromURL()
+            }
+            self.webViewManager?.removeWebView(for: tab.id)
+            self.modelContext?.delete(tab)
         }
     }
 

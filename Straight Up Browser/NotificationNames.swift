@@ -78,6 +78,7 @@ extension Notification.Name {
     // Privacy / sessions
     static let browserNewIncognitoTab = Notification.Name("browserNewIncognitoTab")
     static let browserNewRegularTab = Notification.Name("browserNewRegularTab")
+    static let browserConvertTabToIncognito = Notification.Name("browserConvertTabToIncognito")
     static let browserClearSiteData = Notification.Name("browserClearSiteData")
     static let browserClearSessionData = Notification.Name("browserClearSessionData")
     static let browserClearAllData = Notification.Name("browserClearAllData")

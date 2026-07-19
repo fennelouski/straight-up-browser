@@ -413,6 +413,24 @@ class WebViewManager: NSObject, ObservableObject {
         incognitoStores.removeValue(forKey: sessionId)
     }
 
+    // Build the ephemeral jar for a tab-to-incognito conversion, before any tab
+    // joins the session. Cookies are copied from the source tab's store so
+    // cookie-based logins survive the switch; localStorage/IndexedDB have no
+    // copy API and are left behind, so sites keeping auth tokens there sign out.
+    // Completion fires on main once the jar is ready to browse in.
+    func prepareIncognitoStore(sessionId: UUID, copyingCookiesFromTab tabId: UUID, completion: @escaping () -> Void) {
+        let store = WKWebsiteDataStore.nonPersistent()
+        incognitoStores[sessionId] = store
+        dataStore(forTab: tabId).httpCookieStore.getAllCookies { cookies in
+            let group = DispatchGroup()
+            for cookie in cookies {
+                group.enter()
+                store.httpCookieStore.setCookie(cookie) { group.leave() }
+            }
+            group.notify(queue: .main) { completion() }
+        }
+    }
+
     // Whether a tab is incognito (its page state must never be persisted to disk).
     private func isIncognito(_ tabId: UUID) -> Bool {
         tabSessions[tabId]?.kind == .incognito

@@ -540,6 +540,7 @@ struct MemorySettingsView: View {
 // MARK: - Privacy
 
 struct PrivacySettingsView: View {
+    @AppStorage("convertToIncognitoEnabled") private var convertToIncognitoEnabled = false
     @State private var showClearDataDialog = false
     @State private var clearHistory = true
     @State private var clearCookies = true
@@ -550,6 +551,16 @@ struct PrivacySettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                Toggle("Switch a tab to incognito with a key command", isOn: $convertToIncognitoEnabled)
+            } header: {
+                SettingsLabel("Incognito", systemImage: "eyeglasses", tint: SettingsTint.privacy)
+            } footer: {
+                Text("Adds “Switch Tab to Incognito” to the Privacy menu. It moves the current tab into a private session: your logins come along (cookies are copied over), but everything after the switch is kept only in memory and vanishes when the tab closes. What happened before the switch is already in your history, and sites that keep you signed in with local storage may ask you to sign in again.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section {
                 Button("Clear browsing data…") { showClearDataDialog = true }
                     .sheet(isPresented: $showClearDataDialog) {

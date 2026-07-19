@@ -136,6 +136,7 @@ struct Straight_Up_BrowserApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var showSettings = false
     @AppStorage("cmdPExportsPDF") private var cmdPExportsPDF = true
+    @AppStorage("convertToIncognitoEnabled") private var convertToIncognitoEnabled = false
     // Reading this in the .commands builder (via `sc`) makes the menu bar rebuild
     // its key equivalents whenever a shortcut is rebound — same invalidation the
     // cmdPExportsPDF toggle relies on.
@@ -262,6 +263,13 @@ struct Straight_Up_BrowserApp: App {
 
                 Button("New Regular Tab") {
                     NotificationCenter.default.post(name: .browserNewRegularTab, object: nil)
+                }
+
+                if convertToIncognitoEnabled {
+                    Button("Switch Tab to Incognito") {
+                        NotificationCenter.default.post(name: .browserConvertTabToIncognito, object: nil)
+                    }
+                    .keyboardShortcut(sc(.convertToIncognito))
                 }
 
                 Divider()
