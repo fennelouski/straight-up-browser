@@ -447,7 +447,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = "Browser iOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -467,7 +467,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.4.3;
+				MARKETING_VERSION = 1.4.4;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser";
 				PRODUCT_NAME = Browser;
 				SDKROOT = iphoneos;
@@ -605,7 +605,7 @@
 				CODE_SIGN_ENTITLEMENTS = Browser.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -620,7 +620,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.4.3;
+				MARKETING_VERSION = 1.4.4;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser";
 				PRODUCT_NAME = Browser;
 				REGISTER_APP_GROUPS = YES;
@@ -641,7 +641,7 @@
 				CODE_SIGN_ENTITLEMENTS = Browser.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -656,7 +656,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.4.3;
+				MARKETING_VERSION = 1.4.4;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser";
 				PRODUCT_NAME = Browser;
 				REGISTER_APP_GROUPS = YES;
@@ -674,11 +674,11 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
-				MARKETING_VERSION = 1.4.3;
+				MARKETING_VERSION = 1.4.4;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-BrowserTests";
 				PRODUCT_NAME = BrowserTests;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -695,11 +695,11 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
-				MARKETING_VERSION = 1.4.3;
+				MARKETING_VERSION = 1.4.4;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-BrowserTests";
 				PRODUCT_NAME = BrowserTests;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -715,10 +715,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.4.3;
+				MARKETING_VERSION = 1.4.4;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-BrowserUITests";
 				PRODUCT_NAME = BrowserUITests;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -734,10 +734,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.4.3;
+				MARKETING_VERSION = 1.4.4;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-BrowserUITests";
 				PRODUCT_NAME = BrowserUITests;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -757,7 +757,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = "Browser iOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -777,7 +777,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.4.3;
+				MARKETING_VERSION = 1.4.4;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser";
 				PRODUCT_NAME = Browser;
 				SDKROOT = iphoneos;

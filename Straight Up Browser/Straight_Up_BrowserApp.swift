@@ -244,6 +244,14 @@ struct Straight_Up_BrowserApp: App {
         .windowStyle(.automatic)
         .windowResizability(.contentSize)
         .commands {
+            // The stock About panel renders "Version 1.4.3 (13)" — the parenthetical is
+            // CFBundleVersion. Blanking it leaves just the marketing version.
+            CommandGroup(replacing: .appInfo) {
+                Button("About Browser") {
+                    NSApplication.shared.orderFrontStandardAboutPanel(options: [.version: ""])
+                }
+            }
+
             // Add standard browser commands
             CommandGroup(replacing: .newItem) {
                 Button("New Tab") {
@@ -396,33 +404,12 @@ struct Straight_Up_BrowserApp: App {
                 Button("Import Bookmarks...") {
                     NotificationCenter.default.post(name: .browserImportBookmarks, object: nil)
                 }
-            }
-
-            // Window menu commands
-            CommandGroup(after: .windowArrangement) {
-                Button("Show Next Tab") {
-                    NotificationCenter.default.post(name: .browserNextTab, object: nil)
-                }
-                .keyboardShortcut(sc(.nextTab))
-
-                Button("Show Previous Tab") {
-                    NotificationCenter.default.post(name: .browserPreviousTab, object: nil)
-                }
-                .keyboardShortcut(sc(.previousTab))
 
                 Divider()
 
-                ForEach(Array(ShortcutCommand.switchTabs.enumerated()), id: \.element.id) { index, command in
-                    Button("Show Tab \(index + 1)") {
-                        NotificationCenter.default.post(
-                            name: Notification.Name("browserSwitchToTab\(index + 1)"), object: nil)
-                    }
-                    .keyboardShortcut(sc(command))
-                }
-            }
-
-            // Add omnibar shortcut and settings to menu
-            CommandGroup(after: .textEditing) {
+                // Merged in from a second `after: .textEditing` group: @CommandsBuilder
+                // caps top-level children at 10, and two groups sharing an anchor cost
+                // two slots for no benefit.
                 Button("Find...") {
                     NotificationCenter.default.post(name: .browserFindInPage, object: nil)
                 }
@@ -453,6 +440,29 @@ struct Straight_Up_BrowserApp: App {
                     NotificationCenter.default.post(name: .browserShowSettings, object: nil)
                 }
                 .keyboardShortcut(sc(.settings))
+            }
+
+            // Window menu commands
+            CommandGroup(after: .windowArrangement) {
+                Button("Show Next Tab") {
+                    NotificationCenter.default.post(name: .browserNextTab, object: nil)
+                }
+                .keyboardShortcut(sc(.nextTab))
+
+                Button("Show Previous Tab") {
+                    NotificationCenter.default.post(name: .browserPreviousTab, object: nil)
+                }
+                .keyboardShortcut(sc(.previousTab))
+
+                Divider()
+
+                ForEach(Array(ShortcutCommand.switchTabs.enumerated()), id: \.element.id) { index, command in
+                    Button("Show Tab \(index + 1)") {
+                        NotificationCenter.default.post(
+                            name: Notification.Name("browserSwitchToTab\(index + 1)"), object: nil)
+                    }
+                    .keyboardShortcut(sc(command))
+                }
             }
 
             CommandMenu("Extensions") {
