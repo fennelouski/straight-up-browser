@@ -29,6 +29,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installURLHandler()
         if UserDefaults.standard.integer(forKey: "acceptedEULAVersion") < eulaVersion {
             guard runEULAAlert() else {
                 NSApp.terminate(nil)
@@ -39,18 +40,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         registerGlobalHotkey()
     }
 
-    // Links handed to us by the OS (we're the default browser, or the user
-    // picked Browser from "Open With"). Same funnel the CLI and Shortcuts use.
-    func application(_ application: NSApplication, open urls: [URL]) {
+    // A link clicked in another app arrives as a GURL Apple Event. SwiftUI's own
+    // app delegate claims that event and then drops it — neither an AppDelegate
+    // application(_:open:) nor .onOpenURL on the WindowGroup ever runs (verified
+    // both). So claim it back here: this registration happens after SwiftUI's,
+    // and for Apple Events the last handler installed wins.
+    private func installURLHandler() {
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+    }
+
+    @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent: NSAppleEventDescriptor) {
+        guard let string = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
+              let url = URL(string: string) else { return }
         Task { @MainActor in
             // Cold launch: observers attach in ContentView.onAppear, after this.
             try? await waitForObservers()
-            for url in urls {
-                NotificationCenter.default.post(
-                    name: .browserOpenURL, object: nil,
-                    userInfo: ["url": url.absoluteString, "newTab": true]
-                )
-            }
+            // Same funnel the CLI and Shortcuts post to.
+            NotificationCenter.default.post(
+                name: .browserOpenURL, object: nil,
+                userInfo: ["url": url.absoluteString, "newTab": true]
+            )
         }
     }
 
@@ -198,6 +212,11 @@ struct Straight_Up_BrowserApp: App {
                         openWindow(id: "settings")
                     }
                 }
+                // Links handed to us by the OS: we're the default browser, or the
+                // user picked Browser from "Open With". Must be SwiftUI's hook —
+                // the WindowGroup consumes the Apple Event, so an AppDelegate
+                // application(_:open:) is never called and the link is dropped.
+                // Same funnel the CLI and Shortcuts post to.
         }
         .modelContainer(sharedModelContainer)
         .windowStyle(.hiddenTitleBar)

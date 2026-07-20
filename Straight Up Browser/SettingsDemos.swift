@@ -267,6 +267,47 @@ struct CmdPPDFDemo: View {
     }
 }
 
+struct DefaultBrowserPromptDemo: View {
+    @Binding var enabled: Bool
+
+    var body: some View {
+        VStack(spacing: 20) {
+            VStack(spacing: 12) {
+                Text("New Tab").font(.caption).foregroundStyle(.tertiary)
+                HStack(spacing: 8) {
+                    Image(systemName: "globe")
+                        .foregroundStyle(enabled ? SettingsTint.general : .secondary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Make Browser your default?")
+                            .font(.caption.weight(.semibold))
+                        Text("Links from other apps will open here.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Text("Set Default")
+                        .font(.caption2.weight(.medium))
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(.quaternary, in: Capsule())
+                }
+                .padding(10)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                .opacity(enabled ? 1 : 0.25)
+                Text(enabled ? "Appears in the corner until you answer it."
+                             : "Never shown. Set the default in System Settings.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(16)
+            .background(demoCard)
+            .animation(.easeInOut, value: enabled)
+
+            Toggle("Offer to make Browser your default", isOn: $enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
 struct HotkeyDemo: View {
     @Binding var chord: String
 
@@ -342,6 +383,33 @@ struct JavaScriptDemo: View {
             .animation(.easeInOut, value: enabled)
 
             Toggle("Enable JavaScript", isOn: $enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// Shows a mock page magnifying, the way a trackpad pinch or two-finger double-tap zooms it.
+struct PinchZoomDemo: View {
+    @Binding var enabled: Bool
+
+    var body: some View {
+        VStack(spacing: 20) {
+            WindowFrame {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("The quick brown fox")
+                        .font(.callout).fontWeight(.medium)
+                    pageLine()
+                    pageLine(width: 120)
+                }
+                .scaleEffect(enabled ? 1.4 : 1.0, anchor: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 130)
+                .padding()
+                .clipped()
+            }
+            .animation(.easeInOut, value: enabled)
+
+            Toggle("Pinch to zoom", isOn: $enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }

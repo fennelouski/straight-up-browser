@@ -93,6 +93,15 @@ class SettingsManager {
         }
     }
 
+    // MARK: - Zoom
+
+    /// Whether trackpad magnify gestures — pinch and two-finger double-tap smart
+    /// zoom — change the page's magnification. Defaults on when unset.
+    var pinchToZoomEnabled: Bool {
+        userDefaults.object(forKey: "pinchToZoomEnabled") == nil
+            || userDefaults.bool(forKey: "pinchToZoomEnabled")
+    }
+
     // MARK: - Option-Click Download
 
     /// Should an option-click on this URL trigger a download?

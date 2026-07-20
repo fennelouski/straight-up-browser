@@ -20,6 +20,7 @@ struct GeneralSettingsView: View {
     @AppStorage("spaceScrollPercent") private var spaceScrollPercent = 90.0
     @AppStorage("cmdPExportsPDF") private var cmdPExportsPDF = true
     @AppStorage(GlobalOmnibarHotkey.defaultsKey) private var globalOmnibarHotkey = GlobalOmnibarHotkey.defaultChord
+    @AppStorage(DefaultBrowser.promptEnabledKey) private var defaultBrowserPrompt = true
 
     @AppStorage(TabSync.Key.enabled) private var tabSyncEnabled = false
     @AppStorage(TabSync.Key.mode) private var tabSyncMode = TabSyncMode.openOnly.rawValue
@@ -94,6 +95,17 @@ struct GeneralSettingsView: View {
                     explanation: "Most of the time you want a PDF, not paper. With this on, ⌘P exports the page as a PDF and ⇧⌘P opens the print dialog. Turn it off and ⌘P prints, the way it does everywhere else.",
                     value: $cmdPExportsPDF
                 ) { CmdPPDFDemo(enabled: $0) }
+
+                Toggle("Offer to make Browser your default", isOn: $defaultBrowserPrompt)
+                    .onChange(of: defaultBrowserPrompt) { _, on in
+                        DefaultBrowser.setPromptEnabled(on)
+                    }
+                SettingCaptionRow(
+                    caption: "Show the corner nudge on a new tab until Browser is your default.",
+                    title: "Default Browser Nudge",
+                    explanation: "When Browser isn't your default, a small card appears in the corner of a new tab offering to make it one. It goes away for good once you answer it either way — turn this off to skip it entirely, or back on to see it again.",
+                    value: $defaultBrowserPrompt
+                ) { DefaultBrowserPromptDemo(enabled: $0) }
 
                 Picker("Global omnibar hotkey", selection: $globalOmnibarHotkey) {
                     Text("⌥ Space").tag("optSpace")
@@ -255,6 +267,7 @@ final class KeyRecorder {
 
 struct ContentSettingsView: View {
     @AppStorage("javaScriptEnabled") private var javaScriptEnabled = true
+    @AppStorage("pinchToZoomEnabled") private var pinchToZoomEnabled = true
 
     var body: some View {
         Form {
@@ -268,6 +281,18 @@ struct ContentSettingsView: View {
                 ) { JavaScriptDemo(enabled: $0) }
             } header: {
                 SettingsLabel("Web Content", systemImage: "curlybraces", tint: SettingsTint.content)
+            }
+
+            Section {
+                Toggle("Pinch to zoom", isOn: $pinchToZoomEnabled)
+                SettingCaptionRow(
+                    caption: "Trackpad pinch and two-finger double-tap zoom the page. ⌘0 resets it.",
+                    title: "Pinch to Zoom",
+                    explanation: "With this on, a trackpad pinch magnifies the page, and a two-finger double-tap zooms the text block under your fingers to fill the width — just like Safari. This is separate from ⌘+ / ⌘− page zoom, which reflows text instead of magnifying. Actual Size (⌘0) resets both.",
+                    value: $pinchToZoomEnabled
+                ) { PinchZoomDemo(enabled: $0) }
+            } header: {
+                SettingsLabel("Zoom", systemImage: "plus.magnifyingglass", tint: SettingsTint.content)
             }
         }
         .formStyle(.grouped)

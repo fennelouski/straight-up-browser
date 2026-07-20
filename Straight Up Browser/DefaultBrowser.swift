@@ -21,9 +21,20 @@ enum DefaultBrowser {
             == Bundle.main.bundleURL.standardizedFileURL
     }
 
-    // Show the prompt only until the user acts on it once, either way.
+    // Show the prompt only until the user acts on it once, either way — and
+    // never when they've switched it off in Settings → General.
     static var shouldOffer: Bool {
-        !UserDefaults.standard.bool(forKey: dismissedKey) && !isDefault
+        let enabled = UserDefaults.standard.object(forKey: promptEnabledKey) as? Bool ?? true
+        return enabled && !UserDefaults.standard.bool(forKey: dismissedKey) && !isDefault
+    }
+
+    // Settings → General. Turning it back on re-arms a prompt already dismissed,
+    // otherwise the switch would look broken for anyone who'd clicked the ✕.
+    static let promptEnabledKey = "defaultBrowserPromptEnabled"
+
+    static func setPromptEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: promptEnabledKey)
+        if enabled { UserDefaults.standard.removeObject(forKey: dismissedKey) }
     }
 
     static func dismiss() {

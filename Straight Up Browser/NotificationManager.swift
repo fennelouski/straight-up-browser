@@ -331,7 +331,7 @@ class NotificationManager {
 
         observers.append(NotificationCenter.default.addObserver(
             forName: .browserZoomReset, object: nil, queue: .main
-        ) { [weak self] _ in self?.setZoom(1.0) })
+        ) { [weak self] _ in self?.resetZoom() })
 
         observers.append(NotificationCenter.default.addObserver(
             forName: .browserPrint, object: nil, queue: .main
@@ -594,6 +594,12 @@ class NotificationManager {
         webView.pageZoom = zoom
         // Persist per tab; reapplied on tab switch in WebView.updateNSView
         tabManager.getActiveTab(from: tabs())?.zoomLevel = zoom
+    }
+
+    /// Actual Size (⌘0): undo page zoom *and* any trackpad pinch/smart-zoom magnification.
+    private func resetZoom() {
+        webViewManager.activeWebView?.magnification = 1.0
+        setZoom(1.0)
     }
 
     private func printCurrentPage() {

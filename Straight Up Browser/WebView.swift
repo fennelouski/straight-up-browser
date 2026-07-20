@@ -29,6 +29,10 @@ struct WebView: NSViewRepresentable {
     var displayedTabIds: [UUID] = []
     var onURLChange: ((URL?) -> Void)?
 
+    // Trackpad pinch + two-finger double-tap smart zoom. @AppStorage here so
+    // flipping the setting re-runs updateNSView and applies it live.
+    @AppStorage("pinchToZoomEnabled") private var pinchToZoomEnabled = true
+
     init(url: Binding<URL?>,
          canGoBack: Binding<Bool>,
          canGoForward: Binding<Bool>,
@@ -109,6 +113,9 @@ struct WebView: NSViewRepresentable {
         if let tab = tabs?.first(where: { $0.id == activeTabId }), activeWebView.pageZoom != tab.zoomLevel {
             activeWebView.pageZoom = tab.zoomLevel
         }
+
+        // Pinch / two-finger double-tap smart zoom, live per the setting.
+        activeWebView.allowsMagnification = pinchToZoomEnabled
 
         // Cache-state sync: restore a synced tab's page state into a fresh web view
         // (scroll + history), then skip the plain URL load.
@@ -292,7 +299,7 @@ struct WebView: NSViewRepresentable {
             DispatchQueue.main.async {
                 // Re-enable interactions
                 webView.allowsBackForwardNavigationGestures = true
-                webView.allowsMagnification = true
+                webView.allowsMagnification = SettingsManager.shared.pinchToZoomEnabled
                 webView.allowsLinkPreview = true
             }
 
@@ -817,7 +824,30 @@ class WebViewContainer: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    // SwiftUI calls updateNSView for any state change, most of which leave the
+    // panes alone — so bail unless something actually moved, then apply one
+    // runloop hop later. Every isHidden write below makes AppKit recompute the
+    // key-view loop, and that walk re-enters SwiftUI's focus machinery; doing it
+    // *inside* the update pass is a fatal Swift access conflict ("Simultaneous
+    // accesses to ... FocusableViewResponder.frame"). A link handed to us by
+    // another app hit it every time: the new tab changed the panes while the
+    // window was taking focus. Off the pass, the walk finds the graph idle.
+    // Coalesced, so a burst of updates still applies only the final state.
     func setDisplayedTabs(_ ids: [UUID], focusedTabId: UUID?) {
+        guard displayedTabIds != ids || self.focusedTabId != focusedTabId else { return }
+        let alreadyScheduled = pendingDisplay != nil
+        pendingDisplay = (ids, focusedTabId)
+        guard !alreadyScheduled else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let pending = self.pendingDisplay else { return }
+            self.pendingDisplay = nil
+            self.applyDisplayedTabs(pending.ids, focusedTabId: pending.focused)
+        }
+    }
+
+    private var pendingDisplay: (ids: [UUID], focused: UUID?)?
+
+    private func applyDisplayedTabs(_ ids: [UUID], focusedTabId: UUID?) {
         Logger.log("WebViewContainer setDisplayedTabs: \(ids.count) pane(s), focused \(focusedTabId?.uuidString ?? "nil")", type: "WebView")
 
         let tabChanged = self.focusedTabId != focusedTabId
@@ -849,7 +879,7 @@ class WebViewContainer: NSView {
 
             // Ensure WebView can accept user interactions
             webView.allowsBackForwardNavigationGestures = true
-            webView.allowsMagnification = true
+            webView.allowsMagnification = SettingsManager.shared.pinchToZoomEnabled
             webView.allowsLinkPreview = true
 
             // Subtle accent border marks the focused pane — only while split
