@@ -741,6 +741,12 @@ struct WebView: NSViewRepresentable {
             presentSheet(alert, over: webView) { completionHandler($0 == .alertFirstButtonReturn ? input.stringValue : nil) }
         }
 
+        // Without this, WebKit denies getUserMedia outright and pages report "no camera or
+        // microphone found". .prompt hands the decision to WebKit's own permission UI.
+        func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+            decisionHandler(.prompt)
+        }
+
         func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
             let panel = NSOpenPanel()
             panel.canChooseFiles = true

@@ -76,16 +76,22 @@
 		};
 		803E20792F11608100A31C8D /* Straight Up BrowserTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "Straight Up BrowserTests";
 			sourceTree = "<group>";
 		};
 		803E20832F11608100A31C8D /* Straight Up BrowserUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "Straight Up BrowserUITests";
 			sourceTree = "<group>";
 		};
 		CACF1DAAEDABC0FCAEF39F90 /* Browser iOS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "Browser iOS";
 			sourceTree = "<group>";
 		};
@@ -446,6 +452,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Websites you visit can ask to use your camera for video calls and photos.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Websites you visit can ask to use your microphone for calls and voice input.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -605,7 +613,9 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Browser-Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Websites you visit can ask to use your camera for video calls and photos.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Nathan Fennel. All rights reserved.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Websites you visit can ask to use your microphone for calls and voice input.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -639,7 +649,9 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Browser-Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Websites you visit can ask to use your camera for video calls and photos.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Nathan Fennel. All rights reserved.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Websites you visit can ask to use your microphone for calls and voice input.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -750,6 +762,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Websites you visit can ask to use your camera for video calls and photos.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Websites you visit can ask to use your microphone for calls and voice input.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

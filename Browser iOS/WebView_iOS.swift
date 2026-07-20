@@ -479,6 +479,12 @@ struct TabWebView: UIViewRepresentable {
             return popupWebView
         }
 
+        // Without this, WebKit denies getUserMedia outright and pages report "no camera or
+        // microphone found". .prompt hands the decision to WebKit's own permission UI.
+        func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+            decisionHandler(.prompt)
+        }
+
         // MARK: - JS dialogs (file uploads use WKWebView's native iOS picker)
 
         func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
