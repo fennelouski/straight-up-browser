@@ -661,19 +661,23 @@ struct WebView: NSViewRepresentable {
             // an incognito/container popup doesn't leak out into a normal persisted tab.
             let popupWebView = WKWebView(frame: .zero, configuration: configuration)
             let openerSession = webViewManager.tabId(for: webView).map { webViewManager.session(for: $0) } ?? (.normal, nil)
-            // Create it unselected: a popup joins the opener in a split rather than
-            // replacing it. A popup that hides the page that opened it (OAuth consent,
-            // a payment sheet) reads as "nothing happened" — the opener is what gives
-            // the popup its meaning, so both stay on screen.
-            let newTab = tabManager.createTab(inheriting: openerSession, select: false)
+            // A clicked target="_blank" link (.linkActivated) is a plain "open in a new
+            // tab" — the vast majority of these — so give it a normal foreground tab.
+            // Only a JS window.open() popup (.other: OAuth consent, a payment sheet)
+            // joins the opener in a split: a popup that hides the page that opened it
+            // reads as "nothing happened", so opener and popup both stay on screen.
+            let isPopup = navigationAction.navigationType != .linkActivated
+            let newTab = tabManager.createTab(inheriting: openerSession, select: !isPopup)
             webViewManager.adoptWebView(popupWebView, for: newTab.id)
             // ponytail: pairs with the *focused* tab, which is the opener in every case
             // except a popup fired from a background pane — rare enough not to track
             // opener identity for. At the 4-pane cap there's no room, so just focus it.
-            if tabManager.splitTabIds.count < TabManager.maxSplitTabs {
-                tabManager.toggleSplitMembership(newTab, tabs: tabs ?? [])
-            } else {
-                tabManager.selectedTabId = newTab.id
+            if isPopup {
+                if tabManager.splitTabIds.count < TabManager.maxSplitTabs {
+                    tabManager.toggleSplitMembership(newTab, tabs: tabs ?? [])
+                } else {
+                    tabManager.selectedTabId = newTab.id
+                }
             }
             return popupWebView
         }

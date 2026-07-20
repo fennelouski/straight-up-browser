@@ -263,7 +263,16 @@ struct Straight_Up_BrowserApp: App {
             // File menu commands (one group: @CommandsBuilder caps top-level children at 10)
             CommandGroup(after: .newItem) {
                 Button("Close Tab") {
-                    NotificationCenter.default.post(name: .browserCloseTab, object: nil)
+                    // Cmd+W is a global menu shortcut, so it fires even when an
+                    // auxiliary window (Downloads/Settings/Help) is key. Over one of
+                    // those, close that window instead of a browser tab underneath it.
+                    let key = NSApp.keyWindow
+                    if let id = key?.identifier?.rawValue,
+                       ["settings", "downloads", "help"].contains(where: id.contains) {
+                        key?.performClose(nil)
+                    } else {
+                        NotificationCenter.default.post(name: .browserCloseTab, object: nil)
+                    }
                 }
                 .keyboardShortcut(sc(.closeTab))
 

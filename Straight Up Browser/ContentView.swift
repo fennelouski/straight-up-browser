@@ -1450,6 +1450,9 @@ struct ContentView: View {
             showOmnibar: $showOmnibar,
             tabs: { self.allTabs },
             closeTabAction: { tab, tabs in
+                // The omnibar edits the current tab's address; once that tab is
+                // gone it's pointing at nothing, so dismiss it with the tab.
+                self.showOmnibar = false
                 tabManager.closeTab(tab, tabs: tabs)
             },
             createNewTabAction: {

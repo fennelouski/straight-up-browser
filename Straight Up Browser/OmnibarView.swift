@@ -41,6 +41,9 @@ struct OmnibarTextField: NSViewRepresentable {
     var onArrowDown: (() -> Void)?
     var onCommit: (() -> Void)?
     var onCancel: (() -> Void)?
+    // Given what the user just typed, returns the full text to inline-complete to
+    // (or nil for no completion). The added suffix is auto-selected.
+    var completion: ((String) -> String?)?
 
     func makeNSView(context: Context) -> NSTextField {
         let textField = NSTextField()
@@ -56,7 +59,13 @@ struct OmnibarTextField: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSTextField, context: Context) {
-        nsView.stringValue = text
+        context.coordinator.parent = self
+        // Guard the assignment so we don't stomp the field editor's selection —
+        // inline completion sets stringValue + a selected suffix, and an
+        // unconditional write here would collapse the caret to the end.
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
 
         // Focus and select all text when shouldFocus becomes true (only on initial open)
         if shouldFocus && !context.coordinator.hasFocused {
@@ -93,6 +102,9 @@ struct OmnibarTextField: NSViewRepresentable {
         var parent: OmnibarTextField
         var hasAutoSelected = false
         var hasFocused = false
+        // Set while the current edit is a delete, so we don't re-complete the
+        // suffix the user is trying to erase (which would trap them).
+        var isDeleting = false
         weak var textField: NSTextField?
 
         init(_ parent: OmnibarTextField) {
@@ -110,13 +122,37 @@ struct OmnibarTextField: NSViewRepresentable {
         }
 
         func controlTextDidChange(_ obj: Notification) {
-            if let textField = obj.object as? NSTextField {
-                parent.text = textField.stringValue
+            guard let textField = obj.object as? NSTextField else { return }
+            let typed = textField.stringValue
+
+            // A delete just updates the text; never re-complete over it.
+            if isDeleting {
+                isDeleting = false
+                parent.text = typed
+                return
+            }
+
+            // Inline-complete to the top match and select the added suffix, so the
+            // next keystroke replaces it and Return accepts the whole thing.
+            if let completion = parent.completion?(typed),
+               (completion as NSString).length > (typed as NSString).length,
+               let editor = textField.currentEditor() {
+                let typedLen = (typed as NSString).length
+                editor.string = completion
+                editor.selectedRange = NSRange(location: typedLen,
+                                               length: (completion as NSString).length - typedLen)
+                parent.text = completion
+            } else {
+                parent.text = typed
             }
         }
 
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             switch commandSelector {
+            case #selector(NSResponder.deleteBackward(_:)),
+                 #selector(NSResponder.deleteForward(_:)):
+                isDeleting = true
+                return false // let the default delete happen, sans re-completion
             case #selector(NSResponder.moveUp(_:)):
                 parent.onArrowUp?()
                 return true
@@ -219,6 +255,24 @@ struct OmnibarView: View {
         }.prefix(8)) // Limit to 8 suggestions
     }
 
+    // Inline autocomplete target: the top prefix match, as a bare host where
+    // possible ("git" → "github.com"), else the full URL. nil when nothing the
+    // user could mean starts with what they typed (e.g. a multi-word search).
+    private func bestCompletion(for typed: String) -> String? {
+        let t = typed.lowercased()
+        guard !t.isEmpty, !t.contains(" "), !t.contains("://") else { return nil }
+        for s in filteredSuggestions {
+            if let host = s.url.host {
+                let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+                if bare.lowercased().hasPrefix(t) { return bare }
+                if host.lowercased().hasPrefix(t) { return host }
+            }
+            let full = s.url.absoluteString
+            if full.lowercased().hasPrefix(t) { return full }
+        }
+        return nil
+    }
+
     private var selectedSuggestion: Suggestion? {
         guard selectedSuggestionIndex >= 0 && selectedSuggestionIndex < filteredSuggestions.count else {
             return nil
@@ -257,7 +311,8 @@ struct OmnibarView: View {
                     },
                     onCancel: {
                         isPresented = false
-                    }
+                    },
+                    completion: { bestCompletion(for: $0) }
                 )
                 .padding(.vertical, 12)
                 .padding(.horizontal, 8)
