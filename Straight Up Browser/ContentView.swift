@@ -1066,6 +1066,17 @@ struct ContentView: View {
         .overlay(importBookmarksDialogOverlay.zIndex(6))
         .overlay(quitHoldOverlay.zIndex(7))
         .overlay(shortcutCheatSheetOverlay.zIndex(8))
+        .overlay(alignment: .bottomTrailing, content: { defaultBrowserOverlay.zIndex(9) })
+    }
+
+    private var defaultBrowserOverlay: some View {
+        Group {
+            if tabManager.offerDefaultBrowser {
+                DefaultBrowserPrompt { tabManager.offerDefaultBrowser = false }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.default, value: tabManager.offerDefaultBrowser)
     }
 
     // Full shortcut reference, toggled with Cmd+Shift+H (or Esc/click to close)

@@ -14,7 +14,7 @@ import Foundation
 // which can lag intent delivery (or the EULA modal). Bounded poll, then
 // give up quietly like the CLI does when no window is open.
 @MainActor
-private func waitForObservers() async throws {
+func waitForObservers() async throws {
     for _ in 0..<100 where !NotificationManager.observersReady {
         try await Task.sleep(for: .milliseconds(50))
     }

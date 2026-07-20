@@ -42,6 +42,11 @@ class TabManager: ObservableObject {
         didSet { persistClosedTabs() }
     }
 
+    // Set when a normal tab is created and we're not the default browser, so
+    // ContentView can show the bottom-corner nudge. Every new-tab path (⌘T, +,
+    // menus, CLI) funnels through createNewTab.
+    @Published var offerDefaultBrowser = false
+
     private static let closedTabsKey = "closedTabsStack"
     private static let maxClosedTabs = 25
     private static let splitKey = "splitTabIds"
@@ -78,6 +83,9 @@ class TabManager: ObservableObject {
 
     @discardableResult
     func createNewTab(url: URL? = nil, select: Bool = true) -> Tab {
+        #if os(macOS)
+        if DefaultBrowser.shouldOffer { offerDefaultBrowser = true }
+        #endif
         let newTab = Tab(title: String(localized: "New Tab"), url: url, isActive: false)
         newTab.memoryPolicy = MemoryPolicy(rawValue:
             UserDefaults.standard.string(forKey: "memorySaverDefaultPolicy") ?? "") ?? .whenNeeded

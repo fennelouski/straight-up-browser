@@ -39,6 +39,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         registerGlobalHotkey()
     }
 
+    // Links handed to us by the OS (we're the default browser, or the user
+    // picked Browser from "Open With"). Same funnel the CLI and Shortcuts use.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        Task { @MainActor in
+            // Cold launch: observers attach in ContentView.onAppear, after this.
+            try? await waitForObservers()
+            for url in urls {
+                NotificationCenter.default.post(
+                    name: .browserOpenURL, object: nil,
+                    userInfo: ["url": url.absoluteString, "newTab": true]
+                )
+            }
+        }
+    }
+
     // Returns true if the user accepted.
     private func runEULAAlert() -> Bool {
         let alert = NSAlert()
