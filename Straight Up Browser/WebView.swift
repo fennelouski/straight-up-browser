@@ -780,8 +780,13 @@ class WebViewContainer: NSView {
     var onPaneFocus: ((UUID) -> Void)?
 
     var activeWebView: WKWebView? {
-        // Return the WebView for the currently focused tab, not necessarily the manager's activeWebView
-        if let focusedTabId = focusedTabId, let webViewManager = webViewManager {
+        // The WebView for the focused tab, not necessarily the manager's
+        // activeWebView. Reads through pendingDisplay: setDisplayedTabs applies a
+        // runloop hop late, but updateNSView reads this back inside the same pass
+        // to pick which web view to load the tab's URL into. Answering with the
+        // *previous* focus there loaded the newly selected tab's page into the
+        // old tab's web view — the "tabs showing each other's pages" bug.
+        if let focusedTabId = pendingDisplay?.focused ?? focusedTabId, let webViewManager = webViewManager {
             return webViewManager.getWebView(for: focusedTabId)
         }
         return webViewManager?.activeWebView
@@ -834,7 +839,12 @@ class WebViewContainer: NSView {
     // window was taking focus. Off the pass, the walk finds the graph idle.
     // Coalesced, so a burst of updates still applies only the final state.
     func setDisplayedTabs(_ ids: [UUID], focusedTabId: UUID?) {
-        guard displayedTabIds != ids || self.focusedTabId != focusedTabId else { return }
+        // Compare against what's *pending* when there is one, not what's applied:
+        // a burst of updates that dips back through the applied state would
+        // otherwise early-return and strand the newer request in pendingDisplay,
+        // leaving the panes on a tab nobody selected.
+        let current = pendingDisplay ?? (displayedTabIds, self.focusedTabId)
+        guard current.ids != ids || current.focused != focusedTabId else { return }
         let alreadyScheduled = pendingDisplay != nil
         pendingDisplay = (ids, focusedTabId)
         guard !alreadyScheduled else { return }

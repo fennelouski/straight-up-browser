@@ -142,6 +142,13 @@ class KeyboardShortcutsManager {
         // terminate at the end, in .common mode so a tracking run loop (menus,
         // scrollbars) can't delay it.
         let timer = Timer(timeInterval: Self.quitHoldDuration, repeats: false) { _ in
+            // Terminate isn't instant — willTerminate persists per-tab state and
+            // WebKit teardown takes a beat — so the windows would linger a second
+            // or two past a full bar, reading as "the hold didn't take". Pull them
+            // off screen first so the app disappears exactly when the bar fills.
+            // Safe because nothing implements applicationShouldTerminate: the
+            // quit always goes through.
+            NSApp.windows.forEach { $0.orderOut(nil) }
             NSApp.terminate(nil)
         }
         RunLoop.main.add(timer, forMode: .common)

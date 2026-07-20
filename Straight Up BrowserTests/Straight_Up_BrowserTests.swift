@@ -358,3 +358,56 @@ struct SplitViewTests {
         cleanup(manager2)
     }
 }
+
+// setDisplayedTabs defers its work one runloop hop (to stay off SwiftUI's update
+// pass), but WebView.updateNSView reads activeWebView back in that same pass to
+// decide which web view to load the tab's URL into. If activeWebView reports the
+// *old* focus, the newly selected tab's URL gets loaded into the previous tab's
+// web view — pages jumping between tabs, duplicates, panes showing each other's
+// content. So activeWebView must answer for the focus most recently requested,
+// not the one last applied.
+@Suite(.serialized)
+@MainActor
+struct PaneFocusTests {
+
+    private func drainMainQueue() async {
+        try? await Task.sleep(for: .milliseconds(50))
+    }
+
+    @Test func activeWebViewFollowsRequestedFocusBeforeApply() async {
+        let webViewManager = WebViewManager()
+        let container = WebViewContainer(webViewManager: webViewManager, coordinator: nil)
+        let tabA = UUID(), tabB = UUID()
+
+        container.setDisplayedTabs([tabA], focusedTabId: tabA)
+        await drainMainQueue()
+        let viewA = webViewManager.existingWebView(for: tabA)
+        #expect(viewA != nil)
+        #expect(container.activeWebView === viewA)
+
+        // Same runloop turn as the request — exactly where updateNSView reads it.
+        container.setDisplayedTabs([tabB], focusedTabId: tabB)
+        #expect(container.activeWebView !== viewA)
+        #expect(container.activeWebView === webViewManager.existingWebView(for: tabB))
+
+        // And still correct once the deferred apply lands.
+        await drainMainQueue()
+        #expect(container.activeWebView === webViewManager.existingWebView(for: tabB))
+    }
+
+    @Test func focusRequestIsNotLostWhenAnUpdateRepeatsTheAppliedState() async {
+        let webViewManager = WebViewManager()
+        let container = WebViewContainer(webViewManager: webViewManager, coordinator: nil)
+        let tabA = UUID(), tabB = UUID()
+
+        container.setDisplayedTabs([tabA], focusedTabId: tabA)
+        await drainMainQueue()
+
+        // Rapid clicking produces bursts of updates within one turn. A pass that
+        // happens to restate the applied focus must not cancel the pending one.
+        container.setDisplayedTabs([tabB], focusedTabId: tabB)
+        container.setDisplayedTabs([tabA], focusedTabId: tabA)
+        await drainMainQueue()
+        #expect(container.activeWebView === webViewManager.existingWebView(for: tabA))
+    }
+}
