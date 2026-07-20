@@ -21,8 +21,10 @@ nathanfennel.com (Next.js on Vercel, auto-deploys `main`). The download button l
 1. **Bump the version.** In Xcode (target *Browser* → General), or in
    `Straight Up Browser.xcodeproj/project.pbxproj`:
    - `CURRENT_PROJECT_VERSION` (build number) — bump **every** release, so a changed
-     binary is distinguishable (About window, crash reports).
-   - `MARKETING_VERSION` — bump for user-facing releases (e.g. `1.1` → `1.2` for a feature).
+     binary is distinguishable in crash reports.
+   - `MARKETING_VERSION` — bump **every** release too. The About panel no longer shows
+     the build number in parentheses, so the marketing version is the only thing users
+     can see; two releases sharing one would be indistinguishable to them.
 
 2. **Build the notarized DMG:**
 
