@@ -44,7 +44,19 @@ nathanfennel.com (Next.js on Vercel, auto-deploys `main`). The download button l
    git push                     # Vercel auto-deploys main
    ```
 
+   **Also update the version line** in `src/app/internet/page.tsx` — it hardcodes
+   "Version 1.x · … · N MB". It drifted from 1.1 to 1.4.3 unnoticed because nothing
+   here said to touch it.
+
    Rollback if needed: `git revert` the commit and push — the previous DMG is in history.
+
+   Verify the CDN actually served the new file — a Ready deployment is not proof, the
+   edge can still hand out the old asset for a few minutes:
+
+   ```
+   curl -sL https://nathanfennel.com/downloads/Browser.dmg | shasum -a 256
+   shasum -a 256 build/release/Browser.dmg      # must match
+   ```
 
 4. **Commit + tag the app source** so the shipped binary is reproducible:
 
