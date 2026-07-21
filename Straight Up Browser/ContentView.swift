@@ -135,6 +135,34 @@ struct SavedWorkspaceTab: Codable {
     }
 }
 
+/// Where the find bar sits and how loudly it flashes a match. Shared by the bar itself
+/// (ContentView) and the controls in Settings.
+enum FindBar {
+    static let positionKey = "findBarPosition"
+    static let intensityKey = "findFlashIntensity"
+    static let defaultPosition = "Top Right"
+    static let defaultIntensity = 25.0
+    static let positions = ["Top Left", "Top Right", "Left Side", "Right Side", "Bottom Left", "Bottom Right"]
+
+    /// Next 1-based match position, wrapping in both directions. `index` 0 means "haven't landed yet".
+    static func step(index: Int, count: Int, backwards: Bool) -> Int {
+        guard count > 0 else { return 0 }
+        if backwards { return index <= 1 ? count : index - 1 }
+        return index >= count ? 1 : index + 1
+    }
+
+    static func alignment(_ position: String) -> Alignment {
+        switch position {
+        case "Top Left": return .topLeading
+        case "Left Side": return .leading
+        case "Right Side": return .trailing
+        case "Bottom Left": return .bottomLeading
+        case "Bottom Right": return .bottomTrailing
+        default: return .topTrailing
+        }
+    }
+}
+
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \BrowserTab.orderIndex) private var tabs: [BrowserTab]
@@ -156,6 +184,10 @@ struct ContentView: View {
     @State private var showOmnibar = false
     @State private var showFindBar = false
     @State private var findText = ""
+    @State private var findMatchIndex = 0 // 1-based position of the current match, 0 before the first hit
+    @State private var findMatchCount = 0
+    @AppStorage(FindBar.positionKey) private var findBarPosition = FindBar.defaultPosition
+    @AppStorage(FindBar.intensityKey) private var findFlashIntensity = FindBar.defaultIntensity
     @State private var canGoBack = false
     @State private var canGoForward = false
     @State private var currentTitle = ""
@@ -704,78 +736,135 @@ struct ContentView: View {
     private var findBarOverlay: some View {
         Group {
             if showFindBar {
-                VStack {
-                    HStack {
-                        Spacer()
-                        HStack(spacing: 4) {
-                            OmnibarTextField(
-                                text: $findText,
-                                placeholder: String(localized: "Find in page"),
-                                shouldFocus: true,
-                                onCommit: { performFind() },
-                                onCancel: {
-                                    showFindBar = false
-                                    clearFindHighlights()
-                                }
-                            )
-                            .frame(width: 200)
-
-                            Button(action: { performFind(backwards: true) }) {
-                                Image(systemName: "chevron.up")
-                            }
-                            .buttonStyle(.plain)
-                            .help("Previous Match")
-
-                            Button(action: { performFind() }) {
-                                Image(systemName: "chevron.down")
-                            }
-                            .buttonStyle(.plain)
-                            .help("Next Match")
-
-                            Button(action: {
-                                showFindBar = false
-                                clearFindHighlights()
-                            }) {
-                                Image(systemName: "xmark")
-                            }
-                            .buttonStyle(.plain)
-                            .help("Close")
+                findBar
+                    .padding(10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: FindBar.alignment(findBarPosition))
+                    .onChange(of: findText) { _, newValue in
+                        findMatchIndex = 0
+                        if newValue.isEmpty {
+                            findMatchCount = 0
+                            clearFindHighlights() // emptied field: drop the highlight
+                        } else {
+                            countFindMatches()
+                            performFind() // incremental find while typing
                         }
-                        .padding(8)
-                        .background(Color(.windowBackgroundColor))
-                        .cornerRadius(8)
-                        .shadow(radius: 4)
-                        .padding(.top, 8)
-                        .padding(.trailing, 8)
                     }
-                    Spacer()
-                }
-                .onChange(of: findText) { _, newValue in
-                    if newValue.isEmpty {
-                        clearFindHighlights() // emptied field: drop the highlight
-                    } else {
-                        performFind() // incremental find while typing
-                    }
-                }
             }
         }
     }
 
+    private var findBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            OmnibarTextField(
+                text: $findText,
+                placeholder: String(localized: "Find in page"),
+                shouldFocus: true,
+                onCommit: { performFind() },
+                onCancel: { closeFindBar() }
+            )
+            .frame(width: 180)
+
+            Text(findCountLabel)
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(findMatchCount == 0 && findMatchIndex == 0 && !findText.isEmpty ? Color.red : .secondary)
+                .frame(minWidth: 60, alignment: .trailing)
+
+            Divider().frame(height: 16)
+
+            Button(action: { performFind(backwards: true) }) {
+                Image(systemName: "chevron.up")
+            }
+            .buttonStyle(.plain)
+            .help("Previous Match")
+
+            Button(action: { performFind() }) {
+                Image(systemName: "chevron.down")
+            }
+            .buttonStyle(.plain)
+            .help("Next Match")
+
+            Button(action: { closeFindBar() }) {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .help("Close")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+        .shadow(radius: 6, y: 2)
+    }
+
+    private var findCountLabel: String {
+        if findText.isEmpty { return "" }
+        if findMatchCount > 0 { return String(localized: "\(max(findMatchIndex, 1)) of \(findMatchCount)") }
+        return findMatchIndex > 0 ? "" : String(localized: "No results")
+    }
+
+    private func closeFindBar() {
+        showFindBar = false
+        findMatchIndex = 0
+        clearFindHighlights()
+    }
+
     private func performFind(backwards: Bool = false) {
         guard let webView = webViewManager?.activeWebView, !findText.isEmpty else { return }
+        if findMatchCount == 0 { countFindMatches() } // ⌘G with a bar we haven't counted yet
         let configuration = WKFindConfiguration()
         configuration.backwards = backwards
         configuration.caseSensitive = false
         configuration.wraps = true
         webView.find(findText, configuration: configuration) { result in
-            if result.matchFound {
-                flashFoundMatch(in: webView)
+            guard result.matchFound else {
+                findMatchIndex = 0
+                findMatchCount = 0
+                return
             }
+            // ponytail: WKWebView won't tell us which match it landed on, so we step a
+            // counter alongside it. It desyncs only if the page already had a selection
+            // mid-document when the search started — the next wrap re-aligns it.
+            // max(count, 1): a match exists even if the text count hasn't landed (or missed it),
+            // so the label falls back to blank rather than claiming "No results".
+            findMatchIndex = FindBar.step(index: findMatchIndex, count: max(findMatchCount, 1), backwards: backwards)
+            flashFoundMatch(in: webView)
         }
     }
 
-    // Pulse a ring around the found match so the eye can locate it
+    /// Total matches on the page, counted over the visible text — WKFindConfiguration has no count.
+    private func countFindMatches() {
+        guard let webView = webViewManager?.activeWebView,
+              let data = try? JSONSerialization.data(withJSONObject: findText, options: .fragmentsAllowed),
+              let needle = String(data: data, encoding: .utf8) else { return }
+        let js = """
+        (function(n) {
+            n = n.toLowerCase();
+            var t = (document.body.innerText || '').toLowerCase(), c = 0, i = 0;
+            while (n && (i = t.indexOf(n, i)) >= 0) { c++; i += n.length; }
+            return c;
+        })(\(needle));
+        """
+        webView.evaluateJavaScript(js) { value, _ in
+            findMatchCount = (value as? NSNumber)?.intValue ?? 0
+        }
+    }
+
+    // Pulse a ring around the found match so the eye can locate it. How loud the pulse is
+    // — ring, glow, zoom-in, and dimming of everything else — rides the Find Emphasis slider.
     private func flashFoundMatch(in webView: WKWebView) {
+        let t = max(0, min(1, findFlashIntensity / 100))
+        guard t > 0 else { return } // 0 = no flash, just the native selection highlight
+        let pad = 4 + 8 * t
+        let border = 1 + 4 * t
+        let glow = 6 + 48 * t
+        let scale = 1 + 1.5 * t * t // negligible when subtle, a real zoom at the top end
+        let dim = max(0, t - 0.5) * 0.8 // spotlight the match by darkening the rest of the page
+        let hold = Int(300 + 1200 * t)
         let js = """
         (function() {
             var sel = window.getSelection();
@@ -783,13 +872,16 @@ struct ContentView: View {
             var r = sel.getRangeAt(0).getBoundingClientRect();
             var d = document.createElement('div');
             d.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;' +
-                'left:' + (r.left - 5) + 'px;top:' + (r.top - 5) + 'px;' +
-                'width:' + (r.width + 10) + 'px;height:' + (r.height + 10) + 'px;' +
-                'border:2px solid #FFD60A;border-radius:5px;box-shadow:0 0 12px #FFD60A;' +
-                'opacity:1;transition:opacity 0.6s ease-out;';
+                'left:' + (r.left - \(pad)) + 'px;top:' + (r.top - \(pad)) + 'px;' +
+                'width:' + (r.width + \(pad * 2)) + 'px;height:' + (r.height + \(pad * 2)) + 'px;' +
+                'border:\(border)px solid #FFD60A;border-radius:6px;' +
+                'box-shadow:0 0 \(glow)px #FFD60A, 0 0 0 9999px rgba(0,0,0,\(dim));' +
+                'transform:scale(\(scale));opacity:1;' +
+                'transition:transform 0.35s cubic-bezier(0.2,0.9,0.3,1),opacity 0.6s ease-out;';
             document.body.appendChild(d);
-            setTimeout(function() { d.style.opacity = '0'; }, 400);
-            setTimeout(function() { d.remove(); }, 1100);
+            requestAnimationFrame(function() { d.style.transform = 'scale(1)'; });
+            setTimeout(function() { d.style.opacity = '0'; }, \(hold));
+            setTimeout(function() { d.remove(); }, \(hold + 700));
         })();
         """
         webView.evaluateJavaScript(js)
@@ -1283,8 +1375,10 @@ struct ContentView: View {
                     queue: .main
                 ) { [self] _ in
                     showFindBar.toggle()
-                    if !showFindBar {
-                        clearFindHighlights()
+                    if showFindBar {
+                        countFindMatches()
+                    } else {
+                        closeFindBar()
                     }
                 }
 

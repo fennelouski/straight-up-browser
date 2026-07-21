@@ -17,6 +17,8 @@ import WebKit
 struct GeneralSettingsView: View {
     @AppStorage("searchEngine") private var searchEngine = "Google"
     @AppStorage("omnibarPosition") private var omnibarPosition = "Upper"
+    @AppStorage(FindBar.positionKey) private var findBarPosition = FindBar.defaultPosition
+    @AppStorage(FindBar.intensityKey) private var findFlashIntensity = FindBar.defaultIntensity
     @AppStorage("spaceScrollPercent") private var spaceScrollPercent = 90.0
     @AppStorage("cmdPExportsPDF") private var cmdPExportsPDF = true
     @AppStorage(GlobalOmnibarHotkey.defaultsKey) private var globalOmnibarHotkey = GlobalOmnibarHotkey.defaultChord
@@ -62,7 +64,7 @@ struct GeneralSettingsView: View {
                 ) { SearchEngineDemo(engine: $0) }
 
                 Picker("Omnibar position", selection: $omnibarPosition) {
-                    ForEach(omnibarPositions, id: \.self) { Text($0) }
+                    ForEach(omnibarPositions, id: \.self) { Text($0.localized) }
                 }
                 SettingCaptionRow(
                     caption: "How high the omnibar sits when you summon it.",
@@ -70,6 +72,29 @@ struct GeneralSettingsView: View {
                     explanation: "The omnibar drops in over the page when you start typing an address. Top pins it to the toolbar; Upper floats it a third of the way down; Center puts it at eye level.",
                     value: $omnibarPosition
                 ) { OmnibarPositionDemo(position: $0) }
+
+                Picker("Find bar position", selection: $findBarPosition) {
+                    ForEach(FindBar.positions, id: \.self) { Text($0.localized) }
+                }
+                SettingCaptionRow(
+                    caption: "Which corner or edge the ⌘F bar docks to.",
+                    title: "Find Bar Position",
+                    explanation: "The find bar floats over the page, so it can cover whatever you were reading. Move it to the corner or edge that's out of your way — bottom placements suit long articles, side placements suit wide monitors.",
+                    value: $findBarPosition
+                ) { FindBarPositionDemo(position: $0) }
+
+                LabeledContent("Find emphasis") {
+                    HStack {
+                        Slider(value: $findFlashIntensity, in: 0...100, step: 5).frame(width: 180)
+                        Text("\(Int(findFlashIntensity))%").monospacedDigit().frame(width: 42, alignment: .trailing)
+                    }
+                }
+                SettingCaptionRow(
+                    caption: "How hard the found match announces itself.",
+                    title: "Find Emphasis",
+                    explanation: "Every match gets a ring around it when you land on it. Low is a quiet glow. Turn it up and the ring zooms in and dims the rest of the page — worth it on a large display, in a long document, or any time a subtle highlight is easy to miss. At 0 there's no animation at all, just the normal selection.",
+                    value: $findFlashIntensity
+                ) { FindFlashDemo(intensity: $0) }
             } header: {
                 SettingsLabel("Search", systemImage: "magnifyingglass", tint: SettingsTint.general)
             }

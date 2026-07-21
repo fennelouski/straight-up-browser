@@ -18,6 +18,35 @@ struct Straight_Up_BrowserTests {
 
 }
 
+struct FindBarTests {
+
+    @Test func matchCounterWrapsInBothDirections() {
+        // Forward from "nothing found yet" lands on the first match and wraps at the end.
+        #expect(FindBar.step(index: 0, count: 3, backwards: false) == 1)
+        #expect(FindBar.step(index: 2, count: 3, backwards: false) == 3)
+        #expect(FindBar.step(index: 3, count: 3, backwards: false) == 1)
+
+        // Backwards from nothing (or from the first) wraps to the last.
+        #expect(FindBar.step(index: 0, count: 3, backwards: true) == 3)
+        #expect(FindBar.step(index: 1, count: 3, backwards: true) == 3)
+        #expect(FindBar.step(index: 3, count: 3, backwards: true) == 2)
+
+        // A single match stays put; no matches stays at zero.
+        #expect(FindBar.step(index: 1, count: 1, backwards: false) == 1)
+        #expect(FindBar.step(index: 1, count: 1, backwards: true) == 1)
+        #expect(FindBar.step(index: 0, count: 0, backwards: false) == 0)
+    }
+
+    @Test func everyPositionMapsToADistinctAlignment() {
+        let alignments = FindBar.positions.map(FindBar.alignment)
+        for (i, a) in alignments.enumerated() {
+            for b in alignments[(i + 1)...] { #expect(a != b) }
+        }
+        #expect(FindBar.alignment(FindBar.defaultPosition) == .topTrailing)
+        #expect(FindBar.alignment("nonsense") == .topTrailing) // unknown value falls back
+    }
+}
+
 // TabManager works with webViewManager: nil (optional chaining) and needs no
 // modelContext for incognito, so its session logic is testable without a GUI.
 @Suite(.serialized)

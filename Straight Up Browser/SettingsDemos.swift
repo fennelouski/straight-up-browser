@@ -199,6 +199,120 @@ struct OmnibarPositionDemo: View {
     }
 }
 
+struct FindBarPositionDemo: View {
+    @Binding var position: String
+
+    var body: some View {
+        VStack(spacing: 20) {
+            WindowFrame {
+                ZStack(alignment: FindBar.alignment(position)) {
+                    VStack(spacing: 8) {
+                        pageLine(width: 120)
+                        pageLine()
+                        pageLine()
+                        pageLine(width: 90)
+                        pageLine()
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                    miniFindBar
+                        .padding(8)
+                        .animation(.smooth(duration: 0.3), value: position)
+                }
+                .frame(height: 140)
+            }
+
+            Picker("", selection: $position) {
+                ForEach(FindBar.positions, id: \.self) { Text($0.localized).tag($0) }
+            }
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var miniFindBar: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass").font(.system(size: 8)).foregroundStyle(.secondary)
+            Text("invoice").font(.system(size: 9))
+            Text("\(2) of \(7)").font(.system(size: 9)).monospacedDigit().foregroundStyle(.secondary)
+            Image(systemName: "chevron.up").font(.system(size: 7)).foregroundStyle(.secondary)
+            Image(systemName: "chevron.down").font(.system(size: 7)).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 7)
+                .fill(Color(nsColor: .textBackgroundColor))
+                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(SettingsTint.general.opacity(0.6), lineWidth: 1.5))
+                .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
+        )
+    }
+}
+
+struct FindFlashDemo: View {
+    @Binding var intensity: Double
+    @State private var visible = false
+    @State private var zoomed = false
+
+    // Mirrors the numbers in ContentView.flashFoundMatch so the demo and the page agree.
+    private var t: Double { max(0, min(1, intensity / 100)) }
+    private var dim: Double { max(0, t - 0.5) * 0.8 }
+    private let flashColor = Color(red: 1, green: 0.84, blue: 0.04)
+
+    var body: some View {
+        VStack(spacing: 20) {
+            WindowFrame {
+                ZStack {
+                    VStack(spacing: 9) {
+                        ForEach(0..<8, id: \.self) { i in
+                            pageLine(width: i.isMultiple(of: 3) ? 120 : .infinity)
+                        }
+                    }
+                    .padding(14)
+
+                    // The top of the slider spotlights the match by dimming the rest.
+                    Color.black.opacity(visible ? dim : 0)
+
+                    matchChip
+                }
+                .frame(height: 130)
+            }
+
+            HStack(spacing: 12) {
+                Text("\(Int(intensity))%").monospacedDigit().frame(width: 42, alignment: .leading)
+                Slider(value: $intensity, in: 0...100, step: 5)
+                Button("Find it") { flash() }
+            }
+        }
+        .onAppear { flash() }
+        .onChange(of: intensity) { _, _ in flash() }
+    }
+
+    private var matchChip: some View {
+        Text("invoice")
+            .font(.system(size: 11, weight: .medium))
+            .padding(.horizontal, 5).padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 3).fill(flashColor.opacity(0.3)))
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .strokeBorder(flashColor, lineWidth: 1 + 4 * t)
+                    .shadow(color: flashColor, radius: (6 + 48 * t) / 4)
+                    .padding(-(4 + 8 * t) / 2)
+                    .opacity(visible && t > 0 ? 1 : 0)
+            )
+            .scaleEffect(zoomed ? 1 + 1.5 * t * t : 1)
+    }
+
+    private func flash() {
+        visible = true
+        zoomed = true
+        withAnimation(.spring(duration: 0.35)) { zoomed = false }
+        withAnimation(.easeOut(duration: 0.6).delay(0.3 + 1.2 * t)) { visible = false }
+    }
+}
+
 struct SpaceScrollDemo: View {
     @Binding var percent: Double
     @State private var offset: CGFloat = 0
