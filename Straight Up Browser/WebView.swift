@@ -33,6 +33,10 @@ struct WebView: NSViewRepresentable {
     // flipping the setting re-runs updateNSView and applies it live.
     @AppStorage("pinchToZoomEnabled") private var pinchToZoomEnabled = true
 
+    // Max page brightness, 100 = untouched. Same deal: @AppStorage so dragging
+    // the slider re-runs updateNSView and you see it change under you.
+    @AppStorage("pageWhitePoint") private var pageWhitePoint = 100.0
+
     init(url: Binding<URL?>,
          canGoBack: Binding<Bool>,
          canGoForward: Binding<Bool>,
@@ -80,6 +84,7 @@ struct WebView: NSViewRepresentable {
 
         // Update the displayed panes (one pane normally, 2–4 in a split)
         nsView.onPaneFocus = { [tabManager] id in tabManager?.selectedTabId = id }
+        nsView.whitePoint = pageWhitePoint
         nsView.setDisplayedTabs(displayedTabIds, focusedTabId: activeTabId)
 
         // Non-focused panes never go through the url-binding load path below, so a
@@ -246,6 +251,9 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            // Old document is gone and the new one hasn't painted: hold the view
+            // invisible until it has, so the gap isn't a flash of white.
+            parent.webViewManager?.beginFadeIn(webView)
             // Push the current spacebar-scroll percentage into the new page;
             // the injected user script reads it on each keypress
             let pct = UserDefaults.standard.object(forKey: "spaceScrollPercent") as? Double ?? 90
@@ -254,6 +262,7 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            parent.webViewManager?.revealPage(webView)  // backstop: content that never pings
             if isActiveWebView(webView) {
                 parent.isLoading = false
                 parent.hasRenderedContent = true
@@ -412,6 +421,7 @@ struct WebView: NSViewRepresentable {
 
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            parent.webViewManager?.revealPage(webView)  // don't leave a failed load invisible
             parent.isLoading = false
             Logger.log("WebView navigation failed: \(error.localizedDescription)", type: "WebView")
             Logger.log("Error domain: \(error._domain), code: \((error as NSError).code)", type: "WebView")
@@ -789,6 +799,22 @@ class WebViewContainer: NSView {
     // Clicking inside a non-focused pane moves focus there (sets selectedTabId).
     var onPaneFocus: ((UUID) -> Void)?
 
+    // Page white point, 100 = untouched. A black veil at (100 - whitePoint)%
+    // composites as a plain multiply: white drops to the chosen level, black text
+    // doesn't move at all, and midtones — most body text — shift about half as
+    // far. It sits over the web views rather than inside the page, so it covers
+    // PDFs and error pages too and can't break a site's layout the way an
+    // injected CSS filter would. ponytail: linear multiply, not a tone curve;
+    // swap in an NSView compositingFilter if the highlight rolloff needs shaping.
+    var whitePoint: Double = 100 {
+        didSet {
+            guard whitePoint != oldValue else { return }
+            dimOverlay.alphaValue = CGFloat((100 - min(max(whitePoint, 0), 100)) / 100)
+        }
+    }
+
+    private let dimOverlay = DimOverlay()
+
     var activeWebView: WKWebView? {
         // The WebView for the focused tab, not necessarily the manager's
         // activeWebView. Reads through pendingDisplay: setDisplayedTabs applies a
@@ -949,6 +975,11 @@ class WebViewContainer: NSView {
     }
 
     private func layoutPanes() {
+        // Keep the veil covering everything, and last in z-order — attach() and
+        // ensureDividers() both append subviews above it.
+        dimOverlay.frame = bounds
+        if subviews.last !== dimOverlay { addSubview(dimOverlay, positioned: .above, relativeTo: nil) }
+
         guard let webViewManager = webViewManager, !displayedTabIds.isEmpty else { return }
         let views = displayedTabIds.map { webViewManager.getWebView(for: $0) }
         let b = bounds
@@ -1070,6 +1101,21 @@ class WebViewContainer: NSView {
             super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
         }
     }
+}
+
+// The white-point veil. Transparent to the mouse so the page underneath still
+// gets every click.
+final class DimOverlay: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.black.cgColor
+        alphaValue = 0
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 // Draggable boundary between split panes: an 8pt grab strip drawing a 1pt

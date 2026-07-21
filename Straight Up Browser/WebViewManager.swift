@@ -95,6 +95,15 @@ class WebViewManager: NSObject, ObservableObject {
             var pct = (window.__subSpacePct || 90) / 100;
             window.scrollBy({top: (e.shiftKey ? -1 : 1) * window.innerHeight * pct});
         }, true);
+
+        // First-paint ping. Two rAFs: the first is scheduled before the frame
+        // that draws this document, the second lands after it — so by the time
+        // this posts there really is content on screen. beginFadeIn is waiting.
+        requestAnimationFrame(function() {
+            requestAnimationFrame(function() {
+                window.webkit.messageHandlers.sub.postMessage({type: 'painted'});
+            });
+        });
     })();
     """
 
@@ -499,6 +508,49 @@ class WebViewManager: NSObject, ObservableObject {
             // Right-click > Inspect Element via Safari Web Inspector
             webView.isInspectable = true
         }
+        // What WebKit paints where the page hasn't yet — the source of the white
+        // flash. Matching the window means even an unpainted web view is invisible.
+        #if os(macOS)
+        if #available(macOS 12.0, *) { webView.underPageBackgroundColor = .windowBackgroundColor }
+        #endif
+    }
+
+    // MARK: - Fade in on first paint
+
+    // Between didCommit (old document gone) and the page's first paint there is
+    // nothing to show, and WebKit flashes its background. So: hide at commit,
+    // fade in when the page's double-rAF ping says pixels exist. Backstops —
+    // didFinish, didFail, and a hard timer — cover content that never runs our
+    // script (PDFs, downloads, plugin content) so a tab can't be left blank.
+    private var fadePending: Set<ObjectIdentifier> = []
+
+    func beginFadeIn(_ webView: WKWebView) {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: "fadeInPages") == nil || defaults.bool(forKey: "fadeInPages") else { return }
+        fadePending.insert(ObjectIdentifier(webView))
+        setAlpha(webView, 0, duration: 0)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self, weak webView] in
+            guard let webView else { return }
+            self?.revealPage(webView)
+        }
+    }
+
+    func revealPage(_ webView: WKWebView) {
+        guard fadePending.remove(ObjectIdentifier(webView)) != nil else { return }
+        let ms = UserDefaults.standard.object(forKey: "fadeInDuration") as? Double ?? 250
+        setAlpha(webView, 1, duration: min(max(ms, 100), 1000) / 1000)
+    }
+
+    private func setAlpha(_ webView: WKWebView, _ alpha: CGFloat, duration: TimeInterval) {
+        #if os(macOS)
+        guard duration > 0 else { webView.alphaValue = alpha; return }
+        NSAnimationContext.runAnimationGroup {
+            $0.duration = duration
+            webView.animator().alphaValue = alpha
+        }
+        #else
+        UIView.animate(withDuration: duration) { webView.alpha = alpha }
+        #endif
     }
 
     // Navigation methods that delegate to the active web view
@@ -588,6 +640,8 @@ extension WebViewManager: WKScriptMessageHandler {
                     download.delegate = webView.navigationDelegate as? WKDownloadDelegate
                 }
             }
+        case "painted":
+            if let webView = message.webView { revealPage(webView) }
         case "linkDown":
             if let urlString = body["url"] as? String, let url = URL(string: urlString) {
                 NotificationCenter.default.post(name: .browserLinkPreviewDown, object: nil, userInfo: ["url": url])
