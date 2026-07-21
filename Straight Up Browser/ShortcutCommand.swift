@@ -127,13 +127,20 @@ struct Shortcut: Codable, Equatable, Hashable {
 // MARK: - Sections
 
 enum ShortcutSection: String, CaseIterable {
+    #if os(macOS)
+    case tabs, navigation, page, screenshots, tabBar, bookmarks, privacy, app
+    #else
     case tabs, navigation, page, tabBar, bookmarks, privacy, app
+    #endif
 
     var title: LocalizedStringResource {
         switch self {
         case .tabs: return "Tabs"
         case .navigation: return "Navigation"
         case .page: return "Page"
+        #if os(macOS)
+        case .screenshots: return "Screenshots"
+        #endif
         case .tabBar: return "Tab Bar"
         case .bookmarks: return "Bookmarks"
         case .privacy: return "Privacy"
@@ -193,6 +200,15 @@ extension ShortcutCommand {
     static let exportPDF    = Self("exportPDF", "Export as PDF", .page, Shortcut(key: "p", command: true))
     static let fullScreen   = Self("fullScreen", "Toggle Full Screen", .page, Shortcut(key: "f", command: true, shift: true))
 
+    #if os(macOS)
+    // Screenshots. macOS-only: every capture path is AppKit/WKWebView specific,
+    // so these must not reach the iPad cheat sheet as dead bindings.
+    static let screenshotVisible  = Self("screenshotVisible", "Screenshot Visible Area", .screenshots, Shortcut(key: "s", command: true))
+    static let screenshotFullPage = Self("screenshotFullPage", "Screenshot Full Page", .screenshots, Shortcut(key: "s", command: true, shift: true))
+    static let screenshotElement  = Self("screenshotElement", "Screenshot Element Under Cursor", .screenshots, Shortcut(key: "s", command: true, option: true))
+    static let screenshotWindow   = Self("screenshotWindow", "Screenshot Window and Tab Bar", .screenshots, Shortcut(key: "s", command: true, shift: true, option: true))
+    #endif
+
     // Tab Bar
     static let toggleTabBar = Self("toggleTabBar", "Toggle Tab Bar", .tabBar, Shortcut(key: "l", command: true, shift: true))
     static let hideTabBar   = Self("hideTabBar", "Hide Tab Bar", .tabBar, Shortcut(key: "`", command: true, option: true))
@@ -217,9 +233,17 @@ extension ShortcutCommand {
         Self("switchTab\(i)", "Show Tab \(i)", .tabs, Shortcut(key: "\(i)", command: true))
     }
 
+    #if os(macOS)
+    private static let screenshots: [ShortcutCommand] =
+        [screenshotVisible, screenshotFullPage, screenshotElement, screenshotWindow]
+    #else
+    private static let screenshots: [ShortcutCommand] = []
+    #endif
+
     static let all: [ShortcutCommand] =
         [newTab, closeTab, reopenTab, nextTab, previousTab, newIncognitoTab]
         + switchTabs
+        + screenshots
         + [openLocation, back, forward, reload, hardReload, reloadAll,
            findInPage, findNext, findPrevious, zoomIn, zoomOut, actualSize, printPage, exportPDF, fullScreen,
            toggleTabBar, hideTabBar, minimalTabBar, compactTabBar, wideTabBar,
@@ -447,10 +471,16 @@ enum ShortcutPreset: String, CaseIterable, Identifiable {
                 ShortcutCommand.showBookmarks.id: Shortcut(key: "b", command: true, option: true), // Show All Bookmarks
             ]
         case .arc:
-            return [
+            var overrides = [
                 ShortcutCommand.fullScreen.id: fullScreenCtrlCmd,
                 ShortcutCommand.toggleTabBar.id: Shortcut(key: "s", command: true), // toggle sidebar
             ]
+            #if os(macOS)
+            // Arc's ⌘S is the sidebar, which is our Screenshot Visible Area —
+            // move the screenshot rather than hand the preset a live conflict.
+            overrides[ShortcutCommand.screenshotVisible.id] = Shortcut(key: "s", command: true, control: true)
+            #endif
+            return overrides
         }
     }
 }

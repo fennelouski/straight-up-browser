@@ -554,6 +554,81 @@ struct ThemeDemo: View {
     }
 }
 
+/// Replays the real thing: a blank window, then the page fading in over the chosen duration.
+/// "Load" restarts it so you can feel a length before committing to it.
+struct FadeInDemo: View {
+    @Binding var duration: Double
+
+    @State private var shown = false
+
+    var body: some View {
+        VStack(spacing: 20) {
+            WindowFrame {
+                VStack(spacing: 8) {
+                    pageLine(width: 70)
+                    pageLine()
+                    pageLine()
+                    pageLine(width: 100)
+                }
+                .padding(14)
+                .frame(width: 220, height: 110, alignment: .top)
+                .opacity(shown ? 1 : 0)
+            }
+
+            HStack {
+                Slider(value: $duration, in: 100...1000, step: 50)
+                Text("\(Int(duration)) ms").font(.caption).monospacedDigit().frame(width: 60, alignment: .trailing)
+            }
+
+            Button("Load") { replay() }
+        }
+        .onAppear { replay() }
+        .onChange(of: duration) { replay() }
+    }
+
+    private func replay() {
+        shown = false
+        // One runloop hop so the reset commits before the fade animates from it.
+        DispatchQueue.main.async {
+            withAnimation(.easeIn(duration: duration / 1000)) { shown = true }
+        }
+    }
+}
+
+/// Two mock pages — a bright one and a dark one — under the chosen white point, so you can see
+/// what it does to backgrounds versus text before you commit.
+struct WhitePointDemo: View {
+    @Binding var whitePoint: Double
+
+    var body: some View {
+        VStack(spacing: 20) {
+            HStack(spacing: 16) {
+                sample(background: .white, text: .black)
+                sample(background: .black, text: .white)
+            }
+            .overlay(Color.black.opacity((100 - whitePoint) / 100).allowsHitTesting(false))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            HStack {
+                Slider(value: $whitePoint, in: 50...100, step: 5)
+                Text("\(Int(whitePoint))%").font(.caption).monospacedDigit().frame(width: 50, alignment: .trailing)
+            }
+        }
+    }
+
+    private func sample(background: Color, text: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("The quick brown fox").font(.caption).foregroundStyle(text)
+            Capsule().fill(text.opacity(0.5)).frame(height: 5)
+            Capsule().fill(text.opacity(0.5)).frame(height: 5)
+            Capsule().fill(text.opacity(0.5)).frame(maxWidth: 70).frame(height: 5)
+        }
+        .padding(12)
+        .frame(width: 130, height: 84, alignment: .top)
+        .background(background)
+    }
+}
+
 /// The one demo that edits live settings rather than a draft: the loading indicator spans five
 /// toggles, and modelling a five-field draft isn't worth it. Read-only popover (Done), toggles
 /// write straight through — the mock window animates a fake page load so you can see the result.
@@ -817,5 +892,187 @@ struct MemorySaverDemo: View {
             Image(systemName: icon).foregroundStyle(tint).frame(width: 18)
             Text(text).font(.callout)
         }
+    }
+}
+
+// MARK: - Screenshots
+
+/// What each capture shortcut frames, drawn on the shared mock window.
+struct ScreenshotKindDemo: View {
+    let kind: ScreenshotKind
+
+    var body: some View {
+        VStack(spacing: 16) {
+            WindowFrame {
+                HStack(spacing: 0) {
+                    // Tab bar stand-in — the only shot that includes it is .window.
+                    VStack(spacing: 5) {
+                        ForEach(0..<3, id: \.self) { _ in pageBlock(height: 8) }
+                        Spacer()
+                    }
+                    .padding(6)
+                    .frame(width: 46)
+                    .background(Color.primary.opacity(0.05))
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        pageBlock(height: 30)
+                            .overlay(frame(if: kind == .element))
+                        ForEach(0..<4, id: \.self) { _ in pageBlock(height: 6) }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(8)
+                    .overlay(frame(if: kind == .visible))
+                }
+                .frame(height: 130)
+                .overlay(frame(if: kind == .fullPage).opacity(0.9))
+            }
+            .padding(4)
+            .overlay(frame(if: kind == .window))
+            .animation(.easeInOut, value: kind)
+
+            Text(caption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var caption: LocalizedStringKey {
+        switch kind {
+        case .visible: return "The page as it sits on screen — no window chrome, no tab bar."
+        case .fullPage: return "Everything the page holds, including what's still below the fold."
+        case .element: return "Just the thing under the pointer: an image, a field, or a block of text."
+        case .window: return "The whole window, tab bar and frame included."
+        }
+    }
+
+    private func frame(if active: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 6)
+            .strokeBorder(SettingsTint.screenshots, lineWidth: 2)
+            .opacity(active ? 1 : 0)
+    }
+
+    private func pageBlock(height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 3)
+            .fill(Color.primary.opacity(0.10))
+            .frame(height: height)
+    }
+}
+
+/// What choosing PNG / JPEG / PDF actually buys you.
+struct ScreenshotFormatDemo: View {
+    @Binding var format: ScreenshotFormat
+
+    private var traits: (icon: String, headline: LocalizedStringKey, detail: LocalizedStringKey) {
+        switch format {
+        case .png: return ("photo", "Lossless", "Every pixel exactly as captured. Bigger files, perfectly crisp text.")
+        case .jpg: return ("photo.on.rectangle", "Smaller", "Compressed at 90%. Fine for photos, slightly soft on small text.")
+        case .pdf: return ("doc.richtext", "A document", "A full-page capture stays vector — the text is still selectable. Other captures become a one-page PDF of the image.")
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            VStack(spacing: 10) {
+                Image(systemName: traits.icon)
+                    .font(.system(size: 30))
+                    .foregroundStyle(SettingsTint.screenshots)
+                Text(traits.headline).font(.headline)
+                Text(traits.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(16)
+            .background(demoCard)
+            .animation(.easeInOut, value: format)
+
+            Picker("", selection: $format) {
+                ForEach(ScreenshotFormat.allCases) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+    }
+}
+
+/// Where a shortcut set to the shared folder actually writes.
+struct ScreenshotFolderDemo: View {
+    @Binding var path: String
+
+    private var display: String {
+        path.isEmpty ? "~/Pictures/Browser Screenshots" : (path as NSString).abbreviatingWithTildeInPath
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            VStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Image(systemName: "camera.fill").foregroundStyle(SettingsTint.screenshots)
+                    Text("Browser Screenshot example.com …png").fontDesign(.monospaced).font(.caption)
+                }
+                Image(systemName: "arrow.down").font(.caption).foregroundStyle(.tertiary)
+                HStack(spacing: 6) {
+                    Image(systemName: "folder.fill").foregroundStyle(SettingsTint.screenshots)
+                    Text(display).fontDesign(.monospaced).font(.caption)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(16)
+            .background(demoCard)
+            .animation(.easeInOut, value: display)
+
+            Text("Saved screenshots also show up in the Downloads window alongside your files.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Focused pane vs. the whole content area, while a split is open.
+struct ScreenshotSplitDemo: View {
+    @Binding var wholeArea: Bool
+
+    var body: some View {
+        VStack(spacing: 16) {
+            WindowFrame {
+                HStack(spacing: 6) {
+                    pane(focused: true)
+                    pane(focused: false)
+                }
+                .padding(6)
+                .frame(height: 110)
+                .overlay(highlight.opacity(wholeArea ? 1 : 0))
+            }
+            .animation(.easeInOut, value: wholeArea)
+
+            Text(wholeArea
+                 ? "Both panes land in one image."
+                 : "Only the pane you're working in is captured.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func pane(focused: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(0..<4, id: \.self) { _ in pageLineBlock() }
+            Spacer(minLength: 0)
+        }
+        .padding(6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
+        .overlay(highlight.opacity(focused && !wholeArea ? 1 : 0))
+    }
+
+    private var highlight: some View {
+        RoundedRectangle(cornerRadius: 6)
+            .strokeBorder(SettingsTint.screenshots, lineWidth: 2)
+    }
+
+    private func pageLineBlock() -> some View {
+        Capsule().fill(Color.primary.opacity(0.12)).frame(height: 5)
     }
 }

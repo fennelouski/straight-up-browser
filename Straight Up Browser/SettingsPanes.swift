@@ -376,6 +376,372 @@ struct DownloadsSettingsView: View {
     }
 }
 
+// MARK: - Window capture permission panel
+
+// Shown as a sheet the first time ⇧⌥⌘S runs, and from the "?" in Settings.
+// Two cards, each with a picture of the result: someone who just wants a
+// screenshot should be able to pick in a second without reading a paragraph.
+// `onCancel` nil = informational (opened from Settings, nothing to commit).
+struct WindowCapturePanel: View {
+    var onChoose: ((WindowCaptureMode) -> Void)?
+    var onCancel: (() -> Void)?
+
+    private var isInformational: Bool { onChoose == nil }
+
+    var body: some View {
+        VStack(spacing: 18) {
+            VStack(spacing: 6) {
+                Image(systemName: "macwindow.badge.plus")
+                    .font(.system(size: 30))
+                    .foregroundStyle(SettingsTint.screenshots)
+                Text("Include the tab bar?")
+                    .font(.title3.weight(.semibold))
+                Text("Two ways to shoot the window. One needs a macOS permission, one doesn't.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            HStack(alignment: .top, spacing: 14) {
+                card(
+                    mode: .full,
+                    icon: "checkmark.seal.fill",
+                    title: "Full Window",
+                    blurb: "Exactly what you see — your tabs included.",
+                    noteIcon: "lock.fill",
+                    note: "Needs Screen Recording permission",
+                    noteTint: .orange,
+                    showsTabs: true
+                )
+                card(
+                    mode: .limited,
+                    icon: "bolt.fill",
+                    title: "Window & Page",
+                    blurb: "The window and the page, right now.",
+                    noteIcon: "checkmark.shield.fill",
+                    note: "No permission, works anywhere",
+                    noteTint: .green,
+                    showsTabs: false
+                )
+            }
+
+            HStack(spacing: 6) {
+                Image(systemName: "gearshape").foregroundStyle(.tertiary)
+                Text("Change this any time in Settings → Screenshots. The other three screenshot shortcuts never ask for anything.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let onCancel {
+                Button("Cancel", action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(22)
+        .frame(width: isInformational ? 560 : 620)
+    }
+
+    private func card(
+        mode: WindowCaptureMode,
+        icon: String,
+        title: LocalizedStringKey,
+        blurb: LocalizedStringKey,
+        noteIcon: String,
+        note: LocalizedStringKey,
+        noteTint: Color,
+        showsTabs: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            preview(showsTabs: showsTabs)
+
+            HStack(spacing: 6) {
+                Image(systemName: icon).foregroundStyle(SettingsTint.screenshots)
+                Text(title).font(.headline)
+            }
+            Text(blurb)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 5) {
+                Image(systemName: noteIcon).foregroundStyle(noteTint)
+                Text(note).foregroundStyle(.secondary)
+            }
+            .font(.caption2)
+
+            if let onChoose {
+                Button(mode == .full ? "Ask for Permission" : "Use This") { onChoose(mode) }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 2)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.primary.opacity(0.04))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+                )
+        )
+    }
+
+    // A mock of the resulting image: same window either way, but the tab column
+    // is either your tabs or a flat block. This is the whole decision, drawn.
+    private func preview(showsTabs: Bool) -> some View {
+        WindowFrame {
+            HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 4) {
+                    if showsTabs {
+                        ForEach(0..<5, id: \.self) { index in
+                            HStack(spacing: 3) {
+                                Circle()
+                                    .fill(SettingsTint.screenshots.opacity(index == 0 ? 0.9 : 0.5))
+                                    .frame(width: 5, height: 5)
+                                Capsule().fill(Color.white.opacity(0.45)).frame(height: 4)
+                            }
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(5)
+                .frame(width: 44)
+                .frame(maxHeight: .infinity)
+                .background(showsTabs ? Color.black.opacity(0.75) : Color.gray.opacity(0.28))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Capsule().fill(Color.primary.opacity(0.25)).frame(width: 52, height: 6)
+                    ForEach(0..<5, id: \.self) { _ in
+                        Capsule().fill(Color.primary.opacity(0.12)).frame(height: 4)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(6)
+            }
+            .frame(height: 96)
+        }
+        .overlay(alignment: .bottomLeading) {
+            if !showsTabs {
+                Text("no tabs")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(Color.primary.opacity(0.10)))
+                    .padding(5)
+            }
+        }
+    }
+}
+
+// MARK: - Screenshots
+
+// Four capture shortcuts × three destinations × a format each. The grid only
+// stays readable because each shortcut is folded into its own DisclosureGroup
+// and every control is one ScreenshotSettings.binding call.
+struct ScreenshotsSettingsView: View {
+    @AppStorage(ScreenshotSettings.Key.sharedFolder) private var sharedFolder = ""
+    @AppStorage(ScreenshotSettings.Key.visibleWholeContentArea) private var visibleWholeContentArea = false
+    @AppStorage(ScreenshotSettings.Key.windowCaptureMode) private var windowCaptureMode = WindowCaptureMode.ask.rawValue
+    // Applied to every destination of every shortcut in one go — the fast path
+    // out of touching twelve pickers by hand.
+    @State private var bulkFormat = ScreenshotFormat.png
+    @State private var showingCaptureHelp = false
+
+    private var settings: ScreenshotSettings { .shared }
+    private var store: ShortcutStore { .shared }
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Shared folder") {
+                    HStack {
+                        TextField("~/Pictures/Browser Screenshots", text: $sharedFolder)
+                            .textFieldStyle(.roundedBorder)
+                        Button("Choose…") { chooseFolder(into: $sharedFolder) }
+                    }
+                }
+                SettingCaptionRow(
+                    caption: "Where any shortcut set to “save to the shared folder” writes.",
+                    title: "Shared Screenshots Folder",
+                    explanation: "Each shortcut can save to this one folder, to a folder of its own, or to both. Leave it empty and screenshots collect in ~/Pictures/Browser Screenshots.",
+                    value: $sharedFolder
+                ) { ScreenshotFolderDemo(path: $0) }
+
+                HStack {
+                    Picker("Set every format to", selection: $bulkFormat) {
+                        ForEach(ScreenshotFormat.allCases) { Text($0.label).tag($0) }
+                    }
+                    Button("Apply") { applyToAll(bulkFormat) }
+                }
+                SettingCaptionRow(
+                    caption: "Overwrites the format on every destination below.",
+                    title: "Format",
+                    explanation: "PNG is lossless and the safe default. JPEG is smaller but softens text. PDF keeps a full-page capture as vector — the text stays selectable — and wraps every other capture as a single page.",
+                    value: $bulkFormat
+                ) { ScreenshotFormatDemo(format: $0) }
+
+                Picker("⌘S in a split captures", selection: $visibleWholeContentArea) {
+                    Text("The focused pane").tag(false)
+                    Text("Every pane").tag(true)
+                }
+                SettingCaptionRow(
+                    caption: "Only matters while a split is open.",
+                    title: "Split Captures",
+                    explanation: "With a split open, ⌘S normally shoots just the pane you're working in. Switch it to every pane and you get the whole content area — all panes side by side, still without the tab bar.",
+                    value: $visibleWholeContentArea
+                ) { ScreenshotSplitDemo(wholeArea: $0) }
+            } header: {
+                SettingsLabel("All Screenshots", systemImage: "camera", tint: SettingsTint.screenshots)
+            }
+
+            ForEach(ScreenshotKind.allCases) { kind in
+                Section {
+                    DisclosureGroup {
+                        destinationRows(for: kind)
+                    } label: {
+                        HStack {
+                            Text(kind.title)
+                            Spacer()
+                            Text(store.shortcut(for: kind.command).displayString)
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    SettingCaptionRow(
+                        caption: kind.summary,
+                        title: kind.title,
+                        explanation: "Each destination is independent: you can put a PNG on the clipboard, a PDF in the shared folder, and a JPEG in this shortcut's own folder from a single press. Rebind the keys in Settings → Shortcuts.",
+                        value: .constant(kind)
+                    ) { ScreenshotKindDemo(kind: $0.wrappedValue) }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    @ViewBuilder
+    private func destinationRows(for kind: ScreenshotKind) -> some View {
+        let ownFolder = settings.binding(kind, \.ownFolder)
+        VStack(alignment: .leading, spacing: 8) {
+            destinationRow("Copy to clipboard", kind, \.clipboard)
+            destinationRow("Save to the shared folder", kind, \.shared)
+            destinationRow("Save to its own folder", kind, \.own)
+
+            if settings.config(for: kind).own.enabled {
+                HStack {
+                    TextField("Choose a folder for this shortcut", text: ownFolder)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Choose…") { chooseFolder(into: ownFolder) }
+                }
+                .padding(.leading, 20)
+            }
+
+            // Only the window shot can want Screen Recording, so the choice
+            // lives with it rather than cluttering the shared section.
+            if kind == .window {
+                Divider().padding(.vertical, 2)
+                HStack {
+                    Picker("Capture the tab bar", selection: $windowCaptureMode) {
+                        ForEach(WindowCaptureMode.allCases) { Text($0.label).tag($0.rawValue) }
+                    }
+                    Button { showingCaptureHelp = true } label: {
+                        Image(systemName: "questionmark.circle").foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("What's the difference?")
+                    .popover(isPresented: $showingCaptureHelp, arrowEdge: .trailing) {
+                        WindowCapturePanel()
+                    }
+                }
+                Text(windowCaptureModeExplanation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                // Only nag when the chosen mode actually needs something the
+                // user hasn't given — never when they've picked the limited path.
+                if windowCaptureMode == WindowCaptureMode.full.rawValue,
+                   !ScreenshotManager.hasScreenRecordingPermission {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Text("Screen Recording isn't granted yet, so this falls back to the limited capture.")
+                            .font(.caption)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 4)
+                        Button("Open System Settings") { ScreenshotManager.openScreenRecordingSettings() }
+                            .controlSize(.small)
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.10)))
+                }
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private var windowCaptureModeExplanation: LocalizedStringKey {
+        switch WindowCaptureMode(rawValue: windowCaptureMode) ?? .ask {
+        case .ask:
+            return "Browser will show you the two options the first time you press this shortcut, and remember what you pick."
+        case .full:
+            return "Captures the window exactly as you see it. Needs macOS Screen Recording permission — if it isn't granted, you get the limited version instead of nothing."
+        case .limited:
+            return "Captures the window and the page with no permission at all. The tab bar area comes out as a plain background rather than your tabs."
+        }
+    }
+
+    private func destinationRow(
+        _ label: LocalizedStringKey,
+        _ kind: ScreenshotKind,
+        _ path: WritableKeyPath<ScreenshotConfig, ScreenshotDestination>
+    ) -> some View {
+        let destination = settings.binding(kind, path)
+        return HStack {
+            Toggle(label, isOn: Binding(get: { destination.wrappedValue.enabled },
+                                        set: { destination.wrappedValue.enabled = $0 }))
+            Spacer()
+            Picker("", selection: Binding(get: { destination.wrappedValue.format },
+                                          set: { destination.wrappedValue.format = $0 })) {
+                ForEach(ScreenshotFormat.allCases) { Text($0.label).tag($0) }
+            }
+            .labelsHidden()
+            .frame(width: 90)
+            .disabled(!destination.wrappedValue.enabled)
+        }
+    }
+
+    private func applyToAll(_ format: ScreenshotFormat) {
+        for kind in ScreenshotKind.allCases {
+            settings.update(kind) {
+                $0.clipboard.format = format
+                $0.shared.format = format
+                $0.own.format = format
+            }
+        }
+    }
+
+    // Same NSOpenPanel shape DownloadsSettingsView uses.
+    private func chooseFolder(into path: Binding<String>) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.title = String(localized: "Choose Screenshots Folder")
+        panel.message = "Select a folder to save screenshots"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            path.wrappedValue = url.path
+        }
+    }
+}
+
 // MARK: - Appearance
 
 struct AppearanceSettingsView: View {
@@ -388,6 +754,11 @@ struct AppearanceSettingsView: View {
     @AppStorage("progressBarLeft") private var progressBarLeft = false
     @AppStorage("progressBarRight") private var progressBarRight = false
     @AppStorage("progressFaviconRing") private var progressFaviconRing = false
+
+    // Flicker control.
+    @AppStorage("fadeInPages") private var fadeInPages = true
+    @AppStorage("fadeInDuration") private var fadeInDuration = 250.0
+    @AppStorage("pageWhitePoint") private var pageWhitePoint = 100.0
 
     private let themes = ["Light", "Dark", "System"]
 
@@ -428,6 +799,43 @@ struct AppearanceSettingsView: View {
                 ) { _ in ProgressIndicatorDemo() }
             } header: {
                 SettingsLabel("Loading Progress", systemImage: "arrow.triangle.2.circlepath", tint: SettingsTint.appearance)
+            }
+
+            Section {
+                Toggle("Fade pages in once they've drawn", isOn: $fadeInPages)
+                if fadeInPages {
+                    LabeledContent("Fade length") {
+                        HStack {
+                            Slider(value: $fadeInDuration, in: 100...1000, step: 50).frame(width: 180)
+                            Text("\(Int(fadeInDuration)) ms").monospacedDigit().frame(width: 60, alignment: .trailing)
+                        }
+                    }
+                }
+                SettingCaptionRow(
+                    caption: "No white flash between tabs — the page appears only once it has pixels.",
+                    title: "Fade Pages In",
+                    explanation: "A loading page has nothing to draw yet, so browsers flash their background — usually white — until the first frame arrives. With this on, Browser keeps the page hidden through that gap and fades it in the moment the page actually paints. Pages that can't report a paint (PDFs, downloads, error pages) appear as soon as they finish loading.",
+                    value: $fadeInDuration
+                ) { FadeInDemo(duration: $0) }
+            } header: {
+                SettingsLabel("Page Fade", systemImage: "circle.lefthalf.filled", tint: SettingsTint.appearance)
+            }
+
+            Section {
+                LabeledContent("Max page brightness") {
+                    HStack {
+                        Slider(value: $pageWhitePoint, in: 50...100, step: 5).frame(width: 180)
+                        Text("\(Int(pageWhitePoint))%").monospacedDigit().frame(width: 60, alignment: .trailing)
+                    }
+                }
+                SettingCaptionRow(
+                    caption: "100% leaves pages alone. Lower caps how bright white can get.",
+                    title: "White Point",
+                    explanation: "Bright pages are the other half of screen flicker — a white page after a dark one is a jolt no fade can hide. This caps how bright the brightest parts of a page can go. Because it scales brightness rather than laying grey over the page, dark text barely moves while backgrounds come down, so text stays readable and roughly half as dimmed as the page around it.",
+                    value: $pageWhitePoint
+                ) { WhitePointDemo(whitePoint: $0) }
+            } header: {
+                SettingsLabel("White Point", systemImage: "sun.max", tint: SettingsTint.appearance)
             }
         }
         .formStyle(.grouped)

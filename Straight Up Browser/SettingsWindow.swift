@@ -27,6 +27,7 @@ enum SettingsTint {
     static let privacy = Color.indigo
     static let memory = Color.mint
     static let shortcuts = Color.green
+    static let screenshots = Color.cyan
 }
 
 /// A settings row or section header: title in the standard text colour, icon in its area's tint.
@@ -235,6 +236,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case shortcuts
     case content
     case downloads
+    case screenshots
     case appearance
     case security
     case memory
@@ -248,6 +250,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .shortcuts: return String(localized: "Shortcuts")
         case .content: return String(localized: "Content")
         case .downloads: return String(localized: "Downloads")
+        case .screenshots: return String(localized: "Screenshots")
         case .appearance: return String(localized: "Appearance")
         case .security: return String(localized: "Security")
         case .memory: return String(localized: "Memory")
@@ -263,6 +266,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .shortcuts: return String(localized: "Customize keyboard shortcuts")
         case .content: return String(localized: "JavaScript and page content")
         case .downloads: return String(localized: "Option-click downloads, folder")
+        case .screenshots: return String(localized: "Capture shortcuts, formats, folders")
         case .appearance: return String(localized: "Theme and loading progress")
         case .security: return String(localized: "SSL, ad blocking, automation")
         case .memory: return String(localized: "Free RAM from idle tabs")
@@ -276,6 +280,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .shortcuts: return "keyboard"
         case .content: return "curlybraces"
         case .downloads: return "arrow.down.circle"
+        case .screenshots: return "camera"
         case .appearance: return "paintbrush"
         case .security: return "lock.shield"
         case .memory: return "memorychip"
@@ -289,6 +294,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .shortcuts: return SettingsTint.shortcuts
         case .content: return SettingsTint.content
         case .downloads: return SettingsTint.downloads
+        case .screenshots: return SettingsTint.screenshots
         case .appearance: return SettingsTint.appearance
         case .security: return SettingsTint.security
         case .memory: return SettingsTint.memory
@@ -385,6 +391,7 @@ struct SettingsWindow: View {
         case .shortcuts: ShortcutsSettingsView()
         case .content: ContentSettingsView()
         case .downloads: DownloadsSettingsView()
+        case .screenshots: ScreenshotsSettingsView()
         case .appearance: AppearanceSettingsView()
         case .security: SecuritySettingsView()
         case .memory: MemorySettingsView()

@@ -19,6 +19,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         #if DEBUG
         ShortcutStore.selfCheck()
+        ScreenshotSettings.selfCheck()
         #endif
 
         // Disable automatic window tabbing
@@ -303,6 +304,30 @@ struct Straight_Up_BrowserApp: App {
                     Button("Export as PDF...") {
                         NotificationCenter.default.post(name: .browserExportPDF, object: nil)
                     }
+                }
+
+                // Lives inside the print group rather than its own CommandGroup:
+                // @CommandsBuilder caps top-level children at 10 and we're there.
+                Menu("Screenshot") {
+                    Button("Visible Area") {
+                        NotificationCenter.default.post(name: .browserScreenshotVisible, object: nil)
+                    }
+                    .keyboardShortcut(sc(.screenshotVisible))
+
+                    Button("Full Page") {
+                        NotificationCenter.default.post(name: .browserScreenshotFullPage, object: nil)
+                    }
+                    .keyboardShortcut(sc(.screenshotFullPage))
+
+                    Button("Element Under Cursor") {
+                        NotificationCenter.default.post(name: .browserScreenshotElement, object: nil)
+                    }
+                    .keyboardShortcut(sc(.screenshotElement))
+
+                    Button("Window and Tab Bar") {
+                        NotificationCenter.default.post(name: .browserScreenshotWindow, object: nil)
+                    }
+                    .keyboardShortcut(sc(.screenshotWindow))
                 }
             }
 

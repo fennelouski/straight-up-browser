@@ -202,6 +202,10 @@ struct ContentView: View {
     // Cmd+Shift+H shortcut cheat sheet
     @State private var showShortcutCheatSheet = false
 
+    // Shutter flash marking what a screenshot just captured.
+    @State private var flashRect: CGRect?
+    @State private var flashOpacity: Double = 0
+
     private var currentURL: URL? { activeTab?.url }
 
 
@@ -1050,6 +1054,22 @@ struct ContentView: View {
         }
     }
 
+    // Screenshot shutter flash, sized to exactly what was captured. The rect
+    // arrives in AppKit window coordinates (origin bottom-left); SwiftUI's root
+    // fills the same content view but counts y downward, hence the flip.
+    private var screenshotFlashOverlay: some View {
+        GeometryReader { geo in
+            if let rect = flashRect {
+                Rectangle()
+                    .fill(.white)
+                    .frame(width: rect.width, height: rect.height)
+                    .position(x: rect.midX, y: geo.size.height - rect.midY)
+                    .opacity(flashOpacity)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
     private var mainContent: some View {
         ZStack {
             webViewContent
@@ -1236,6 +1256,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.all) // Ignore safe areas to extend to edges
         .background(Color(.windowBackgroundColor)) // Set explicit background
+        .overlay(screenshotFlashOverlay)
         .onAppear {
             // One-time setup; onAppear can fire again (window reopen) and must
             // not recreate managers or stack observers
@@ -1307,6 +1328,18 @@ struct ContentView: View {
                         quitHoldActive = false
                         quitHoldProgress = 0
                     }
+                }
+
+                // Screenshot shutter flash
+                NotificationCenter.default.addObserver(
+                    forName: .browserScreenshotFlash,
+                    object: nil,
+                    queue: .main
+                ) { [self] notification in
+                    guard let rect = notification.userInfo?["rect"] as? CGRect else { return }
+                    flashRect = rect
+                    flashOpacity = 0.8
+                    withAnimation(.easeOut(duration: 0.22)) { flashOpacity = 0 }
                 }
 
                 // Cmd+Shift+H shortcut cheat sheet

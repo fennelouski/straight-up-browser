@@ -341,6 +341,20 @@ class NotificationManager {
             forName: .browserExportPDF, object: nil, queue: .main
         ) { [weak self] _ in self?.exportPDF() })
 
+        for (name, kind): (Notification.Name, ScreenshotKind) in [
+            (.browserScreenshotVisible, .visible),
+            (.browserScreenshotFullPage, .fullPage),
+            (.browserScreenshotElement, .element),
+            (.browserScreenshotWindow, .window),
+        ] {
+            observers.append(NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { [weak self] _ in
+                guard let self else { return }
+                ScreenshotManager.capture(kind, in: self.webViewManager)
+            })
+        }
+
         let getPageDataObserver = NotificationCenter.default.addObserver(
             forName: .browserGetPageData,
             object: nil,

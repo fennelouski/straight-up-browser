@@ -36,6 +36,15 @@ extension Notification.Name {
     static let browserPrint = Notification.Name("browserPrint")
     static let browserExportPDF = Notification.Name("browserExportPDF")
 
+    // Screenshot menu (macOS). Distinct from `browserScreenshot` below, which is
+    // the CLI's own capture-to-a-response-file command.
+    static let browserScreenshotVisible = Notification.Name("browserScreenshotVisible")
+    static let browserScreenshotFullPage = Notification.Name("browserScreenshotFullPage")
+    static let browserScreenshotElement = Notification.Name("browserScreenshotElement")
+    static let browserScreenshotWindow = Notification.Name("browserScreenshotWindow")
+    // Shutter flash over the captured region (userInfo["rect"]: CGRect in window coords)
+    static let browserScreenshotFlash = Notification.Name("browserScreenshotFlash")
+
     // Link preview (long-press) signals from the injected page script
     static let browserLinkPreviewDown = Notification.Name("browserLinkPreviewDown")
     static let browserLinkPreviewLongPress = Notification.Name("browserLinkPreviewLongPress")
