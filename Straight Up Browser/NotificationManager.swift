@@ -14,6 +14,7 @@ class NotificationManager {
     private var tabManager: TabManager
     private var navigationManager: NavigationManager
     private var webViewManager: WebViewManager
+    private var pageTranslator: PageTranslator
     private var showOmnibar: Binding<Bool>
     private var tabs: () -> [Tab]
     private var closeTabAction: (Tab, [Tab]) -> Void
@@ -32,6 +33,7 @@ class NotificationManager {
         tabManager: TabManager,
         navigationManager: NavigationManager,
         webViewManager: WebViewManager,
+        pageTranslator: PageTranslator,
         showOmnibar: Binding<Bool>,
         tabs: @escaping () -> [Tab],
         closeTabAction: @escaping (Tab, [Tab]) -> Void,
@@ -47,6 +49,7 @@ class NotificationManager {
         self.tabManager = tabManager
         self.navigationManager = navigationManager
         self.webViewManager = webViewManager
+        self.pageTranslator = pageTranslator
         self.showOmnibar = showOmnibar
         self.tabs = tabs
         self.closeTabAction = closeTabAction
@@ -340,6 +343,23 @@ class NotificationManager {
         observers.append(NotificationCenter.default.addObserver(
             forName: .browserExportPDF, object: nil, queue: .main
         ) { [weak self] _ in self?.exportPDF() })
+
+        observers.append(NotificationCenter.default.addObserver(
+            forName: .browserToggleTranslation, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.pageTranslator.toggle(webView: self.webViewManager.activeWebView)
+        })
+
+        observers.append(NotificationCenter.default.addObserver(
+            forName: .browserTranslateInSplit, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            let tabs = self.tabs()
+            guard let activeTab = self.tabManager.getActiveTab(from: tabs) else { return }
+            self.pageTranslator.translateIntoSplitPane(
+                tab: activeTab, tabManager: self.tabManager, webViewManager: self.webViewManager, tabs: tabs)
+        })
 
         for (name, kind): (Notification.Name, ScreenshotKind) in [
             (.browserScreenshotVisible, .visible),

@@ -23,6 +23,7 @@ struct WebView: NSViewRepresentable {
 
     var webViewManager: WebViewManager?
     var tabManager: TabManager?
+    var pageTranslator: PageTranslator?
     var tabs: [Tab]?
     var activeTabId: UUID?
     // Split view: all tabs shown as panes (ordered). Normally just [activeTabId].
@@ -46,6 +47,7 @@ struct WebView: NSViewRepresentable {
          hasRenderedContent: Binding<Bool>,
          webViewManager: WebViewManager?,
          tabManager: TabManager?,
+         pageTranslator: PageTranslator? = nil,
          tabs: [Tab]?,
          activeTabId: UUID?,
          displayedTabIds: [UUID] = [],
@@ -59,6 +61,7 @@ struct WebView: NSViewRepresentable {
         self._hasRenderedContent = hasRenderedContent
         self.webViewManager = webViewManager
         self.tabManager = tabManager
+        self.pageTranslator = pageTranslator
         self.tabs = tabs
         self.activeTabId = activeTabId
         self.displayedTabIds = displayedTabIds.isEmpty ? [activeTabId].compactMap { $0 } : displayedTabIds
@@ -303,6 +306,10 @@ struct WebView: NSViewRepresentable {
             // Load favicon for the current page
             loadFavicon(for: webView)
             if let tab = tab(for: webView) { TabSync.captureCacheState(from: webView, into: tab) }
+
+            // Async and JS-driven only (see translateScript) - can't interfere
+            // with interactivity the way the removed injection below did.
+            parent.pageTranslator?.maybeAutoTranslate(webView: webView)
 
             // Ensure WebView remains interactive after loading
             DispatchQueue.main.async {

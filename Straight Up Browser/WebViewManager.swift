@@ -107,6 +107,108 @@ class WebViewManager: NSObject, ObservableObject {
     })();
     """
 
+    // On-device page translation (PageTranslator.swift is the Swift-side driver).
+    // window.__subTranslate.sampleText() feeds language detection; .extract()
+    // wraps visible text nodes in spans and returns {id, text} for translation;
+    // .apply(map) writes translated text back in; .toggle() flips every wrapped
+    // span between translated/original. Peek: holding Option anywhere on the
+    // page reveals the original text of just the element under the cursor, via
+    // a body class + CSS :hover/::before (no per-mousemove JS, so it can't
+    // collide with KeyboardShortcutsManager's global modifier monitor).
+    private static let translateScript = """
+    (function() {
+        var nextId = 0, nodeMap = new Map(), showOriginal = false;
+
+        function isVisible(el) {
+            var style = window.getComputedStyle(el);
+            return style && style.display !== 'none' && style.visibility !== 'hidden';
+        }
+
+        function collectTextNodes(root, limit) {
+            var out = [];
+            var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+                acceptNode: function(node) {
+                    if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+                    var parent = node.parentElement;
+                    if (!parent || parent.isContentEditable) return NodeFilter.FILTER_REJECT;
+                    if (/^(SCRIPT|STYLE|NOSCRIPT|TEXTAREA)$/.test(parent.tagName)) return NodeFilter.FILTER_REJECT;
+                    if (!isVisible(parent)) return NodeFilter.FILTER_REJECT;
+                    return NodeFilter.FILTER_ACCEPT;
+                }
+            });
+            var node;
+            while (out.length < limit && (node = walker.nextNode())) out.push(node);
+            return out;
+        }
+
+        // ponytail: position:absolute overlay for the peek/toggle swap - good
+        // enough for prose text, can misalign on tightly-laid-out inline text.
+        // Upgrade to an inline-reflow-safe technique if that's reported janky.
+        function injectStyle() {
+            if (document.getElementById('sub-translate-style')) return;
+            var style = document.createElement('style');
+            style.id = 'sub-translate-style';
+            style.textContent =
+                '.sub-translated[data-original]{position:relative}' +
+                'body.sub-peek-mode .sub-translated:hover,' +
+                'body.sub-show-original .sub-translated{visibility:hidden}' +
+                'body.sub-peek-mode .sub-translated:hover::before,' +
+                'body.sub-show-original .sub-translated::before{' +
+                'content:attr(data-original);visibility:visible;position:absolute;' +
+                'left:0;top:0;width:max-content;max-width:100vw}';
+            (document.head || document.documentElement).appendChild(style);
+        }
+        if (document.head) { injectStyle(); } else {
+            document.addEventListener('DOMContentLoaded', injectStyle);
+        }
+
+        window.__subTranslate = {
+            sampleText: function() {
+                return document.body ? document.body.innerText.slice(0, 2000) : '';
+            },
+            hasTranslation: function() {
+                return nodeMap.size > 0;
+            },
+            extract: function() {
+                if (!document.body) return [];
+                var results = [];
+                collectTextNodes(document.body, 500).forEach(function(node) {
+                    var span = document.createElement('span');
+                    span.className = 'sub-translated';
+                    var id = 'st' + (nextId++);
+                    span.dataset.tid = id;
+                    span.dataset.original = node.nodeValue;
+                    node.parentNode.replaceChild(span, node);
+                    span.appendChild(node);
+                    nodeMap.set(id, node);
+                    results.push({id: id, text: node.nodeValue});
+                });
+                return results;
+            },
+            apply: function(map) {
+                Object.keys(map).forEach(function(id) {
+                    var node = nodeMap.get(id);
+                    if (node) node.nodeValue = map[id];
+                });
+            },
+            toggle: function() {
+                showOriginal = !showOriginal;
+                if (document.body) document.body.classList.toggle('sub-show-original', showOriginal);
+            }
+        };
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Alt' && document.body) document.body.classList.add('sub-peek-mode');
+        }, true);
+        document.addEventListener('keyup', function(e) {
+            if (e.key === 'Alt' && document.body) document.body.classList.remove('sub-peek-mode');
+        }, true);
+        window.addEventListener('blur', function() {
+            if (document.body) document.body.classList.remove('sub-peek-mode');
+        });
+    })();
+    """
+
     // Store web views per tab ID
     private var webViews: [UUID: WKWebView] = [:]
 
@@ -477,6 +579,9 @@ class WebViewManager: NSObject, ObservableObject {
         }
         configuration.userContentController.addUserScript(
             WKUserScript(source: Self.pageScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        )
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: Self.translateScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         )
         // Must run before any page code so feature detection sees the truth, and
         // in subframes because sign-in flows are often framed.

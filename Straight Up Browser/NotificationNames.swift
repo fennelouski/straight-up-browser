@@ -35,6 +35,8 @@ extension Notification.Name {
     static let browserZoomReset = Notification.Name("browserZoomReset")
     static let browserPrint = Notification.Name("browserPrint")
     static let browserExportPDF = Notification.Name("browserExportPDF")
+    static let browserToggleTranslation = Notification.Name("browserToggleTranslation")
+    static let browserTranslateInSplit = Notification.Name("browserTranslateInSplit")
 
     // Screenshot menu (macOS). Distinct from `browserScreenshot` below, which is
     // the CLI's own capture-to-a-response-file command.

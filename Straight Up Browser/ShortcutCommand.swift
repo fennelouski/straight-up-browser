@@ -199,6 +199,8 @@ extension ShortcutCommand {
     static let printPage    = Self("printPage", "Print", .page, Shortcut(key: "p", command: true, shift: true))
     static let exportPDF    = Self("exportPDF", "Export as PDF", .page, Shortcut(key: "p", command: true))
     static let fullScreen   = Self("fullScreen", "Toggle Full Screen", .page, Shortcut(key: "f", command: true, shift: true))
+    static let toggleTranslation = Self("toggleTranslation", "Toggle Page Translation", .page, Shortcut(key: "t", command: true, option: true))
+    static let translateInSplit  = Self("translateInSplit", "Open Translation in Split Pane", .page, Shortcut(key: "t", command: true, shift: true, option: true))
 
     #if os(macOS)
     // Screenshots. macOS-only: every capture path is AppKit/WKWebView specific,
@@ -246,6 +248,7 @@ extension ShortcutCommand {
         + screenshots
         + [openLocation, back, forward, reload, hardReload, reloadAll,
            findInPage, findNext, findPrevious, zoomIn, zoomOut, actualSize, printPage, exportPDF, fullScreen,
+           toggleTranslation, translateInSplit,
            toggleTabBar, hideTabBar, minimalTabBar, compactTabBar, wideTabBar,
            addBookmark, showBookmarks, clearSiteData, convertToIncognito,
            omnibar, quickOpen, shortcutOverlay, settings, help, extensionPopup]

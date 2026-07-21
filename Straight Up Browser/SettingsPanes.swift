@@ -293,6 +293,8 @@ final class KeyRecorder {
 struct ContentSettingsView: View {
     @AppStorage("javaScriptEnabled") private var javaScriptEnabled = true
     @AppStorage("pinchToZoomEnabled") private var pinchToZoomEnabled = true
+    @AppStorage("autoTranslateEnabled") private var autoTranslateEnabled = true
+    @AppStorage("translationPreferredLanguages") private var translationPreferredLanguages = ""
 
     var body: some View {
         Form {
@@ -318,6 +320,18 @@ struct ContentSettingsView: View {
                 ) { PinchZoomDemo(enabled: $0) }
             } header: {
                 SettingsLabel("Zoom", systemImage: "plus.magnifyingglass", tint: SettingsTint.content)
+            }
+
+            Section {
+                Toggle("Auto-translate pages", isOn: $autoTranslateEnabled)
+                LabeledContent("Languages you read") {
+                    TokenField(text: $translationPreferredLanguages, placeholder: "en  es  fr")
+                }
+            } header: {
+                SettingsLabel("Translation", systemImage: "character.bubble", tint: SettingsTint.content)
+            } footer: {
+                Text("On-device — nothing leaves your Mac. A page in a language outside this list translates automatically. ⌥⌘T flips original/translated; hold ⌥ over any text to peek at the original; ⇧⌥⌘T opens a translated copy in a split pane. ISO codes — leave empty to use your system languages.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

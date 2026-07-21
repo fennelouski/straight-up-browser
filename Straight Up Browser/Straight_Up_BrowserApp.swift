@@ -395,6 +395,18 @@ struct Straight_Up_BrowserApp: App {
 
                 Divider()
 
+                Button("Toggle Page Translation") {
+                    NotificationCenter.default.post(name: .browserToggleTranslation, object: nil)
+                }
+                .keyboardShortcut(sc(.toggleTranslation))
+
+                Button("Open Translation in Split Pane") {
+                    NotificationCenter.default.post(name: .browserTranslateInSplit, object: nil)
+                }
+                .keyboardShortcut(sc(.translateInSplit))
+
+                Divider()
+
                 Button("Toggle Tab Bar") {
                     NotificationCenter.default.post(name: .browserToggleTabBar, object: nil)
                 }

@@ -10,6 +10,7 @@ import SwiftData
 import AppKit
 import WebKit
 import Combine
+import Translation
 import UniformTypeIdentifiers
 
 // Type alias to disambiguate our Tab model from SwiftUI's Tab view
@@ -173,6 +174,7 @@ struct ContentView: View {
     // Managers
     @StateObject private var tabManager: TabManager
     @StateObject private var linkPreview = LinkPreviewManager()
+    @StateObject private var pageTranslator = PageTranslator()
     @State private var navigationManager: NavigationManager?
     @State private var notificationManager: NotificationManager?
     @State private var keyboardShortcutsManager: KeyboardShortcutsManager?
@@ -582,6 +584,7 @@ struct ContentView: View {
                         hasRenderedContent: $hasRenderedContent,
                         webViewManager: webViewManager,
                         tabManager: tabManager,
+                        pageTranslator: pageTranslator,
                         tabs: allTabs,
                         activeTabId: tabManager.selectedTabId,
                         displayedTabIds: displayedTabIds,
@@ -1349,6 +1352,11 @@ struct ContentView: View {
         .ignoresSafeArea(.all) // Ignore safe areas to extend to edges
         .background(Color(.windowBackgroundColor)) // Set explicit background
         .overlay(screenshotFlashOverlay)
+        // One session, serialized by pageTranslator's own queue: it advances
+        // `configuration` to the next pending request as each one finishes.
+        .translationTask(pageTranslator.configuration) { session in
+            await pageTranslator.perform(session: session)
+        }
         .onAppear {
             // One-time setup; onAppear can fire again (window reopen) and must
             // not recreate managers or stack observers
@@ -1574,6 +1582,7 @@ struct ContentView: View {
             tabManager: tabManager,
             navigationManager: navigationManager,
             webViewManager: webViewManager,
+            pageTranslator: pageTranslator,
             showOmnibar: $showOmnibar,
             tabs: { self.allTabs },
             closeTabAction: { tab, tabs in
