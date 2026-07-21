@@ -136,6 +136,24 @@ class BrowserCLI {
             newTab = true
         }
 
+        // screenshot-only flags, reusing the same generic strip-before-dispatch
+        // approach as --new above.
+        var fullPage = false
+        if let index = commandParts.firstIndex(of: "--full-page") {
+            commandParts.remove(at: index)
+            fullPage = true
+        }
+        var toClipboard = false
+        if let index = commandParts.firstIndex(of: "--clipboard") {
+            commandParts.remove(at: index)
+            toClipboard = true
+        }
+        var toShared = false
+        if let index = commandParts.firstIndex(of: "--shared") {
+            commandParts.remove(at: index)
+            toShared = true
+        }
+
         let action = commandParts.first?.lowercased()
         let parameter = commandParts.count > 1 ? commandParts[1..<commandParts.count].joined(separator: " ") : nil
 
@@ -206,6 +224,9 @@ class BrowserCLI {
         case "screenshot":
             var userInfo: [String: Any] = [:]
             if let responseFilePath = responseFilePath { userInfo["responseFilePath"] = responseFilePath }
+            if fullPage { userInfo["fullPage"] = true }
+            if toClipboard { userInfo["clipboard"] = true }
+            if toShared { userInfo["shared"] = true }
             NotificationCenter.default.post(name: .browserScreenshot, object: nil, userInfo: userInfo)
         case "notify":
             NotificationCenter.default.post(name: .browserNotifyUser, object: nil,

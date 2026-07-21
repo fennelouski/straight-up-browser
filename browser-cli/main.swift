@@ -257,7 +257,13 @@ func printUsage() {
     Reading the page:
       snapshot                 Compact text outline: URL, title, interactive
                                elements with CSS selectors, page text
-      screenshot [path]        Save a PNG of the page (default ./screenshot.png)
+      screenshot [flags] [path]
+                               Save a PNG of the page (default ./screenshot.png)
+        --full-page              Capture the whole scrollable document, not
+                                  just the visible viewport
+        --clipboard               Also copy the PNG to the system clipboard
+        --shared                  Also save into the app's Shared Screenshots
+                                  folder (Settings > Screenshots)
       get [url|current]        Full page JSON (html, text, links, images, meta)
 
     Interacting:
@@ -282,6 +288,7 @@ func printUsage() {
       browser-cli click '#more-info' && browser-cli wait
       browser-cli type 'input[name=q]' hello world
       browser-cli js 'document.title'
+      browser-cli screenshot --full-page page.png
       browser-cli notify "Please solve the captcha in the browser window"
 
     Install on PATH (tool ships inside the app bundle):
@@ -340,7 +347,7 @@ person: real cookies, real sessions, real rendering.
 | Command | Output |
 |---|---|
 | `snapshot` | Plain text, cheap to read. `URL:`/`TITLE:` lines, then `INTERACTIVE (n):` - one line per visible link/button/input with a **CSS selector you can pass to `click`/`type`** - then `TEXT:` (page text, capped at 6000 chars). Start here; it's the cheapest way to see a page. |
-| `screenshot [path]` | Saves a PNG (default `./screenshot.png`), prints `{"ok":true,"path":"..."}`. Use when you need to *look* at the page (layout, captcha, images). |
+| `screenshot [--full-page] [--clipboard] [--shared] [path]` | Saves a PNG (default `./screenshot.png`), prints `{"ok":true,"path":"..."}`. Use when you need to *look* at the page (layout, captcha, images). By default it captures only the visible viewport; pass `--full-page` to capture the whole scrollable document top to bottom. `--clipboard` also copies the PNG to the system clipboard; `--shared` also drops a copy into the app's Shared Screenshots folder (Settings > Screenshots) - both are useful for handing the image to a human alongside the saved file. |
 | `get [url\|current]` | Full JSON: `{url,title,html,text,links[],images[],metaTags[]}`. Huge - prefer `snapshot`. With a URL argument (scheme required) it loads that page **offscreen** without touching your tabs. |
 
 ### Interacting (active tab)
@@ -558,8 +565,16 @@ case "snapshot":
     print(envelope["result"] as? String ?? "")
 
 case "screenshot":
-    let target = arguments.count > 2 ? arguments[2] : "screenshot.png"
-    let data = requestResponse("screenshot", timeout: 30)
+    var rest = Array(arguments.dropFirst(2))
+    var flags = ""
+    for flag in ["--full-page", "--clipboard", "--shared"] {
+        if let index = rest.firstIndex(of: flag) {
+            rest.remove(at: index)
+            flags += " \(flag)"
+        }
+    }
+    let target = rest.first ?? "screenshot.png"
+    let data = requestResponse("screenshot\(flags)", timeout: 30)
     // The app writes the PNG bytes straight into the response file; anything
     // that isn't a PNG is a JSON error
     if data.prefix(4) == Data([0x89, 0x50, 0x4E, 0x47]) {

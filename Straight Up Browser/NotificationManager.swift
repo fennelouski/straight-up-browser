@@ -460,11 +460,14 @@ class NotificationManager {
             forName: .browserScreenshot, object: nil, queue: .main
         ) { [weak self] notification in
             let path = notification.userInfo?["responseFilePath"] as? String
+            let fullPage = notification.userInfo?["fullPage"] as? Bool ?? false
+            let toClipboard = notification.userInfo?["clipboard"] as? Bool ?? false
+            let toShared = notification.userInfo?["shared"] as? Bool ?? false
             guard let webView = self?.webViewManager.activeWebView else {
                 BrowserCLI.writeResponse(["error": "no active tab"], to: path)
                 return
             }
-            webView.takeSnapshot(with: nil) { image, error in
+            let deliver: (NSImage?, Error?) -> Void = { image, error in
                 guard let path = path else { return }
                 guard let image = image,
                       let tiff = image.tiffRepresentation,
@@ -473,9 +476,19 @@ class NotificationManager {
                     BrowserCLI.writeResponse(["error": error?.localizedDescription ?? "snapshot failed"], to: path)
                     return
                 }
+                if toClipboard { ScreenshotManager.copyPNGToClipboard(png) }
+                if toShared { ScreenshotManager.writePNGToSharedFolder(png, source: webView.url, pageTitle: webView.title) }
                 // Binary PNG straight into the response file; the CLI sniffs
                 // the magic bytes and moves it to the requested path
                 try? png.write(to: URL(fileURLWithPath: path), options: .atomic)
+            }
+            // takeSnapshot(with: nil) only ever captures the current viewport -
+            // `--full-page` needs the resize-and-snapshot dance that actually
+            // covers the whole scrollable document.
+            if fullPage {
+                ScreenshotManager.snapshotFullPage(webView) { deliver($0, nil) }
+            } else {
+                webView.takeSnapshot(with: nil) { image, error in deliver(image, error) }
             }
         })
 

@@ -382,9 +382,18 @@ enum ScreenshotManager {
             return
         }
 
+        snapshotFullPage(webView) { deliver($0, kind: kind, webView: webView) }
+    }
+
+    /// Resizes the webview to the full document height, snapshots it, and
+    /// restores the original frame. `takeSnapshot(with: nil)` only ever
+    /// captures the current viewport — this is the one path that actually
+    /// gets the whole scrollable page, top to bottom. Shared by the in-app
+    /// Full Page shortcut and the CLI's `screenshot --full-page`.
+    static func snapshotFullPage(_ webView: WKWebView, completion: @escaping (NSImage?) -> Void) {
         webView.evaluateJavaScript("[document.documentElement.scrollWidth, document.documentElement.scrollHeight]") { result, _ in
             guard let size = result as? [Double], size.count == 2 else {
-                snapshot(webView, rect: nil) { deliver($0, kind: kind, webView: webView) }
+                snapshot(webView, rect: nil, completion: completion)
                 return
             }
             let zoom = max(webView.magnification, 0.01)
@@ -397,7 +406,7 @@ enum ScreenshotManager {
             DispatchQueue.main.async {
                 snapshot(webView, rect: nil) { image in
                     webView.frame = original
-                    deliver(image, kind: kind, webView: webView)
+                    completion(image)
                 }
             }
         }
@@ -562,9 +571,13 @@ enum ScreenshotManager {
     }
 
     private static func fileName(for shot: Shot) -> String {
+        fileName(source: shot.source, pageTitle: shot.pageTitle)
+    }
+
+    private static func fileName(source: URL?, pageTitle: String?) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
-        let site = shot.source?.host ?? shot.pageTitle ?? "Page"
+        let site = source?.host ?? pageTitle ?? "Page"
         // Slashes and colons would fork the path or confuse Finder.
         let safe = site.components(separatedBy: CharacterSet(charactersIn: "/:")).joined(separator: "-")
         return "Browser Screenshot \(safe) \(formatter.string(from: Date()))"
@@ -578,6 +591,35 @@ enum ScreenshotManager {
             suffix += 1
         }
         return candidate
+    }
+}
+
+// MARK: - CLI destinations
+
+// browser-cli's `screenshot --clipboard` / `--shared` flags reuse the same
+// two destinations the in-app shortcuts write to, without going through
+// `Shot`/`ScreenshotConfig` (the CLI always hands back raw PNG bytes over
+// the response file, regardless of what a shortcut's format setting is).
+extension ScreenshotManager {
+    static func copyPNGToClipboard(_ data: Data) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.declareTypes([.png], owner: nil)
+        pasteboard.setData(data, forType: .png)
+    }
+
+    @discardableResult
+    static func writePNGToSharedFolder(_ data: Data, source: URL?, pageTitle: String?) -> URL? {
+        let folder = ScreenshotSettings.shared.sharedFolder
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = uniqueURL(in: folder, name: fileName(source: source, pageTitle: pageTitle), ext: "png")
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            Logger.log("CLI screenshot write failed: \(error.localizedDescription)", type: "ScreenshotManager")
+            return nil
+        }
+        DownloadManager.shared.record(url, kind: .download, source: source)
+        return url
     }
 }
 

@@ -37,7 +37,7 @@ For development, `./build-cli.sh` still produces a standalone `./browser-cli-too
 | `tabs` | Print open tabs as JSON (1-based `index`) |
 | `switch <index>` | Make tab `<index>` active |
 | `snapshot` | Compact plain-text outline: URL, title, interactive elements with CSS selectors, page text — the cheap way for an agent to "see" the page |
-| `screenshot [path]` | Save a PNG of the active tab (default `./screenshot.png`) |
+| `screenshot [--full-page] [--clipboard] [--shared] [path]` | Save a PNG of the active tab (default `./screenshot.png`). `--full-page` captures the whole scrollable document instead of just the visible viewport; `--clipboard` also copies it to the system clipboard; `--shared` also drops a copy in the app's Shared Screenshots folder (Settings → Screenshots) |
 | `get [url\|current]` | Full page JSON (`html`, `text`, `links`, `images`, `metaTags`); with a URL it loads offscreen without touching your tabs |
 | `js <code>` | Run JavaScript in the active tab; prints `{"ok":true,"result":...}` |
 | `click <selector>` | Click an element (JavaScript click) |
