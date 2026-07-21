@@ -19,17 +19,6 @@
     {
       "layers" : [
         {
-          "image-name" : "macOS_icon_1024 copy 2.png",
-          "name" : "macOS_icon_1024 copy 2",
-          "position" : {
-            "scale" : 1,
-            "translation-in-points" : [
-              0,
-              0
-            ]
-          }
-        },
-        {
           "blend-mode" : "normal",
           "hidden" : false,
           "image-name" : "macOS_icon_1024 copy.png",
