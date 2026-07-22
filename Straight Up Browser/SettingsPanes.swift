@@ -23,6 +23,7 @@ struct GeneralSettingsView: View {
     @AppStorage("cmdPExportsPDF") private var cmdPExportsPDF = true
     @AppStorage(GlobalOmnibarHotkey.defaultsKey) private var globalOmnibarHotkey = GlobalOmnibarHotkey.defaultChord
     @AppStorage(DefaultBrowser.promptEnabledKey) private var defaultBrowserPrompt = true
+    @AppStorage(KeyboardShortcutsManager.quitHoldPercentKey) private var quitHoldPercent = KeyboardShortcutsManager.quitHoldDefaultPercent
 
     @AppStorage(TabSync.Key.enabled) private var tabSyncEnabled = false
     @AppStorage(TabSync.Key.mode) private var tabSyncMode = TabSyncMode.openOnly.rawValue
@@ -145,6 +146,26 @@ struct GeneralSettingsView: View {
                 ) { HotkeyDemo(chord: $0) }
             } header: {
                 SettingsLabel("Behavior", systemImage: "slider.horizontal.3", tint: SettingsTint.general)
+            }
+
+            Section {
+                LabeledContent("Hold ⌘Q to quit") {
+                    HStack {
+                        Text("Quick").font(.caption).foregroundStyle(.secondary)
+                        Slider(value: $quitHoldPercent,
+                               in: KeyboardShortcutsManager.quitHoldMinPercent...KeyboardShortcutsManager.quitHoldMaxPercent)
+                            .frame(width: 160)
+                        Text("Slow").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                SettingCaptionRow(
+                    caption: "How long you need to hold ⌘Q before Browser quits.",
+                    title: "Quit Safety",
+                    explanation: "⌘Q doesn't quit on tap — you hold it, and a bar fills to show you're about to quit. Letting go before it fills cancels. This sets how long that hold takes: quick if you're confident, slow if you'd rather it take real effort to close the app by accident.",
+                    value: $quitHoldPercent
+                ) { QuitHoldDemo(percent: $0) }
+            } header: {
+                SettingsLabel("Quit Safety", systemImage: "power", tint: SettingsTint.general)
             }
         }
         .formStyle(.grouped)

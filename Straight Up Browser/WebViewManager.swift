@@ -272,7 +272,9 @@ class WebViewManager: NSObject, ObservableObject {
     // Archive every open tab's page state to disk. Live web views win over a
     // stale saved copy for the same tab. ponytail: uncapped file; if heavy
     // sessions bloat it, cap total bytes or drop the least-recently-used tabs.
-    @objc private func persistInteractionStates() {
+    // Internal (not private) so the hold-to-quit gate can trigger it early,
+    // while the progress bar is still filling — see KeyboardShortcutsManager.
+    @objc func persistInteractionStates() {
         guard #available(macOS 12.0, *), let url = Self.interactionStateFileURL else { return }
         var out: [String: Data] = [:]
         // Never persist incognito tabs' page state — that would write a private URL

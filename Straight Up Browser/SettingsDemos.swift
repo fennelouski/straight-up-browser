@@ -668,6 +668,54 @@ struct ThemeDemo: View {
     }
 }
 
+/// Press and hold the pill to feel the actual hold length — same bar, same
+/// linear fill, scaled the same way the real ⌘Q gate is (percent × 2s).
+struct QuitHoldDemo: View {
+    @Binding var percent: Double
+
+    @State private var progress: Double = 0
+
+    private var duration: Double {
+        max(KeyboardShortcutsManager.quitHoldMinPercent, min(KeyboardShortcutsManager.quitHoldMaxPercent, percent)) * 2.0
+    }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            WindowFrame {
+                VStack(spacing: 10) {
+                    Image(systemName: "power")
+                        .foregroundStyle(.secondary)
+                    ProgressView(value: progress)
+                        .frame(width: 140)
+                }
+                .padding(14)
+                .frame(width: 220, height: 90)
+            }
+
+            HStack {
+                Text("Quick").font(.caption).foregroundStyle(.secondary)
+                Slider(value: $percent,
+                       in: KeyboardShortcutsManager.quitHoldMinPercent...KeyboardShortcutsManager.quitHoldMaxPercent)
+                Text("Slow").font(.caption).foregroundStyle(.secondary)
+            }
+
+            Text("Press and hold")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(.quaternary, in: Capsule())
+                .onLongPressGesture(minimumDuration: 0.05, maximumDistance: .infinity, perform: {}, onPressingChanged: { pressing in
+                    if pressing {
+                        progress = 0
+                        withAnimation(.linear(duration: duration)) { progress = 1 }
+                    } else {
+                        withAnimation(.easeOut(duration: 0.15)) { progress = 0 }
+                    }
+                })
+        }
+    }
+}
+
 /// Replays the real thing: a blank window, then the page fading in over the chosen duration.
 /// "Load" restarts it so you can feel a length before committing to it.
 struct FadeInDemo: View {

@@ -1512,6 +1512,11 @@ struct ContentView: View {
         .onChange(of: tabManager.selectedTabId) { oldValue, newValue in
             Logger.log("ContentView onChange selectedTabId: \(oldValue?.uuidString ?? "nil") -> \(newValue?.uuidString ?? "nil")", type: "ContentView")
 
+            // Switching away from the blank tab the last new-tab command
+            // created closes it automatically, so repeated ⌘T doesn't pile
+            // up abandoned blank tabs.
+            tabManager.handleSelectionChanged(from: oldValue, tabs: allTabs)
+
             // Persist which tab is active so relaunch restores the selection
             tabManager.updateActiveTab(in: allTabs)
 
@@ -1592,19 +1597,13 @@ struct ContentView: View {
                 tabManager.closeTab(tab, tabs: tabs)
             },
             createNewTabAction: {
-                // Close empty tabs before creating a new one
-                let emptyTabs = self.tabs.filter { $0.url == nil }
-                for emptyTab in emptyTabs {
-                    if emptyTab.id != tabManager.selectedTabId {
-                        tabManager.closeTab(emptyTab, tabs: allTabs)
-                    }
-                }
-
                 // Inherit the active tab's session so Cmd+T stays in the current
                 // container/incognito (a fresh incognito comes from ⇧⌘N instead).
-                _ = self.tabManager.createTab(inheriting: self.activeSession())
-                // Show omnibar when creating a new tab
-                self.showOmnibar = true
+                // A second press while still on the blank tab undoes it instead
+                // of creating another (see TabManager.newTabOrUndo).
+                if tabManager.newTabOrUndo(tabs: allTabs, inheriting: self.activeSession()) != nil {
+                    self.showOmnibar = true
+                }
             },
             setTabBarWidth: { width in
                 self.tabBarWidth = width
@@ -1624,23 +1623,17 @@ struct ContentView: View {
             hardReloadAction: { self.hardReload() },
             reloadAllTabsAction: { self.reloadAllTabs() },
             goBackAction: { self.goBack() },
-            goForwardAction: { self.goForward() }
+            goForwardAction: { self.goForward() },
+            webViewManager: webViewManager
         )
     }
 
     private func createNewTab() {
-        // Close empty tabs before creating a new one
-        let emptyTabs = tabs.filter { $0.url == nil }
-        for emptyTab in emptyTabs {
-            if emptyTab.id != tabManager.selectedTabId {
-                tabManager.closeTab(emptyTab, tabs: allTabs)
-            }
+        // Inherit the active tab's session (matches Cmd+T). A second press
+        // while still on the blank tab undoes it instead of creating another.
+        if tabManager.newTabOrUndo(tabs: allTabs, inheriting: activeSession()) != nil {
+            showOmnibar = true
         }
-
-        // Inherit the active tab's session (matches Cmd+T).
-        _ = tabManager.createTab(inheriting: activeSession())
-        // Show omnibar when creating a new tab
-        showOmnibar = true
     }
 
     // The active tab's session, so a new tab (Cmd+T / +) stays in the same

@@ -19,10 +19,29 @@ class KeyboardShortcutsManager {
     private var reloadAllTabsAction: () -> Void
     private var goBackAction: () -> Void
     private var goForwardAction: () -> Void
+    private weak var webViewManager: WebViewManager?
     private var monitorToken: Any?
 
-    // Hold Cmd+Q for 2 seconds to quit (Chrome-style)
-    private static let quitHoldDuration: TimeInterval = 2.0
+    // Hold Cmd+Q to quit (Chrome-style). How long is user-configurable in
+    // Settings — quitHoldPercentKey stores 0.08 (quick) to 1.0 (slow), scaled
+    // against the max bar duration. See also GeneralSettingsView.
+    static let quitHoldPercentKey = "quitHoldPercent"
+    static let quitHoldMinPercent: Double = 0.08
+    static let quitHoldMaxPercent: Double = 1.0
+    static let quitHoldDefaultPercent: Double = 0.8
+    private static let quitHoldMaxDuration: TimeInterval = 2.0
+    // Fixed beat after the bar reads full, so the total hold time is always
+    // predictable — the actual quit work (state persistence) is front-loaded
+    // during the hold instead of happening here, where it used to add a
+    // variable-length stall.
+    private static let postFillQuitDelay: TimeInterval = 0.15
+
+    private static var quitHoldDuration: TimeInterval {
+        let stored = UserDefaults.standard.double(forKey: quitHoldPercentKey)
+        let percent = stored == 0 ? quitHoldDefaultPercent : stored
+        return max(quitHoldMinPercent, min(quitHoldMaxPercent, percent)) * quitHoldMaxDuration
+    }
+
     private var quitHoldStart: Date?
     private var quitHoldTimer: Timer?
 
@@ -32,7 +51,8 @@ class KeyboardShortcutsManager {
         hardReloadAction: @escaping () -> Void,
         reloadAllTabsAction: @escaping () -> Void,
         goBackAction: @escaping () -> Void,
-        goForwardAction: @escaping () -> Void
+        goForwardAction: @escaping () -> Void,
+        webViewManager: WebViewManager? = nil
     ) {
         self.showOmnibar = showOmnibar
         self.reloadAction = reloadAction
@@ -40,6 +60,7 @@ class KeyboardShortcutsManager {
         self.reloadAllTabsAction = reloadAllTabsAction
         self.goBackAction = goBackAction
         self.goForwardAction = goForwardAction
+        self.webViewManager = webViewManager
     }
 
     func setupKeyboardShortcuts() {
@@ -136,25 +157,36 @@ class KeyboardShortcutsManager {
 
     private func startQuitHold() {
         quitHoldStart = Date()
+        let duration = Self.quitHoldDuration
+
+        // Do the slow part now, while the bar is still filling, instead of at
+        // the end: persisting per-tab page state is what used to make the app
+        // linger past a full bar. Front-loading it means the fixed delay below
+        // is the *only* wait once the bar reads full.
+        webViewManager?.persistInteractionStates()
+
         // The HUD animates itself 0→1 over the hold (Core Animation, immune to
         // main-thread jitter), so we no longer feed per-frame progress — that
-        // irregular 30fps feed was what made the bar jumpy. Just fire one
-        // terminate at the end, in .common mode so a tracking run loop (menus,
-        // scrollbars) can't delay it.
-        let timer = Timer(timeInterval: Self.quitHoldDuration, repeats: false) { _ in
-            // Terminate isn't instant — willTerminate persists per-tab state and
-            // WebKit teardown takes a beat — so the windows would linger a second
-            // or two past a full bar, reading as "the hold didn't take". Pull them
-            // off screen first so the app disappears exactly when the bar fills.
-            // Safe because nothing implements applicationShouldTerminate: the
-            // quit always goes through.
-            NSApp.windows.forEach { $0.orderOut(nil) }
-            NSApp.terminate(nil)
+        // irregular 30fps feed was what made the bar jumpy. Just fire once at
+        // the end, in .common mode so a tracking run loop (menus, scrollbars)
+        // can't delay it.
+        let timer = Timer(timeInterval: duration, repeats: false) { _ in
+            // Bar reads full here. Wait one fixed beat — not NSApp.terminate,
+            // which would re-run the willTerminate persistence we already did
+            // above and reintroduce the same variable stall — then pull the
+            // windows off screen and end the process directly. Safe: nothing
+            // else here depends on the normal termination lifecycle (no
+            // applicationShouldTerminate, autosaved SwiftData context, no other
+            // willTerminate observers).
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.postFillQuitDelay) {
+                NSApp.windows.forEach { $0.orderOut(nil) }
+                exit(0)
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         quitHoldTimer = timer
         NotificationCenter.default.post(name: .browserQuitHoldProgress, object: nil,
-            userInfo: ["progress": 1.0, "duration": Self.quitHoldDuration])
+            userInfo: ["progress": 1.0, "duration": duration])
     }
 
     private func cancelQuitHold() {

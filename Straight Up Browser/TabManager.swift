@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import Combine
+import AppKit
 
 // Value snapshot of a closed tab. Holding the deleted SwiftData model itself
 // is undefined behavior once modelContext.delete runs.
@@ -54,6 +55,13 @@ class TabManager: ObservableObject {
 
     private var modelContext: ModelContext?
     private weak var webViewManager: WebViewManager?
+
+    // The blank tab the last new-tab command (⌘T/+) created, if the user hasn't
+    // navigated it anywhere yet. Tracked so a second new-tab press undoes the
+    // first instead of piling up another blank tab, and so switching away from
+    // it closes it automatically (see newTabOrUndo / handleSelectionChanged).
+    private var pendingNewTabId: UUID?
+    private var tabIdBeforePendingNewTab: UUID?
 
     init(modelContext: ModelContext? = nil, webViewManager: WebViewManager? = nil) {
         self.modelContext = modelContext
@@ -148,6 +156,49 @@ class TabManager: ObservableObject {
             tab.sessionId = session.sessionId
             webViewManager?.registerSession(for: tab.id, kind: .container, sessionId: session.sessionId)
             return tab
+        }
+    }
+
+    // The ⌘T/+ entry point: if we're still looking at the blank tab the last
+    // press created, undo it (close it, go back to what was showing before).
+    // Otherwise create a fresh one and remember where we came from. Returns
+    // nil on undo (nothing new to show) so callers can skip e.g. opening the
+    // omnibar.
+    @discardableResult
+    func newTabOrUndo(tabs: [Tab], inheriting session: (kind: SessionKind, sessionId: UUID?)) -> Tab? {
+        if let pendingId = pendingNewTabId,
+           selectedTabId == pendingId,
+           let pendingTab = tabs.first(where: { $0.id == pendingId }),
+           pendingTab.url == nil {
+            selectedTabId = tabIdBeforePendingNewTab
+            pendingNewTabId = nil
+            tabIdBeforePendingNewTab = nil
+            closeTab(pendingTab, tabs: tabs)
+            return nil
+        }
+
+        // Stray blank tabs (e.g. the one launch starts with) shouldn't pile up
+        // alongside a freshly created one either.
+        for tab in tabs where tab.url == nil && tab.id != selectedTabId {
+            closeTab(tab, tabs: tabs)
+        }
+
+        tabIdBeforePendingNewTab = selectedTabId
+        let newTab = createTab(inheriting: session)
+        pendingNewTabId = newTab.id
+        return newTab
+    }
+
+    // Called whenever the selection changes away from the pending blank tab
+    // (click, key command, anything). If it's still blank, close it — that's
+    // the whole point of tracking it. If it navigated, it's a real tab now;
+    // just stop tracking it.
+    func handleSelectionChanged(from oldValue: UUID?, tabs: [Tab]) {
+        guard let oldValue, oldValue == pendingNewTabId else { return }
+        pendingNewTabId = nil
+        tabIdBeforePendingNewTab = nil
+        if let tab = tabs.first(where: { $0.id == oldValue }), tab.url == nil {
+            closeTab(tab, tabs: tabs)
         }
     }
 
@@ -282,6 +333,10 @@ class TabManager: ObservableObject {
             }
             // Ensure there's always a selected tab after closing
             ensureSelectedTab(from: remaining)
+        } else if tab.url == nil {
+            // Already a blank New Tab and it's the last one open — closing it
+            // again means the user wants out, not another blank tab.
+            NSApp.terminate(nil)
         } else {
             // Closing the last tab: reset it to a fresh New Tab instead of
             // deleting it, so there is always one tab open

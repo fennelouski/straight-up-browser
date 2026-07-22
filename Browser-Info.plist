@@ -46,5 +46,21 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Sparkle auto-update. Feed is generated + signed by
+	     scripts/sparkle-bin/generate_appcast (see scripts/release.sh) and hosted
+	     alongside the DMG. Filename is "browser-appcast.xml", not the generic
+	     "appcast.xml" — that name is already taken by Dictate's feed in the same
+	     nathanfennel.com/downloads/ folder. SUPublicEDKey is the public half of
+	     the EdDSA key in the release Mac's Keychain — it never changes across
+	     releases; losing the private key would break updates for everyone
+	     already installed. -->
+	<key>SUFeedURL</key>
+	<string>https://nathanfennel.com/downloads/browser-appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>EVIc3OgRfDph2xDZgmLkjrHOdI8S249jGppr8MHTMCs=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
 </dict>
 </plist>

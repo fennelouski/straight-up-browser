@@ -8,10 +8,16 @@
 import SwiftUI
 import SwiftData
 import AppKit
+import Sparkle
 
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private let globalOmnibar = GlobalOmnibarController()
+    // Starts checking immediately (SUEnableAutomaticChecks/SUAutomaticallyUpdate
+    // in Browser-Info.plist mean it's silent — downloads and installs on quit,
+    // no prompt). "Check for Updates…" below just triggers an on-demand check.
+    let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
 
     // Keep in sync with EULA.md; bump the version to re-prompt existing users.
     private let eulaVersion = 1
@@ -247,9 +253,14 @@ struct Straight_Up_BrowserApp: App {
         .commands {
             // The stock About panel renders "Version 1.4.3 (13)" — the parenthetical is
             // CFBundleVersion. Blanking it leaves just the marketing version.
+            // Check for Updates lives here too rather than its own CommandGroup:
+            // @CommandsBuilder caps top-level children at 10 and we're there.
             CommandGroup(replacing: .appInfo) {
                 Button("About Browser") {
                     NSApplication.shared.orderFrontStandardAboutPanel(options: [.version: ""])
+                }
+                Button("Check for Updates…") {
+                    appDelegate.updaterController.updater.checkForUpdates()
                 }
             }
 

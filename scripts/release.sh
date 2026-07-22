@@ -70,4 +70,21 @@ xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
 xcrun stapler staple "$DMG"
 spctl -a -t open --context context:primary-signature -v "$DMG"
 
-echo "Ready to upload: $DMG"
+# Sparkle appcast: reads the version out of the stapled DMG and signs it with
+# the EdDSA private key in this Mac's Keychain (scripts/sparkle-bin/generate_keys
+# put it there — see DEPLOYMENT.md). $BUILD holds only this release's DMG, so
+# the feed always describes just the latest version (no delta patches).
+# Browser.zip was only an intermediate for notarizing the .app before it went
+# into the DMG — generate_appcast would otherwise see it as a duplicate of the
+# same version and refuse to run.
+# Filename is "browser-appcast.xml", not the generic "appcast.xml" — that name
+# is already taken by another app's feed (Dictate) in the same downloads
+# folder on nathanfennel.com. Must match SUFeedURL in Browser-Info.plist.
+rm -f "$BUILD/Browser.zip"
+./scripts/sparkle-bin/generate_appcast \
+    --download-url-prefix "https://nathanfennel.com/downloads/" \
+    --link "https://nathanfennel.com/internet" \
+    -o "$BUILD/browser-appcast.xml" \
+    "$BUILD"
+
+echo "Ready to upload: $DMG and $BUILD/browser-appcast.xml"
