@@ -98,7 +98,15 @@ class TabManager: ObservableObject {
             // symptom — one would appear at the top of the list, nowhere near the
             // tab that opened it. Matches what createIncognitoTab already does.
             let existing = (try? modelContext.fetch(FetchDescriptor<Tab>())) ?? []
-            newTab.orderIndex = (existing.map(\.orderIndex).max() ?? -1) + 1
+            if let currentIndex = existing.first(where: { $0.id == selectedTabId })?.orderIndex {
+                // Land right after the tab you're on, not at the end of the list.
+                for tab in existing where tab.orderIndex > currentIndex {
+                    tab.orderIndex += 1
+                }
+                newTab.orderIndex = currentIndex + 1
+            } else {
+                newTab.orderIndex = (existing.map(\.orderIndex).max() ?? -1) + 1
+            }
             modelContext.insert(newTab)
         }
         if select {
