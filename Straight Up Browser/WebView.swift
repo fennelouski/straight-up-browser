@@ -97,7 +97,10 @@ struct WebView: NSViewRepresentable {
                   paneWebView.url == nil, !paneWebView.isLoading,
                   let tab = tabs?.first(where: { $0.id == id }) else { continue }
             if TabSync.restoreInteractionState(tab, into: paneWebView) { continue }
-            if let paneURL = tab.url { paneWebView.load(URLRequest(url: paneURL)) }
+            if let paneURL = tab.url {
+                webViewManager?.beginFadeIn(paneWebView)
+                paneWebView.load(URLRequest(url: paneURL))
+            }
         }
 
         // Log the active WebView after the update
@@ -154,6 +157,11 @@ struct WebView: NSViewRepresentable {
            !(activeWebView.isLoading && normalizedWebViewURL == normalizedRequestedURL) {
             Logger.log("WebView loading URL: \(url.absoluteString) (current: \(activeWebView.url?.absoluteString ?? "nil"))", type: "WebView")
             context.coordinator.lastRequestedURL = url
+            // Hide now, synchronously, rather than waiting for didCommit - that
+            // callback arrives after WebKit has already swapped the compositor
+            // layer, so the old/blank frame flickers through for a frame or two
+            // before the fade catches up.
+            webViewManager?.beginFadeIn(activeWebView)
             activeWebView.load(URLRequest(url: url))
         } else if let url = url, normalizedURL == normalizedWebViewURL {
             // Ensure lastRequestedURL is set correctly
