@@ -169,16 +169,7 @@ class TabManager: ObservableObject {
     // omnibar.
     @discardableResult
     func newTabOrUndo(tabs: [Tab], inheriting session: (kind: SessionKind, sessionId: UUID?)) -> Tab? {
-        if let pendingId = pendingNewTabId,
-           selectedTabId == pendingId,
-           let pendingTab = tabs.first(where: { $0.id == pendingId }),
-           pendingTab.url == nil {
-            selectedTabId = tabIdBeforePendingNewTab
-            pendingNewTabId = nil
-            tabIdBeforePendingNewTab = nil
-            closeTab(pendingTab, tabs: tabs)
-            return nil
-        }
+        if closePendingNewTab(tabs: tabs) { return nil }
 
         // Stray blank tabs (e.g. the one launch starts with) shouldn't pile up
         // alongside a freshly created one either.
@@ -190,6 +181,22 @@ class TabManager: ObservableObject {
         let newTab = createTab(inheriting: session)
         pendingNewTabId = newTab.id
         return newTab
+    }
+
+    // Undo the last new-tab command if we're still sitting on the blank tab it
+    // created: close it and go back to what was showing before. Returns whether
+    // it did anything.
+    @discardableResult
+    func closePendingNewTab(tabs: [Tab]) -> Bool {
+        guard let pendingId = pendingNewTabId,
+              selectedTabId == pendingId,
+              let pendingTab = tabs.first(where: { $0.id == pendingId }),
+              pendingTab.url == nil else { return false }
+        selectedTabId = tabIdBeforePendingNewTab
+        pendingNewTabId = nil
+        tabIdBeforePendingNewTab = nil
+        closeTab(pendingTab, tabs: tabs)
+        return true
     }
 
     // Called whenever the selection changes away from the pending blank tab

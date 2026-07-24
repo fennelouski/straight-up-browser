@@ -1530,6 +1530,12 @@ struct ContentView: View {
             notificationManager?.setupNotificationObservers()
             keyboardShortcutsManager?.setupKeyboardShortcuts()
         }
+        .onChange(of: showOmnibar) { _, isShowing in
+            // Dismissing the omnibar (Esc, click-away) without navigating takes
+            // the blank tab it was opened for with it. Navigating first gives the
+            // tab a URL, so this no-ops there.
+            if !isShowing { tabManager.closePendingNewTab(tabs: allTabs) }
+        }
         .onChange(of: tabManager.selectedTabId) { oldValue, newValue in
             Logger.log("ContentView onChange selectedTabId: \(oldValue?.uuidString ?? "nil") -> \(newValue?.uuidString ?? "nil")", type: "ContentView")
 
