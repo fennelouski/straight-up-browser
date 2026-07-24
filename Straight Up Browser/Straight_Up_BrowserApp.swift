@@ -172,6 +172,7 @@ struct Straight_Up_BrowserApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var showSettings = false
     @AppStorage("cmdPExportsPDF") private var cmdPExportsPDF = true
+    @AppStorage("expandBackForwardShortcuts") private var expandBackForwardShortcuts = true
     @AppStorage("convertToIncognitoEnabled") private var convertToIncognitoEnabled = false
     // Reading this in the .commands builder (via `sc`) makes the menu bar rebuild
     // its key equivalents whenever a shortcut is rebound — same invalidation the
@@ -300,20 +301,32 @@ struct Straight_Up_BrowserApp: App {
             }
 
             CommandGroup(replacing: .printItem) {
-                Button("Print...") {
-                    NotificationCenter.default.post(name: .browserPrint, object: nil)
-                }
-                .keyboardShortcut(sc(.printPage))
-
-                // Cmd+P makes a PDF (toggleable in Settings > General)
-                if cmdPExportsPDF {
+                // Settings > General > "⌘P and ⌘\ navigate Back/Forward" frees
+                // both print chords for navigation, so neither item gets a
+                // keyboard shortcut then (they're still here in the menu).
+                if expandBackForwardShortcuts {
+                    Button("Print...") {
+                        NotificationCenter.default.post(name: .browserPrint, object: nil)
+                    }
                     Button("Export as PDF...") {
                         NotificationCenter.default.post(name: .browserExportPDF, object: nil)
                     }
-                    .keyboardShortcut(sc(.exportPDF))
                 } else {
-                    Button("Export as PDF...") {
-                        NotificationCenter.default.post(name: .browserExportPDF, object: nil)
+                    Button("Print...") {
+                        NotificationCenter.default.post(name: .browserPrint, object: nil)
+                    }
+                    .keyboardShortcut(sc(.printPage))
+
+                    // Cmd+P makes a PDF (toggleable in Settings > General)
+                    if cmdPExportsPDF {
+                        Button("Export as PDF...") {
+                            NotificationCenter.default.post(name: .browserExportPDF, object: nil)
+                        }
+                        .keyboardShortcut(sc(.exportPDF))
+                    } else {
+                        Button("Export as PDF...") {
+                            NotificationCenter.default.post(name: .browserExportPDF, object: nil)
+                        }
                     }
                 }
 

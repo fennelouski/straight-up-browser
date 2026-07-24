@@ -440,3 +440,95 @@ struct PaneFocusTests {
         #expect(container.activeWebView === webViewManager.existingWebView(for: tabA))
     }
 }
+
+@Suite("FastForward")
+@MainActor
+struct FastForwardTests {
+
+    @Test func destinationQueriesClassifyRegardlessOfWordOrder() {
+        for q in ["download slack", "slack download", "get slack for my mac"] {
+            let match = FastForwardRule.parse(q)
+            #expect(match?.intent == .download)
+            #expect(match?.noun == "slack")
+            // All three collide onto one learnable signature.
+            #expect(match?.signature == "download:slack")
+        }
+    }
+
+    @Test func otherIntentsClassify() {
+        #expect(FastForwardRule.parse("notion pricing")?.signature == "pricing:notion")
+        #expect(FastForwardRule.parse("github login")?.signature == "login:github")
+        #expect(FastForwardRule.parse("stripe docs")?.signature == "docs:stripe")
+        #expect(FastForwardRule.parse("cancel my netflix subscription")?.intent == .support)
+    }
+
+    @Test func questionsAndBareTopicsDoNotClassify() {
+        // No destination verb → nothing to fast-forward.
+        #expect(FastForwardRule.parse("is slack down") == nil)
+        #expect(FastForwardRule.parse("weather tomorrow") == nil)
+        #expect(FastForwardRule.parse("how do neural networks work") == nil)
+        // Verb present but no product left after stripping → don't guess.
+        #expect(FastForwardRule.parse("download") == nil)
+        // Prose that happens to contain a trigger word is too long to be a destination.
+        #expect(FastForwardRule.parse("what is the best way to download large files quickly on a mac") == nil)
+    }
+
+    @Test func recipeTableCoversTheClassifiedSignatures() {
+        // Every marquee query the parser produces should have a shipped destination.
+        for q in ["download slack", "download zoom", "download vscode"] {
+            let sig = FastForwardRule.parse(q)!.signature
+            #expect(FastForwardRecipes.table[sig] != nil)
+        }
+    }
+
+    @Test func searchQueryRoundTripsForEveryEngine() {
+        // A search built for any engine must parse back to the original query,
+        // or Fast Forward can never see the intent. (These prefixes mirror
+        // OmnibarView.searchURLPrefix / OmnibarInput.searchURLPrefix.)
+        let prefixes = ["https://www.google.com/search?q=",
+                        "https://duckduckgo.com/?q=",
+                        "https://www.bing.com/search?q=",
+                        "https://search.yahoo.com/search?p="]
+        for prefix in prefixes {
+            let url = URL(string: prefix + "download%20slack")!
+            #expect(FastForward.searchQuery(from: url) == "download slack")
+        }
+        // A plain destination URL is not a search — nothing to recover.
+        #expect(FastForward.searchQuery(from: URL(string: "https://slack.com/downloads")!) == nil)
+    }
+
+    @Test func memoryBlocksAfterTwoNetStrikesAndForgivesAccepts() {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ff-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let memory = FastForwardMemory(storeURL: tmp)
+        let sig = "download:slack", url = "https://slack.com/downloads/mac"
+
+        #expect(!memory.isBlocked(sig))
+        memory.record(signature: sig, url: url, target: nil, accepted: false)
+        #expect(!memory.isBlocked(sig))               // one strike: still tries
+        memory.record(signature: sig, url: url, target: nil, accepted: false)
+        #expect(memory.isBlocked(sig))                // two strikes: gives up
+
+        // An accept a signature usually keeps outweighs a stray dismissal.
+        let sig2 = "download:zoom"
+        memory.record(signature: sig2, url: url, target: nil, accepted: true)
+        memory.record(signature: sig2, url: url, target: nil, accepted: false)
+        #expect(!memory.isBlocked(sig2))
+    }
+
+    @Test func acceptedDestinationPersistsAndReloads() {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ff-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let sig = "login:github", url = "https://github.com/login"
+
+        let first = FastForwardMemory(storeURL: tmp)
+        first.record(signature: sig, url: url, target: "sign in", accepted: true)
+
+        // A fresh instance reads the same file — the correction survives relaunch.
+        let reloaded = FastForwardMemory(storeURL: tmp)
+        #expect(reloaded.destination(for: sig)?.url.absoluteString == url)
+        #expect(reloaded.destination(for: sig)?.target == "sign in")
+    }
+}

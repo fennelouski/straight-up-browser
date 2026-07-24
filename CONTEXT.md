@@ -18,6 +18,10 @@ _Avoid_: active tab when ambiguity with "displayed" matters
 **Displayed tabs**:
 The tabs currently visible in the window — one normally, 2–4 in a split. The focused tab is always one of them.
 
+**Fast Forward**:
+When a search query means a _destination_ ("download slack") rather than a _question_ ("is slack down"), Fast Forward opens the resolved destination as a second pane beside the search results, scrolled to and pulsing on the thing the query wanted. The results pane is never touched, so a wrong guess costs a pane, not an outcome. A fast-forwarded pane is an ordinary **Tab** in an ordinary **Split** — nothing about it is special except how it was created. Closing it is the "no thanks" and teaches Fast Forward to stop guessing that query (`FastForwardMemory`, local JSON).
+_Avoid_: redirect (Fast Forward never replaces the results), recommendation (it acts, it doesn't list)
+
 ## Relationships
 
 - A **Split** displays 2–4 **Tabs**; exactly one of them is the **Focused tab**
@@ -30,6 +34,7 @@ The tabs currently visible in the window — one normally, 2–4 in a split. The
 - Memory saver must exempt all **Displayed tabs**, not just the **Focused tab**
 - The **Split** arrangement (ordered member IDs + focused ID) persists in UserDefaults; on launch, unresolved IDs are dropped, and fewer than 2 survivors means a plain single view
 - Incognito tabs may join a **Split** (isolation is per-tab at the data-store level); they never survive relaunch, handled by the drop-unresolved rule
+- **Fast Forward** only ever _opens_ a **Split** from a single-view search; it never touches a Split the user built, and never resolves or records for incognito tabs
 
 ## Example dialogue
 

@@ -21,6 +21,7 @@ struct GeneralSettingsView: View {
     @AppStorage(FindBar.intensityKey) private var findFlashIntensity = FindBar.defaultIntensity
     @AppStorage("spaceScrollPercent") private var spaceScrollPercent = 90.0
     @AppStorage("cmdPExportsPDF") private var cmdPExportsPDF = true
+    @AppStorage("expandBackForwardShortcuts") private var expandBackForwardShortcuts = true
     @AppStorage(GlobalOmnibarHotkey.defaultsKey) private var globalOmnibarHotkey = GlobalOmnibarHotkey.defaultChord
     @AppStorage(DefaultBrowser.promptEnabledKey) private var defaultBrowserPrompt = true
     @AppStorage(KeyboardShortcutsManager.quitHoldPercentKey) private var quitHoldPercent = KeyboardShortcutsManager.quitHoldDefaultPercent
@@ -28,6 +29,7 @@ struct GeneralSettingsView: View {
     @AppStorage(TabSync.Key.enabled) private var tabSyncEnabled = false
     @AppStorage(TabSync.Key.mode) private var tabSyncMode = TabSyncMode.openOnly.rawValue
     @AppStorage(TabSync.Key.cacheState) private var tabSyncCacheState = false
+    @AppStorage(FastForward.Key.enabled) private var fastForwardEnabled = true
     @State private var iCloudAvailable = false
 
     private let searchEngines = ["Google", "DuckDuckGo", "Bing", "Yahoo"]
@@ -51,6 +53,21 @@ struct GeneralSettingsView: View {
                     Text("Uses iCloud. “Just opening tabs” shares the tabs you open but keeps closing a tab a per-device choice; “Opening and closing” keeps one shared set across devices. Turning sync on or off takes effect after you relaunch.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+            }
+
+            Section {
+                Toggle("Fast Forward searches", isOn: $fastForwardEnabled)
+                SettingCaptionRow(
+                    caption: "A search that means a destination opens it beside the results.",
+                    title: "Fast Forward",
+                    explanation: "When a search clearly means a destination — “download slack”, “notion pricing”, “github login” — Fast Forward keeps the results on the left and opens the page you were heading for on the right, scrolled to the part you wanted. Nothing is lost: the real results are still there. If the guess is wrong, just close the pane — that also teaches Fast Forward to stop guessing for that search.",
+                    value: $fastForwardEnabled
+                ) { FastForwardDemo(enabled: $0) }
+            } header: {
+                SettingsLabel("Fast Forward", systemImage: "forward.fill", tint: SettingsTint.general)
+            } footer: {
+                Text("Runs on your Mac. The left pane always holds your actual search results, so Fast Forward only ever adds a head start — it never replaces what you asked for.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Section {
@@ -121,6 +138,14 @@ struct GeneralSettingsView: View {
                     explanation: "Most of the time you want a PDF, not paper. With this on, ⌘P exports the page as a PDF and ⇧⌘P opens the print dialog. Turn it off and ⌘P prints, the way it does everywhere else.",
                     value: $cmdPExportsPDF
                 ) { CmdPPDFDemo(enabled: $0) }
+
+                Toggle("⌘P and ⌘\\ navigate Back/Forward (no keyboard Print)", isOn: $expandBackForwardShortcuts)
+                SettingCaptionRow(
+                    caption: "Free the print chords for navigation instead.",
+                    title: "Expand Back/Forward Shortcuts",
+                    explanation: "With this on, ⌘P goes Back and ⌘\\ goes Forward — the same as ⌘[ and ⌘] — and neither Print nor Export as PDF has a keyboard shortcut anymore (both are still in the menu). Turn it off to get the print shortcuts back.",
+                    value: $expandBackForwardShortcuts
+                ) { ExpandBackForwardDemo(enabled: $0) }
 
                 Toggle("Offer to make Browser your default", isOn: $defaultBrowserPrompt)
                     .onChange(of: defaultBrowserPrompt) { _, on in

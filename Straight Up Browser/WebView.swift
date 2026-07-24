@@ -24,6 +24,7 @@ struct WebView: NSViewRepresentable {
     var webViewManager: WebViewManager?
     var tabManager: TabManager?
     var pageTranslator: PageTranslator?
+    var fastForward: FastForward?
     var tabs: [Tab]?
     var activeTabId: UUID?
     // Split view: all tabs shown as panes (ordered). Normally just [activeTabId].
@@ -48,6 +49,7 @@ struct WebView: NSViewRepresentable {
          webViewManager: WebViewManager?,
          tabManager: TabManager?,
          pageTranslator: PageTranslator? = nil,
+         fastForward: FastForward? = nil,
          tabs: [Tab]?,
          activeTabId: UUID?,
          displayedTabIds: [UUID] = [],
@@ -62,6 +64,7 @@ struct WebView: NSViewRepresentable {
         self.webViewManager = webViewManager
         self.tabManager = tabManager
         self.pageTranslator = pageTranslator
+        self.fastForward = fastForward
         self.tabs = tabs
         self.activeTabId = activeTabId
         self.displayedTabIds = displayedTabIds.isEmpty ? [activeTabId].compactMap { $0 } : displayedTabIds
@@ -269,7 +272,12 @@ struct WebView: NSViewRepresentable {
             // the injected user script reads it on each keypress
             let pct = UserDefaults.standard.object(forKey: "spaceScrollPercent") as? Double ?? 90
             webView.evaluateJavaScript("window.__subSpacePct = \(pct)")
-            if let tab = tab(for: webView) { TabSync.restoreSessionStorage(tab, into: webView) }
+            if let tab = tab(for: webView) {
+                TabSync.restoreSessionStorage(tab, into: webView)
+                // The search URL is known here, so a recipe/memory hit can open the
+                // pane already — racing the search results' own load.
+                parent.fastForward?.pageCommitted(webView: webView, tab: tab)
+            }
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -318,6 +326,11 @@ struct WebView: NSViewRepresentable {
             // Async and JS-driven only (see translateScript) - can't interfere
             // with interactivity the way the removed injection below did.
             parent.pageTranslator?.maybeAutoTranslate(webView: webView)
+
+            // Pulse a fast-forwarded pane, or scrape the results the recipe table missed.
+            if let tab = tab(for: webView) {
+                parent.fastForward?.pageFinished(webView: webView, tab: tab)
+            }
 
             // Ensure WebView remains interactive after loading
             DispatchQueue.main.async {

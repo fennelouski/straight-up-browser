@@ -27,6 +27,8 @@ class TabManager: ObservableObject {
             if !splitTabIds.isEmpty, let id = selectedTabId, !splitTabIds.contains(id) {
                 splitTabIds = []
             }
+            // Focusing a fast-forwarded pane means the guess was useful.
+            fastForward?.noteFocus(selectedTabId)
         }
     }
     // Split view: ordered member tab ids (2–4; empty = normal single view).
@@ -55,6 +57,7 @@ class TabManager: ObservableObject {
 
     private var modelContext: ModelContext?
     private weak var webViewManager: WebViewManager?
+    weak var fastForward: FastForward?
 
     // The blank tab the last new-tab command (⌘T/+) created, if the user hasn't
     // navigated it anywhere yet. Tracked so a second new-tab press undoes the
@@ -288,6 +291,10 @@ class TabManager: ObservableObject {
     }
 
     func closeTab(_ tab: Tab, tabs: [Tab]) {
+        // Closing a fast-forwarded pane is the "no thanks" — record the verdict
+        // before the tab goes away.
+        fastForward?.paneClosed(tab.id)
+
         // Closing a split member collapses just its pane; focus moves to another
         // member so the dissolve-on-outside-selection rule doesn't tear down the rest.
         if splitTabIds.contains(tab.id) {

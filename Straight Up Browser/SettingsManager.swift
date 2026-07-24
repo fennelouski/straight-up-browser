@@ -102,6 +102,16 @@ class SettingsManager {
             || userDefaults.bool(forKey: "pinchToZoomEnabled")
     }
 
+    // MARK: - Print / Navigation
+
+    /// When on, ⌘P and ⌘\ additionally act as Back/Forward, and Print/Export as
+    /// PDF lose their keyboard shortcuts (still reachable from the menu).
+    /// Defaults on when unset.
+    var expandBackForwardShortcuts: Bool {
+        userDefaults.object(forKey: "expandBackForwardShortcuts") == nil
+            || userDefaults.bool(forKey: "expandBackForwardShortcuts")
+    }
+
     // MARK: - Option-Click Download
 
     /// Should an option-click on this URL trigger a download?

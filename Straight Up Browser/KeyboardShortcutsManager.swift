@@ -142,6 +142,19 @@ class KeyboardShortcutsManager {
                 self.goForwardAction()
                 return nil
             }
+            // Settings > General > "⌘P and ⌘\ navigate": frees the everyday
+            // print chord for navigation instead. Fixed aliases, not rebindable
+            // — they piggyback on whatever Back/Forward already do.
+            if SettingsManager.shared.expandBackForwardShortcuts {
+                if mods == .command && event.charactersIgnoringModifiers == "p" {
+                    self.goBackAction()
+                    return nil
+                }
+                if mods == .command && event.charactersIgnoringModifiers == "\\" {
+                    self.goForwardAction()
+                    return nil
+                }
+            }
             if store.shortcut(for: .hardReload).matches(event) {
                 self.hardReloadAction()
                 return nil

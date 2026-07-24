@@ -175,6 +175,7 @@ struct ContentView: View {
     @StateObject private var tabManager: TabManager
     @StateObject private var linkPreview = LinkPreviewManager()
     @StateObject private var pageTranslator = PageTranslator()
+    @StateObject private var fastForward = FastForward()
     @State private var navigationManager: NavigationManager?
     @State private var notificationManager: NotificationManager?
     @State private var keyboardShortcutsManager: KeyboardShortcutsManager?
@@ -585,6 +586,7 @@ struct ContentView: View {
                         webViewManager: webViewManager,
                         tabManager: tabManager,
                         pageTranslator: pageTranslator,
+                        fastForward: fastForward,
                         tabs: allTabs,
                         activeTabId: tabManager.selectedTabId,
                         displayedTabIds: displayedTabIds,
@@ -860,33 +862,10 @@ struct ContentView: View {
     // Pulse a ring around the found match so the eye can locate it. How loud the pulse is
     // — ring, glow, zoom-in, and dimming of everything else — rides the Find Emphasis slider.
     private func flashFoundMatch(in webView: WKWebView) {
-        let t = max(0, min(1, findFlashIntensity / 100))
-        guard t > 0 else { return } // 0 = no flash, just the native selection highlight
-        let pad = 4 + 8 * t
-        let border = 1 + 4 * t
-        let glow = 6 + 48 * t
-        let scale = 1 + 1.5 * t * t // negligible when subtle, a real zoom at the top end
-        let dim = max(0, t - 0.5) * 0.8 // spotlight the match by darkening the rest of the page
-        let hold = Int(300 + 1200 * t)
-        let js = """
-        (function() {
-            var sel = window.getSelection();
-            if (!sel.rangeCount) return;
-            var r = sel.getRangeAt(0).getBoundingClientRect();
-            var d = document.createElement('div');
-            d.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;' +
-                'left:' + (r.left - \(pad)) + 'px;top:' + (r.top - \(pad)) + 'px;' +
-                'width:' + (r.width + \(pad * 2)) + 'px;height:' + (r.height + \(pad * 2)) + 'px;' +
-                'border:\(border)px solid #FFD60A;border-radius:6px;' +
-                'box-shadow:0 0 \(glow)px #FFD60A, 0 0 0 9999px rgba(0,0,0,\(dim));' +
-                'transform:scale(\(scale));opacity:1;' +
-                'transition:transform 0.35s cubic-bezier(0.2,0.9,0.3,1),opacity 0.6s ease-out;';
-            document.body.appendChild(d);
-            requestAnimationFrame(function() { d.style.transform = 'scale(1)'; });
-            setTimeout(function() { d.style.opacity = '0'; }, \(hold));
-            setTimeout(function() { d.remove(); }, \(hold + 700));
-        })();
-        """
+        // Same ring Fast Forward draws over its scroll target, so both ride this
+        // one slider (see PulseRing in FastForward.swift).
+        guard let js = PulseRing.script(intensity: findFlashIntensity,
+                                        rectJS: PulseRing.selectionRectJS) else { return }
         webView.evaluateJavaScript(js)
     }
 
@@ -1580,6 +1559,10 @@ struct ContentView: View {
         self.navigationManager = navigationManager
         tabManager.setModelContext(modelContext)
         tabManager.setWebViewManager(webViewManager)
+        tabManager.fastForward = fastForward
+        fastForward.configure(tabManager: tabManager,
+                              webViewManager: webViewManager,
+                              tabs: { self.allTabs })
         bookmarkManager = BookmarkManager(modelContext: modelContext)
         managersInitialized = true
 

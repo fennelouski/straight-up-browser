@@ -136,6 +136,93 @@ struct SearchEngineDemo: View {
     }
 }
 
+// Types a destination-shaped search, then splits: results stay left, the
+// resolved page slides in on the right with its target pulsing.
+struct FastForwardDemo: View {
+    @Binding var enabled: Bool
+    @State private var split = false
+    @State private var pulse = false
+
+    var body: some View {
+        VStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: 10) {
+                demoCaption("You search")
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    Text("download slack")
+                }
+                .font(.callout)
+
+                WindowFrame {
+                    HStack(spacing: 0) {
+                        // Left: the real search results, always present.
+                        VStack(alignment: .leading, spacing: 7) {
+                            demoLine(width: 70)
+                            demoLine(width: 110)
+                            demoLine(width: 90)
+                            demoLine(width: 100)
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        if split && enabled {
+                            Rectangle().fill(SettingsTint.general.opacity(0.6)).frame(width: 2)
+
+                            // Right: the destination, scrolled to the pulsing button.
+                            VStack(alignment: .leading, spacing: 8) {
+                                demoLine(width: 60)
+                                Text("Download")
+                                    .font(.caption.weight(.semibold))
+                                    .padding(.horizontal, 10).padding(.vertical, 5)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(SettingsTint.general.opacity(0.18))
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .strokeBorder(Color(red: 1, green: 0.84, blue: 0.04),
+                                                          lineWidth: pulse ? 2.5 : 0)
+                                    )
+                                    .shadow(color: Color(red: 1, green: 0.84, blue: 0.04)
+                                        .opacity(pulse ? 0.9 : 0), radius: pulse ? 10 : 0)
+                                    .scaleEffect(pulse ? 1.06 : 1)
+                                demoLine(width: 80)
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                        }
+                    }
+                    .frame(height: 116)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(demoCard)
+            .animation(.smooth(duration: 0.4), value: split)
+            .animation(.easeOut(duration: 0.6), value: pulse)
+            .onAppear { runLoop() }
+
+            Toggle("Fast Forward searches", isOn: $enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func demoLine(width: CGFloat) -> some View {
+        Capsule().fill(Color.primary.opacity(0.12)).frame(width: width, height: 6)
+    }
+
+    // Loops the split-open + pulse so the popover always shows the effect.
+    private func runLoop() {
+        split = false; pulse = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            split = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { pulse = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { runLoop() }
+        }
+    }
+}
+
 struct OmnibarPositionDemo: View {
     @Binding var position: String
 
@@ -376,6 +463,40 @@ struct CmdPPDFDemo: View {
             .animation(.easeInOut, value: enabled)
 
             Toggle("⌘P creates a PDF", isOn: $enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+struct ExpandBackForwardDemo: View {
+    @Binding var enabled: Bool
+
+    var body: some View {
+        VStack(spacing: 20) {
+            VStack(spacing: 12) {
+                HStack(spacing: 16) {
+                    keycap("⌘P")
+                    keycap("⌘\\")
+                }
+                Image(systemName: "arrow.down").font(.caption).foregroundStyle(.tertiary)
+                HStack(spacing: 8) {
+                    Image(systemName: enabled ? "arrow.left.arrow.right" : "printer.fill")
+                        .foregroundStyle(enabled ? SettingsTint.general : .secondary)
+                    Text(enabled ? "Back / Forward" : "Print / Export as PDF")
+                        .font(.callout).fontWeight(.medium)
+                }
+                Text(enabled ? "Same as ⌘[ and ⌘]. Print stays in the menu, just without a shortcut."
+                             : "Turn this on to free ⌘P and ⌘\\ for navigation instead.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(16)
+            .background(demoCard)
+            .animation(.easeInOut, value: enabled)
+
+            Toggle("⌘P / ⌘\\ navigate", isOn: $enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
