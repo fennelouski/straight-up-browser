@@ -8,9 +8,15 @@
 import SwiftUI
 import AppKit
 
-enum SuggestionType {
-    case history
+// Ordered by how likely it is to be what you meant: a tab already open beats a
+// site you go to often, which beats a bookmark, which beats a raw history URL.
+enum SuggestionType: Int, Comparable {
+    case openTab = 0
+    case site
     case bookmark
+    case history
+
+    static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
 }
 
 struct Suggestion: Identifiable {
@@ -18,17 +24,20 @@ struct Suggestion: Identifiable {
     let url: URL
     let title: String?
     let type: SuggestionType
+    let tabId: UUID?    // .openTab only: which tab to switch to
 
-    init(url: URL, title: String? = nil, type: SuggestionType) {
+    init(url: URL, title: String? = nil, type: SuggestionType, tabId: UUID? = nil) {
         self.url = url
         self.title = title
         self.type = type
+        self.tabId = tabId
     }
 
     init(historyURL: URL) {
         self.url = historyURL
         self.title = nil
         self.type = .history
+        self.tabId = nil
     }
 }
 
@@ -215,6 +224,13 @@ struct OmnibarView: View {
     var errorMessage: String?
     var tabs: [Tab]
     var bookmarkSuggestions: [(title: String, url: URL)]
+    var currentTabId: UUID? = nil
+    var onSwitchToTab: ((UUID) -> Void)? = nil
+    var thumbnail: ((UUID) -> NSImage?)? = nil
+
+    // Below this, a match is too weak to hijack a plain Return into a tab switch —
+    // you can still arrow onto the suggestion at any length.
+    private static let switchOnReturnMinLength = 3
 
     @State private var inputText: String = ""
     @State private var selectedSuggestionIndex: Int = -1
@@ -238,11 +254,47 @@ struct OmnibarView: View {
         return bookmarkSuggestions.map { $0.url }
     }
 
+    // Tabs already open that match what's being typed — ranked by how well the
+    // typed text starts their host/title, best first. The tab you're already
+    // looking at is never a suggestion.
+    private var openTabSuggestions: [Suggestion] {
+        typealias Ranked = (suggestion: Suggestion, rank: Double, used: Date)
+        let ranked: [Ranked] = tabs.compactMap { tab -> Ranked? in
+            guard tab.id != currentTabId, let url = tab.url,
+                  let host = SiteHistory.normalizedHost(url) else { return nil }
+            // A restored tab's title is just its domain, so fold in the last real page
+            // title we saw for that host — that's where "Gmail" lives — plus whatever
+            // nicknames the site has earned.
+            let known = SiteHistory.shared.sites[host]
+            guard let rank = SiteHistory.matchRank(host: host,
+                                                   title: tab.title + " " + (known?.title ?? ""),
+                                                   aliases: known?.nicknames ?? [],
+                                                   query: inputText) else { return nil }
+            let suggestion = Suggestion(url: url, title: tab.title, type: .openTab, tabId: tab.id)
+            return (suggestion, rank, tab.lastAccessed)
+        }
+        // Equally good matches (four "…google.com" tabs) order by the one you used
+        // last, so Return lands on the live one rather than a stale sign-in page.
+        return ranked
+            .sorted { $0.rank == $1.rank ? $0.used > $1.used : $0.rank > $1.rank }
+            .map(\.suggestion)
+    }
+
     // Filter suggestions based on input text
     private var filteredSuggestions: [Suggestion] {
         guard !inputText.isEmpty else { return [] }
 
         let lowercasedInput = inputText.lowercased()
+
+        let openTabs = openTabSuggestions
+        let openHosts = Set(openTabs.compactMap { SiteHistory.normalizedHost($0.url) })
+
+        // Sites visited often enough to have earned a nickname. Already-open ones
+        // are dropped — the tab suggestion above says the same thing, better.
+        let frequentSites = SiteHistory.shared.matches(inputText).compactMap { site -> Suggestion? in
+            guard !openHosts.contains(site.host), let url = site.url else { return nil }
+            return Suggestion(url: url, title: site.host, type: .site)
+        }
 
         // Get matching bookmarks
         let matchingBookmarks = bookmarkSuggestions.filter { bookmark in
@@ -260,15 +312,12 @@ struct OmnibarView: View {
              (url.host?.lowercased().contains(lowercasedInput) ?? false))
         }.map { Suggestion(historyURL: $0) }
 
-        // Combine and sort: bookmarks first, then history
-        let allSuggestions = matchingBookmarks + matchingHistory
-
-        return Array(allSuggestions.sorted { (suggestion1, suggestion2) -> Bool in
+        // Open tabs and frequent sites are already ranked; bookmarks and raw history
+        // sort among themselves and fill in behind them.
+        let rest = (matchingBookmarks + matchingHistory).sorted { (suggestion1, suggestion2) -> Bool in
             // Bookmarks come first
-            if suggestion1.type == SuggestionType.bookmark && suggestion2.type == SuggestionType.history {
-                return true
-            } else if suggestion1.type == SuggestionType.history && suggestion2.type == SuggestionType.bookmark {
-                return false
+            if suggestion1.type != suggestion2.type {
+                return suggestion1.type < suggestion2.type
             }
 
             // Within same type, sort by relevance
@@ -288,7 +337,20 @@ struct OmnibarView: View {
                 // If both start with or both don't, sort by length (shorter first)
                 return url1String.count < url2String.count
             }
-        }.prefix(8)) // Limit to 8 suggestions
+        }
+
+        return Array((openTabs + frequentSites + rest).prefix(8)) // Limit to 8 suggestions
+    }
+
+    // The open tab a plain Return should switch to, if any: whatever is arrowed to,
+    // else the top suggestion once enough has been typed to be sure.
+    private var switchTarget: Suggestion? {
+        if let selected = selectedSuggestion {
+            return selected.type == .openTab ? selected : nil
+        }
+        guard inputText.count >= Self.switchOnReturnMinLength,
+              let top = filteredSuggestions.first, top.type == .openTab else { return nil }
+        return top
     }
 
     // Inline autocomplete target: the top prefix match, as a bare host where
@@ -340,6 +402,14 @@ struct OmnibarView: View {
                         }
                     },
                     onCommit: { commit in
+                        // Return on a site you already have open switches to that tab
+                        // instead of opening a second copy. Shift/Cmd+Return still
+                        // force a new tab / split pane.
+                        if commit == .navigate, let tabId = switchTarget?.tabId {
+                            onSwitchToTab?(tabId)
+                            isPresented = false
+                            return
+                        }
                         if let selectedSuggestion = selectedSuggestion {
                             inputText = selectedSuggestion.url.absoluteString
                         }
@@ -374,6 +444,53 @@ struct OmnibarView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 20)
 
+            // Card preview of the tab Return would jump to, so you can see it's the
+            // one you meant before committing.
+            if let target = switchTarget, let tabId = target.tabId {
+                HStack(spacing: 12) {
+                    Group {
+                        if let image = thumbnail?(tabId) {
+                            Image(nsImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        } else {
+                            Image(systemName: "macwindow")
+                                .font(.system(size: 20))
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .background(Color.gray.opacity(0.12))
+                        }
+                    }
+                    .frame(width: 120, height: 76)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(target.title ?? target.url.host ?? "")
+                            .font(.system(size: 13, weight: .medium))
+                            .lineLimit(1)
+                        Text(target.url.absoluteString)
+                            .font(.system(size: 11))
+                            .foregroundColor(.gray)
+                            .lineLimit(1)
+                        Text("Return to switch · ⇧Return for a new tab")
+                            .font(.system(size: 11))
+                            .foregroundColor(.blue)
+                    }
+                    Spacer()
+                }
+                .padding(10)
+                .background(Color(.windowBackgroundColor).opacity(0.95))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.blue.opacity(0.4), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .shadow(radius: 4)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
+                .padding(.top, -8)
+            }
+
             // Suggestions dropdown
             if showSuggestions && !filteredSuggestions.isEmpty {
                 VStack(spacing: 0) {
@@ -384,10 +501,24 @@ struct OmnibarView: View {
                                     Text(suggestion.title ?? suggestion.url.host ?? suggestion.url.absoluteString)
                                         .font(.system(size: 14))
                                         .foregroundColor(.primary)
-                                    if suggestion.type == .bookmark {
+                                    switch suggestion.type {
+                                    case .bookmark:
                                         Image(systemName: "bookmark.fill")
                                             .font(.system(size: 10))
                                             .foregroundColor(.blue)
+                                    case .openTab:
+                                        Text("Switch to Tab")
+                                            .font(.system(size: 10, weight: .medium))
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 1)
+                                            .background(Color.blue.opacity(0.15), in: Capsule())
+                                            .foregroundColor(.blue)
+                                    case .site:
+                                        Image(systemName: "clock.arrow.circlepath")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(.secondary)
+                                    case .history:
+                                        EmptyView()
                                     }
                                 }
                                 Text(suggestion.url.absoluteString)
@@ -402,8 +533,13 @@ struct OmnibarView: View {
                         .background(selectedSuggestionIndex == index ? Color.blue.opacity(0.1) : Color.clear)
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            inputText = suggestion.url.absoluteString
-                            navigate()
+                            if let tabId = suggestion.tabId {
+                                onSwitchToTab?(tabId)
+                                isPresented = false
+                            } else {
+                                inputText = suggestion.url.absoluteString
+                                navigate()
+                            }
                         }
                     }
                 }
@@ -446,6 +582,10 @@ struct OmnibarView: View {
             // URL-ish: no spaces and either a dot (example.com) or a colon (localhost:3000)
             if !urlString.contains(" ") && (urlString.contains(".") || urlString.contains(":")) {
                 urlString = "https://" + urlString
+            } else if let habit = SiteHistory.shared.habit(for: urlString), let habitURL = habit.url {
+                // A bare word you've been going to for months isn't a search: "woot"
+                // means woot.com, "gmail" means mail.google.com.
+                urlString = habitURL.absoluteString
             } else {
                 let query = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString
                 urlString = searchURLPrefix + query

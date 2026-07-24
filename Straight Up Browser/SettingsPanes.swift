@@ -30,6 +30,7 @@ struct GeneralSettingsView: View {
     @AppStorage(TabSync.Key.mode) private var tabSyncMode = TabSyncMode.openOnly.rawValue
     @AppStorage(TabSync.Key.cacheState) private var tabSyncCacheState = false
     @AppStorage(FastForward.Key.enabled) private var fastForwardEnabled = true
+    @AppStorage(SiteHistory.useAppleIntelligenceKey) private var siteNicknamesUseAI = true
     @State private var iCloudAvailable = false
 
     private let searchEngines = ["Google", "DuckDuckGo", "Bing", "Yahoo"]
@@ -67,6 +68,15 @@ struct GeneralSettingsView: View {
                 SettingsLabel("Fast Forward", systemImage: "forward.fill", tint: SettingsTint.general)
             } footer: {
                 Text("Runs on your Mac. The left pane always holds your actual search results, so Fast Forward only ever adds a head start — it never replaces what you asked for.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Learn what you call your sites", isOn: $siteNicknamesUseAI)
+            } header: {
+                SettingsLabel("Site Nicknames", systemImage: "text.magnifyingglass", tint: SettingsTint.general)
+            } footer: {
+                Text("Type “gmail” for mail.google.com or “hn” for news.ycombinator.com. Sites you visit often are recognized by name either way; with this on, Apple Intelligence names them once, on your Mac, the first time a site becomes a regular. Nothing leaves the device.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

@@ -226,6 +226,7 @@ extension ShortcutCommand {
     static let omnibar      = Self("omnibar", "Omnibar", .app, Shortcut(key: " ", control: true))
     static let quickOpen    = Self("quickOpen", "Quick Open", .app, Shortcut(key: "k", command: true))
     static let quickOpenNewTab = Self("quickOpenNewTab", "New Tab (Quick Open Alt)", .app, Shortcut(key: "k", command: true, shift: true))
+    static let tabGrid      = Self("tabGrid", "Show All Tabs", .tabs, Shortcut(key: "o", command: true))
     static let shortcutOverlay = Self("shortcutOverlay", "Keyboard Shortcuts", .app, Shortcut(key: "h", command: true, shift: true))
     static let settings     = Self("settings", "Settings", .app, Shortcut(key: ",", command: true))
     static let help         = Self("help", "Help", .app, Shortcut(key: "?", command: true))
@@ -252,7 +253,7 @@ extension ShortcutCommand {
            toggleTranslation, translateInSplit,
            toggleTabBar, hideTabBar, minimalTabBar, compactTabBar, wideTabBar,
            addBookmark, showBookmarks, clearSiteData, convertToIncognito,
-           omnibar, quickOpen, quickOpenNewTab, shortcutOverlay, settings, help, extensionPopup]
+           omnibar, quickOpen, quickOpenNewTab, tabGrid, shortcutOverlay, settings, help, extensionPopup]
 
     static func by(id: String) -> ShortcutCommand? { all.first { $0.id == id } }
 }

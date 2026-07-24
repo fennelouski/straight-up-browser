@@ -228,6 +228,27 @@ class WebViewManager: NSObject, ObservableObject {
     // Active web view for the currently selected tab
     @Published var activeWebView: WKWebView?
 
+    // Card previews for the omnibar and the ⌘O tab grid. In-memory only: Tab has a
+    // lastThumbnail column, but filling it would sync image blobs to CloudKit for a
+    // purely cosmetic cache. Tabs with no capture yet fall back to their favicon.
+    @Published private(set) var thumbnails: [UUID: NSImage] = [:]
+
+    func thumbnail(for tabId: UUID) -> NSImage? { thumbnails[tabId] }
+
+    // ponytail: only a web view that's on screen can be snapshotted, so this
+    // captures the tab you're leaving (and, on demand, the one you're on). Tabs
+    // you haven't visited this session simply have no card.
+    func captureThumbnail(for tabId: UUID?) {
+        guard let tabId, let webView = webViews[tabId],
+              webView.window != nil, webView.bounds.width > 0 else { return }
+        let config = WKSnapshotConfiguration()
+        config.snapshotWidth = 400
+        webView.takeSnapshot(with: config) { [weak self] image, _ in
+            guard let image else { return }
+            self?.thumbnails[tabId] = image
+        }
+    }
+
     override init() {
         super.init()
         NotificationCenter.default.addObserver(
@@ -402,6 +423,7 @@ class WebViewManager: NSObject, ObservableObject {
         }
 
         let previousTabId = activeTabId
+        captureThumbnail(for: previousTabId)   // last look at the tab you're leaving
         let webView = getWebView(for: tabId)
         Logger.log("WebViewManager setActiveTab: got WebView for tab \(tabId): \(Unmanaged.passUnretained(webView).toOpaque())", type: "WebViewManager")
         if activeWebView !== webView {
@@ -441,8 +463,12 @@ class WebViewManager: NSObject, ObservableObject {
             webViews.removeValue(forKey: tabId)
             savedInteractionStates.removeValue(forKey: tabId)
             // Keep the session across a memory unload (the tab reactivates and must
-            // rebuild in the same store); drop it only on a genuine close.
-            if notifyClosed { tabSessions.removeValue(forKey: tabId) }
+            // rebuild in the same store); drop it only on a genuine close. Same for
+            // the thumbnail — an unloaded tab still shows its last card.
+            if notifyClosed {
+                tabSessions.removeValue(forKey: tabId)
+                thumbnails.removeValue(forKey: tabId)
+            }
 
             // If this was the active web view, clear it
             if activeWebView === webView {

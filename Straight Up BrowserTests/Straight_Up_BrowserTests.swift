@@ -532,3 +532,120 @@ struct FastForwardTests {
         #expect(reloaded.destination(for: sig)?.target == "sign in")
     }
 }
+
+// The nickname rules behind "gmail" -> mail.google.com. Uses a throwaway
+// UserDefaults suite so a test run never touches real browsing history.
+@Suite(.serialized)
+struct SiteHistoryTests {
+
+    private func freshStore() -> SiteHistory {
+        let name = "sitehistory-test-\(UUID())"
+        let defaults = UserDefaults(suiteName: name)!
+        defaults.removePersistentDomain(forName: name)
+        return SiteHistory(defaults: defaults)
+    }
+
+    // Visits have to be recorded oldest-first, the way they actually happen.
+    private func visits(_ store: SiteHistory, _ host: String, title: String,
+                        count: Int, endingAt end: Date) {
+        let url = URL(string: "https://\(host)/")!
+        for i in stride(from: count - 1, through: 0, by: -1) {
+            store.record(url: url, title: title, now: end.addingTimeInterval(Double(-i) * 86400))
+        }
+    }
+
+    @Test func matchRankPrefersHostThenLabelThenTitle() {
+        // "giz" starts the host itself; "goog" only starts a later label; "gmail"
+        // appears nowhere in mail.google.com and has to come from the page title.
+        #expect(SiteHistory.matchRank(host: "gizmodo.com", title: "Gizmodo", query: "giz") == 3)
+        #expect(SiteHistory.matchRank(host: "mail.google.com", title: "", query: "goog") == 2)
+        #expect(SiteHistory.matchRank(host: "mail.google.com",
+                                      title: "Inbox (3) - me@gmail.com - Gmail", query: "gmail") == 1)
+
+        // Prefix-only: a letter from the middle of a word matches nothing, and a
+        // multi-word query is a search, not a site.
+        #expect(SiteHistory.matchRank(host: "gizmodo.com", title: "Gizmodo", query: "zmo") == nil)
+        #expect(SiteHistory.matchRank(host: "gizmodo.com", title: "Gizmodo", query: "giz mo") == nil)
+    }
+
+    @Test func habitNeedsFiveVisitsInsideThreeMonths() {
+        let store = freshStore()
+        visits(store, "woot.com", title: "Woot", count: 4,
+               endingAt: Date().addingTimeInterval(-86400))
+        #expect(store.habit(for: "woot") == nil)          // 4 visits: still a search
+        #expect(!store.matches("woot").isEmpty)           // but already a suggestion
+
+        // The fifth visit, today, on a deep link — the nickname still resolves to
+        // the site root.
+        store.record(url: URL(string: "https://woot.com/offers")!, title: "Woot")
+        #expect(store.habit(for: "woot")?.host == "woot.com")
+        #expect(store.habit(for: "woot")?.url?.absoluteString == "https://woot.com/")
+
+        // Same five visits, but they stopped last year — no longer a habit.
+        let stale = freshStore()
+        visits(stale, "woot.com", title: "Woot", count: 5,
+               endingAt: Date().addingTimeInterval(-200 * 86400))
+        #expect(stale.habit(for: "woot") == nil)
+    }
+
+    @Test func rankingPrefersTheSiteYouUseMost() {
+        let now = Date()
+
+        // Equal recency: the site you go to more often wins.
+        let byCount = freshStore()
+        visits(byCount, "giz-often.com", title: "Often", count: 10, endingAt: now)
+        visits(byCount, "giz-rarely.com", title: "Rarely", count: 2, endingAt: now)
+        #expect(byCount.matches("giz", now: now).first?.host == "giz-often.com")
+
+        // Equal counts: the one you haven't opened in months loses.
+        let byRecency = freshStore()
+        visits(byRecency, "giz-recent.com", title: "Recent", count: 5, endingAt: now)
+        visits(byRecency, "giz-stale.com", title: "Stale", count: 5,
+               endingAt: now.addingTimeInterval(-150 * 86400))
+        #expect(byRecency.matches("giz", now: now).first?.host == "giz-recent.com")
+    }
+
+    @Test func initialismsComeFromEitherEndOfTheTitle() {
+        // Sites put their name at one end or the other; both ends get a candidate.
+        #expect(SiteHistory.initialisms(of: "Ask HN: something - Hacker News").contains("hn"))
+        #expect(SiteHistory.initialisms(of: "GitHub - user/repo: a thing").contains("gh"))
+        #expect(SiteHistory.initialisms(of: "YouTube").contains("yt"))   // camel case is a word break
+
+        // Junk self-filters on the length cap rather than inventing a nickname.
+        #expect(SiteHistory.initialisms(of: "Inbox (58,191) - me@gmail.com - Gmail").isEmpty)
+        #expect(SiteHistory.initialisms(of: "Gizmodo").isEmpty)          // one letter is not a nickname
+    }
+
+    @Test func nicknamesMatchWholeAndAliasesByPrefix() {
+        #expect(SiteHistory.matchRank(host: "news.ycombinator.com",
+                                      title: "Some Article - Hacker News", query: "hn") == 1)
+
+        // An initialism is all-or-nothing. Needs a title whose words don't also start
+        // with the query, or the ordinary title-word rule would answer first.
+        #expect(SiteHistory.matchRank(host: "example.com", title: "Wide Open Spaces", query: "wos") == 1)
+        #expect(SiteHistory.matchRank(host: "example.com", title: "Wide Open Spaces", query: "wo") == nil)
+
+        // Model-given aliases are words, so they complete like everything else.
+        #expect(SiteHistory.matchRank(host: "mail.google.com", title: "",
+                                      aliases: ["email"], query: "ema") == 1)
+        #expect(SiteHistory.matchRank(host: "mail.google.com", title: "",
+                                      aliases: ["email"], query: "xyz") == nil)
+
+        // A nickname never outranks the site whose host you actually typed.
+        let byName = SiteHistory.matchRank(host: "mail.google.com", title: "", aliases: ["email"], query: "mail")
+        let byAlias = SiteHistory.matchRank(host: "example.com", title: "", aliases: ["mailbox"], query: "mail")
+        #expect((byName ?? 0) > (byAlias ?? 0))
+    }
+
+    @Test func repeatLoadsOnOneSiteAreOneVisit() {
+        let store = freshStore()
+        let now = Date()
+        // Clicking through 10 articles in one sitting shouldn't out-rank a site you
+        // open every morning.
+        for i in 0..<10 {
+            store.record(url: URL(string: "https://news.example/\(i)")!, title: "News",
+                         now: now.addingTimeInterval(Double(i) * 60))
+        }
+        #expect(store.sites["news.example"]?.count == 1)
+    }
+}

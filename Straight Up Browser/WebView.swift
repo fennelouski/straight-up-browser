@@ -315,6 +315,12 @@ struct WebView: NSViewRepresentable {
                     }
                 }
 
+                // Cross-tab visit frequency for omnibar nicknames ("gmail" ->
+                // mail.google.com). Incognito never contributes — that's the point of it.
+                if tab.sessionKind != .incognito {
+                    SiteHistory.shared.record(url: currentURL, title: webView.title)
+                }
+
                 // Notify parent of URL change to update stable URL
                 parent.onURLChange?(currentURL)
             }

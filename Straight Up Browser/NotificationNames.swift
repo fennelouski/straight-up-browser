@@ -18,6 +18,7 @@ extension Notification.Name {
     static let reopenLastClosedTab = Notification.Name("reopenLastClosedTab")
     static let showOmnibar = Notification.Name("showOmnibar")
     static let browserListTabs = Notification.Name("browserListTabs")
+    static let browserShowTabGrid = Notification.Name("browserShowTabGrid")
 
     // Edit menu
     static let browserFindInPage = Notification.Name("browserFindInPage")

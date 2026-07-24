@@ -185,6 +185,7 @@ struct ContentView: View {
 
     // UI State
     @State private var showOmnibar = false
+    @State private var showTabGrid = false
     @State private var showFindBar = false
     @State private var findText = ""
     @State private var findMatchIndex = 0 // 1-based position of the current match, 0 before the first hit
@@ -741,7 +742,10 @@ struct ContentView: View {
                                 },
                                 errorMessage: navigationManager?.omnibarError,
                                 tabs: tabs,
-                                bookmarkSuggestions: bookmarkSuggestions
+                                bookmarkSuggestions: bookmarkSuggestions,
+                                currentTabId: tabManager.selectedTabId,
+                                onSwitchToTab: { tabManager.selectedTabId = $0 },
+                                thumbnail: { webViewManager?.thumbnail(for: $0) }
                             )
                             .allowsHitTesting(true)
                             Spacer(minLength: 0)
@@ -1175,6 +1179,7 @@ struct ContentView: View {
         .overlay(importBookmarksDialogOverlay.zIndex(6))
         .overlay(quitHoldOverlay.zIndex(7))
         .overlay(shortcutCheatSheetOverlay.zIndex(8))
+        .overlay(tabGridOverlay.zIndex(8))
         .overlay(alignment: .bottomTrailing, content: { defaultBrowserOverlay.zIndex(9) })
     }
 
@@ -1186,6 +1191,21 @@ struct ContentView: View {
             }
         }
         .animation(.default, value: tabManager.offerDefaultBrowser)
+    }
+
+    // Card grid of every open tab, ⌘O (arrows to steer, Return to jump)
+    private var tabGridOverlay: some View {
+        Group {
+            if showTabGrid {
+                TabGridView(
+                    isPresented: $showTabGrid,
+                    tabs: allTabs,
+                    selectedTabId: tabManager.selectedTabId,
+                    thumbnail: { webViewManager?.thumbnail(for: $0) },
+                    onSelect: { tabManager.selectedTabId = $0 }
+                )
+            }
+        }
     }
 
     // Full shortcut reference, toggled with Cmd+Shift+H (or Esc/click to close)
@@ -1460,6 +1480,13 @@ struct ContentView: View {
                         let last = UserDefaults.standard.double(forKey: "lastTabBarWidth")
                         tabBarWidth = last > 0 ? last : 200
                     }
+                }
+
+                NotificationCenter.default.addObserver(forName: .browserShowTabGrid, object: nil, queue: .main) { [self] _ in
+                    // Snapshot the tab you're on first; every other tab was captured
+                    // when you switched away from it.
+                    webViewManager?.captureThumbnail(for: tabManager.selectedTabId)
+                    showTabGrid.toggle()
                 }
 
                 // Privacy & session commands (Privacy menu + ⇧⌘N / ⇧⌘E)

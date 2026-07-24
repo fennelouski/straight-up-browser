@@ -531,6 +531,11 @@ struct Straight_Up_BrowserApp: App {
                 }
                 .keyboardShortcut(sc(.previousTab))
 
+                Button("Show All Tabs") {
+                    NotificationCenter.default.post(name: .browserShowTabGrid, object: nil)
+                }
+                .keyboardShortcut(sc(.tabGrid))
+
                 Divider()
 
                 ForEach(Array(ShortcutCommand.switchTabs.enumerated()), id: \.element.id) { index, command in
