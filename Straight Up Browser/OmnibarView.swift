@@ -32,6 +32,14 @@ struct Suggestion: Identifiable {
     }
 }
 
+// How the omnibar's Return key was pressed, so the caller can decide where
+// the result should land.
+enum OmnibarCommit {
+    case navigate       // Return: current tab
+    case newTab         // Shift+Return: new tab
+    case newSplitPane   // Cmd+Return: new split pane next to the current tab
+}
+
 struct OmnibarTextField: NSViewRepresentable {
     @Binding var text: String
     var placeholder: String
@@ -39,7 +47,7 @@ struct OmnibarTextField: NSViewRepresentable {
     var shouldFocus: Bool = false
     var onArrowUp: (() -> Void)?
     var onArrowDown: (() -> Void)?
-    var onCommit: (() -> Void)?
+    var onCommit: ((OmnibarCommit) -> Void)?
     var onCancel: (() -> Void)?
     // Given what the user just typed, returns the full text to inline-complete to
     // (or nil for no completion). The added suffix is auto-selected.
@@ -55,7 +63,12 @@ struct OmnibarTextField: NSViewRepresentable {
         textField.backgroundColor = .clear
         textField.delegate = context.coordinator
         context.coordinator.textField = textField
+        context.coordinator.startMonitoringCommandReturn()
         return textField
+    }
+
+    static func dismantleNSView(_ nsView: NSTextField, coordinator: Coordinator) {
+        coordinator.stopMonitoringCommandReturn()
     }
 
     func updateNSView(_ nsView: NSTextField, context: Context) {
@@ -106,9 +119,31 @@ struct OmnibarTextField: NSViewRepresentable {
         // suffix the user is trying to erase (which would trap them).
         var isDeleting = false
         weak var textField: NSTextField?
+        // Cmd+Return never reaches doCommandBy (Command suppresses the field
+        // editor's key-binding lookup), so catch it with a local monitor instead.
+        private var commandReturnMonitor: Any?
 
         init(_ parent: OmnibarTextField) {
             self.parent = parent
+        }
+
+        func startMonitoringCommandReturn() {
+            commandReturnMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, let textField = self.textField, textField.currentEditor() != nil,
+                      event.keyCode == 36, // Return
+                      event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command else {
+                    return event
+                }
+                self.parent.onCommit?(.newSplitPane)
+                return nil
+            }
+        }
+
+        func stopMonitoringCommandReturn() {
+            if let commandReturnMonitor {
+                NSEvent.removeMonitor(commandReturnMonitor)
+            }
+            commandReturnMonitor = nil
         }
 
         func controlTextDidBeginEditing(_ obj: Notification) {
@@ -160,7 +195,8 @@ struct OmnibarTextField: NSViewRepresentable {
                 parent.onArrowDown?()
                 return true
             case #selector(NSResponder.insertNewline(_:)):
-                parent.onCommit?()
+                let shift = NSApp.currentEvent?.modifierFlags.intersection(.deviceIndependentFlagsMask) == .shift
+                parent.onCommit?(shift ? .newTab : .navigate)
                 return true
             case #selector(NSResponder.cancelOperation(_:)):
                 parent.onCancel?()
@@ -175,7 +211,7 @@ struct OmnibarTextField: NSViewRepresentable {
 struct OmnibarView: View {
     @Binding var isPresented: Bool
     @Binding var urlString: String
-    var onNavigate: (String) -> Void
+    var onNavigate: (String, OmnibarCommit) -> Void
     var errorMessage: String?
     var tabs: [Tab]
     var bookmarkSuggestions: [(title: String, url: URL)]
@@ -303,11 +339,11 @@ struct OmnibarView: View {
                             selectedSuggestionIndex += 1
                         }
                     },
-                    onCommit: {
+                    onCommit: { commit in
                         if let selectedSuggestion = selectedSuggestion {
                             inputText = selectedSuggestion.url.absoluteString
                         }
-                        navigate()
+                        navigate(commit)
                     },
                     onCancel: {
                         isPresented = false
@@ -321,7 +357,7 @@ struct OmnibarView: View {
                     showSuggestions = !newValue.isEmpty && !filteredSuggestions.isEmpty
                 }
 
-                Button(action: navigate) {
+                Button(action: { navigate() }) {
                     Image(systemName: "arrow.right.circle.fill")
                         .foregroundColor(.blue)
                         .padding(.trailing, 12)
@@ -399,7 +435,7 @@ struct OmnibarView: View {
         }
     }
 
-    private func navigate() {
+    private func navigate(_ commit: OmnibarCommit = .navigate) {
         let trimmedText = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
 
@@ -416,7 +452,7 @@ struct OmnibarView: View {
             }
         }
 
-        onNavigate(urlString)
+        onNavigate(urlString, commit)
         isPresented = false
     }
 

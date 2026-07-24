@@ -716,11 +716,26 @@ struct ContentView: View {
                             OmnibarView(
                                 isPresented: $showOmnibar,
                                 urlString: .constant(currentURL?.absoluteString ?? ""),
-                                onNavigate: { urlString in
-                                    if let navigationManager = navigationManager {
+                                onNavigate: { urlString, commit in
+                                    guard let navigationManager else { return }
+                                    switch commit {
+                                    case .navigate:
                                         _ = navigationManager.navigateToURL(urlString, activeTab: activeTab)
-                                        if let activeTab = activeTab {
+                                        if let activeTab {
                                             tabManager.updateTabTitle(activeTab)
+                                        }
+                                    case .newTab, .newSplitPane:
+                                        // Shift+Return / Cmd+Return: skip navigating the
+                                        // current tab, land the result in a fresh one instead.
+                                        guard let url = URL(string: urlString) else {
+                                            navigationManager.omnibarError = String(localized: "Invalid URL")
+                                            return
+                                        }
+                                        let session = activeTab.map { (kind: $0.sessionKind, sessionId: $0.sessionId) }
+                                            ?? (kind: SessionKind.normal, sessionId: nil)
+                                        let newTab = tabManager.createTab(inheriting: session, url: url, select: commit == .newTab)
+                                        if commit == .newSplitPane {
+                                            tabManager.toggleSplitMembership(newTab, tabs: tabs + [newTab])
                                         }
                                     }
                                 },
@@ -768,7 +783,7 @@ struct ContentView: View {
                 text: $findText,
                 placeholder: String(localized: "Find in page"),
                 shouldFocus: true,
-                onCommit: { performFind() },
+                onCommit: { _ in performFind() },
                 onCancel: { closeFindBar() }
             )
             .frame(width: 180)

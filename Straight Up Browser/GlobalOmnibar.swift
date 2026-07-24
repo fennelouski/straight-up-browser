@@ -83,7 +83,9 @@ final class GlobalOmnibarController: NSObject, NSWindowDelegate {
                 if !shown { self?.close() }
             }),
             urlString: .constant(""),
-            onNavigate: { GlobalOmnibarController.openInBrowser($0) },
+            // ponytail: no tab/split concept in the floating global panel, so
+            // Shift/Cmd+Return behave the same as plain Return here.
+            onNavigate: { url, _ in GlobalOmnibarController.openInBrowser(url) },
             errorMessage: nil,
             tabs: [], // ponytail: no history/bookmark suggestions in the global panel
             bookmarkSuggestions: []
