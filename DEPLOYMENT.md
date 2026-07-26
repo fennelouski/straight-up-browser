@@ -72,9 +72,11 @@ check on demand.
    The appcast is what makes already-installed copies auto-update — skipping it
    means new installs get 1.x but existing users never hear about it.
 
-   **Also update the version line** in `src/app/internet/page.tsx` — it hardcodes
-   "Version 1.x · … · N MB". It drifted from 1.1 to 1.4.3 unnoticed because nothing
-   here said to touch it.
+   Nothing else to edit by hand. The "Version 1.x · macOS 15.6 or later · N MB"
+   line on `/internet` is read out of `browser-appcast.xml` at build time
+   (`downloadInfo()` in `src/app/internet/page.tsx`), so copying the appcast is
+   what updates it. It used to be hardcoded and drifted from 1.1 to 1.4.3
+   unnoticed.
 
    Rollback if needed: `git revert` the commit and push — the previous DMG is in history.
 
