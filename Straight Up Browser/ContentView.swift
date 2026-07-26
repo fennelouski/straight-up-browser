@@ -238,6 +238,10 @@ struct ContentView: View {
     // Cmd+Shift+H shortcut cheat sheet
     @State private var showShortcutCheatSheet = false
 
+    // Favicon peek shown when the active tab changes while the tab bar is hidden.
+    @State private var showFaviconPeek = false
+    @State private var faviconPeekTask: Task<Void, Never>?
+
     // Shutter flash marking what a screenshot just captured.
     @State private var flashRect: CGRect?
     @State private var flashOpacity: Double = 0
@@ -1163,6 +1167,54 @@ struct ContentView: View {
         .allowsHitTesting(false)
     }
 
+    // With the tab bar fully hidden, changing the active tab slides its favicon
+    // out of the left edge for ~1s so you can see where you landed.
+    // The blob is only as wide as it needs to be and rounds off on the exposed
+    // side, so no hard edge ever crosses the page.
+    @ViewBuilder
+    private var faviconPeekOverlay: some View {
+        if tabBarWidth == 0, let tab = activeTab {
+            UnevenRoundedRectangle(bottomTrailingRadius: 20, topTrailingRadius: 20)
+                .fill(Color(.windowBackgroundColor))
+                .frame(width: 44, height: 40)
+                .overlay(alignment: .trailing) {
+                    Group {
+                        if let data = tab.favicon, let icon = NSImage(data: data) {
+                            Image(nsImage: icon)
+                                .resizable()
+                                .scaledToFit()
+                        } else {
+                            Image(systemName: tab.url != nil ? "globe" : "plus.circle")
+                                .resizable()
+                                .scaledToFit()
+                                .foregroundColor(.primary)
+                        }
+                    }
+                    .frame(width: 20, height: 20)
+                    .padding(.trailing, 8)
+                }
+                .shadow(color: .black.opacity(0.35), radius: 6, x: 2, y: 0)
+                .offset(x: showFaviconPeek ? 0 : -48)
+                .opacity(showFaviconPeek ? 1 : 0)
+                .allowsHitTesting(false)
+        }
+    }
+
+    // Cancels any in-flight peek so a fast run of switches keeps one blob out
+    // rather than stuttering it closed mid-sequence.
+    private func peekFavicon() {
+        guard tabBarWidth == 0 else { return }
+        faviconPeekTask?.cancel()
+        // duration: here is the perceptual travel time; `response:` is an
+        // oscillator period, which lands the blob in ~165ms, not 300ms.
+        withAnimation(.spring(duration: 0.3, bounce: 0.15)) { showFaviconPeek = true }
+        faviconPeekTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.3)) { showFaviconPeek = false }
+        }
+    }
+
     private var mainContent: some View {
         ZStack {
             webViewContent
@@ -1366,6 +1418,7 @@ struct ContentView: View {
         .ignoresSafeArea(.all) // Ignore safe areas to extend to edges
         .background(Color(.windowBackgroundColor)) // Set explicit background
         .overlay(screenshotFlashOverlay)
+        .overlay(alignment: .leading) { faviconPeekOverlay }
         // One session, serialized by pageTranslator's own queue: it advances
         // `configuration` to the next pending request as each one finishes.
         .translationTask(pageTranslator.configuration) { session in
@@ -1530,6 +1583,11 @@ struct ContentView: View {
             notificationManager?.setupNotificationObservers()
             keyboardShortcutsManager?.setupKeyboardShortcuts()
         }
+        // Every way the active tab changes writes selectedTabId, so peek from
+        // here rather than the individual switch/close/reopen paths: Cmd+W and
+        // Cmd+Shift+T get it too, and a no-op switch (Cmd+5 with 3 tabs open)
+        // doesn't peek because the value never changed.
+        .onChange(of: tabManager.selectedTabId) { _, _ in peekFavicon() }
         .onChange(of: showOmnibar) { _, isShowing in
             // Dismissing the omnibar (Esc, click-away) without navigating takes
             // the blank tab it was opened for with it. Navigating first gives the
