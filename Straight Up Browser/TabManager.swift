@@ -297,7 +297,18 @@ class TabManager: ObservableObject {
         }
     }
 
+    /// Which tab takes focus when `tab` is closed: the one before it in the list,
+    /// or the one after when closing the first tab.
+    private func neighbor(of tab: Tab, in tabs: [Tab]) -> UUID? {
+        guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return tabs.first?.id }
+        if index > 0 { return tabs[index - 1].id }
+        return tabs.count > 1 ? tabs[index + 1].id : nil
+    }
+
     func closeTab(_ tab: Tab, tabs: [Tab]) {
+        // Resolve the focus target while the list still contains the tab.
+        let successor = neighbor(of: tab, in: tabs)
+
         // Closing a fast-forwarded pane is the "no thanks" — record the verdict
         // before the tab goes away.
         fastForward?.paneClosed(tab.id)
@@ -317,7 +328,7 @@ class TabManager: ObservableObject {
                 webViewManager?.discardIncognitoStore(sid)
             }
             let remaining = tabs.filter { $0.id != tab.id }
-            if selectedTabId == tab.id { selectedTabId = remaining.first?.id }
+            if selectedTabId == tab.id { selectedTabId = successor }
             if remaining.isEmpty { _ = createNewTab() } else { ensureSelectedTab(from: remaining) }
             return
         }
@@ -335,7 +346,7 @@ class TabManager: ObservableObject {
         // closed-set instead, and keep the always-one-tab invariant.
         if TabSync.enabled && TabSync.mode == .openOnly {
             TabSync.markLocallyClosed(tab.id)
-            if selectedTabId == tab.id { selectedTabId = remaining.first?.id }
+            if selectedTabId == tab.id { selectedTabId = successor }
             if remaining.isEmpty { _ = createNewTab() } else { ensureSelectedTab(from: remaining) }
             return
         }
@@ -343,7 +354,7 @@ class TabManager: ObservableObject {
         if tabs.count > 1 {
             modelContext?.delete(tab)
             if selectedTabId == tab.id {
-                selectedTabId = remaining.first?.id
+                selectedTabId = successor
             }
             // Ensure there's always a selected tab after closing
             ensureSelectedTab(from: remaining)

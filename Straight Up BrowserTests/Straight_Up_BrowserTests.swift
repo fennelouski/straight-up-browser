@@ -341,6 +341,22 @@ struct SplitViewTests {
         cleanup(manager)
     }
 
+    @Test func closingFocusedTabSelectsNeighbor() {
+        let manager = TabManager()
+        let tabs = makeTabs(3)
+
+        manager.selectedTabId = tabs[1].id
+        manager.closeTab(tabs[1], tabs: tabs)
+        #expect(manager.selectedTabId == tabs[0].id)
+
+        // Closing the first tab has no predecessor: focus moves forward instead
+        let remaining = [tabs[0], tabs[2]]
+        manager.selectedTabId = tabs[0].id
+        manager.closeTab(tabs[0], tabs: remaining)
+        #expect(manager.selectedTabId == tabs[2].id)
+        cleanup(manager)
+    }
+
     @Test func closingMemberCollapsesOnlyItsPane() {
         let manager = TabManager()
         let tabs = makeTabs(3)
