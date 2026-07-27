@@ -8,7 +8,53 @@
 import Testing
 import SwiftUI
 import SwiftData
+import AppKit
 @testable import Browser
+
+// The selection ring in the minimal tab bar traces the favicon's own shape, so
+// the shape sniffer has to tell a full-bleed tile from a glyph on transparency.
+struct FaviconShapeTests {
+
+    // cornerRadius nil = full circle; 0 = hard square.
+    private func icon(cornerRadius: CGFloat?) -> Data {
+        let side: CGFloat = 32
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(side), pixelsHigh: Int(side),
+                                   bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                   isPlanar: false, colorSpaceName: .deviceRGB,
+                                   bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        let bounds = NSRect(x: 0, y: 0, width: side, height: side)
+        NSColor.clear.setFill()
+        bounds.fill(using: .copy)
+        NSColor.red.setFill()
+        let path = cornerRadius.map { NSBezierPath(roundedRect: bounds, xRadius: $0, yRadius: $0) }
+            ?? NSBezierPath(ovalIn: bounds)
+        path.fill()
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.representation(using: .png, properties: [:])!
+    }
+
+    // The measured radius is quantized to whole source pixels (~0.1 of the side
+    // on a 32px icon), so it tracks the real corner rather than matching it.
+    @Test func measuredRadiusTracksTheTilesOwnCorner() {
+        #expect(FaviconShape.cornerRadiusFraction(icon(cornerRadius: 0)) == 0)  // hard square
+        for radius in [CGFloat(3), 6, 7.2, 11, 15] {
+            let measured = FaviconShape.cornerRadiusFraction(icon(cornerRadius: radius))
+            #expect(abs(measured - radius / 32) < 0.06, "radius \(radius) measured \(measured)")
+        }
+        // Monotonic: a rounder tile never reports a tighter corner.
+        let fractions = [CGFloat(0), 3, 6, 11, 15].map { FaviconShape.cornerRadiusFraction(icon(cornerRadius: $0)) }
+        #expect(fractions == fractions.sorted())
+    }
+
+    @Test func roundAndUnknownIconsResolveToAFullCircle() {
+        #expect(FaviconShape.cornerRadiusFraction(icon(cornerRadius: nil)) == 0.5)
+        // No favicon, or bytes we can't decode: circle, same as the monogram.
+        #expect(FaviconShape.cornerRadiusFraction(nil) == 0.5)
+        #expect(FaviconShape.cornerRadiusFraction(Data("not an image".utf8)) == 0.5)
+    }
+}
 
 struct Straight_Up_BrowserTests {
 
@@ -229,6 +275,71 @@ struct SessionIsolationTests {
 // run in parallel with each other.
 @Suite(.serialized)
 struct ShortcutTests {
+
+    @Test func websiteQuickOpenOverrideIsOptIn() {
+        let defaults = UserDefaults.standard
+        let key = KeyboardShortcutsManager.overrideWebsiteQuickOpenKey
+        let previousValue = defaults.object(forKey: key)
+        defer {
+            if let previousValue {
+                defaults.set(previousValue, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+
+        defaults.removeObject(forKey: key)
+        #expect(!SettingsManager.shared.overrideWebsiteQuickOpen)
+
+        defaults.set(true, forKey: key)
+        #expect(SettingsManager.shared.overrideWebsiteQuickOpen)
+    }
+
+    @Test @MainActor func browserCanCaptureQuickOpenBeforeTheWebsite() throws {
+        let defaults = UserDefaults.standard
+        let key = KeyboardShortcutsManager.overrideWebsiteQuickOpenKey
+        let previousValue = defaults.object(forKey: key)
+        defer {
+            if let previousValue {
+                defaults.set(previousValue, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+
+        var isOmnibarShowing = false
+        let manager = KeyboardShortcutsManager(
+            showOmnibar: Binding(
+                get: { isOmnibarShowing },
+                set: { isOmnibarShowing = $0 }
+            ),
+            reloadAction: {},
+            hardReloadAction: {},
+            reloadAllTabsAction: {},
+            goBackAction: {},
+            goForwardAction: {}
+        )
+        let commandK = try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "k",
+            charactersIgnoringModifiers: "k",
+            isARepeat: false,
+            keyCode: 40
+        ))
+
+        defaults.removeObject(forKey: key)
+        #expect(!manager.captureQuickOpenIfNeeded(commandK))
+        #expect(!isOmnibarShowing)
+
+        defaults.set(true, forKey: key)
+        #expect(manager.captureQuickOpenIfNeeded(commandK))
+        #expect(isOmnibarShowing)
+    }
 
     @Test func shortcutValueConversions() {
         let cmdShiftT = Shortcut(key: "t", command: true, shift: true)

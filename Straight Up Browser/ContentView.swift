@@ -16,6 +16,48 @@ import UniformTypeIdentifiers
 // Type alias to disambiguate our Tab model from SwiftUI's Tab view
 typealias BrowserTab = Tab
 
+// A favicon is either a tile that paints its own corners — sharp, rounded, or
+// squircled — or a glyph floating on transparency. The selection ring traces
+// whichever it is, so measure the tile's corner radius rather than guessing.
+enum FaviconShape {
+    // ponytail: plain dictionary, read/written from SwiftUI body on the main
+    // thread only. Make it an NSCache if it ever gets touched off-main.
+    private static var known = [Data: CGFloat]()
+
+    /// Corner radius as a fraction of the icon's side: 0 for a hard-edged tile,
+    /// 0.5 for a circle — which is also the answer for a glyph on transparency,
+    /// bytes we can't decode, and no favicon at all.
+    static func cornerRadiusFraction(_ data: Data?) -> CGFloat {
+        guard let data else { return 0.5 }
+        if let cached = known[data] { return cached }
+        let fraction = measure(data)
+        known[data] = fraction
+        return fraction
+    }
+
+    // Walk in from each corner along the diagonal to the first pixel that's more
+    // painted than not. On a rounded rect of radius r that pixel sits r·(1 − 1/√2)
+    // from the corner, so the length of the walk gives back r.
+    private static func measure(_ data: Data) -> CGFloat {
+        guard let rep = NSBitmapImageRep(data: data), rep.pixelsWide > 3, rep.pixelsHigh > 3 else {
+            return 0.5
+        }
+        let side = CGFloat(min(rep.pixelsWide, rep.pixelsHigh))
+        // A circle leaves a 0.146·side diagonal gap; a deeper one isn't a tile.
+        let limit = Int(side * 0.16) + 1
+        var deepest = 0
+        for (fromLeft, fromTop) in [(true, true), (false, true), (true, false), (false, false)] {
+            guard let gap = (0...limit).first(where: { k in
+                let x = fromLeft ? k : rep.pixelsWide - 1 - k
+                let y = fromTop ? k : rep.pixelsHigh - 1 - k
+                return (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.5
+            }) else { return 0.5 }
+            deepest = max(deepest, gap)
+        }
+        return min(0.5, CGFloat(deepest) / (1 - 1 / 2.0.squareRoot()) / side)
+    }
+}
+
 // Floating favicon overlay for compact mode
 struct FloatingFaviconOverlay: View {
     let tabs: [BrowserTab]
@@ -32,6 +74,14 @@ struct FloatingFaviconOverlay: View {
                 let isSelected = tabManager?.selectedTabId == tab.id
                 let tabDownloads = downloads.filter { $0.tabId == tab.id }
 
+                // The ring follows the favicon's own corners; 0.5 of the cell is
+                // a circle, which is what unknown/round icons resolve to.
+                let cell: CGFloat = 26
+                let ringRadius = FaviconShape.cornerRadiusFraction(tab.favicon) * cell
+                // Inset by half the line width so the stroke stays inside the
+                // cell — straddling the edge got its bottom clipped by the sidebar.
+                let inset: CGFloat = isSelected ? 1 : 0.5
+
                 ZStack {
                     Button(action: {
                         onTabSelect(tab.id)
@@ -39,12 +89,13 @@ struct FloatingFaviconOverlay: View {
                         ZStack {
                             // Neutral background so favicons of any color stay
                             // readable; selection is a ring, not a colored fill
-                            Circle()
+                            RoundedRectangle(cornerRadius: ringRadius)
                                 .fill(Color(.windowBackgroundColor))
-                                .frame(width: 26, height: 26)
+                                .frame(width: cell, height: cell)
                                 .overlay(
-                                    Circle()
+                                    RoundedRectangle(cornerRadius: max(0, ringRadius - inset))
                                         .stroke(isSelected ? Color.blue : Color.gray.opacity(0.4), lineWidth: isSelected ? 2 : 1)
+                                        .padding(inset)
                                 )
 
                             // Favicon or default icon

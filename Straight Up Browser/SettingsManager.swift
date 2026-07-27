@@ -112,6 +112,12 @@ class SettingsManager {
             || userDefaults.bool(forKey: "expandBackForwardShortcuts")
     }
 
+    /// When on, the browser consumes the configured Quick Open shortcut before
+    /// the focused website can handle it. Defaults off when unset.
+    var overrideWebsiteQuickOpen: Bool {
+        userDefaults.bool(forKey: KeyboardShortcutsManager.overrideWebsiteQuickOpenKey)
+    }
+
     // MARK: - Option-Click Download
 
     /// Should an option-click on this URL trigger a download?

@@ -502,6 +502,37 @@ struct ExpandBackForwardDemo: View {
     }
 }
 
+struct QuickOpenOverrideDemo: View {
+    @Binding var enabled: Bool
+
+    var body: some View {
+        VStack(spacing: 20) {
+            VStack(spacing: 12) {
+                keycap(ShortcutStore.shared.shortcut(for: .quickOpen).displayString)
+                Image(systemName: "arrow.down").font(.caption).foregroundStyle(.tertiary)
+                HStack(spacing: 8) {
+                    Image(systemName: enabled ? "macwindow.on.rectangle" : "globe")
+                        .foregroundStyle(enabled ? SettingsTint.general : .secondary)
+                    Text(enabled ? "Browser opens Quick Open" : "The website may handle it")
+                        .font(.callout).fontWeight(.medium)
+                }
+                Text(enabled ? "The shortcut is consumed before it reaches the page."
+                             : "Browser leaves the shortcut available to the focused website.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(16)
+            .background(demoCard)
+            .animation(.easeInOut, value: enabled)
+
+            Toggle("Browser takes priority", isOn: $enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
 struct DefaultBrowserPromptDemo: View {
     @Binding var enabled: Bool
 

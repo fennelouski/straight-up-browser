@@ -22,6 +22,7 @@ struct GeneralSettingsView: View {
     @AppStorage("spaceScrollPercent") private var spaceScrollPercent = 90.0
     @AppStorage("cmdPExportsPDF") private var cmdPExportsPDF = true
     @AppStorage("expandBackForwardShortcuts") private var expandBackForwardShortcuts = true
+    @AppStorage(KeyboardShortcutsManager.overrideWebsiteQuickOpenKey) private var overrideWebsiteQuickOpen = false
     @AppStorage(GlobalOmnibarHotkey.defaultsKey) private var globalOmnibarHotkey = GlobalOmnibarHotkey.defaultChord
     @AppStorage(DefaultBrowser.promptEnabledKey) private var defaultBrowserPrompt = true
     @AppStorage(KeyboardShortcutsManager.quitHoldPercentKey) private var quitHoldPercent = KeyboardShortcutsManager.quitHoldDefaultPercent
@@ -156,6 +157,14 @@ struct GeneralSettingsView: View {
                     explanation: "With this on, ⌘P goes Back and ⌘\\ goes Forward — the same as ⌘[ and ⌘] — and neither Print nor Export as PDF has a keyboard shortcut anymore (both are still in the menu). Turn it off to get the print shortcuts back.",
                     value: $expandBackForwardShortcuts
                 ) { ExpandBackForwardDemo(enabled: $0) }
+
+                Toggle("Let Quick Open override website shortcuts", isOn: $overrideWebsiteQuickOpen)
+                SettingCaptionRow(
+                    caption: "Make Browser’s Quick Open shortcut take priority over the page.",
+                    title: "Override Website Shortcuts",
+                    explanation: "Websites often use ⌘K for their own search or command palette. With this on, Browser handles your configured Quick Open shortcut first, so it always opens the omnibar. With it off, the focused website can handle the shortcut instead.",
+                    value: $overrideWebsiteQuickOpen
+                ) { QuickOpenOverrideDemo(enabled: $0) }
 
                 Toggle("Offer to make Browser your default", isOn: $defaultBrowserPrompt)
                     .onChange(of: defaultBrowserPrompt) { _, on in

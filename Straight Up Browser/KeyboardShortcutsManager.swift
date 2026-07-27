@@ -13,6 +13,8 @@ import AppKit
 // quit gate). Everything else is a menu item in the App's .commands, which is
 // leak-free and discoverable.
 class KeyboardShortcutsManager {
+    static let overrideWebsiteQuickOpenKey = "overrideWebsiteQuickOpen"
+
     private var showOmnibar: Binding<Bool>
     private var reloadAction: () -> Void
     private var hardReloadAction: () -> Void
@@ -108,6 +110,13 @@ class KeyboardShortcutsManager {
                 return nil
             }
 
+            // Websites commonly bind ⌘K themselves. This opt-in route consumes
+            // the configured Quick Open chord before WKWebView can deliver it
+            // to page JavaScript.
+            if self.captureQuickOpenIfNeeded(event) {
+                return nil
+            }
+
             // While the omnibar is open, every other key passes through so
             // editing shortcuts work in the text field
             if self.showOmnibar.wrappedValue {
@@ -166,6 +175,17 @@ class KeyboardShortcutsManager {
 
             return event
         }
+    }
+
+    /// Returns true when the browser owns this Quick Open event and the caller
+    /// should stop it from reaching the focused website.
+    func captureQuickOpenIfNeeded(_ event: NSEvent) -> Bool {
+        guard SettingsManager.shared.overrideWebsiteQuickOpen,
+              ShortcutStore.shared.shortcut(for: .quickOpen).matches(event) else {
+            return false
+        }
+        showOmnibar.wrappedValue.toggle()
+        return true
     }
 
     private func startQuitHold() {
