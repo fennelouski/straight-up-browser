@@ -58,6 +58,7 @@ class TabManager: ObservableObject {
     private var modelContext: ModelContext?
     private weak var webViewManager: WebViewManager?
     weak var fastForward: FastForward?
+    private let terminateApplication: () -> Void
 
     // The blank tab the last new-tab command (⌘T/+) created, if the user hasn't
     // navigated it anywhere yet. Tracked so a second new-tab press undoes the
@@ -66,9 +67,14 @@ class TabManager: ObservableObject {
     private var pendingNewTabId: UUID?
     private var tabIdBeforePendingNewTab: UUID?
 
-    init(modelContext: ModelContext? = nil, webViewManager: WebViewManager? = nil) {
+    init(
+        modelContext: ModelContext? = nil,
+        webViewManager: WebViewManager? = nil,
+        terminateApplication: @escaping () -> Void = { NSApp.terminate(nil) }
+    ) {
         self.modelContext = modelContext
         self.webViewManager = webViewManager
+        self.terminateApplication = terminateApplication
         if let data = UserDefaults.standard.data(forKey: Self.closedTabsKey),
            let saved = try? JSONDecoder().decode([ClosedTabSnapshot].self, from: data) {
             closedTabs = saved
@@ -308,6 +314,7 @@ class TabManager: ObservableObject {
     func closeTab(_ tab: Tab, tabs: [Tab]) {
         // Resolve the focus target while the list still contains the tab.
         let successor = neighbor(of: tab, in: tabs)
+        let remaining = tabs.filter { $0.id != tab.id }
 
         // Closing a fast-forwarded pane is the "no thanks" — record the verdict
         // before the tab goes away.
@@ -327,9 +334,12 @@ class TabManager: ObservableObject {
             if let sid = tab.sessionId, !incognitoTabs.contains(where: { $0.sessionId == sid }) {
                 webViewManager?.discardIncognitoStore(sid)
             }
-            let remaining = tabs.filter { $0.id != tab.id }
             if selectedTabId == tab.id { selectedTabId = successor }
-            if remaining.isEmpty { _ = createNewTab() } else { ensureSelectedTab(from: remaining) }
+            if remaining.isEmpty {
+                terminateApplication()
+            } else {
+                ensureSelectedTab(from: remaining)
+            }
             return
         }
 
@@ -339,37 +349,30 @@ class TabManager: ObservableObject {
         // Clean up the web view for this tab
         webViewManager?.removeWebView(for: tab.id)
 
-        let remaining = tabs.filter { $0.id != tab.id }
-
         // Open-only tab sync: don't delete the record (deleting would propagate the
-        // close to your other devices). Hide it on this device via the local
-        // closed-set instead, and keep the always-one-tab invariant.
+        // close to your other devices). Hide it on this device via the local closed-set.
         if TabSync.enabled && TabSync.mode == .openOnly {
             TabSync.markLocallyClosed(tab.id)
             if selectedTabId == tab.id { selectedTabId = successor }
-            if remaining.isEmpty { _ = createNewTab() } else { ensureSelectedTab(from: remaining) }
+            if remaining.isEmpty {
+                terminateApplication()
+            } else {
+                ensureSelectedTab(from: remaining)
+            }
             return
         }
 
-        if tabs.count > 1 {
-            modelContext?.delete(tab)
-            if selectedTabId == tab.id {
-                selectedTabId = successor
-            }
-            // Ensure there's always a selected tab after closing
-            ensureSelectedTab(from: remaining)
-        } else if tab.url == nil {
-            // Already a blank New Tab and it's the last one open — closing it
-            // again means the user wants out, not another blank tab.
-            NSApp.terminate(nil)
+        modelContext?.delete(tab)
+        if selectedTabId == tab.id {
+            selectedTabId = successor
+        }
+        if remaining.isEmpty {
+            // Persist the deletion before termination so relaunch starts from an
+            // actually empty session rather than restoring the tab just closed.
+            if let modelContext { try? modelContext.save() }
+            terminateApplication()
         } else {
-            // Closing the last tab: reset it to a fresh New Tab instead of
-            // deleting it, so there is always one tab open
-            tab.title = String(localized: "New Tab")
-            tab.url = nil
-            tab.historyStrings = []
-            tab.currentHistoryIndex = -1
-            tab.lastAccessed = Date()
+            ensureSelectedTab(from: remaining)
         }
     }
 

@@ -367,11 +367,11 @@ struct ContentView: View {
         return bookmarks.map { (title: $0.title, url: $0.url) }
     }
 
-    // The working set of tabs: persisted normal/container tabs (SwiftData) plus the
-    // in-memory incognito tabs. Used for selection, switching, active-tab lookup, the
-    // web view coordinator, and rendering — everywhere except SwiftData-only concerns
-    // (empty-tab cleanup, workspace save) which stay on `tabs`.
-    private var allTabs: [BrowserTab] { tabs + tabManager.incognitoTabs }
+    // The working set of tabs visible on this device: persisted normal/container
+    // tabs (excluding open-only sync closes) plus the in-memory incognito tabs.
+    // Used for selection, switching, active-tab lookup, and rendering.
+    private var visiblePersistedTabs: [BrowserTab] { TabSync.visible(tabs) }
+    private var allTabs: [BrowserTab] { visiblePersistedTabs + tabManager.incognitoTabs }
 
     // The tabs visible in the window: the split members, or just the focused tab.
     private var displayedTabIds: [UUID] {
@@ -391,10 +391,9 @@ struct ContentView: View {
     private var groupedTabs: [(group: TabGroup?, tabs: [BrowserTab])] {
         var result: [(group: TabGroup?, tabs: [BrowserTab])] = []
 
-        // Group tabs by groupId (dropping open-only local closes, which keep their
-        // CloudKit record so they stay open on other devices). Incognito tabs aren't
-        // synced, so they bypass the visibility filter and always show.
-        let groupedById = Dictionary(grouping: TabSync.visible(tabs) + tabManager.incognitoTabs) { $0.groupId }
+        // Group tabs by groupId. `allTabs` has already dropped open-only local
+        // closes; incognito tabs are included because they are always local.
+        let groupedById = Dictionary(grouping: allTabs) { $0.groupId }
 
         // Add tabs without groups first (ungrouped tabs)
         if let ungroupedTabs = groupedById[nil] {
@@ -423,6 +422,15 @@ struct ContentView: View {
             }
         }
         return availableHeight / 2
+    }
+
+    private func peekLabelWidth(_ label: String) -> CGFloat {
+        let baseFont = NSFont.systemFont(ofSize: 11, weight: .medium)
+        let descriptor = baseFont.fontDescriptor.withDesign(.rounded) ?? baseFont.fontDescriptor
+        let font = NSFont(descriptor: descriptor, size: 11) ?? baseFont
+        // A couple of points beyond the glyph bounds keep antialiasing and the
+        // final character from being clipped after the Text is rotated.
+        return ceil((label as NSString).size(withAttributes: [.font: font]).width) + 4
     }
 
     private var isCurrentPageBookmarked: Bool {
@@ -1246,22 +1254,30 @@ struct ContentView: View {
             GeometryReader { geometry in
                 let iconY = sidebarY(for: tab.id, availableHeight: geometry.size.height)
                 let label = tab.peekLabel(among: allTabs)
-                let labelHeight = min(CGFloat(max(label.count, 8)) * 6.2, 180)
-                let runsDown = iconY < labelHeight + 48
-                let backgroundY = iconY + (runsDown ? labelHeight / 2 : -labelHeight / 2)
-                let textY = iconY + (runsDown ? (labelHeight / 2 + 22) : -(labelHeight / 2 + 22))
+                let labelWidth = peekLabelWidth(label)
+                let labelPadding: CGFloat = 10
+                let labelSpan = labelWidth + labelPadding * 2
+                let totalHeight = 40 + labelSpan
+                let spaceNeededOnOneSide = totalHeight - 20
+                let fitsAbove = iconY >= spaceNeededOnOneSide
+                let fitsBelow = geometry.size.height - iconY >= spaceNeededOnOneSide
+                let runsDown = !fitsAbove && (fitsBelow || iconY < geometry.size.height / 2)
+                let direction: CGFloat = runsDown ? 1 : -1
+                let backgroundY = iconY + direction * labelSpan / 2
+                let textY = iconY + direction * (20 + labelPadding + labelWidth / 2)
 
                 ZStack(alignment: .topLeading) {
                     UnevenRoundedRectangle(bottomTrailingRadius: 20, topTrailingRadius: 20)
                         .fill(Color(.windowBackgroundColor))
-                        .frame(width: 44, height: labelHeight + 40)
+                        .frame(width: 44, height: totalHeight)
                         .position(x: 22, y: backgroundY)
 
                     Text(label)
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .lineLimit(1)
+                        .fixedSize()
                         .foregroundStyle(.primary)
-                        .frame(width: labelHeight, height: 16)
+                        .frame(width: labelWidth, height: 16)
                         .rotationEffect(.degrees(runsDown ? 90 : -90))
                         .position(x: 20, y: textY)
 
@@ -1693,13 +1709,18 @@ struct ContentView: View {
                 // SwiftData is the session store: tabs are already loaded via @Query.
                 // Register any restored container tabs' sessions before they activate.
                 webViewManager?.syncSessions(from: tabs)
-                // Select the tab that was active last time, tabs load lazily on selection.
-                if tabs.isEmpty {
+                // Select the tab that was active last time, tabs load lazily on
+                // selection. If every synced record is locally hidden, that is
+                // also an empty local session.
+                if visiblePersistedTabs.isEmpty {
                     _ = tabManager.createNewTab()
+                    showOmnibar = true
                 } else {
-                    tabManager.selectedTabId = tabs.first(where: { $0.isActive })?.id ?? tabs.first?.id
+                    tabManager.selectedTabId =
+                        visiblePersistedTabs.first(where: { $0.isActive })?.id
+                        ?? visiblePersistedTabs.first?.id
                     // Restore last session's split (drops ids that no longer resolve)
-                    tabManager.restoreSplit(from: tabs)
+                    tabManager.restoreSplit(from: visiblePersistedTabs)
                 }
             }
 

@@ -18,6 +18,64 @@ struct Straight_Up_BrowserTests {
 
 }
 
+@Suite(.serialized)
+struct LastTabLifecycleTests {
+
+    @Test func closingBlankLastTabTerminates() {
+        var didTerminate = false
+        let manager = TabManager(terminateApplication: { didTerminate = true })
+        let tab = Tab()
+        manager.selectedTabId = tab.id
+
+        manager.closeTab(tab, tabs: [tab])
+
+        #expect(didTerminate)
+    }
+
+    @Test func closingNavigatedLastTabTerminates() {
+        var didTerminate = false
+        let manager = TabManager(terminateApplication: { didTerminate = true })
+        let tab = Tab(title: "Example", url: URL(string: "https://example.com"))
+        manager.selectedTabId = tab.id
+
+        manager.closeTab(tab, tabs: [tab])
+
+        #expect(didTerminate)
+    }
+
+    @Test func closingIncognitoLastTabTerminates() {
+        var didTerminate = false
+        let manager = TabManager(terminateApplication: { didTerminate = true })
+        let tab = manager.createIncognitoTab()
+
+        manager.closeTab(tab, tabs: [tab])
+
+        #expect(didTerminate)
+        #expect(manager.incognitoTabs.isEmpty)
+    }
+
+    @Test @MainActor func closingPersistedLastTabDeletesItBeforeTerminating() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Browser.Tab.self, configurations: configuration)
+        let context = container.mainContext
+        let tab = Tab(title: "Example", url: URL(string: "https://example.com"))
+        context.insert(tab)
+        try context.save()
+
+        var didTerminate = false
+        let manager = TabManager(
+            modelContext: context,
+            terminateApplication: { didTerminate = true }
+        )
+        manager.selectedTabId = tab.id
+
+        manager.closeTab(tab, tabs: [tab])
+
+        #expect(didTerminate)
+        #expect(try context.fetch(FetchDescriptor<Browser.Tab>()).isEmpty)
+    }
+}
+
 struct TabPeekLabelTests {
     @Test func sameDomainTabsUseDistinctPageTitles() {
         let album = Tab(title: "Summer Album", url: URL(string: "https://facebook.com/albums/123"))
