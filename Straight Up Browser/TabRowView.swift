@@ -56,6 +56,7 @@ struct TabRowView: View {
     let onSelect: () -> Void
     let onReorder: ((UUID, UUID) -> Void)? // sourceTabId, targetTabId
     var loadingProgress: Double? = nil // non-nil draws a progress ring around the favicon
+    var downloads: [ActiveDownload] = [] // concentric, independently colored transfer rings
     var sessionColor: Color? = nil      // container/incognito session tint; nil = normal tab
     var isIncognito: Bool = false
     var isDisplayedInSplit: Bool = false // visible as a split pane (dimmer highlight + glyph)
@@ -105,6 +106,26 @@ struct TabRowView: View {
                     .rotationEffect(.degrees(-90))
                     .frame(width: 21, height: 21)
                     .animation(.linear(duration: 0.1), value: progress)
+            }
+
+            ForEach(Array(downloads.enumerated()), id: \.element.id) { layer, transfer in
+                let diameter = CGFloat(23 + min(layer, 5) * 3)
+                Circle()
+                    .stroke(DownloadVisuals.color(for: transfer.colorIndex).opacity(0.18), lineWidth: 2)
+                    .frame(width: diameter, height: diameter)
+                Circle()
+                    .trim(from: 0, to: max(0.015, transfer.progress))
+                    .stroke(
+                        DownloadVisuals.color(for: transfer.colorIndex),
+                        style: StrokeStyle(
+                            lineWidth: 2,
+                            lineCap: .round,
+                            dash: transfer.state == .failed ? [2, 2] : []
+                        )
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: diameter, height: diameter)
+                    .animation(.linear(duration: 0.1), value: transfer.progress)
             }
 
             // Incognito badge on the favicon corner — visible in both layouts.

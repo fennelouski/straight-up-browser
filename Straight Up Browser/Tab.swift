@@ -169,6 +169,63 @@ final class Tab {
         return URL(string: urlString)
     }
 
+    // Short, page-specific text for the hidden-sidebar tab peek. Prefer a real
+    // page title, but fall back to path/query details when sibling tabs on the
+    // same site have the same title (or only a domain title).
+    func peekLabel(among tabs: [Tab], maxLength: Int = 39) -> String {
+        func normalizedHost(_ url: URL?) -> String {
+            guard var host = url?.host?.lowercased() else { return "" }
+            if host.hasPrefix("www.") { host.removeFirst(4) }
+            return host
+        }
+        let host = normalizedHost(url)
+        let peers = tabs.filter { normalizedHost($0.url) == host }
+
+        func titleCandidate(_ tab: Tab) -> String? {
+            let value = tab.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty,
+                  value.caseInsensitiveCompare(host) != .orderedSame,
+                  value != String(localized: "New Tab") else { return nil }
+            return value
+        }
+
+        let ownTitle = titleCandidate(self)
+        let sameTitleCount = ownTitle.map { title in
+            peers.filter { titleCandidate($0)?.caseInsensitiveCompare(title) == .orderedSame }.count
+        } ?? 0
+
+        var label: String
+        if let ownTitle, sameTitleCount <= 1 {
+            label = ownTitle
+        } else if let url {
+            let path = url.pathComponents
+                .filter { $0 != "/" }
+                .suffix(2)
+                .map { $0.removingPercentEncoding ?? $0 }
+                .joined(separator: " / ")
+            if !path.isEmpty {
+                label = path
+            } else if let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { !($0.value ?? "").isEmpty }) {
+                label = query.value ?? query.name
+            } else {
+                label = ownTitle ?? host
+            }
+        } else {
+            label = ownTitle ?? String(localized: "New Tab")
+        }
+
+        if peers.filter({ peer in
+            guard peer.id != id else { return false }
+            return peer.url == url || titleCandidate(peer)?.caseInsensitiveCompare(label) == .orderedSame
+        }).isEmpty == false,
+           let position = peers.firstIndex(where: { $0.id == id }) {
+            label += " · \(position + 1)"
+        }
+
+        return String(label.prefix(maxLength))
+    }
+
     // Update title based on current URL
     func updateTitleFromURL() {
         title = Tab.extractDomain(from: url)

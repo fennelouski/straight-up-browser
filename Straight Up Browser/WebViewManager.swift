@@ -769,8 +769,13 @@ extension WebViewManager: WKScriptMessageHandler {
                SettingsManager.shared.optionClickShouldDownload(url, isImage: true),
                let webView = message.webView {
                 webView.startDownload(using: URLRequest(url: url)) { download in
-                    // The coordinator (navigation delegate) owns download destinations
-                    download.delegate = webView.navigationDelegate as? WKDownloadDelegate
+                    // The coordinator owns destinations, progress, pause/restart,
+                    // and the originating-tab association for every download.
+                    if let coordinator = webView.navigationDelegate as? WebView.Coordinator {
+                        coordinator.track(download, from: webView)
+                    } else {
+                        download.delegate = webView.navigationDelegate as? WKDownloadDelegate
+                    }
                 }
             }
         case "painted":

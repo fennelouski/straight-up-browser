@@ -23,12 +23,14 @@ struct FloatingFaviconOverlay: View {
     let onTabSelect: (UUID) -> Void
     let onReorder: ((UUID, UUID) -> Void)?
     let tabManager: TabManager?
+    let downloads: [ActiveDownload]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(tabs.indices, id: \.self) { index in
                 let tab = tabs[index]
                 let isSelected = tabManager?.selectedTabId == tab.id
+                let tabDownloads = downloads.filter { $0.tabId == tab.id }
 
                 ZStack {
                     Button(action: {
@@ -61,6 +63,20 @@ struct FloatingFaviconOverlay: View {
                                     .font(.system(size: 14))
                                     .foregroundColor(.primary)
                             }
+
+                            ForEach(Array(tabDownloads.enumerated()), id: \.element.id) { layer, transfer in
+                                Circle()
+                                    .trim(from: 0, to: max(0.015, transfer.progress))
+                                    .stroke(
+                                        DownloadVisuals.color(for: transfer.colorIndex),
+                                        style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                                    )
+                                    .rotationEffect(.degrees(-90))
+                                    .frame(
+                                        width: CGFloat(28 + min(layer, 4) * 3),
+                                        height: CGFloat(28 + min(layer, 4) * 3)
+                                    )
+                            }
                         }
                         .frame(width: 26, height: 26)
                     }
@@ -80,6 +96,42 @@ struct FloatingFaviconOverlay: View {
         .padding(.top, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.leading, 3)
+    }
+}
+
+private struct TabDownloadBars: View {
+    let downloads: [ActiveDownload]
+
+    var body: some View {
+        VStack(spacing: 1) {
+            ForEach(downloads) { transfer in
+                GeometryReader { geometry in
+                    let color = DownloadVisuals.color(for: transfer.colorIndex)
+                    ZStack(alignment: .leading) {
+                        color.opacity(0.18)
+                        color.opacity(transfer.state == .downloading ? 0.9 : 0.55)
+                            .frame(width: geometry.size.width * max(0.015, transfer.progress))
+                        HStack(spacing: 6) {
+                            Text(transfer.filename)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: 4)
+                            Text(
+                                transfer.state == .downloading
+                                    ? "\(Int(transfer.progress * 100))%"
+                                    : transfer.state.label
+                            )
+                            .monospacedDigit()
+                        }
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 5)
+                    }
+                }
+                .frame(height: 14)
+            }
+        }
+        .background(.ultraThinMaterial)
     }
 }
 
@@ -176,6 +228,7 @@ struct ContentView: View {
     @StateObject private var linkPreview = LinkPreviewManager()
     @StateObject private var pageTranslator = PageTranslator()
     @StateObject private var fastForward = FastForward()
+    @ObservedObject private var downloadManager = DownloadManager.shared
     @State private var navigationManager: NavigationManager?
     @State private var notificationManager: NotificationManager?
     @State private var keyboardShortcutsManager: KeyboardShortcutsManager?
@@ -358,6 +411,20 @@ struct ContentView: View {
         return result
     }
 
+    private func sidebarY(for tabId: UUID, availableHeight: CGFloat) -> CGFloat {
+        var y: CGFloat = 36 // expanded sidebar header + top breathing room
+        for section in groupedTabs {
+            if section.group != nil { y += 30 }
+            for tab in section.tabs {
+                if tab.id == tabId {
+                    return min(max(y + 20, 24), availableHeight - 24)
+                }
+                y += 40
+            }
+        }
+        return availableHeight / 2
+    }
+
     private var isCurrentPageBookmarked: Bool {
         guard let currentURL = currentURL else { return false }
         return bookmarkManager?.isBookmarked(currentURL) ?? false
@@ -500,6 +567,7 @@ struct ContentView: View {
                             },
                             loadingProgress: progressFaviconRing && showProgressBar
                                 && tab.id == tabManager.selectedTabId ? progressValue : nil,
+                            downloads: downloadManager.downloads(for: tab.id),
                             sessionColor: sessionColor(for: tab),
                             isIncognito: tab.sessionKind == .incognito,
                             isDisplayedInSplit: tabManager.splitTabIds.contains(tab.id)
@@ -560,7 +628,8 @@ struct ContentView: View {
                             onReorder: { sourceTabId, targetTabId in
                                 tabManager.reorderTabs(sourceTabId: sourceTabId, targetTabId: targetTabId, tabs: allTabs)
                             },
-                        tabManager: tabManager
+                        tabManager: tabManager,
+                        downloads: downloadManager.activeDownloads
                     )
                 } else {
                     // Regular tab list view
@@ -1174,10 +1243,28 @@ struct ContentView: View {
     @ViewBuilder
     private var faviconPeekOverlay: some View {
         if tabBarWidth == 0, let tab = activeTab {
-            UnevenRoundedRectangle(bottomTrailingRadius: 20, topTrailingRadius: 20)
-                .fill(Color(.windowBackgroundColor))
-                .frame(width: 44, height: 40)
-                .overlay(alignment: .trailing) {
+            GeometryReader { geometry in
+                let iconY = sidebarY(for: tab.id, availableHeight: geometry.size.height)
+                let label = tab.peekLabel(among: allTabs)
+                let labelHeight = min(CGFloat(max(label.count, 8)) * 6.2, 180)
+                let runsDown = iconY < labelHeight + 48
+                let backgroundY = iconY + (runsDown ? labelHeight / 2 : -labelHeight / 2)
+                let textY = iconY + (runsDown ? (labelHeight / 2 + 22) : -(labelHeight / 2 + 22))
+
+                ZStack(alignment: .topLeading) {
+                    UnevenRoundedRectangle(bottomTrailingRadius: 20, topTrailingRadius: 20)
+                        .fill(Color(.windowBackgroundColor))
+                        .frame(width: 44, height: labelHeight + 40)
+                        .position(x: 22, y: backgroundY)
+
+                    Text(label)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .lineLimit(1)
+                        .foregroundStyle(.primary)
+                        .frame(width: labelHeight, height: 16)
+                        .rotationEffect(.degrees(runsDown ? 90 : -90))
+                        .position(x: 20, y: textY)
+
                     Group {
                         if let data = tab.favicon, let icon = NSImage(data: data) {
                             Image(nsImage: icon)
@@ -1191,12 +1278,13 @@ struct ContentView: View {
                         }
                     }
                     .frame(width: 20, height: 20)
-                    .padding(.trailing, 8)
+                    .position(x: 28, y: iconY)
                 }
                 .shadow(color: .black.opacity(0.35), radius: 6, x: 2, y: 0)
                 .offset(x: showFaviconPeek ? 0 : -48)
                 .opacity(showFaviconPeek ? 1 : 0)
                 .allowsHitTesting(false)
+            }
         }
     }
 
@@ -1221,6 +1309,7 @@ struct ContentView: View {
                 .zIndex(0)
         }
         .overlay(progressBarOverlay.zIndex(1))
+        .overlay(downloadProgressOverlay.zIndex(1.5))
         .overlay(newTabPageOverlay.zIndex(2))
         .overlay(linkPreviewOverlay.zIndex(3))
         .overlay(omnibarOverlay.zIndex(3))
@@ -1233,6 +1322,41 @@ struct ContentView: View {
         .overlay(shortcutCheatSheetOverlay.zIndex(8))
         .overlay(tabGridOverlay.zIndex(8))
         .overlay(alignment: .bottomTrailing, content: { defaultBrowserOverlay.zIndex(9) })
+    }
+
+    @ViewBuilder
+    private func downloadPane(for tabId: UUID) -> some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            let transfers = downloadManager.downloads(for: tabId)
+            if !transfers.isEmpty {
+                TabDownloadBars(downloads: transfers)
+            }
+        }
+    }
+
+    private var downloadProgressOverlay: some View {
+        Group {
+            if displayedTabIds.count == 4 {
+                VStack(spacing: 0) {
+                    HStack(spacing: 0) {
+                        downloadPane(for: displayedTabIds[0])
+                        downloadPane(for: displayedTabIds[1])
+                    }
+                    HStack(spacing: 0) {
+                        downloadPane(for: displayedTabIds[2])
+                        downloadPane(for: displayedTabIds[3])
+                    }
+                }
+            } else {
+                HStack(spacing: 0) {
+                    ForEach(displayedTabIds, id: \.self) { tabId in
+                        downloadPane(for: tabId)
+                    }
+                }
+            }
+        }
+        .allowsHitTesting(false)
     }
 
     private var defaultBrowserOverlay: some View {

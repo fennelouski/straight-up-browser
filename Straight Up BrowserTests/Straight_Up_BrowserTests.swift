@@ -18,6 +18,28 @@ struct Straight_Up_BrowserTests {
 
 }
 
+struct TabPeekLabelTests {
+    @Test func sameDomainTabsUseDistinctPageTitles() {
+        let album = Tab(title: "Summer Album", url: URL(string: "https://facebook.com/albums/123"))
+        let post = Tab(title: "Nathan's Post", url: URL(string: "https://facebook.com/posts/456"))
+        let tabs = [album, post]
+
+        #expect(album.peekLabel(among: tabs) == "Summer Album")
+        #expect(post.peekLabel(among: tabs) == "Nathan's Post")
+    }
+
+    @Test func duplicateDomainTitlesFallBackToPathAndStayShort() {
+        let album = Tab(title: "Facebook", url: URL(string: "https://facebook.com/photos/album-123"))
+        let post = Tab(title: "Facebook", url: URL(string: "https://facebook.com/posts/post-456"))
+        let tabs = [album, post]
+
+        #expect(album.peekLabel(among: tabs).contains("album-123"))
+        #expect(post.peekLabel(among: tabs).contains("post-456"))
+        #expect(album.peekLabel(among: tabs).count < 40)
+        #expect(post.peekLabel(among: tabs).count < 40)
+    }
+}
+
 struct FindBarTests {
 
     @Test func matchCounterWrapsInBothDirections() {

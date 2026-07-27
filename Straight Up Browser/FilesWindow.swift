@@ -153,9 +153,19 @@ struct FilesWindow: View {
         }
     }
 
+    private var visibleActiveDownloads: [ActiveDownload] {
+        guard filter != .uploads else { return [] }
+        guard !search.isEmpty else { return manager.activeDownloads }
+        let query = search.lowercased()
+        return manager.activeDownloads.filter {
+            $0.filename.lowercased().contains(query)
+                || ($0.source?.absoluteString.lowercased().contains(query) ?? false)
+        }
+    }
+
     var body: some View {
         Group {
-            if manager.records.isEmpty {
+            if manager.records.isEmpty && manager.activeDownloads.isEmpty {
                 ContentUnavailableView(
                     "Nothing here yet",
                     systemImage: "tray.and.arrow.down",
@@ -198,6 +208,19 @@ struct FilesWindow: View {
 
     private var list: some View {
         List(selection: $selection) {
+            if !visibleActiveDownloads.isEmpty {
+                Section("Current Downloads") {
+                    ForEach(visibleActiveDownloads) { transfer in
+                        ActiveDownloadRow(
+                            transfer: transfer,
+                            onPause: { manager.pause(transfer.id) },
+                            onRestart: { manager.restart(transfer.id) },
+                            onDismiss: { manager.dismiss(transfer.id) }
+                        )
+                        .tag(transfer.id)
+                    }
+                }
+            }
             ForEach(groupedDays, id: \.day) { group in
                 Section(HumanDate.day(group.day)) {
                     ForEach(group.rows) { row in
@@ -237,6 +260,79 @@ struct FilesWindow: View {
 
     private func refresh() {
         rows = manager.records.map(FileRow.make)
+    }
+}
+
+private struct ActiveDownloadRow: View {
+    let transfer: ActiveDownload
+    let onPause: () -> Void
+    let onRestart: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .stroke(DownloadVisuals.color(for: transfer.colorIndex).opacity(0.18), lineWidth: 3)
+                Circle()
+                    .trim(from: 0, to: max(0.015, transfer.progress))
+                    .stroke(
+                        DownloadVisuals.color(for: transfer.colorIndex),
+                        style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: transfer.state == .failed ? "exclamationmark" : "arrow.down")
+                    .font(.system(size: 11, weight: .bold))
+            }
+            .frame(width: 32, height: 32)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(transfer.filename)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                ProgressView(value: transfer.progress)
+                    .tint(DownloadVisuals.color(for: transfer.colorIndex))
+
+                HStack(spacing: 6) {
+                    Text(transfer.state.label)
+                    Text("\(Int(transfer.progress * 100))%").monospacedDigit()
+                    if let host = transfer.source?.host { Text("from \(host)") }
+                    if let error = transfer.errorMessage {
+                        Text(error).foregroundStyle(.red)
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+
+            Spacer(minLength: 12)
+
+            switch transfer.state {
+            case .downloading:
+                Button(action: onPause) {
+                    Image(systemName: "pause.fill")
+                }
+                .buttonStyle(.borderless)
+                .help("Pause")
+            case .pausing:
+                ProgressView().controlSize(.small)
+            case .paused, .failed:
+                Button(action: onRestart) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .help("Restart")
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .help("Remove from List")
+            }
+        }
+        .padding(.vertical, 5)
     }
 }
 

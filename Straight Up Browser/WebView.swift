@@ -182,6 +182,9 @@ struct WebView: NSViewRepresentable {
         var tabManager: TabManager?
         var tabs: [Tab]?
         private var downloadDestinations: [WKDownload: URL] = [:]
+        private var downloadTransferIds: [WKDownload: UUID] = [:]
+        private var downloadProgressObservers: [WKDownload: NSKeyValueObservation] = [:]
+        private var intentionallyPausedTransfers: Set<UUID> = []
         var lastRequestedURL: URL?
         var lastSuccessfullyLoadedURL: URL?
 
@@ -528,13 +531,73 @@ struct WebView: NSViewRepresentable {
         // MARK: - Downloads
 
         func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
-            download.delegate = self
+            track(download, from: webView)
             resetTabURLAfterDownload(webView)
         }
 
         func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
-            download.delegate = self
+            track(download, from: webView)
             resetTabURLAfterDownload(webView)
+        }
+
+        func track(_ download: WKDownload, from webView: WKWebView, transferId existingId: UUID? = nil) {
+            guard let tabId = parent.webViewManager?.tabId(for: webView) else { return }
+            download.delegate = self
+            let transferId = existingId ?? DownloadManager.shared.beginDownload(
+                tabId: tabId,
+                source: download.originalRequest?.url
+            )
+            downloadTransferIds[download] = transferId
+            downloadProgressObservers[download] = download.progress.observe(
+                \.fractionCompleted,
+                options: [.initial, .new]
+            ) { _, change in
+                let progress = change.newValue ?? download.progress.fractionCompleted
+                Task { @MainActor in
+                    DownloadManager.shared.update(transferId, progress: progress)
+                }
+            }
+            DownloadManager.shared.setPauseHandler(transferId) { [weak self, weak download, weak webView] in
+                guard let self, let download, let webView else { return }
+                self.pause(download, transferId: transferId, webView: webView)
+            }
+        }
+
+        private func pause(_ download: WKDownload, transferId: UUID, webView: WKWebView) {
+            intentionallyPausedTransfers.insert(transferId)
+            let request = download.originalRequest
+            download.cancel { [weak self, weak webView] resumeData in
+                guard let self, let webView else { return }
+                self.cleanup(download)
+                let canRestart = resumeData != nil || request != nil
+                if canRestart {
+                    DownloadManager.shared.setRestartHandler(transferId) { [weak self, weak webView] in
+                        guard let self, let webView else { return }
+                        self.restart(transferId: transferId, resumeData: resumeData, request: request, webView: webView)
+                    }
+                }
+                DownloadManager.shared.markPaused(transferId, canResume: canRestart)
+                self.intentionallyPausedTransfers.remove(transferId)
+            }
+        }
+
+        private func restart(transferId: UUID, resumeData: Data?, request: URLRequest?, webView: WKWebView) {
+            DownloadManager.shared.markRestarting(transferId)
+            let attach: (WKDownload) -> Void = { [weak self, weak webView] resumedDownload in
+                guard let self, let webView else { return }
+                self.track(resumedDownload, from: webView, transferId: transferId)
+            }
+            if let resumeData {
+                webView.resumeDownload(fromResumeData: resumeData, completionHandler: attach)
+            } else if let request {
+                webView.startDownload(using: request, completionHandler: attach)
+            }
+        }
+
+        private func cleanup(_ download: WKDownload) {
+            downloadProgressObservers.removeValue(forKey: download)?.invalidate()
+            downloadTransferIds.removeValue(forKey: download)
+            downloadDestinations.removeValue(forKey: download)
         }
 
         // A download is not a navigation. If the tab's URL points at the file
@@ -571,22 +634,48 @@ struct WebView: NSViewRepresentable {
             }
 
             downloadDestinations[download] = destination
+            if let transferId = downloadTransferIds[download] {
+                DownloadManager.shared.setDestination(transferId, url: destination, suggestedFilename: suggestedFilename)
+            }
             Logger.log("Download starting: \(destination.path)", type: "WebView")
             completionHandler(destination)
         }
 
         func downloadDidFinish(_ download: WKDownload) {
-            if let url = downloadDestinations.removeValue(forKey: download) {
+            let transferId = downloadTransferIds[download]
+            if let url = downloadDestinations[download] {
                 Logger.log("Download finished: \(url.path)", type: "WebView")
-                DownloadManager.shared.record(url, kind: .download, source: download.originalRequest?.url)
+                if let transferId {
+                    DownloadManager.shared.finish(transferId, at: url)
+                } else {
+                    DownloadManager.shared.record(url, kind: .download, source: download.originalRequest?.url)
+                }
                 // Reveal in Finder is the immediate "it's done" feedback; the
                 // browsable history lives in the Downloads window (File ▸ Show Downloads).
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             }
+            cleanup(download)
         }
 
         func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
-            downloadDestinations.removeValue(forKey: download)
+            guard let transferId = downloadTransferIds[download] else {
+                cleanup(download)
+                return
+            }
+            if intentionallyPausedTransfers.contains(transferId) {
+                Logger.log("Download paused: \(error.localizedDescription)", type: "WebView")
+                return
+            }
+            let request = download.originalRequest
+            let webView = download.webView
+            cleanup(download)
+            if resumeData != nil || request != nil, let webView {
+                DownloadManager.shared.setRestartHandler(transferId) { [weak self, weak webView] in
+                    guard let self, let webView else { return }
+                    self.restart(transferId: transferId, resumeData: resumeData, request: request, webView: webView)
+                }
+            }
+            DownloadManager.shared.markFailed(transferId, error: error, canRestart: resumeData != nil || request != nil)
             Logger.log("Download failed: \(error.localizedDescription)", type: "WebView")
         }
 

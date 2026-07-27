@@ -128,8 +128,9 @@ struct OmnibarTextField: NSViewRepresentable {
         // suffix the user is trying to erase (which would trap them).
         var isDeleting = false
         weak var textField: NSTextField?
-        // Cmd+Return never reaches doCommandBy (Command suppresses the field
-        // editor's key-binding lookup), so catch it with a local monitor instead.
+        // Modified Return is most reliable at the event level. In particular,
+        // NSTextField can clear currentEvent before doCommandBy runs, which made
+        // Shift+Return occasionally look like plain Return and switch tabs.
         private var commandReturnMonitor: Any?
 
         init(_ parent: OmnibarTextField) {
@@ -139,12 +140,19 @@ struct OmnibarTextField: NSViewRepresentable {
         func startMonitoringCommandReturn() {
             commandReturnMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 guard let self, let textField = self.textField, textField.currentEditor() != nil,
-                      event.keyCode == 36, // Return
-                      event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command else {
+                      event.keyCode == 36 else { // Return
                     return event
                 }
-                self.parent.onCommit?(.newSplitPane)
-                return nil
+                let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                if modifiers.contains(.command) {
+                    self.parent.onCommit?(.newSplitPane)
+                    return nil
+                }
+                if modifiers.contains(.shift) {
+                    self.parent.onCommit?(.newTab)
+                    return nil
+                }
+                return event
             }
         }
 
@@ -204,7 +212,7 @@ struct OmnibarTextField: NSViewRepresentable {
                 parent.onArrowDown?()
                 return true
             case #selector(NSResponder.insertNewline(_:)):
-                let shift = NSApp.currentEvent?.modifierFlags.intersection(.deviceIndependentFlagsMask) == .shift
+                let shift = NSApp.currentEvent?.modifierFlags.contains(.shift) == true
                 parent.onCommit?(shift ? .newTab : .navigate)
                 return true
             case #selector(NSResponder.cancelOperation(_:)):
