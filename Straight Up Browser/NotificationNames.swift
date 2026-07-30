@@ -14,6 +14,7 @@ import Foundation
 extension Notification.Name {
     static let browserOpenURL = Notification.Name("browserOpenURL")
     static let browserCloseTab = Notification.Name("browserCloseTab")
+    static let browserCloseTabSet = Notification.Name("browserCloseTabSet")
     static let browserNewTab = Notification.Name("browserNewTab")
     static let reopenLastClosedTab = Notification.Name("reopenLastClosedTab")
     static let showOmnibar = Notification.Name("showOmnibar")

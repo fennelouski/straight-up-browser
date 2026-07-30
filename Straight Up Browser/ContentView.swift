@@ -1267,7 +1267,7 @@ struct ContentView: View {
         Group {
             if quitHoldActive {
                 VStack(spacing: 12) {
-                    Text("Keep holding ⌘Q to quit")
+                    Text(quitHoldProgress >= 0.99 ? "Release ⌘Q now to quit" : "Keep holding ⌘Q to quit")
                         .font(.headline)
                     ProgressView(value: min(quitHoldProgress, 1))
                         .frame(width: 220)
@@ -1868,24 +1868,28 @@ struct ContentView: View {
         bookmarkManager = BookmarkManager(modelContext: modelContext)
         managersInitialized = true
 
-        notificationManager = NotificationManager(
-            tabManager: tabManager,
-            navigationManager: navigationManager,
-            webViewManager: webViewManager,
-            pageTranslator: pageTranslator,
-            showOmnibar: $showOmnibar,
-            tabs: { self.allTabs },
-            closeTabAction: { tab, tabs in
-                // The omnibar edits the current tab's address; once that tab is
-                // gone it's pointing at nothing, so dismiss it with the tab.
-                self.showOmnibar = false
-                tabManager.closeTab(tab, tabs: tabs)
-            },
-            createNewTabAction: {
-                // Inherit the active tab's session so Cmd+T stays in the current
-                // container/incognito (a fresh incognito comes from ⇧⌘N instead).
-                // A second press while still on the blank tab undoes it instead
-                // of creating another (see TabManager.newTabOrUndo).
+            notificationManager = NotificationManager(
+                tabManager: tabManager,
+                navigationManager: navigationManager,
+                webViewManager: webViewManager,
+                pageTranslator: pageTranslator,
+                showOmnibar: $showOmnibar,
+                tabs: { self.allTabs },
+                closeTabAction: { tab, tabs in
+                    // The omnibar edits the current tab's address; once that tab is
+                    // gone it's pointing at nothing, so dismiss it with the tab.
+                    self.showOmnibar = false
+                    tabManager.closeTab(tab, tabs: tabs)
+                },
+                closeTabSetAction: {
+                    self.showOmnibar = false
+                    tabManager.closeTabSet(tabs: allTabs)
+                },
+                createNewTabAction: {
+                    // Inherit the active tab's session so Cmd+T stays in the current
+                    // container/incognito (a fresh incognito comes from ⇧⌘N instead).
+                    // A second press while still on the blank tab undoes it instead
+                    // of creating another (see TabManager.newTabOrUndo).
                 if tabManager.newTabOrUndo(tabs: allTabs, inheriting: self.activeSession()) != nil {
                     self.showOmnibar = true
                 }

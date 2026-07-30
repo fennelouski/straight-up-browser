@@ -172,6 +172,7 @@ extension ShortcutCommand {
     // Tabs
     static let newTab       = Self("newTab", "New Tab", .tabs, Shortcut(key: "t", command: true))
     static let closeTab     = Self("closeTab", "Close Tab", .tabs, Shortcut(key: "w", command: true))
+    static let closeTabSet  = Self("closeTabSet", "Close Tab Set", .tabs, Shortcut(key: "w", command: true, shift: true))
     static let reopenTab    = Self("reopenTab", "Reopen Last Closed Tab", .tabs, Shortcut(key: "t", command: true, shift: true))
     static let nextTab      = Self("nextTab", "Next Tab", .tabs, Shortcut(key: "\t", control: true))
     static let previousTab  = Self("previousTab", "Previous Tab", .tabs, Shortcut(key: "\t", shift: true, control: true))
@@ -245,7 +246,7 @@ extension ShortcutCommand {
     #endif
 
     static let all: [ShortcutCommand] =
-        [newTab, closeTab, reopenTab, nextTab, previousTab, newIncognitoTab]
+        [newTab, closeTab, closeTabSet, reopenTab, nextTab, previousTab, newIncognitoTab]
         + switchTabs
         + screenshots
         + [openLocation, back, forward, reload, hardReload, reloadAll,
@@ -521,6 +522,7 @@ extension ShortcutStore {
         Shortcut(key: "q", command: true): "Quit",
         Shortcut(key: "h", command: true): "Hide",
         Shortcut(key: "m", command: true): "Minimize",
+        Shortcut(key: "w", command: true, shift: true): "Close Window",
     ]
 
     // The name of the system shortcut this chord collides with, if any.

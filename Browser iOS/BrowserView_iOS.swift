@@ -209,6 +209,7 @@ struct BrowserView_iOS: View {
     private var commandPublisher: AnyPublisher<Notification, Never> {
         let names: [Notification.Name] = [
             .browserNewTab, .browserNewIncognitoTab, .browserCloseTab, .reopenLastClosedTab, .showOmnibar,
+            .browserCloseTabSet,
             .browserGoBack, .browserGoForward, .browserReload,
             .browserNextTab, .browserPreviousTab, .browserSwitchTab, .browserAddBookmark,
             .browserZoomIn, .browserZoomOut, .browserZoomReset,
@@ -224,6 +225,7 @@ struct BrowserView_iOS: View {
         case .browserNewTab: createNewTab()
         case .browserNewIncognitoTab: _ = tabManager.createIncognitoTab(); focusOmnibar()
         case .browserCloseTab: closeActiveTab()
+        case .browserCloseTabSet: tabManager.closeTabSet(tabs: visibleTabs)
         case .reopenLastClosedTab: _ = tabManager.reopenLastClosedTab()
         case .showOmnibar: focusOmnibar()
         case .browserGoBack: webViewManager?.goBack()

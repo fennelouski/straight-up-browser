@@ -58,6 +58,7 @@ struct BrowserApp: App {
             cmd("New Tab", .browserNewTab, .newTab)
             cmd("New Incognito Tab", .browserNewIncognitoTab, .newIncognitoTab)
             cmd("Close Tab", .browserCloseTab, .closeTab)
+            cmd("Close Tab Set", .browserCloseTabSet, .closeTabSet)
             cmd("Reopen Closed Tab", .reopenLastClosedTab, .reopenTab)
             Divider()
             cmd("Open Location…", .showOmnibar, .openLocation)

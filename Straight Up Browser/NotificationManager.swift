@@ -18,6 +18,7 @@ class NotificationManager {
     private var showOmnibar: Binding<Bool>
     private var tabs: () -> [Tab]
     private var closeTabAction: (Tab, [Tab]) -> Void
+    private var closeTabSetAction: () -> Void
     private var createNewTabAction: () -> Void
     private var setTabBarWidth: (Double) -> Void
     private var switchToTabAction: (Int) -> Void
@@ -37,6 +38,7 @@ class NotificationManager {
         showOmnibar: Binding<Bool>,
         tabs: @escaping () -> [Tab],
         closeTabAction: @escaping (Tab, [Tab]) -> Void,
+        closeTabSetAction: @escaping () -> Void,
         createNewTabAction: @escaping () -> Void,
         setTabBarWidth: @escaping (Double) -> Void,
         switchToTabAction: @escaping (Int) -> Void,
@@ -53,6 +55,7 @@ class NotificationManager {
         self.showOmnibar = showOmnibar
         self.tabs = tabs
         self.closeTabAction = closeTabAction
+        self.closeTabSetAction = closeTabSetAction
         self.createNewTabAction = createNewTabAction
         self.setTabBarWidth = setTabBarWidth
         self.switchToTabAction = switchToTabAction
@@ -102,6 +105,15 @@ class NotificationManager {
             }
         }
         observers.append(closeTabObserver)
+
+        let closeTabSetObserver = NotificationCenter.default.addObserver(
+            forName: .browserCloseTabSet,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.closeTabSetAction()
+        }
+        observers.append(closeTabSetObserver)
 
         let newTabObserver = NotificationCenter.default.addObserver(
             forName: .browserNewTab,

@@ -394,6 +394,21 @@ class TabManager: ObservableObject {
         }
     }
 
+    func closeTabSet(tabs: [Tab]) {
+        let hasSplitTabs = splitTabIds.count >= 2
+        let targetIds = (hasSplitTabs ? splitTabIds : [selectedTabId].compactMap { $0 })
+            .filter { id in tabs.contains { $0.id == id } }
+
+        guard !targetIds.isEmpty else { return }
+
+        var remaining = tabs
+        for id in targetIds {
+            guard let tab = remaining.first(where: { $0.id == id }) else { continue }
+            closeTab(tab, tabs: remaining)
+            remaining.removeAll { $0.id == id }
+        }
+    }
+
     func reopenLastClosedTab() -> Tab? {
         guard let snapshot = closedTabs.popLast() else { return nil }
 
