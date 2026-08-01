@@ -18,6 +18,42 @@ struct LoggingPrivacyTests {
     }
 }
 
+@MainActor
+struct PrivateTransferHistoryTests {
+    @Test func privateTransfersNeverEnterPersistentHistory() {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("private-transfer-\(UUID().uuidString).json")
+        let manager = DownloadManager(storeURL: storeURL)
+
+        manager.record(
+            URL(fileURLWithPath: "/tmp/private-upload.txt"),
+            kind: .upload,
+            source: URL(string: "https://private.example/form"),
+            privacy: .privateSession
+        )
+
+        #expect(manager.records.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: storeURL.path))
+    }
+
+    @Test func completedPrivateDownloadsDisappearWithoutAHistoryRecord() {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("private-download-\(UUID().uuidString).json")
+        let manager = DownloadManager(storeURL: storeURL)
+        let transferId = manager.beginDownload(
+            tabId: UUID(),
+            source: URL(string: "https://private.example/secret.pdf"),
+            privacy: .privateSession
+        )
+
+        manager.finish(transferId, at: URL(fileURLWithPath: "/tmp/secret.pdf"))
+
+        #expect(manager.activeDownloads.isEmpty)
+        #expect(manager.records.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: storeURL.path))
+    }
+}
+
 // The selection ring in the minimal tab bar traces the favicon's own shape, so
 // the shape sniffer has to tell a full-bleed tile from a glyph on transparency.
 struct FaviconShapeTests {

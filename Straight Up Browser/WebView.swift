@@ -561,9 +561,12 @@ struct WebView: NSViewRepresentable {
         func track(_ download: WKDownload, from webView: WKWebView, transferId existingId: UUID? = nil) {
             guard let tabId = parent.webViewManager?.tabId(for: webView) else { return }
             download.delegate = self
+            let privacy: FileTransferPrivacy =
+                parent.webViewManager?.isPrivateTab(tabId) == true ? .privateSession : .standard
             let transferId = existingId ?? DownloadManager.shared.beginDownload(
                 tabId: tabId,
-                source: download.originalRequest?.url
+                source: download.originalRequest?.url,
+                privacy: privacy
             )
             downloadTransferIds[download] = transferId
             let downloadTransfer = MainActorTransfer(value: download)
@@ -669,8 +672,6 @@ struct WebView: NSViewRepresentable {
                 Logger.log("Download finished: \(url.path)", type: "WebView")
                 if let transferId {
                     DownloadManager.shared.finish(transferId, at: url)
-                } else {
-                    DownloadManager.shared.record(url, kind: .download, source: download.originalRequest?.url)
                 }
                 // Reveal in Finder is the immediate "it's done" feedback; the
                 // browsable history lives in the Downloads window (File ▸ Show Downloads).
@@ -918,9 +919,14 @@ struct WebView: NSViewRepresentable {
             panel.canChooseDirectories = parameters.allowsDirectories
             panel.allowsMultipleSelection = parameters.allowsMultipleSelection
             let site = webView.url
+            let tabId = parent.webViewManager?.tabId(for: webView)
+            let isPrivate = tabId.map { parent.webViewManager?.isPrivateTab($0) == true } ?? false
             let finish: (NSApplication.ModalResponse) -> Void = { response in
                 let urls = response == .OK ? panel.urls : nil
-                urls?.forEach { DownloadManager.shared.record($0, kind: .upload, source: site) }
+                let privacy: FileTransferPrivacy = isPrivate ? .privateSession : .standard
+                urls?.forEach {
+                    DownloadManager.shared.record($0, kind: .upload, source: site, privacy: privacy)
+                }
                 completionHandler(urls)
             }
             if let window = webView.window {
