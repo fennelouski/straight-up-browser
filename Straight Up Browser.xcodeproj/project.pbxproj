@@ -457,7 +457,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Compile the CLI helper into the bundle and sign it before Xcode signs\n# the outer app (Contents/Helpers is a standard nested-code location).\nset -e\nHELPERS=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Helpers\"\nmkdir -p \"$HELPERS\"\nxcrun swiftc -O \"${SRCROOT}/browser-cli/main.swift\" -o \"$HELPERS/browser-cli\"\nif [ \"${EXPANDED_CODE_SIGN_IDENTITY:--}\" != \"-\" ]; then\n    codesign --force --options runtime --timestamp --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$HELPERS/browser-cli\"\nelse\n    codesign --force --sign - \"$HELPERS/browser-cli\"\nfi\n";
+			shellScript = "\"${SRCROOT}/scripts/build-cli-helper.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
