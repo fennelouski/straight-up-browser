@@ -308,12 +308,12 @@ class WebViewManager: NSObject, ObservableObject {
         var out: [String: Data] = [:]
         // Never persist incognito tabs' page state — that would write a private URL
         // (and form/scroll state) to disk, defeating the point of incognito.
-        for (id, state) in savedInteractionStates where !isIncognito(id) {
+        for (id, state) in savedInteractionStates where !isPrivateTab(id) {
             if let data = try? NSKeyedArchiver.archivedData(withRootObject: state, requiringSecureCoding: false) {
                 out[id.uuidString] = data
             }
         }
-        for (id, webView) in webViews where !isIncognito(id) {
+        for (id, webView) in webViews where !isPrivateTab(id) {
             if let state = webView.interactionState,
                let data = try? NSKeyedArchiver.archivedData(withRootObject: state, requiringSecureCoding: false) {
                 out[id.uuidString] = data
@@ -580,7 +580,7 @@ class WebViewManager: NSObject, ObservableObject {
     }
 
     // Whether a tab is incognito (its page state must never be persisted to disk).
-    private func isIncognito(_ tabId: UUID) -> Bool {
+    func isPrivateTab(_ tabId: UUID) -> Bool {
         tabSessions[tabId]?.kind == .incognito
     }
 
