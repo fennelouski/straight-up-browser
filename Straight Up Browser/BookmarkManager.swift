@@ -79,4 +79,18 @@ class BookmarkManager {
         try? modelContext.save()
         return added
     }
+
+    func importBookmarks(_ items: [ImportedLibraryBookmark]) -> Int {
+        var existing = Set(fetchAllBookmarks().map { $0.url.absoluteString })
+        var added = 0
+        for item in items where !existing.contains(item.url.absoluteString) {
+            modelContext.insert(
+                Bookmark(title: item.title, url: item.url, category: item.category)
+            )
+            existing.insert(item.url.absoluteString)
+            added += 1
+        }
+        try? modelContext.save()
+        return added
+    }
 }

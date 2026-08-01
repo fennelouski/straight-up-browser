@@ -5,6 +5,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 #endif
 
+struct ImportedLibraryBookmark: Equatable {
+    let title: String
+    let url: URL
+    let category: String?
+}
+
 enum BrowserLibrary {
     static func historyURLs(from tabs: [Tab]) -> [URL] {
         var seen: Set<String> = []
@@ -70,12 +76,68 @@ enum BrowserLibrary {
         """
     }
 
+    static func bookmarks(fromHTML html: String) -> [ImportedLibraryBookmark] {
+        let pattern = #"<H3\b[^>]*>(.*?)</H3>|<A\b[^>]*HREF\s*=\s*["']([^"']+)["'][^>]*>(.*?)</A>"#
+        guard let expression = try? NSRegularExpression(
+            pattern: pattern,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        ) else { return [] }
+
+        var currentFolder: String?
+        var result: [ImportedLibraryBookmark] = []
+        let range = NSRange(html.startIndex..<html.endIndex, in: html)
+        for match in expression.matches(in: html, range: range) {
+            if let folderRange = Range(match.range(at: 1), in: html) {
+                currentFolder = decodedHTML(String(html[folderRange])).trimmedNonEmpty
+                continue
+            }
+            guard let urlRange = Range(match.range(at: 2), in: html),
+                  let titleRange = Range(match.range(at: 3), in: html) else { continue }
+            let urlString = decodedHTML(String(html[urlRange]))
+            guard let url = URL(string: urlString),
+                  url.scheme == "http" || url.scheme == "https" else { continue }
+            let title = decodedHTML(String(html[titleRange])).trimmedNonEmpty
+                ?? url.host
+                ?? url.absoluteString
+            result.append(
+                ImportedLibraryBookmark(
+                    title: title,
+                    url: url,
+                    category: currentFolder
+                )
+            )
+        }
+        return result
+    }
+
     private static func escape(_ value: String) -> String {
         value
             .replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "\"", with: "&quot;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
+    }
+
+    private static func decodedHTML(_ value: String) -> String {
+        value
+            .replacingOccurrences(
+                of: #"<[^>]+>"#,
+                with: "",
+                options: .regularExpression
+            )
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&apos;", with: "'")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&amp;", with: "&")
+    }
+}
+
+private extension String {
+    var trimmedNonEmpty: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
@@ -117,7 +179,6 @@ enum ReaderMode {
     }
 }
 
-#if os(macOS)
 enum BrowserLibrarySection: String, CaseIterable, Identifiable {
     case bookmarks = "Bookmarks"
     case history = "History"
@@ -125,6 +186,7 @@ enum BrowserLibrarySection: String, CaseIterable, Identifiable {
     var id: Self { self }
 }
 
+#if os(macOS)
 struct BrowserLibraryView: View {
     let bookmarks: [Bookmark]
     let initialSection: BrowserLibrarySection

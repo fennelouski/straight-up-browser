@@ -222,6 +222,7 @@ extension ShortcutCommand {
     // Bookmarks
     static let addBookmark  = Self("addBookmark", "Add Bookmark", .bookmarks, Shortcut(key: "d", command: true))
     static let showBookmarks = Self("showBookmarks", "Show Bookmarks", .bookmarks, Shortcut(key: "b", command: true, shift: true))
+    static let showHistory = Self("showHistory", "Show History", .bookmarks, Shortcut(key: "y", command: true))
 
     // App
     static let omnibar      = Self("omnibar", "Omnibar", .app, Shortcut(key: " ", control: true))
@@ -253,7 +254,7 @@ extension ShortcutCommand {
            findInPage, findNext, findPrevious, zoomIn, zoomOut, actualSize, printPage, exportPDF, fullScreen,
            toggleTranslation, translateInSplit,
            toggleTabBar, hideTabBar, minimalTabBar, compactTabBar, wideTabBar,
-           addBookmark, showBookmarks, clearSiteData, convertToIncognito,
+           addBookmark, showBookmarks, showHistory, clearSiteData, convertToIncognito,
            omnibar, quickOpen, quickOpenNewTab, tabGrid, shortcutOverlay, settings, help, extensionPopup]
 
     static func by(id: String) -> ShortcutCommand? { all.first { $0.id == id } }
@@ -295,6 +296,8 @@ enum BrowserPlatformCommandAction: Hashable {
     case settings
     case shortcutOverlay
     case addBookmark
+    case showBookmarks
+    case showHistory
     case nextTab
     case previousTab
     case switchTab(Int)
@@ -325,6 +328,8 @@ struct BrowserPlatformCommandEntry: Identifiable {
         case .settings: .browserShowSettings
         case .shortcutOverlay: .browserToggleShortcutOverlay
         case .addBookmark: .browserAddBookmark
+        case .showBookmarks: .browserShowBookmarks
+        case .showHistory: .browserShowHistory
         case .nextTab: .browserNextTab
         case .previousTab: .browserPreviousTab
         case .switchTab: .browserSwitchTab
@@ -356,6 +361,8 @@ enum BrowserPlatformCommandRegistry {
         .init(group: .view, command: .settings, action: .settings),
         .init(group: .view, command: .shortcutOverlay, action: .shortcutOverlay),
         .init(group: .bookmarks, command: .addBookmark, action: .addBookmark),
+        .init(group: .bookmarks, command: .showBookmarks, action: .showBookmarks),
+        .init(group: .bookmarks, command: .showHistory, action: .showHistory),
         .init(group: .tabs, command: .nextTab, action: .nextTab),
         .init(group: .tabs, command: .previousTab, action: .previousTab),
     ] + ShortcutCommand.switchTabs.enumerated().map { index, command in

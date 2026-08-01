@@ -470,7 +470,7 @@ struct Straight_Up_BrowserApp: App {
                 Button("Show History") {
                     NotificationCenter.default.post(name: .browserShowHistory, object: nil)
                 }
-                .keyboardShortcut("y", modifiers: [.command])
+                .keyboardShortcut(sc(.showHistory))
 
                 Button("Add Bookmark") {
                     NotificationCenter.default.post(name: .browserAddBookmark, object: nil)
