@@ -16,6 +16,8 @@ COMMON_SETTINGS=(
     SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
 )
 
+./scripts/validate-ci.sh
+
 echo "Running macOS unit tests..."
 xcodebuild test -quiet \
     -project "$PROJECT" \
