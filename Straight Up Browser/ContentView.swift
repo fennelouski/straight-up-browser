@@ -226,6 +226,9 @@ struct SavedWorkspaceTab: Codable {
     let isMuted: Bool
     let zoomLevel: Double
     let orderIndex: Int
+    // Optional so workspaces saved before container support decode as normal tabs.
+    let sessionKind: SessionKind?
+    let sessionId: UUID?
 
     init(from tab: Tab) {
         self.id = tab.id
@@ -236,6 +239,21 @@ struct SavedWorkspaceTab: Codable {
         self.isMuted = tab.isMuted
         self.zoomLevel = tab.zoomLevel
         self.orderIndex = tab.orderIndex
+        self.sessionKind = tab.sessionKind == .normal ? nil : tab.sessionKind
+        self.sessionId = tab.sessionId
+    }
+
+    func makeTab() -> Tab {
+        let tab = Tab(title: title, url: urlString.flatMap(URL.init(string:)), isActive: false)
+        tab.id = id
+        tab.groupId = groupId
+        tab.isPinned = isPinned
+        tab.isMuted = isMuted
+        tab.zoomLevel = zoomLevel
+        tab.orderIndex = orderIndex
+        tab.sessionKind = sessionKind ?? .normal
+        tab.sessionId = sessionId
+        return tab
     }
 }
 
@@ -2024,10 +2042,9 @@ struct ContentView: View {
     }
 
     private func loadWorkspace(_ workspace: SavedWorkspace) {
-        // Clear existing tabs and groups
-        for tab in tabs {
-            modelContext.delete(tab)
-        }
+        // Workspace replacement is not a normal user close: discard views and
+        // models without adding every old tab to the reopen stack.
+        tabManager.discardTabsForWorkspaceLoad(tabs)
         for group in tabGroups {
             modelContext.delete(group)
         }
@@ -2042,24 +2059,13 @@ struct ContentView: View {
         }
 
         // Restore tabs
+        var restoredTabs: [Tab] = []
         for savedTab in workspace.tabs {
-            let tab = BrowserTab(title: savedTab.title, url: nil, isActive: false)
-            tab.id = savedTab.id
-            tab.groupId = savedTab.groupId
-            tab.isPinned = savedTab.isPinned
-            tab.isMuted = savedTab.isMuted
-            tab.zoomLevel = savedTab.zoomLevel
-            tab.orderIndex = savedTab.orderIndex
-
-            // Restore URL if valid
-            if let urlString = savedTab.urlString, let url = URL(string: urlString) {
-                tab.url = url
-                tab.historyStrings = [url.absoluteString]
-                tab.currentHistoryIndex = 0
-            }
-
+            let tab = savedTab.makeTab()
             modelContext.insert(tab)
+            restoredTabs.append(tab)
         }
+        webViewManager?.syncSessions(from: restoredTabs)
 
         // Select the first tab if available
         DispatchQueue.main.async {

@@ -302,6 +302,46 @@ struct SessionIsolationTests {
     }
 }
 
+struct WorkspaceTests {
+    @Test @MainActor func savedContainerTabRestoresItsSession() throws {
+        let sessionId = UUID()
+        let tab = Tab(title: "Work", url: URL(string: "https://work.example"))
+        tab.sessionKind = .container
+        tab.sessionId = sessionId
+
+        let encoded = try JSONEncoder().encode(SavedWorkspaceTab(from: tab))
+        let saved = try JSONDecoder().decode(SavedWorkspaceTab.self, from: encoded)
+        let restored = saved.makeTab()
+
+        #expect(restored.sessionKind == .container)
+        #expect(restored.sessionId == sessionId)
+    }
+
+    @Test @MainActor func replacingWorkspaceDiscardsModelsAndWebViews() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Browser.Tab.self, configurations: configuration)
+        let context = container.mainContext
+        let webViews = WebViewManager()
+        let manager = TabManager(
+            modelContext: context,
+            webViewManager: webViews,
+            terminateApplication: {}
+        )
+        let sessionId = UUID()
+        let tab = manager.createTab(inheriting: (.container, sessionId))
+        let unopenedTab = manager.createTab(inheriting: (.container, sessionId))
+        _ = webViews.getWebView(for: tab.id)
+        #expect(webViews.liveTabIds == [tab.id])
+
+        manager.discardTabsForWorkspaceLoad([tab, unopenedTab])
+
+        #expect(webViews.liveTabIds.isEmpty)
+        #expect(webViews.session(for: tab.id).kind == .normal)
+        #expect(webViews.session(for: unopenedTab.id).kind == .normal)
+        #expect(try context.fetch(FetchDescriptor<Browser.Tab>()).isEmpty)
+    }
+}
+
 // Serialized: these mutate the shared ShortcutStore singleton, so they must not
 // run in parallel with each other.
 @Suite(.serialized)

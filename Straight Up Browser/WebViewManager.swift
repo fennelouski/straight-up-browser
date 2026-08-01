@@ -469,14 +469,6 @@ class WebViewManager: NSObject, ObservableObject {
 
             // Remove from storage
             webViews.removeValue(forKey: tabId)
-            savedInteractionStates.removeValue(forKey: tabId)
-            // Keep the session across a memory unload (the tab reactivates and must
-            // rebuild in the same store); drop it only on a genuine close. Same for
-            // the thumbnail — an unloaded tab still shows its last card.
-            if notifyClosed {
-                tabSessions.removeValue(forKey: tabId)
-                thumbnails.removeValue(forKey: tabId)
-            }
 
             // If this was the active web view, clear it
             if activeWebView === webView {
@@ -489,6 +481,15 @@ class WebViewManager: NSObject, ObservableObject {
                 #endif
             }
             Logger.log("Removed web view for tab \(tabId)", type: "WebViewManager")
+        }
+
+        savedInteractionStates.removeValue(forKey: tabId)
+        // Keep the session across a memory unload (the tab reactivates and must
+        // rebuild in the same store); drop it only on a genuine close. This must
+        // run even when the tab never materialized a WebView.
+        if notifyClosed {
+            tabSessions.removeValue(forKey: tabId)
+            thumbnails.removeValue(forKey: tabId)
         }
     }
 

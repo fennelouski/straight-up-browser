@@ -423,6 +423,25 @@ class TabManager: ObservableObject {
         }
     }
 
+    // Replace a workspace without treating every displaced tab as a user close.
+    // This tears down WebViews/session mappings and deletes persisted rows, but
+    // deliberately creates no reopen snapshots and never terminates the app.
+    func discardTabsForWorkspaceLoad(_ tabs: [Tab]) {
+        splitTabIds = []
+        pendingNewTabId = nil
+        tabIdBeforePendingNewTab = nil
+
+        for tab in tabs {
+            webViewManager?.removeWebView(for: tab.id)
+            if tab.sessionKind == .incognito {
+                incognitoTabs.removeAll { $0.id == tab.id }
+            } else {
+                modelContext?.delete(tab)
+            }
+        }
+        selectedTabId = nil
+    }
+
     func closeTabSet(tabs: [Tab]) {
         let hasSplitTabs = splitTabIds.count >= 2
         let targetIds = (hasSplitTabs ? splitTabIds : [selectedTabId].compactMap { $0 })
