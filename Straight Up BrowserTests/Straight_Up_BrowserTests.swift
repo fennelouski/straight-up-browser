@@ -1118,6 +1118,15 @@ struct CLIAuthorizationTests {
     }
 }
 
+@MainActor
+struct CLIPageReaderPrivacyTests {
+    @Test func offscreenReadsUseAnEphemeralWebsiteDataStore() {
+        let configuration = CLIPageReader.makeConfiguration()
+
+        #expect(!configuration.websiteDataStore.isPersistent)
+    }
+}
+
 struct TabSyncDisclosureTests {
     @Test func everyCloudBackedModelHasAVisibleDataCategory() {
         #expect(TabSync.cloudBackedModelTypeNames == [
