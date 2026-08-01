@@ -128,24 +128,20 @@ struct TabWebView: UIViewRepresentable {
         var lastRequestedURL: URL?
         var lastSuccessfullyLoadedURL: URL?
 
-        // Redirect loop detection
-        private var navigationHistory: [(url: URL, timestamp: Date)] = []
-        private let maxNavigationHistorySize = 5
-        private let loopDetectionTimeWindow: TimeInterval = 10.0
-        private let maxRedirectsInTimeWindow = 3
+        // Each web view owns a separate redirect chain; background tabs must not
+        // trip the active tab's loop threshold.
+        private var redirectLoopGuards: [ObjectIdentifier: RedirectLoopGuard] = [:]
 
-        private func isRedirectLoop(_ url: URL) -> Bool {
-            let now = Date()
-            let recentNavigations = navigationHistory.filter { now.timeIntervalSince($0.timestamp) <= loopDetectionTimeWindow }
-            let urlCount = recentNavigations.filter { $0.url.absoluteString == url.absoluteString }.count
-            return urlCount >= maxRedirectsInTimeWindow
+        private func shouldBlockRedirect(to url: URL, in webView: WKWebView) -> Bool {
+            let key = ObjectIdentifier(webView)
+            var guardrail = redirectLoopGuards[key] ?? RedirectLoopGuard()
+            let shouldBlock = guardrail.shouldBlock(url)
+            redirectLoopGuards[key] = guardrail
+            return shouldBlock
         }
 
-        private func recordNavigation(_ url: URL) {
-            navigationHistory.append((url: url, timestamp: Date()))
-            if navigationHistory.count > maxNavigationHistorySize {
-                navigationHistory.removeFirst()
-            }
+        private func resetRedirectLoopGuard(for webView: WKWebView) {
+            redirectLoopGuards.removeValue(forKey: ObjectIdentifier(webView))
         }
 
         init(_ parent: TabWebView, tabManager: TabManager?, tabs: [Tab]?) {
@@ -168,10 +164,6 @@ struct TabWebView: UIViewRepresentable {
         // MARK: - Navigation
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-            if let url = webView.url, isRedirectLoop(url) {
-                parent.isLoading = false
-                return
-            }
             if isActiveWebView(webView) {
                 parent.isLoading = true
                 parent.hasRenderedContent = false
@@ -179,7 +171,6 @@ struct TabWebView: UIViewRepresentable {
             }
             if let url = webView.url {
                 if isActiveWebView(webView) { lastRequestedURL = url }
-                recordNavigation(url)
                 // Sync the tab's URL as the web view starts navigating, or a link
                 // click triggers a view update while the tab still holds the old
                 // URL and updateUIView re-loads it — "refreshing" instead of navigating.
@@ -208,7 +199,7 @@ struct TabWebView: UIViewRepresentable {
             }
 
             if let url = webView.url { lastSuccessfullyLoadedURL = url }
-            navigationHistory.removeAll()
+            resetRedirectLoopGuard(for: webView)
 
             if let currentURL = webView.url, let tab = tab(for: webView) {
                 if Tab.normalizeURLForComparison(tab.url) != Tab.normalizeURLForComparison(currentURL) {
@@ -240,6 +231,9 @@ struct TabWebView: UIViewRepresentable {
             webView.scrollView.refreshControl?.endRefreshing()
             Logger.log("WebView navigation failed: \(error.localizedDescription)", type: "WebView")
             lastRequestedURL = nil
+            if (error as NSError).code != NSURLErrorCancelled {
+                resetRedirectLoopGuard(for: webView)
+            }
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -247,6 +241,9 @@ struct TabWebView: UIViewRepresentable {
             webView.scrollView.refreshControl?.endRefreshing()
             Logger.log("WebView provisional navigation failed: \(error.localizedDescription)", type: "WebView")
             lastRequestedURL = nil
+            if (error as NSError).code != NSURLErrorCancelled {
+                resetRedirectLoopGuard(for: webView)
+            }
         }
 
         // MARK: - Favicon
@@ -404,6 +401,20 @@ struct TabWebView: UIViewRepresentable {
             preferences.allowsContentJavaScript =
                 UserDefaults.standard.object(forKey: "javaScriptEnabled") == nil
                 || UserDefaults.standard.bool(forKey: "javaScriptEnabled")
+
+            if navigationAction.navigationType != .other {
+                resetRedirectLoopGuard(for: webView)
+            }
+            if let url = navigationAction.request.url,
+               shouldBlockRedirect(to: url, in: webView) {
+                Logger.log("WebView iOS: Cancelled redirect loop at \(url.absoluteString)", type: "WebView")
+                if isActiveWebView(webView) {
+                    parent.isLoading = false
+                }
+                decisionHandler(.cancel, preferences)
+                return
+            }
+
             decisionHandler(.allow, preferences)
         }
 

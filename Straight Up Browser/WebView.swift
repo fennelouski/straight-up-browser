@@ -188,35 +188,20 @@ struct WebView: NSViewRepresentable {
         var lastRequestedURL: URL?
         var lastSuccessfullyLoadedURL: URL?
 
-        // Redirect loop detection
-        private var navigationHistory: [(url: URL, timestamp: Date)] = []
-        private let maxNavigationHistorySize = 5
-        private let loopDetectionTimeWindow: TimeInterval = 10.0 // 10 seconds
-        private let maxRedirectsInTimeWindow = 3
+        // One guard per WKWebView: background tabs and split panes must not
+        // contribute to each other's redirect counts.
+        private var redirectLoopGuards: [ObjectIdentifier: RedirectLoopGuard] = [:]
 
-        private func isRedirectLoop(_ url: URL) -> Bool {
-            let now = Date()
-            let recentNavigations = navigationHistory.filter { now.timeIntervalSince($0.timestamp) <= loopDetectionTimeWindow }
-
-            // Count how many times this URL has been navigated to recently
-            let urlCount = recentNavigations.filter { $0.url.absoluteString == url.absoluteString }.count
-
-            // If we've seen this URL more than maxRedirectsInTimeWindow times in the last loopDetectionTimeWindow seconds, it's a loop
-            if urlCount >= maxRedirectsInTimeWindow {
-                Logger.log("WebView: Detected redirect loop for URL: \(url.absoluteString) (navigated \(urlCount) times in \(loopDetectionTimeWindow)s)", type: "WebView")
-                return true
-            }
-
-            return false
+        private func shouldBlockRedirect(to url: URL, in webView: WKWebView) -> Bool {
+            let key = ObjectIdentifier(webView)
+            var guardrail = redirectLoopGuards[key] ?? RedirectLoopGuard()
+            let shouldBlock = guardrail.shouldBlock(url)
+            redirectLoopGuards[key] = guardrail
+            return shouldBlock
         }
 
-        private func recordNavigation(_ url: URL) {
-            navigationHistory.append((url: url, timestamp: Date()))
-
-            // Keep only the most recent navigations
-            if navigationHistory.count > maxNavigationHistorySize {
-                navigationHistory.removeFirst()
-            }
+        private func resetRedirectLoopGuard(for webView: WKWebView) {
+            redirectLoopGuards.removeValue(forKey: ObjectIdentifier(webView))
         }
 
         init(_ parent: WebView, tabManager: TabManager?, tabs: [Tab]?) {
@@ -237,13 +222,6 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-            // Check for redirect loops before starting navigation
-            if let url = webView.url, isRedirectLoop(url) {
-                Logger.log("WebView didStartProvisionalNavigation: Blocking redirect loop for URL: \(url.absoluteString)", type: "WebView")
-                parent.isLoading = false
-                return
-            }
-
             if isActiveWebView(webView) {
                 parent.isLoading = true
                 parent.hasRenderedContent = false
@@ -254,8 +232,6 @@ struct WebView: NSViewRepresentable {
                 if isActiveWebView(webView) {
                     lastRequestedURL = url
                 }
-                recordNavigation(url)
-
                 // Sync the tab's URL as soon as the webview starts navigating.
                 // Without this, a link click triggers a view update while the
                 // tab still holds the old URL, and updateNSView re-loads the old
@@ -298,8 +274,7 @@ struct WebView: NSViewRepresentable {
                 lastSuccessfullyLoadedURL = url
             }
 
-            // Clear navigation history on successful page load to reset loop detection
-            navigationHistory.removeAll()
+            resetRedirectLoopGuard(for: webView)
 
             if let currentURL = webView.url, let tab = tab(for: webView) {
                 if Tab.normalizeURLForComparison(tab.url) != Tab.normalizeURLForComparison(currentURL) {
@@ -465,6 +440,9 @@ struct WebView: NSViewRepresentable {
             // Reset lastRequestedURL on failure so we can retry
             Logger.log("WebView didFail: resetting lastRequestedURL to nil", type: "WebView")
             lastRequestedURL = nil
+            if (error as NSError).code != NSURLErrorCancelled {
+                resetRedirectLoopGuard(for: webView)
+            }
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -477,6 +455,9 @@ struct WebView: NSViewRepresentable {
             // Reset lastRequestedURL on failure so we can retry
             Logger.log("WebView didFailProvisionalNavigation: resetting lastRequestedURL to nil", type: "WebView")
             lastRequestedURL = nil
+            if (error as NSError).code != NSURLErrorCancelled {
+                resetRedirectLoopGuard(for: webView)
+            }
         }
 
         func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
@@ -521,6 +502,19 @@ struct WebView: NSViewRepresentable {
             preferences.allowsContentJavaScript =
                 UserDefaults.standard.object(forKey: "javaScriptEnabled") == nil
                 || UserDefaults.standard.bool(forKey: "javaScriptEnabled")
+
+            if navigationAction.navigationType != .other {
+                resetRedirectLoopGuard(for: webView)
+            }
+            if let url = navigationAction.request.url,
+               shouldBlockRedirect(to: url, in: webView) {
+                Logger.log("WebView: Cancelled redirect loop at \(url.absoluteString)", type: "WebView")
+                if isActiveWebView(webView) {
+                    parent.isLoading = false
+                }
+                decisionHandler(.cancel, preferences)
+                return
+            }
 
             decisionHandler(.allow, preferences)
         }
