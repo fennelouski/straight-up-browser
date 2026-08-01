@@ -1084,3 +1084,24 @@ struct RedirectLoopGuardTests {
         #expect(!afterReset)
     }
 }
+
+struct DownloadNavigationHistoryTests {
+    @Test func eachDownloadRestoresOnlyItsOwningTabsLastPage() {
+        var history = DownloadNavigationHistory()
+        let firstTab = UUID()
+        let secondTab = UUID()
+        let firstPage = URL(string: "https://example.com/first")!
+        let secondPage = URL(string: "https://example.com/second")!
+
+        history.recordSuccessfulLoad(firstPage, for: firstTab)
+        history.recordSuccessfulLoad(secondPage, for: secondTab)
+
+        #expect(history.restorationURL(for: firstTab) == firstPage)
+        #expect(history.restorationURL(for: secondTab) == secondPage)
+        #expect(history.restorationURL(for: UUID()) == nil)
+
+        history.retainOnly([firstTab])
+        #expect(history.restorationURL(for: firstTab) == firstPage)
+        #expect(history.restorationURL(for: secondTab) == nil)
+    }
+}
