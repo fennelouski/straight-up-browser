@@ -1182,6 +1182,7 @@ struct PrivacySettingsView: View {
 
 struct ClearDataDialog: View {
     @Query private var tabs: [Tab]
+    @Query private var browserSessions: [BrowserSession]
 
     @Binding var isPresented: Bool
     @Binding var clearHistory: Bool
@@ -1230,7 +1231,8 @@ struct ClearDataDialog: View {
         BrowsingDataCleaner.clearSelectedWebsiteData(
             cookies: clearCookies,
             cache: clearCache,
-            localStorage: clearLocalStorage
+            localStorage: clearLocalStorage,
+            containerIdentifiers: browserSessions.map(\.id)
         )
     }
 }

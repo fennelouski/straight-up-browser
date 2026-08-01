@@ -24,10 +24,53 @@ enum ContainerStoreRemoval {
     }
 }
 
+enum WebsiteDataStoreScope: Equatable {
+    case defaultStore
+    case container(UUID)
+}
+
 // Scoped browsing-data clearing for the Privacy menu. WebKit can't un-delete data,
 // so the caller confirms with a warning first; there is no undo. Hard-reload (a page
 // scope with no deletion) lives in ContentView.hardReload() / ⇧⌘R.
 enum BrowsingDataCleaner {
+    static func allStoreScopes(containerIdentifiers: [UUID]) -> [WebsiteDataStoreScope] {
+        var seen: Set<UUID> = []
+        let containers = containerIdentifiers.compactMap { identifier in
+            seen.insert(identifier).inserted
+                ? WebsiteDataStoreScope.container(identifier)
+                : nil
+        }
+        return [.defaultStore] + containers
+    }
+
+    private static func stores(for scopes: [WebsiteDataStoreScope]) -> [WKWebsiteDataStore] {
+        scopes.map { scope in
+            switch scope {
+            case .defaultStore:
+                return .default()
+            case .container(let identifier):
+                return WKWebsiteDataStore(forIdentifier: identifier)
+            }
+        }
+    }
+
+    private static func clear(
+        dataTypes: Set<String>,
+        from stores: [WKWebsiteDataStore],
+        then: @escaping @MainActor @Sendable () -> Void
+    ) {
+        guard !stores.isEmpty, !dataTypes.isEmpty else {
+            then()
+            return
+        }
+        var remaining = stores.count
+        for store in stores {
+            store.removeData(ofTypes: dataTypes, modifiedSince: .distantPast) {
+                remaining -= 1
+                if remaining == 0 { then() }
+            }
+        }
+    }
 
     // Browsing history is app-owned rather than WebKit-owned. Clear every local
     // and synced recovery surface together so neither search nor session restore
@@ -70,7 +113,7 @@ enum BrowsingDataCleaner {
         cookies: Bool,
         cache: Bool,
         localStorage: Bool,
-        in store: WKWebsiteDataStore = .default(),
+        containerIdentifiers: [UUID] = [],
         then: @escaping @MainActor @Sendable () -> Void = {}
     ) {
         if cache { URLCache.shared.removeAllCachedResponses() }
@@ -83,7 +126,11 @@ enum BrowsingDataCleaner {
             then()
             return
         }
-        store.removeData(ofTypes: types, modifiedSince: .distantPast, completionHandler: then)
+        clear(
+            dataTypes: types,
+            from: stores(for: allStoreScopes(containerIdentifiers: containerIdentifiers)),
+            then: then
+        )
     }
 
     // Remove one site's data (cookies + cache + storage) from a specific store, then
@@ -104,11 +151,17 @@ enum BrowsingDataCleaner {
         store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { then() }
     }
 
-    // Clear all normal browsing data: the default WebKit store and shared URL cache.
-    // Container sessions keep their own jars on purpose (they're persistent
-    // by design) — clear those from within each via "Clear This Session's Data".
-    static func clearDefaultEverything(then: @escaping () -> Void = {}) {
+    // Clear every persistent browsing jar: the default store plus each named
+    // container. Incognito stores are memory-only and disappear with their tabs.
+    static func clearEverything(
+        containerIdentifiers: [UUID],
+        then: @escaping @MainActor @Sendable () -> Void = {}
+    ) {
         URLCache.shared.removeAllCachedResponses()
-        clearStore(.default(), then: then)
+        clear(
+            dataTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
+            from: stores(for: allStoreScopes(containerIdentifiers: containerIdentifiers)),
+            then: then
+        )
     }
 }

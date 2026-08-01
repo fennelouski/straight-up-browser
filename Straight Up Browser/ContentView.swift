@@ -2192,9 +2192,11 @@ struct ContentView: View {
     private func clearAllData() {
         confirmClear(
             String(localized: "Clear all browsing data?"),
-            informative: String(localized: "Removes cookies, cache, and storage for normal browsing. Container sessions keep their own data. This can’t be undone.")
+            informative: String(localized: "Removes cookies, cache, and storage from normal browsing and every container. This can’t be undone.")
         ) {
-            BrowsingDataCleaner.clearDefaultEverything()
+            BrowsingDataCleaner.clearEverything(
+                containerIdentifiers: browserSessions.map(\.id)
+            )
         }
     }
 

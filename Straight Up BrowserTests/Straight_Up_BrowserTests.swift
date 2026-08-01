@@ -1090,6 +1090,17 @@ struct BrowsingDataCleanerTests {
         }
     }
 
+    @Test func clearAllScopeIncludesTheDefaultStoreAndEveryContainer() {
+        let work = UUID()
+        let personal = UUID()
+
+        #expect(BrowsingDataCleaner.allStoreScopes(containerIdentifiers: [work, personal]) == [
+            .defaultStore,
+            .container(work),
+            .container(personal)
+        ])
+    }
+
     @Test func eachPrivacyCheckboxMapsOnlyToItsPromisedWebsiteData() {
         #expect(BrowsingDataCleaner.websiteDataTypes(
             cookies: true, cache: false, localStorage: false
