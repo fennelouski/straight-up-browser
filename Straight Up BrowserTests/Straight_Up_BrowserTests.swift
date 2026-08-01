@@ -164,7 +164,7 @@ struct FindBarTests {
     }
 
     @Test func everyPositionMapsToADistinctAlignment() {
-        let alignments = FindBar.positions.map(FindBar.alignment)
+        let alignments = FindBar.positions.map { FindBar.alignment($0) }
         for (i, a) in alignments.enumerated() {
             for b in alignments[(i + 1)...] { #expect(a != b) }
         }
@@ -354,9 +354,17 @@ struct ShortcutTests {
         #expect(ShortcutCommand.omnibar.defaultShortcut.displayString == "⌃Space")
 
         // No two defaults collide.
-        var seen = Set<Shortcut>()
+        var seen = Set<String>()
         for command in ShortcutCommand.all {
-            #expect(seen.insert(command.defaultShortcut).inserted, "duplicate default for \(command.id)")
+            let shortcut = command.defaultShortcut
+            let signature = [
+                shortcut.key,
+                shortcut.command ? "command" : "",
+                shortcut.shift ? "shift" : "",
+                shortcut.option ? "option" : "",
+                shortcut.control ? "control" : "",
+            ].joined(separator: "|")
+            #expect(seen.insert(signature).inserted, "duplicate default for \(command.id)")
         }
     }
 

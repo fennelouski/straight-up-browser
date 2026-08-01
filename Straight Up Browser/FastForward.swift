@@ -315,7 +315,7 @@ enum PulseRing {
 // MARK: - FoundationModels
 
 #if canImport(FoundationModels)
-@available(macOS 26.0, *)
+@available(macOS 26.0, iOS 26.0, *)
 @Generable
 struct ModeledFastForwardIntent {
     @Guide(description: "Exactly one of: download, login, pricing, docs, support. Empty string if the query is a general question rather than an attempt to reach a specific company or product's page.")
@@ -334,6 +334,8 @@ final class FastForward: ObservableObject {
         static let enabled = "fastForwardEnabled"
         // Escape hatch: kill the model branch without killing the feature.
         static let useAppleIntelligence = "fastForwardUseAppleIntelligence"
+        static let pulseIntensity = "findFlashIntensity"
+        static let defaultPulseIntensity = 25.0
     }
 
     private let memory: FastForwardMemory
@@ -409,7 +411,7 @@ final class FastForward: ObservableObject {
         // Table missed. On macOS 26 the on-device model gets a shot at phrasings
         // the regexes don't cover ("where do I get the slack app"). Pure upside:
         // everything above this line works on every supported OS.
-        if #available(macOS 26.0, *),
+        if #available(macOS 26.0, iOS 26.0, *),
            UserDefaults.standard.object(forKey: Key.useAppleIntelligence) as? Bool ?? true {
             Task { [weak self] in
                 guard let match = await Self.modelParse(query) else { return }
@@ -525,8 +527,8 @@ final class FastForward: ObservableObject {
     private func pulse(_ match: FastForwardMatch, in webView: WKWebView) {
         guard let targets = jsArray(match.rule.targets),
               let preferred = jsArray(match.rule.preferred) else { return }
-        let intensity = UserDefaults.standard.object(forKey: FindBar.intensityKey) as? Double
-            ?? FindBar.defaultIntensity
+        let intensity = UserDefaults.standard.object(forKey: Key.pulseIntensity) as? Double
+            ?? Key.defaultPulseIntensity
         // Find the best candidate, centre it, and report where it landed. The rect
         // is read *after* scrolling, so the ring draws over the settled position.
         let findRect = """
@@ -567,7 +569,7 @@ final class FastForward: ObservableObject {
     // MARK: On-device model
 
     #if canImport(FoundationModels)
-    @available(macOS 26.0, *)
+    @available(macOS 26.0, iOS 26.0, *)
     private static func modelParse(_ query: String) async -> FastForwardMatch? {
         guard SystemLanguageModel.default.availability == .available else { return nil }
         let session = LanguageModelSession(instructions: """
@@ -590,7 +592,7 @@ final class FastForward: ObservableObject {
         return FastForwardMatch(intent: intent, noun: noun, rule: FastForwardRule.rule(for: intent))
     }
     #else
-    @available(macOS 26.0, *)
+    @available(macOS 26.0, iOS 26.0, *)
     private static func modelParse(_ query: String) async -> FastForwardMatch? { nil }
     #endif
 }

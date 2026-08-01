@@ -259,7 +259,7 @@ struct FilesWindow: View {
     }
 
     private func refresh() {
-        rows = manager.records.map(FileRow.make)
+        rows = manager.records.map { FileRow.make(from: $0) }
     }
 }
 
