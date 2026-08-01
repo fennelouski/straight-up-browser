@@ -1148,7 +1148,7 @@ struct ClearDataDialog: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 Toggle("Browsing history", isOn: $clearHistory)
-                Toggle("Cookies and site data", isOn: $clearCookies)
+                Toggle("Cookies", isOn: $clearCookies)
                 Toggle("Cached images and files", isOn: $clearCache)
                 Toggle("Local storage", isOn: $clearLocalStorage)
             }
@@ -1175,23 +1175,11 @@ struct ClearDataDialog: View {
             BrowsingDataCleaner.clearHistory(in: tabs)
         }
 
-        if clearCookies {
-            HTTPCookieStorage.shared.removeCookies(since: Date.distantPast)
-            WKWebsiteDataStore.default().fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { records in
-                records.forEach { record in
-                    WKWebsiteDataStore.default().removeData(ofTypes: record.dataTypes, for: [record]) { }
-                }
-            }
-        }
-
-        if clearCache {
-            URLCache.shared.removeAllCachedResponses()
-            WKWebsiteDataStore.default().removeData(ofTypes: [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache], modifiedSince: Date.distantPast) { }
-        }
-
-        if clearLocalStorage {
-            WKWebsiteDataStore.default().removeData(ofTypes: [WKWebsiteDataTypeLocalStorage], modifiedSince: Date.distantPast) { }
-        }
+        BrowsingDataCleaner.clearSelectedWebsiteData(
+            cookies: clearCookies,
+            cache: clearCache,
+            localStorage: clearLocalStorage
+        )
     }
 }
 
@@ -1201,6 +1189,10 @@ struct CookieManagerDialog: View {
     @Binding var isPresented: Bool
     @State private var cookies: [HTTPCookie] = []
     @State private var searchText = ""
+
+    private var cookieStore: WKHTTPCookieStore {
+        WKWebsiteDataStore.default().httpCookieStore
+    }
 
     var filteredCookies: [HTTPCookie] {
         if searchText.isEmpty {
@@ -1276,20 +1268,34 @@ struct CookieManagerDialog: View {
     }
 
     private func loadCookies() {
-        cookies = HTTPCookieStorage.shared.cookies ?? []
+        cookieStore.getAllCookies { loadedCookies in
+            DispatchQueue.main.async {
+                cookies = loadedCookies.sorted {
+                    ($0.domain, $0.path, $0.name) < ($1.domain, $1.path, $1.name)
+                }
+            }
+        }
     }
 
     private func deleteCookie(_ cookie: HTTPCookie) {
-        HTTPCookieStorage.shared.deleteCookie(cookie)
-        loadCookies()
+        cookieStore.delete(cookie) {
+            loadCookies()
+        }
     }
 
     private func deleteAllCookies() {
-        if let allCookies = HTTPCookieStorage.shared.cookies {
-            for cookie in allCookies {
-                HTTPCookieStorage.shared.deleteCookie(cookie)
+        let store = cookieStore
+        store.getAllCookies { allCookies in
+            guard !allCookies.isEmpty else {
+                DispatchQueue.main.async { loadCookies() }
+                return
             }
+            let group = DispatchGroup()
+            for cookie in allCookies {
+                group.enter()
+                store.delete(cookie) { group.leave() }
+            }
+            group.notify(queue: .main) { loadCookies() }
         }
-        loadCookies()
     }
 }
