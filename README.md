@@ -129,8 +129,13 @@ Run the same warning-free gates used by CI and releases:
 ./scripts/verify.sh
 ```
 
-This runs the macOS unit suite, builds the iOS simulator app, and builds the
-macOS UI-test target. Swift and Clang warnings are treated as errors.
+This runs the macOS unit suite, builds both apps in Release, verifies that the
+macOS executable is universal (`arm64` + `x86_64`), and builds the macOS UI-test
+target. On CI and in `scripts/release.sh`, it also executes the macOS and iPadOS
+UI suites. Set `RUN_UI_TESTS=1` locally on a Mac with Developer Mode/UI
+automation enabled to run the same executable UI gates. Swift and Clang warnings
+are treated as errors, and UI failures retain `.xcresult` bundles under the
+verification directory.
 
 For a standalone release build:
 

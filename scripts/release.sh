@@ -48,7 +48,7 @@ if ! git merge-base --is-ancestor "$SOURCE_COMMIT" origin/main; then
 fi
 
 # Never archive a release that has not passed the same gates as CI.
-./scripts/verify.sh
+RUN_UI_TESTS=1 ./scripts/verify.sh
 
 security find-identity -v -p codesigning | grep -q "Developer ID Application" || {
     echo "No 'Developer ID Application' certificate in the keychain."
