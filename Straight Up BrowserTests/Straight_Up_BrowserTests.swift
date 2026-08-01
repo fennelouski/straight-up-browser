@@ -9,6 +9,7 @@ import Testing
 import SwiftUI
 import SwiftData
 import AppKit
+import WebKit
 @testable import Browser
 
 // The selection ring in the minimal tab bar traces the favicon's own shape, so
@@ -881,5 +882,21 @@ struct SiteHistoryTests {
                          now: now.addingTimeInterval(Double(i) * 60))
         }
         #expect(store.sites["news.example"]?.count == 1)
+    }
+}
+
+struct BrowsingDataCleanerTests {
+    @Test func eachPrivacyCheckboxMapsOnlyToItsPromisedWebsiteData() {
+        #expect(BrowsingDataCleaner.websiteDataTypes(
+            cookies: true, cache: false, localStorage: false
+        ) == [WKWebsiteDataTypeCookies])
+
+        #expect(BrowsingDataCleaner.websiteDataTypes(
+            cookies: false, cache: true, localStorage: false
+        ) == [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache])
+
+        #expect(BrowsingDataCleaner.websiteDataTypes(
+            cookies: false, cache: false, localStorage: true
+        ) == [WKWebsiteDataTypeLocalStorage])
     }
 }

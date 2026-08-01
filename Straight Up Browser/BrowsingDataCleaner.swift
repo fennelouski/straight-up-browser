@@ -25,6 +25,43 @@ enum BrowsingDataCleaner {
         siteHistory.clear()
     }
 
+    // Translate the settings checkboxes into non-overlapping WebKit data types.
+    // In particular, selecting cookies must not silently erase caches or storage.
+    static func websiteDataTypes(
+        cookies: Bool,
+        cache: Bool,
+        localStorage: Bool
+    ) -> Set<String> {
+        var types: Set<String> = []
+        if cookies { types.insert(WKWebsiteDataTypeCookies) }
+        if cache {
+            types.insert(WKWebsiteDataTypeDiskCache)
+            types.insert(WKWebsiteDataTypeMemoryCache)
+        }
+        if localStorage { types.insert(WKWebsiteDataTypeLocalStorage) }
+        return types
+    }
+
+    static func clearSelectedWebsiteData(
+        cookies: Bool,
+        cache: Bool,
+        localStorage: Bool,
+        in store: WKWebsiteDataStore = .default(),
+        then: @escaping () -> Void = {}
+    ) {
+        if cache { URLCache.shared.removeAllCachedResponses() }
+        let types = websiteDataTypes(
+            cookies: cookies,
+            cache: cache,
+            localStorage: localStorage
+        )
+        guard !types.isEmpty else {
+            then()
+            return
+        }
+        store.removeData(ofTypes: types, modifiedSince: .distantPast, completionHandler: then)
+    }
+
     // Remove one site's data (cookies + cache + storage) from a specific store, then
     // run `then` (e.g. reload the page). Scoped to the tab's own store, so clearing a
     // site in one container/incognito session never touches another.
@@ -43,12 +80,11 @@ enum BrowsingDataCleaner {
         store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { then() }
     }
 
-    // Clear all normal browsing data: the default store, the shared URL cache, and
-    // cookies. Container sessions keep their own jars on purpose (they're persistent
+    // Clear all normal browsing data: the default WebKit store and shared URL cache.
+    // Container sessions keep their own jars on purpose (they're persistent
     // by design) — clear those from within each via "Clear This Session's Data".
     static func clearDefaultEverything(then: @escaping () -> Void = {}) {
         URLCache.shared.removeAllCachedResponses()
-        HTTPCookieStorage.shared.removeCookies(since: .distantPast)
         clearStore(.default(), then: then)
     }
 }
