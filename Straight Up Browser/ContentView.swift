@@ -58,6 +58,117 @@ enum FaviconShape {
     }
 }
 
+private struct FloatingDownloadRings: View {
+    let downloads: [ActiveDownload]
+
+    var body: some View {
+        ForEach(Array(downloads.enumerated()), id: \.element.id) { layer, transfer in
+            let diameter = CGFloat(28 + min(layer, 4) * 3)
+            Circle()
+                .trim(from: 0, to: max(0.015, transfer.progress))
+                .stroke(
+                    DownloadVisuals.color(for: transfer.colorIndex),
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+                .frame(width: diameter, height: diameter)
+        }
+    }
+}
+
+private struct FloatingFaviconItem: View {
+    let tab: BrowserTab
+    let isSelected: Bool
+    let isInSplit: Bool
+    let downloads: [ActiveDownload]
+    let onSelect: () -> Void
+    let onReorder: ((UUID, UUID) -> Void)?
+
+    private let cell: CGFloat = 26
+
+    var body: some View {
+        Button(action: onSelect) {
+            ZStack {
+                faviconBackground
+                favicon
+                FloatingDownloadRings(downloads: downloads)
+            }
+            .frame(width: cell, height: cell)
+        }
+        .buttonStyle(.plain)
+        .shadow(color: Color.black.opacity(0.3), radius: 2, x: 0, y: 1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(accessibilityValue)
+        .accessibilityHint("Select this tab")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .onDrag {
+            Logger.log("FloatingFaviconOverlay onDrag called for tab: \(tab.id)", type: "ContentView")
+            return NSItemProvider(object: tab.id.uuidString as NSString)
+        }
+        .onDrop(of: [UTType.text], delegate: TabDropDelegate(tabId: tab.id, onReorder: onReorder))
+        .contentShape(Rectangle())
+    }
+
+    private var ringRadius: CGFloat {
+        FaviconShape.cornerRadiusFraction(tab.favicon) * cell
+    }
+
+    private var inset: CGFloat { isSelected ? 1 : 0.5 }
+
+    private var faviconBackground: some View {
+        RoundedRectangle(cornerRadius: ringRadius)
+            .fill(Color(.windowBackgroundColor))
+            .frame(width: cell, height: cell)
+            .overlay(
+                RoundedRectangle(cornerRadius: max(0, ringRadius - inset))
+                    .stroke(
+                        isSelected ? Color.blue : Color.gray.opacity(0.4),
+                        lineWidth: isSelected ? 2 : 1
+                    )
+                    .padding(inset)
+            )
+    }
+
+    @ViewBuilder
+    private var favicon: some View {
+        if let faviconData = tab.favicon, let nsImage = NSImage(data: faviconData) {
+            Image(nsImage: nsImage)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+                .clipped()
+        } else if tab.url != nil {
+            Image(systemName: "globe")
+                .font(.system(size: 14))
+                .foregroundColor(.primary)
+        } else {
+            Image(systemName: "plus.circle")
+                .font(.system(size: 14))
+                .foregroundColor(.primary)
+        }
+    }
+
+    private var accessibilityLabel: String {
+        BrowserAccessibility.tabLabel(
+            title: tab.title,
+            url: tab.url,
+            sessionKind: tab.sessionKind,
+            isPinned: tab.isPinned,
+            isInSplit: isInSplit
+        )
+    }
+
+    private var accessibilityValue: String {
+        BrowserAccessibility.tabValue(
+            isSelected: isSelected,
+            isLoading: false,
+            loadProgress: 0,
+            activeDownloadCount: downloads.count
+        )
+    }
+}
+
 // Floating favicon overlay for compact mode
 struct FloatingFaviconOverlay: View {
     let tabs: [BrowserTab]
@@ -69,79 +180,19 @@ struct FloatingFaviconOverlay: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(tabs.indices, id: \.self) { index in
-                let tab = tabs[index]
-                let isSelected = tabManager?.selectedTabId == tab.id
+            ForEach(Array(tabs.enumerated()), id: \.0) { (_: Int, tab: BrowserTab) in
+                let isSelected = (tabManager?.selectedTabId ?? selectedTabId) == tab.id
+                let isInSplit = tabManager?.splitTabIds.contains(tab.id) ?? false
                 let tabDownloads = downloads.filter { $0.tabId == tab.id }
 
-                // The ring follows the favicon's own corners; 0.5 of the cell is
-                // a circle, which is what unknown/round icons resolve to.
-                let cell: CGFloat = 26
-                let ringRadius = FaviconShape.cornerRadiusFraction(tab.favicon) * cell
-                // Inset by half the line width so the stroke stays inside the
-                // cell — straddling the edge got its bottom clipped by the sidebar.
-                let inset: CGFloat = isSelected ? 1 : 0.5
-
-                ZStack {
-                    Button(action: {
-                        onTabSelect(tab.id)
-                    }) {
-                        ZStack {
-                            // Neutral background so favicons of any color stay
-                            // readable; selection is a ring, not a colored fill
-                            RoundedRectangle(cornerRadius: ringRadius)
-                                .fill(Color(.windowBackgroundColor))
-                                .frame(width: cell, height: cell)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: max(0, ringRadius - inset))
-                                        .stroke(isSelected ? Color.blue : Color.gray.opacity(0.4), lineWidth: isSelected ? 2 : 1)
-                                        .padding(inset)
-                                )
-
-                            // Favicon or default icon
-                            if let faviconData = tab.favicon, let nsImage = NSImage(data: faviconData) {
-                                Image(nsImage: nsImage)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 18, height: 18)
-                                    .clipped()
-                            } else if tab.url != nil {
-                                Image(systemName: "globe")
-                                    .font(.system(size: 14))
-                                    .foregroundColor(.primary)
-                            } else {
-                                Image(systemName: "plus.circle")
-                                    .font(.system(size: 14))
-                                    .foregroundColor(.primary)
-                            }
-
-                            ForEach(Array(tabDownloads.enumerated()), id: \.element.id) { layer, transfer in
-                                Circle()
-                                    .trim(from: 0, to: max(0.015, transfer.progress))
-                                    .stroke(
-                                        DownloadVisuals.color(for: transfer.colorIndex),
-                                        style: StrokeStyle(lineWidth: 2, lineCap: .round)
-                                    )
-                                    .rotationEffect(.degrees(-90))
-                                    .frame(
-                                        width: CGFloat(28 + min(layer, 4) * 3),
-                                        height: CGFloat(28 + min(layer, 4) * 3)
-                                    )
-                            }
-                        }
-                        .frame(width: 26, height: 26)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .shadow(color: Color.black.opacity(0.3), radius: 2, x: 0, y: 1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .onDrag {
-                    Logger.log("FloatingFaviconOverlay onDrag called for tab: \(tab.id)", type: "ContentView")
-                    // Provide the tab ID as the drag item
-                    return NSItemProvider(object: tab.id.uuidString as NSString)
-                }
-                .onDrop(of: [UTType.text], delegate: TabDropDelegate(tabId: tab.id, onReorder: onReorder))
-                .contentShape(Rectangle()) // Make the entire area droppable
+                FloatingFaviconItem(
+                    tab: tab,
+                    isSelected: isSelected,
+                    isInSplit: isInSplit,
+                    downloads: tabDownloads,
+                    onSelect: { onTabSelect(tab.id) },
+                    onReorder: onReorder
+                )
             }
         }
         .padding(.top, 8)
@@ -287,6 +338,7 @@ enum FindBar {
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \BrowserTab.orderIndex) private var tabs: [BrowserTab]
     @Query(sort: \TabGroup.orderIndex) private var tabGroups: [TabGroup]
     @Query(sort: \Bookmark.createdAt, order: .reverse) private var allBookmarks: [Bookmark]
@@ -532,6 +584,7 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .help("New Tab")
+            .accessibilityLabel("New Tab")
 
             Button(action: { showCreateGroupDialog = true }) {
                 Image(systemName: "folder.badge.plus")
@@ -541,6 +594,7 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .help("New Group")
+            .accessibilityLabel("New Group")
 
             Menu {
                 Button("Save Workspace", action: { showSaveWorkspaceDialog = true })
@@ -562,6 +616,7 @@ struct ContentView: View {
             }
             .menuStyle(.borderlessButton)
             .help("Workspaces")
+            .accessibilityLabel("Workspaces")
 
             Menu {
                 Button("New Incognito Tab") {
@@ -590,6 +645,7 @@ struct ContentView: View {
             }
             .menuStyle(.borderlessButton)
             .help("Containers & Incognito")
+            .accessibilityLabel("Containers and Incognito")
 
             Spacer(minLength: 0)
         }
@@ -616,6 +672,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Delete Group")
+                .accessibilityLabel("Delete \(group.name) group")
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -971,18 +1028,21 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .help("Previous Match")
+            .accessibilityLabel("Previous Match")
 
             Button(action: { performFind() }) {
                 Image(systemName: "chevron.down")
             }
             .buttonStyle(.plain)
             .help("Next Match")
+            .accessibilityLabel("Next Match")
 
             Button(action: { closeFindBar() }) {
                 Image(systemName: "xmark")
             }
             .buttonStyle(.plain)
             .help("Close")
+            .accessibilityLabel("Close Find Bar")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
@@ -1327,6 +1387,7 @@ struct ContentView: View {
             }
         }
         .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     // With the tab bar fully hidden, changing the active tab slides its favicon
@@ -1385,6 +1446,7 @@ struct ContentView: View {
                 .offset(x: showFaviconPeek ? 0 : -48)
                 .opacity(showFaviconPeek ? 1 : 0)
                 .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
         }
     }
@@ -1396,11 +1458,19 @@ struct ContentView: View {
         faviconPeekTask?.cancel()
         // duration: here is the perceptual travel time; `response:` is an
         // oscillator period, which lands the blob in ~165ms, not 300ms.
-        withAnimation(.spring(duration: 0.3, bounce: 0.15)) { showFaviconPeek = true }
+        if reduceMotion {
+            showFaviconPeek = true
+        } else {
+            withAnimation(.spring(duration: 0.3, bounce: 0.15)) { showFaviconPeek = true }
+        }
         faviconPeekTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(700))
             guard !Task.isCancelled else { return }
-            withAnimation(.easeInOut(duration: 0.3)) { showFaviconPeek = false }
+            if reduceMotion {
+                showFaviconPeek = false
+            } else {
+                withAnimation(.easeInOut(duration: 0.3)) { showFaviconPeek = false }
+            }
         }
     }
 
@@ -1617,6 +1687,20 @@ struct ContentView: View {
                     Color.clear
                         .frame(width: 5)
                         .contentShape(Rectangle())
+                        .accessibilityElement()
+                        .accessibilityLabel("Resize Tab Sidebar")
+                        .accessibilityValue("\(Int(tabBarWidth)) points wide")
+                        .accessibilityAdjustableAction { direction in
+                            switch direction {
+                            case .increment:
+                                tabBarWidth = min(400, tabBarWidth + 20)
+                            case .decrement:
+                                tabBarWidth = max(0, tabBarWidth - 20)
+                            @unknown default:
+                                break
+                            }
+                            UserDefaults.standard.set(tabBarWidth, forKey: "tabBarWidth")
+                        }
                         .gesture(
                             DragGesture()
                                 .onChanged { value in
@@ -1639,6 +1723,9 @@ struct ContentView: View {
             }
         )
         .preferredColorScheme(colorScheme)
+        .transaction {
+            if reduceMotion { $0.disablesAnimations = true }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.all) // Ignore safe areas to extend to edges
         .background(Color(.windowBackgroundColor)) // Set explicit background

@@ -20,6 +20,7 @@ import GameController  // GCKeyboard: detect a hardware keyboard to gate the tou
 
 struct BrowserView_iOS: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \Tab.orderIndex) private var tabs: [Tab]
     @Query(sort: \TabGroup.orderIndex) private var tabGroups: [TabGroup]
     @Query(sort: \BrowserSession.createdAt) private var browserSessions: [BrowserSession]
@@ -166,6 +167,7 @@ struct BrowserView_iOS: View {
             if showSidebar {
                 Color.black.opacity(0.25).ignoresSafeArea()
                     .onTapGesture { withAnimation { showSidebar = false } }
+                    .accessibilityHidden(true)
                 sidebarPanel.transition(.move(edge: .leading))
             }
 
@@ -174,6 +176,9 @@ struct BrowserView_iOS: View {
             }
         }
         .preferredColorScheme(colorScheme)
+        .transaction {
+            if reduceMotion { $0.disablesAnimations = true }
+        }
         // Maximize screen real estate: hide the status bar and auto-hide the home
         // indicator so the web fills every pixel.
         .statusBarHidden(true)
@@ -304,6 +309,7 @@ struct BrowserView_iOS: View {
             Color.black.opacity(0.12)
                 .ignoresSafeArea()
                 .onTapGesture { dismissOmnibar() }
+                .accessibilityHidden(true)
             VStack(spacing: 8) {
                 omnibarCard
                 if !suggestions.isEmpty {
@@ -325,11 +331,14 @@ struct BrowserView_iOS: View {
                 Image(systemName: "square.stack").foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .frame(minWidth: 44, minHeight: 44)
+            .accessibilityLabel("Show Tabs")
             if let pageProtectionSummary {
                 PageProtectionButton(summary: pageProtectionSummary)
             }
             Image(systemName: isLoading ? "arrow.triangle.2.circlepath" : "magnifyingglass")
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             TextField("Search or enter address", text: $omnibarText)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -352,9 +361,12 @@ struct BrowserView_iOS: View {
                         .foregroundStyle(isCurrentBookmarked ? Color.accentColor : .secondary)
                 }
                 .buttonStyle(.plain)
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityLabel(isCurrentBookmarked ? "Remove Bookmark" : "Add Bookmark")
+                .accessibilityHint("Change the bookmark for the current page")
             }
         }
-        .font(.system(size: 17))
+        .font(.body)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(.regularMaterial, in: Capsule())
@@ -383,6 +395,26 @@ struct BrowserView_iOS: View {
                 .onTapGesture { focusOmnibar() }
                 .onLongPressGesture(minimumDuration: 0.4) { createNewTab() }
                 .highPriorityGesture(DragGesture(minimumDistance: 20).onEnded(handleBarSwipe))
+                .accessibilityElement()
+                .accessibilityLabel("Browser Controls")
+                .accessibilityValue(activeTab?.title ?? activeTab?.url?.host ?? String(localized: "New Tab"))
+                .accessibilityHint("Activate for the address bar. Swipe up for tabs, or left and right to change tabs.")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { focusOmnibar() }
+                .accessibilityAction(named: "New Tab") { createNewTab() }
+                .accessibilityAction(named: "Show Tabs") { toggleSidebar() }
+                .accessibilityAction(named: "Next Tab") { tabManager.switchToNextTab(tabs: visibleTabs) }
+                .accessibilityAction(named: "Previous Tab") { tabManager.switchToPreviousTab(tabs: visibleTabs) }
+                .accessibilityAdjustableAction { direction in
+                    switch direction {
+                    case .increment:
+                        tabManager.switchToNextTab(tabs: visibleTabs)
+                    case .decrement:
+                        tabManager.switchToPreviousTab(tabs: visibleTabs)
+                    @unknown default:
+                        break
+                    }
+                }
                 .padding(.bottom, 6)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)

@@ -112,11 +112,11 @@ struct SuggestionsPanel: View {
                             .frame(width: 18)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(suggestion.title ?? suggestion.url.host ?? suggestion.url.absoluteString)
-                                .font(.system(size: 15))
+                                .font(.body)
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
                             Text(suggestion.url.absoluteString)
-                                .font(.system(size: 12))
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
@@ -129,6 +129,10 @@ struct SuggestionsPanel: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(suggestion.title ?? suggestion.url.host ?? suggestion.url.absoluteString)
+                .accessibilityValue(suggestion.url.absoluteString)
+                .accessibilityHint("Open suggestion")
+                .accessibilityAddTraits(index == selectedIndex ? .isSelected : [])
             }
         }
         .background(.regularMaterial)

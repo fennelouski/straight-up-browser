@@ -66,6 +66,7 @@ struct TabSidebar_iOS: View {
                             } label: {
                                 Image(systemName: "ellipsis").font(.caption)
                             }
+                            .accessibilityLabel("Actions for \(group.name)")
                         }
                     }
                 } else {
@@ -79,6 +80,7 @@ struct TabSidebar_iOS: View {
             ToolbarItem(placement: .primaryAction) {
                 Button(action: onNewTab) { Image(systemName: "plus") }
                     .help("New Tab")
+                    .accessibilityLabel("New Tab")
             }
             ToolbarItem(placement: .topBarLeading) {
                 Menu {
@@ -95,6 +97,7 @@ struct TabSidebar_iOS: View {
                 } label: {
                     Image(systemName: "square.stack.3d.up")
                 }
+                .accessibilityLabel("Browser Menu")
             }
         }
     }
@@ -148,7 +151,7 @@ struct TabRow_iOS: View {
             TabFaviconView(tab: tab, showProgress: isActive && isLoading, progress: progressValue)
             Text(displayTitle)
                 .lineLimit(1)
-                .font(.system(size: 15))
+                .font(.body)
                 .foregroundStyle(sessionColor ?? .primary)
             Spacer(minLength: 0)
             if isIncognito {
@@ -165,6 +168,22 @@ struct TabRow_iOS: View {
                 RoundedRectangle(cornerRadius: 1.5).fill(sessionColor).frame(width: 3).padding(.vertical, 3)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(BrowserAccessibility.tabLabel(
+            title: displayTitle,
+            url: tab.url,
+            sessionKind: tab.sessionKind,
+            isPinned: tab.isPinned,
+            isInSplit: false
+        ))
+        .accessibilityValue(BrowserAccessibility.tabValue(
+            isSelected: isActive,
+            isLoading: isActive && isLoading,
+            loadProgress: progressValue,
+            activeDownloadCount: 0
+        ))
+        .accessibilityHint("Select this tab")
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 }
 
@@ -208,5 +227,6 @@ struct TabFaviconView: View {
             }
         }
         .frame(width: 24, height: 24)
+        .accessibilityHidden(true)
     }
 }

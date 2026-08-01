@@ -41,6 +41,76 @@ struct Suggestion: Identifiable {
     }
 }
 
+private struct OmnibarSuggestionLabel: View {
+    let suggestion: Suggestion
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(suggestion.title ?? suggestion.url.host ?? suggestion.url.absoluteString)
+                        .font(.system(size: 14))
+                        .foregroundColor(.primary)
+                    badge
+                }
+                Text(suggestion.url.absoluteString)
+                    .font(.system(size: 12))
+                    .foregroundColor(.gray)
+                    .lineLimit(1)
+            }
+            Spacer()
+        }
+    }
+
+    @ViewBuilder
+    private var badge: some View {
+        switch suggestion.type {
+        case .bookmark:
+            Image(systemName: "bookmark.fill")
+                .font(.system(size: 10))
+                .foregroundColor(.blue)
+        case .openTab:
+            Text("Switch to Tab")
+                .font(.system(size: 10, weight: .medium))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(Color.blue.opacity(0.15), in: Capsule())
+                .foregroundColor(.blue)
+        case .site:
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+        case .history:
+            EmptyView()
+        }
+    }
+}
+
+private struct OmnibarSuggestionButton: View {
+    let suggestion: Suggestion
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            OmnibarSuggestionLabel(suggestion: suggestion)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
+        .contentShape(Rectangle())
+        .accessibilityLabel(accessibilityTitle)
+        .accessibilityValue(suggestion.url.absoluteString)
+        .accessibilityHint(suggestion.tabId == nil ? "Open suggestion" : "Switch to open tab")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var accessibilityTitle: String {
+        suggestion.title ?? suggestion.url.host ?? suggestion.url.absoluteString
+    }
+}
+
 // How the omnibar's Return key was pressed, so the caller can decide where
 // the result should land.
 enum OmnibarCommit {
@@ -447,6 +517,8 @@ struct OmnibarView: View {
                         .padding(.trailing, 12)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Go")
+                .accessibilityHint("Open the entered address or search")
             }
             .background(Color(.windowBackgroundColor).opacity(0.95))
             .overlay(
@@ -503,50 +575,19 @@ struct OmnibarView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 8)
                 .padding(.top, -8)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Open tab: \(target.title ?? target.url.host ?? target.url.absoluteString)")
+                .accessibilityHint("Press Return to switch to this tab")
             }
 
             // Suggestions dropdown
             if showSuggestions && !filteredSuggestions.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(filteredSuggestions.enumerated()), id: \.element.id) { index, suggestion in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack {
-                                    Text(suggestion.title ?? suggestion.url.host ?? suggestion.url.absoluteString)
-                                        .font(.system(size: 14))
-                                        .foregroundColor(.primary)
-                                    switch suggestion.type {
-                                    case .bookmark:
-                                        Image(systemName: "bookmark.fill")
-                                            .font(.system(size: 10))
-                                            .foregroundColor(.blue)
-                                    case .openTab:
-                                        Text("Switch to Tab")
-                                            .font(.system(size: 10, weight: .medium))
-                                            .padding(.horizontal, 5)
-                                            .padding(.vertical, 1)
-                                            .background(Color.blue.opacity(0.15), in: Capsule())
-                                            .foregroundColor(.blue)
-                                    case .site:
-                                        Image(systemName: "clock.arrow.circlepath")
-                                            .font(.system(size: 10))
-                                            .foregroundColor(.secondary)
-                                    case .history:
-                                        EmptyView()
-                                    }
-                                }
-                                Text(suggestion.url.absoluteString)
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.gray)
-                                    .lineLimit(1)
-                            }
-                            Spacer()
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(selectedSuggestionIndex == index ? Color.blue.opacity(0.1) : Color.clear)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
+                        OmnibarSuggestionButton(
+                            suggestion: suggestion,
+                            isSelected: selectedSuggestionIndex == index
+                        ) {
                             if let tabId = suggestion.tabId {
                                 onSwitchToTab?(tabId)
                                 isPresented = false
