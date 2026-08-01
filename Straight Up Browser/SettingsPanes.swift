@@ -395,8 +395,11 @@ struct ContentSettingsView: View {
         Form {
             Section {
                 Toggle("Enable JavaScript", isOn: $javaScriptEnabled)
+                    .onChange(of: javaScriptEnabled) { _, _ in
+                        NotificationCenter.default.post(name: .javaScriptChanged, object: nil)
+                    }
                 SettingCaptionRow(
-                    caption: "Off makes pages static. Applies to newly loaded pages.",
+                    caption: "Off makes pages static. Open tabs reload when changed.",
                     title: "JavaScript",
                     explanation: "JavaScript is what makes pages interactive — menus, forms, live content. Almost every modern site needs it. Turning it off loads pages as plain, static documents, which is faster and quieter but breaks most web apps.",
                     value: $javaScriptEnabled

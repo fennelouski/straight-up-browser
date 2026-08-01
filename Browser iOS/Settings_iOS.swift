@@ -114,6 +114,9 @@ struct Settings_iOS: View {
 
                 Section("Web Content") {
                     Toggle("Enable JavaScript", isOn: $javaScriptEnabled)
+                        .onChange(of: javaScriptEnabled) { _, _ in
+                            NotificationCenter.default.post(name: .javaScriptChanged, object: nil)
+                        }
                 }
 
                 Section {

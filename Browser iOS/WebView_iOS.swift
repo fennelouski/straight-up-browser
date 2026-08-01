@@ -132,6 +132,7 @@ struct TabWebView: UIViewRepresentable {
         private var downloadDestinations: [WKDownload: URL] = [:]
         var lastRequestedURL: URL?
         private var downloadNavigationHistory = DownloadNavigationHistory()
+        private var certificateOverrideWebViews: Set<ObjectIdentifier> = []
 
         // Each web view owns a separate redirect chain; background tabs must not
         // trip the active tab's loop threshold.
@@ -169,6 +170,8 @@ struct TabWebView: UIViewRepresentable {
         // MARK: - Navigation
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            certificateOverrideWebViews.remove(ObjectIdentifier(webView))
+            tab(for: webView)?.securityLevel = .none
             if isActiveWebView(webView) {
                 parent.isLoading = true
                 parent.hasRenderedContent = false
@@ -210,6 +213,11 @@ struct TabWebView: UIViewRepresentable {
             resetRedirectLoopGuard(for: webView)
 
             if let currentURL = webView.url, let tab = tab(for: webView) {
+                tab.securityLevel = PageSecurityEvaluator.level(
+                    for: currentURL,
+                    hasOnlySecureContent: webView.hasOnlySecureContent,
+                    certificateWasOverridden: certificateOverrideWebViews.contains(ObjectIdentifier(webView))
+                )
                 if Tab.normalizeURLForComparison(tab.url) != Tab.normalizeURLForComparison(currentURL) {
                     tab.url = currentURL
                 }
@@ -342,6 +350,7 @@ struct TabWebView: UIViewRepresentable {
                 return
             }
 
+            tab(for: webView)?.securityLevel = .insecure
             // Strict SSL (settings toggle, default on): refuse invalid certs outright.
             let strict = UserDefaults.standard.object(forKey: "sslStrictMode") == nil
                 || UserDefaults.standard.bool(forKey: "sslStrictMode")
@@ -351,6 +360,7 @@ struct TabWebView: UIViewRepresentable {
             }
             showSSLErrorDialog(for: host) { proceed in
                 if proceed {
+                    self.certificateOverrideWebViews.insert(ObjectIdentifier(webView))
                     completionHandler(.useCredential, URLCredential(trust: serverTrust))
                 } else {
                     completionHandler(.cancelAuthenticationChallenge, nil)

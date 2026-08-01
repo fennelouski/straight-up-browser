@@ -1105,3 +1105,39 @@ struct DownloadNavigationHistoryTests {
         #expect(history.restorationURL(for: secondTab) == nil)
     }
 }
+
+struct PageSecurityStateTests {
+    @Test func connectionStateComesFromTheCommittedPage() {
+        #expect(PageSecurityEvaluator.level(
+            for: nil,
+            hasOnlySecureContent: false,
+            certificateWasOverridden: false
+        ) == .none)
+        #expect(PageSecurityEvaluator.level(
+            for: URL(string: "http://example.com"),
+            hasOnlySecureContent: false,
+            certificateWasOverridden: false
+        ) == .insecure)
+        #expect(PageSecurityEvaluator.level(
+            for: URL(string: "https://example.com"),
+            hasOnlySecureContent: true,
+            certificateWasOverridden: false
+        ) == .secure)
+        #expect(PageSecurityEvaluator.level(
+            for: URL(string: "https://example.com"),
+            hasOnlySecureContent: false,
+            certificateWasOverridden: false
+        ) == .mixed)
+        #expect(PageSecurityEvaluator.level(
+            for: URL(string: "https://example.com"),
+            hasOnlySecureContent: true,
+            certificateWasOverridden: true
+        ) == .insecure)
+    }
+
+    @Test func requestedBlockingIsDistinctFromActiveBlocking() {
+        #expect(ContentBlockingStatus.resolve(enabled: false, active: false) == .off)
+        #expect(ContentBlockingStatus.resolve(enabled: true, active: false) == .requestedNotActive)
+        #expect(ContentBlockingStatus.resolve(enabled: true, active: true) == .active)
+    }
+}

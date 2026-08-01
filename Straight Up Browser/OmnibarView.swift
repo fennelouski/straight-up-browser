@@ -235,6 +235,7 @@ struct OmnibarView: View {
     var currentTabId: UUID? = nil
     var onSwitchToTab: ((UUID) -> Void)? = nil
     var thumbnail: ((UUID) -> NSImage?)? = nil
+    var pageProtection: PageProtectionSummary? = nil
 
     // Below this, a match is too weak to hijack a plain Return into a tab switch —
     // you can still arrow onto the suggestion at any length.
@@ -390,9 +391,14 @@ struct OmnibarView: View {
         // Fixed height container to prevent layout shifts when suggestions appear/disappear
         VStack(spacing: 0) {
             HStack {
+                if let pageProtection {
+                    PageProtectionButton(summary: pageProtection)
+                        .padding(.leading, 12)
+                }
+
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.gray)
-                    .padding(.leading, 12)
+                    .padding(.leading, pageProtection == nil ? 12 : 0)
 
                 OmnibarTextField(
                     text: $inputText,

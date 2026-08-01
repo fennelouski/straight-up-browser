@@ -298,6 +298,7 @@ struct ContentView: View {
     @StateObject private var pageTranslator = PageTranslator()
     @StateObject private var fastForward = FastForward()
     @ObservedObject private var downloadManager = DownloadManager.shared
+    @ObservedObject private var protectionStore = PageProtectionStore.shared
     @State private var navigationManager: NavigationManager?
     @State private var notificationManager: NotificationManager?
     @State private var keyboardShortcutsManager: KeyboardShortcutsManager?
@@ -351,6 +352,8 @@ struct ContentView: View {
 
     // Memory saving: release background tabs from RAM under memory pressure
     @AppStorage("memorySaverEnabled") private var memorySaverEnabled = false
+    @AppStorage("javaScriptEnabled") private var javaScriptEnabled = true
+    @AppStorage("adBlockEnabled") private var adBlockEnabled = false
 
     // Hold-Cmd+Q-to-quit HUD. quitHoldActive gates the overlay; quitHoldProgress
     // is animated 0→1 by Core Animation over the hold duration.
@@ -369,6 +372,18 @@ struct ContentView: View {
     @State private var flashOpacity: Double = 0
 
     private var currentURL: URL? { activeTab?.url }
+
+    private var pageProtectionSummary: PageProtectionSummary? {
+        guard let tab = activeTab, tab.url != nil else { return nil }
+        return PageProtectionSummary(
+            securityLevel: tab.securityLevel,
+            contentBlocking: .resolve(
+                enabled: adBlockEnabled,
+                active: protectionStore.isContentBlockingActive(for: tab.id)
+            ),
+            javaScriptEnabled: javaScriptEnabled
+        )
+    }
 
 
 
@@ -895,7 +910,8 @@ struct ContentView: View {
                                 bookmarkSuggestions: bookmarkSuggestions,
                                 currentTabId: tabManager.selectedTabId,
                                 onSwitchToTab: { tabManager.selectedTabId = $0 },
-                                thumbnail: { webViewManager?.thumbnail(for: $0) }
+                                thumbnail: { webViewManager?.thumbnail(for: $0) },
+                                pageProtection: pageProtectionSummary
                             )
                             .allowsHitTesting(true)
                             Spacer(minLength: 0)

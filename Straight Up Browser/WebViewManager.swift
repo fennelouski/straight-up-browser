@@ -261,6 +261,8 @@ class WebViewManager: NSObject, ObservableObject {
         super.init()
         NotificationCenter.default.addObserver(
             self, selector: #selector(adBlockSettingChanged), name: .adBlockChanged, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(javaScriptSettingChanged), name: .javaScriptChanged, object: nil)
         // Restore last session's per-tab page state; getWebView consumes it the
         // first time each tab is activated. Persist again when the app quits.
         loadPersistedInteractionStates()
@@ -380,24 +382,46 @@ class WebViewManager: NSObject, ObservableObject {
         }
     }
 
+    private static func reportContentBlocking(_ active: Bool, for tabId: UUID) {
+        Task { @MainActor in
+            PageProtectionStore.shared.setContentBlocking(active, for: tabId)
+        }
+    }
+
     @objc private func adBlockSettingChanged() {
         if UserDefaults.standard.bool(forKey: "adBlockEnabled") {
             Self.compileAdBlockList { [weak self] list in
-                guard let self, let list else { return }
-                for webView in self.webViews.values {
-                    let controller = webView.configuration.userContentController
-                    controller.remove(list) // avoid double-add
-                    controller.add(list)
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    guard UserDefaults.standard.bool(forKey: "adBlockEnabled"),
+                          let list else {
+                        for tabId in self.webViews.keys {
+                            Self.reportContentBlocking(false, for: tabId)
+                        }
+                        return
+                    }
+                    for (tabId, webView) in self.webViews {
+                        let controller = webView.configuration.userContentController
+                        controller.remove(list) // avoid double-add
+                        controller.add(list)
+                        Self.reportContentBlocking(true, for: tabId)
+                    }
+                    self.reloadAllTabs()
                 }
-                self.reloadAllTabs()
             }
         } else {
-            guard let list = Self.adBlockList else { return }
-            for webView in webViews.values {
-                webView.configuration.userContentController.remove(list)
+            for (tabId, webView) in webViews {
+                if let list = Self.adBlockList {
+                    webView.configuration.userContentController.remove(list)
+                }
+                Self.reportContentBlocking(false, for: tabId)
             }
             reloadAllTabs()
         }
+    }
+
+    @objc private func javaScriptSettingChanged() {
+        reloadAllTabs()
     }
 
     // Get or create a web view for a specific tab
@@ -469,6 +493,7 @@ class WebViewManager: NSObject, ObservableObject {
 
             // Remove from storage
             webViews.removeValue(forKey: tabId)
+            Self.reportContentBlocking(false, for: tabId)
 
             // If this was the active web view, clear it
             if activeWebView === webView {
@@ -510,6 +535,14 @@ class WebViewManager: NSObject, ObservableObject {
     func adoptWebView(_ webView: WKWebView, for tabId: UUID) {
         applyStandardSetup(to: webView)
         webViews[tabId] = webView
+        let blockingActive = UserDefaults.standard.bool(forKey: "adBlockEnabled")
+            && Self.adBlockList != nil
+        if blockingActive, let list = Self.adBlockList {
+            let controller = webView.configuration.userContentController
+            controller.remove(list)
+            controller.add(list)
+        }
+        Self.reportContentBlocking(blockingActive, for: tabId)
         #if canImport(AppKit)
         MainActor.assumeIsolated { WebExtensionManager.shared.tabOpened(tabId) }
         #endif
@@ -609,10 +642,24 @@ class WebViewManager: NSObject, ObservableObject {
         // the webviews - a cycle, but WebViewManager lives for the app lifetime
         configuration.userContentController.add(self, name: "sub")
         if UserDefaults.standard.bool(forKey: "adBlockEnabled") {
-            let controller = configuration.userContentController
-            Self.compileAdBlockList { list in
-                if let list { controller.add(list) }
+            Self.reportContentBlocking(false, for: tabId)
+            Self.compileAdBlockList { [weak self] list in
+                DispatchQueue.main.async {
+                    guard let self,
+                          UserDefaults.standard.bool(forKey: "adBlockEnabled"),
+                          let webView = self.webViews[tabId],
+                          let list else {
+                        Self.reportContentBlocking(false, for: tabId)
+                        return
+                    }
+                    let controller = webView.configuration.userContentController
+                    controller.remove(list)
+                    controller.add(list)
+                    Self.reportContentBlocking(true, for: tabId)
+                }
             }
+        } else {
+            Self.reportContentBlocking(false, for: tabId)
         }
         configuration.userContentController.addUserScript(
             WKUserScript(source: Self.pageScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)

@@ -12,6 +12,7 @@ import AppKit
 #endif
 
 enum SecurityLevel: String, Codable {
+    case none
     case secure
     case insecure
     case mixed
@@ -94,7 +95,7 @@ final class Tab {
     var interactionStateData: Data? = nil
     var sessionStorageData: Data? = nil
     var loadingProgress: Double = 0.0
-    var securityLevel: SecurityLevel = SecurityLevel.secure
+    var securityLevel: SecurityLevel = SecurityLevel.none
     // Persisted as the raw string, not the enum. Adding a non-optional enum column to a
     // store that already has rows leaves those rows unmigrated, and SwiftData crashes
     // (swift_dynamicCastFailure) reading them. An optional String migrates cleanly; the

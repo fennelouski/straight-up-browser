@@ -192,6 +192,7 @@ struct WebView: NSViewRepresentable {
         private var intentionallyPausedTransfers: Set<UUID> = []
         var lastRequestedURL: URL?
         private var downloadNavigationHistory = DownloadNavigationHistory()
+        private var certificateOverrideWebViews: Set<ObjectIdentifier> = []
 
         // One guard per WKWebView: background tabs and split panes must not
         // contribute to each other's redirect counts.
@@ -227,6 +228,8 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            certificateOverrideWebViews.remove(ObjectIdentifier(webView))
+            tab(for: webView)?.securityLevel = .none
             if isActiveWebView(webView) {
                 parent.isLoading = true
                 parent.hasRenderedContent = false
@@ -284,6 +287,11 @@ struct WebView: NSViewRepresentable {
             resetRedirectLoopGuard(for: webView)
 
             if let currentURL = webView.url, let tab = tab(for: webView) {
+                tab.securityLevel = PageSecurityEvaluator.level(
+                    for: currentURL,
+                    hasOnlySecureContent: webView.hasOnlySecureContent,
+                    certificateWasOverridden: certificateOverrideWebViews.contains(ObjectIdentifier(webView))
+                )
                 if Tab.normalizeURLForComparison(tab.url) != Tab.normalizeURLForComparison(currentURL) {
                     Logger.log("WebView didFinish: updating tab URL to \(currentURL.absoluteString)", type: "WebView")
                     tab.url = currentURL
@@ -469,7 +477,7 @@ struct WebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
             // Handle SSL certificate validation
-            handleAuthenticationChallenge(challenge, completionHandler: completionHandler)
+            handleAuthenticationChallenge(challenge, for: webView, completionHandler: completionHandler)
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, preferences: WKWebpagePreferences, decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
@@ -689,7 +697,11 @@ struct WebView: NSViewRepresentable {
             Logger.log("Download failed: \(error.localizedDescription)", type: "WebView")
         }
 
-        private func handleAuthenticationChallenge(_ challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        private func handleAuthenticationChallenge(
+            _ challenge: URLAuthenticationChallenge,
+            for webView: WKWebView,
+            completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+        ) {
             if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
                 // SSL/TLS certificate challenge
                 if let serverTrust = challenge.protectionSpace.serverTrust {
@@ -717,6 +729,7 @@ struct WebView: NSViewRepresentable {
                         let credential = URLCredential(trust: serverTrust)
                         completionHandler(.useCredential, credential)
                     default:
+                        tab(for: webView)?.securityLevel = .insecure
                         // Strict SSL (settings toggle, default on): refuse invalid certs outright
                         let strict = UserDefaults.standard.object(forKey: "sslStrictMode") == nil
                             || UserDefaults.standard.bool(forKey: "sslStrictMode")
@@ -728,6 +741,7 @@ struct WebView: NSViewRepresentable {
                         // Certificate is invalid - show warning but allow user to proceed
                         showSSLErrorDialog(for: host, trustResult: trustResult) { shouldProceed in
                             if shouldProceed {
+                                self.certificateOverrideWebViews.insert(ObjectIdentifier(webView))
                                 let credential = URLCredential(trust: serverTrust)
                                 completionHandler(.useCredential, credential)
                             } else {
