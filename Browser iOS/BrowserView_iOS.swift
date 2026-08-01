@@ -24,6 +24,7 @@ struct BrowserView_iOS: View {
     @Query(sort: \Tab.orderIndex) private var tabs: [Tab]
     @Query(sort: \TabGroup.orderIndex) private var tabGroups: [TabGroup]
     @Query(sort: \BrowserSession.createdAt) private var browserSessions: [BrowserSession]
+    @Query(sort: \Bookmark.createdAt, order: .reverse) private var bookmarks: [Bookmark]
 
     @StateObject private var tabManager = TabManager()
     @ObservedObject private var protectionStore = PageProtectionStore.shared
@@ -52,6 +53,8 @@ struct BrowserView_iOS: View {
     @State private var showShortcutSheet = false
     @State private var showGestureGuide = false
     @State private var showSettings = false
+    @State private var showLibrary = false
+    @State private var librarySection = BrowserLibrarySection.bookmarks
 
     // Group / workspace dialogs
     @State private var showNewGroup = false
@@ -108,7 +111,7 @@ struct BrowserView_iOS: View {
     }
 
     private var bookmarkPairs: [(title: String, url: URL)] {
-        (bookmarkManager?.fetchAllBookmarks() ?? []).map { (title: $0.title, url: $0.url) }
+        bookmarks.map { (title: $0.title, url: $0.url) }
     }
 
     private var suggestions: [Suggestion] {
@@ -238,6 +241,27 @@ struct BrowserView_iOS: View {
             GestureGuide_iOS().presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showSettings) { Settings_iOS() }
+        .sheet(isPresented: $showLibrary) {
+            BrowserLibrary_iOS(
+                bookmarks: bookmarks,
+                initialSection: librarySection,
+                onOpen: openFromLibrary,
+                onUpdateBookmark: { bookmark, title, url, category in
+                    bookmarkManager?.updateBookmark(
+                        bookmark,
+                        title: title,
+                        url: url,
+                        category: category
+                    )
+                },
+                onDeleteBookmark: { bookmarkManager?.removeBookmark($0) },
+                onImportBookmarks: { bookmarkManager?.importBookmarks($0) ?? 0 },
+                onDeleteHistory: removeHistory,
+                onClearHistory: clearHistory
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
         // Keyboard commands (posted by BrowserApp_iOS.commands), handled through
         // one merged publisher — a chain of ~16 .onReceive modifiers overwhelms
         // the SwiftUI type-checker.
@@ -274,6 +298,8 @@ struct BrowserView_iOS: View {
         case .previousTab: tabManager.switchToPreviousTab(tabs: visibleTabs)
         case .switchTab(let index): tabManager.switchToTab(at: index - 1, tabs: visibleTabs)
         case .addBookmark: toggleBookmark()
+        case .showBookmarks: presentLibrary(.bookmarks)
+        case .showHistory: presentLibrary(.history)
         case .zoomIn: zoom(by: 1.1)
         case .zoomOut: zoom(by: 1 / 1.1)
         case .actualSize: setZoom(1)
@@ -315,6 +341,7 @@ struct BrowserView_iOS: View {
                 onDeleteGroup: deleteGroup,
                 onMoveTab: { $0.groupId = $1 },
                 onSaveWorkspace: { workspaceName = ""; showSaveWorkspace = true },
+                onLibrary: { presentLibrary(.bookmarks) },
                 onSettings: { showSettings = true },
                 onShortcuts: { showShortcutSheet = true },
                 onGestures: { withAnimation { showSidebar = false }; showGestureGuide = true },
@@ -605,18 +632,44 @@ struct BrowserView_iOS: View {
 
     private var isCurrentBookmarked: Bool {
         guard let url = activeTab?.url else { return false }
-        return bookmarkManager?.isBookmarked(url) ?? false
+        return bookmarks.contains { $0.url.absoluteString == url.absoluteString }
     }
 
     private func toggleBookmark() {
         guard let tab = activeTab, let url = tab.url, let bm = bookmarkManager else { return }
-        if bm.isBookmarked(url) {
-            if let existing = bm.fetchAllBookmarks().first(where: { $0.url.absoluteString == url.absoluteString }) {
-                bm.removeBookmark(existing)
-            }
+        if let existing = bookmarks.first(where: {
+            $0.url.absoluteString == url.absoluteString
+        }) {
+            bm.removeBookmark(existing)
         } else {
             _ = bm.addBookmark(from: tab)
         }
+    }
+
+    private func presentLibrary(_ section: BrowserLibrarySection) {
+        librarySection = section
+        showSidebar = false
+        showLibrary = true
+    }
+
+    private func openFromLibrary(_ url: URL) {
+        if let activeTab {
+            _ = navigationManager?.navigateToURL(url.absoluteString, activeTab: activeTab)
+        } else {
+            let tab = tabManager.createNewTab()
+            _ = navigationManager?.navigateToURL(url.absoluteString, activeTab: tab)
+        }
+        showLibrary = false
+    }
+
+    private func removeHistory(_ url: URL) {
+        browsingHistory.remove(url: url)
+        BrowserLibrary.removeHistory(url: url, from: tabs)
+        try? modelContext.save()
+    }
+
+    private func clearHistory() {
+        BrowsingDataCleaner.clearHistory(in: tabs)
     }
 
     private func zoom(by factor: Double) {

@@ -27,6 +27,7 @@ struct TabSidebar_iOS: View {
     let onDeleteGroup: (TabGroup) -> Void
     let onMoveTab: (Tab, UUID?) -> Void
     let onSaveWorkspace: () -> Void
+    let onLibrary: () -> Void
     let onSettings: () -> Void
     let onShortcuts: () -> Void
     let onGestures: () -> Void
@@ -100,6 +101,7 @@ struct TabSidebar_iOS: View {
                     Divider()
                     workspaceMenu
                     Divider()
+                    Button(action: onLibrary) { Label("Library", systemImage: "books.vertical") }
                     Button(action: onSettings) { Label("Settings", systemImage: "gearshape") }
                     Button(action: onShortcuts) { Label("Keyboard Shortcuts", systemImage: "keyboard") }
                     Button(action: onGestures) { Label("Touch Gestures", systemImage: "hand.draw") }

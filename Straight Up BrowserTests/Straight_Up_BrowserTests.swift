@@ -635,6 +635,8 @@ struct ShortcutTests {
         #expect(commandIDs.isSubset(of: Set(ShortcutCommand.all.map(\.id))))
         #expect(commandIDs.contains(ShortcutCommand.newTab.id))
         #expect(commandIDs.contains(ShortcutCommand.findInPage.id))
+        #expect(commandIDs.contains(ShortcutCommand.showBookmarks.id))
+        #expect(commandIDs.contains(ShortcutCommand.showHistory.id))
         #expect(commandIDs.contains(ShortcutCommand.switchTabs.last!.id))
 
         for unsupported in [
@@ -643,7 +645,6 @@ struct ShortcutTests {
             .printPage,
             .exportPDF,
             .toggleTranslation,
-            .showBookmarks,
             .clearSiteData,
             .extensionPopup,
         ] {
@@ -1454,6 +1455,26 @@ struct BrowserLibraryTests {
         #expect(html.contains("Work &amp; Study"))
         #expect(html.contains("https://example.com/?a=1&amp;b=2"))
         #expect(html.contains("<!DOCTYPE NETSCAPE-Bookmark-file-1>"))
+    }
+
+    @Test
+    func bookmarkImportDecodesHTMLAndPreservesFolders() {
+        let html = """
+        <!DOCTYPE NETSCAPE-Bookmark-file-1>
+        <DL><p>
+          <DT><H3>Work &amp; Study</H3>
+          <DL><p>
+            <DT><A HREF="https://example.com/?a=1&amp;b=2">Research &lt;Notes&gt;</A>
+          </DL><p>
+        </DL><p>
+        """
+
+        let imported = BrowserLibrary.bookmarks(fromHTML: html)
+
+        #expect(imported.count == 1)
+        #expect(imported.first?.title == "Research <Notes>")
+        #expect(imported.first?.url.absoluteString == "https://example.com/?a=1&b=2")
+        #expect(imported.first?.category == "Work & Study")
     }
 
     @Test @MainActor
