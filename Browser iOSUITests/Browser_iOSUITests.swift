@@ -15,6 +15,7 @@ final class Browser_iOSUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = [
             "-ApplePersistenceIgnoreState", "YES",
+            "-tabSyncEnabled", "NO",
             "-hasSeenGestureGuide", "YES",
         ]
         app.launch()
