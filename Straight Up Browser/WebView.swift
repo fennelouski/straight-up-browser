@@ -287,6 +287,7 @@ struct WebView: NSViewRepresentable {
             resetRedirectLoopGuard(for: webView)
 
             if let currentURL = webView.url, let tab = tab(for: webView) {
+                parent.webViewManager?.setMuted(tab.isMuted, for: tab.id)
                 tab.securityLevel = PageSecurityEvaluator.level(
                     for: currentURL,
                     hasOnlySecureContent: webView.hasOnlySecureContent,

@@ -176,6 +176,18 @@ struct TabRowView: View {
 
                         Spacer(minLength: 0)
 
+                        if tab.isPinned {
+                            Image(systemName: "pin.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if tab.isMuted {
+                            Image(systemName: "speaker.slash.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                        }
+
                         if isDisplayedInSplit {
                             Image(systemName: "rectangle.split.2x1")
                                 .font(.system(size: 9))
@@ -195,6 +207,7 @@ struct TabRowView: View {
                 url: tab.url,
                 sessionKind: tab.sessionKind,
                 isPinned: tab.isPinned,
+                isMuted: tab.isMuted,
                 isInSplit: isDisplayedInSplit
             ))
             .accessibilityValue(BrowserAccessibility.tabValue(

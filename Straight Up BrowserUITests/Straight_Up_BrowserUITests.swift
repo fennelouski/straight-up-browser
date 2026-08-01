@@ -29,4 +29,18 @@ final class Straight_Up_BrowserUITests: XCTestCase {
 
         XCTAssertTrue(app.textFields["Search or enter address"].waitForExistence(timeout: 5))
     }
+
+    @MainActor
+    func testHistoryShortcutOpensTheLibrary() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-ApplePersistenceIgnoreState", "YES",
+            "-tabBarWidth", "200",
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
+        app.typeKey("y", modifierFlags: .command)
+        XCTAssertTrue(app.otherElements["Browser Library"].waitForExistence(timeout: 5))
+    }
 }

@@ -35,16 +35,10 @@ class BookmarkManager {
         try? modelContext.save()
     }
 
-    func updateBookmark(_ bookmark: Bookmark, title: String? = nil, url: URL? = nil, category: String? = nil) {
-        if let title = title {
-            bookmark.title = title
-        }
-        if let url = url {
-            bookmark.url = url
-        }
-        if let category = category {
-            bookmark.category = category
-        }
+    func updateBookmark(_ bookmark: Bookmark, title: String, url: URL, category: String?) {
+        bookmark.title = title
+        bookmark.url = url
+        bookmark.category = category
         bookmark.lastVisited = Date()
         try? modelContext.save()
     }

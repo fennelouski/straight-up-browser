@@ -423,6 +423,11 @@ struct Straight_Up_BrowserApp: App {
                 }
                 .keyboardShortcut(sc(.translateInSplit))
 
+                Button("Reader Mode") {
+                    NotificationCenter.default.post(name: .browserToggleReader, object: nil)
+                }
+                .keyboardShortcut("r", modifiers: [.command, .option])
+
                 Divider()
 
                 Button("Toggle Tab Bar") {
@@ -457,6 +462,11 @@ struct Straight_Up_BrowserApp: App {
                     NotificationCenter.default.post(name: .browserShowBookmarks, object: nil)
                 }
                 .keyboardShortcut(sc(.showBookmarks))
+
+                Button("Show History") {
+                    NotificationCenter.default.post(name: .browserShowHistory, object: nil)
+                }
+                .keyboardShortcut("y", modifiers: [.command])
 
                 Button("Add Bookmark") {
                     NotificationCenter.default.post(name: .browserAddBookmark, object: nil)

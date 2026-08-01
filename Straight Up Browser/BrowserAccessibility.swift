@@ -23,6 +23,7 @@ nonisolated enum BrowserAccessibility {
         url: URL?,
         sessionKind: SessionKind,
         isPinned: Bool,
+        isMuted: Bool = false,
         isInSplit: Bool
     ) -> String {
         let identity: String
@@ -42,6 +43,7 @@ nonisolated enum BrowserAccessibility {
             details.append(String(localized: "Incognito tab"))
         }
         if isPinned { details.append(String(localized: "Pinned")) }
+        if isMuted { details.append(String(localized: "Muted")) }
         if isInSplit { details.append(String(localized: "Shown in split view")) }
         return details.joined(separator: ", ")
     }

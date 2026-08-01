@@ -285,6 +285,15 @@ struct BrowserView_iOS: View {
                 isLoading: isLoading,
                 onNewTab: createNewTab,
                 onCloseTab: { tabManager.closeTab($0, tabs: visibleTabs) },
+                onTogglePinned: {
+                    $0.isPinned.toggle()
+                    try? modelContext.save()
+                },
+                onToggleMuted: {
+                    $0.isMuted.toggle()
+                    webViewManager?.setMuted($0.isMuted, for: $0.id)
+                    try? modelContext.save()
+                },
                 onNewGroup: { newGroupName = ""; showNewGroup = true },
                 onDeleteGroup: deleteGroup,
                 onMoveTab: { $0.groupId = $1 },

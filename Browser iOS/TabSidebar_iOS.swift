@@ -21,6 +21,8 @@ struct TabSidebar_iOS: View {
     let isLoading: Bool
     let onNewTab: () -> Void
     let onCloseTab: (Tab) -> Void
+    let onTogglePinned: (Tab) -> Void
+    let onToggleMuted: (Tab) -> Void
     let onNewGroup: () -> Void
     let onDeleteGroup: (TabGroup) -> Void
     let onMoveTab: (Tab, UUID?) -> Void
@@ -35,14 +37,21 @@ struct TabSidebar_iOS: View {
         let byGroup = Dictionary(grouping: tabs) { $0.groupId }
         var result: [(group: TabGroup?, tabs: [Tab])] = []
         if let ungrouped = byGroup[nil] {
-            result.append((nil, ungrouped.sorted { $0.orderIndex < $1.orderIndex }))
+            result.append((nil, sortedTabs(ungrouped)))
         }
         for group in tabGroups.sorted(by: { $0.orderIndex < $1.orderIndex }) {
             if let groupTabs = byGroup[group.id] {
-                result.append((group, groupTabs.sorted { $0.orderIndex < $1.orderIndex }))
+                result.append((group, sortedTabs(groupTabs)))
             }
         }
         return result
+    }
+
+    private func sortedTabs(_ tabs: [Tab]) -> [Tab] {
+        tabs.sorted {
+            if $0.isPinned != $1.isPinned { return $0.isPinned && !$1.isPinned }
+            return $0.orderIndex < $1.orderIndex
+        }
     }
 
     var body: some View {
@@ -119,6 +128,15 @@ struct TabSidebar_iOS: View {
                 }
                 .contextMenu {
                     Button { onCloseTab(tab) } label: { Label("Close Tab", systemImage: "xmark") }
+                    Button { onTogglePinned(tab) } label: {
+                        Label(tab.isPinned ? "Unpin Tab" : "Pin Tab", systemImage: "pin")
+                    }
+                    Button { onToggleMuted(tab) } label: {
+                        Label(
+                            tab.isMuted ? "Unmute Tab" : "Mute Tab",
+                            systemImage: tab.isMuted ? "speaker.wave.2" : "speaker.slash"
+                        )
+                    }
                     if !tabGroups.isEmpty || tab.groupId != nil {
                         Menu("Move to Group") {
                             Button("None") { onMoveTab(tab, nil) }
@@ -160,6 +178,9 @@ struct TabRow_iOS: View {
             if tab.isPinned {
                 Image(systemName: "pin.fill").font(.system(size: 10)).foregroundStyle(.secondary)
             }
+            if tab.isMuted {
+                Image(systemName: "speaker.slash.fill").font(.system(size: 10)).foregroundStyle(.secondary)
+            }
         }
         .padding(.vertical, 2)
         // Leading tint stripe so container/incognito tabs are obvious unselected.
@@ -174,6 +195,7 @@ struct TabRow_iOS: View {
             url: tab.url,
             sessionKind: tab.sessionKind,
             isPinned: tab.isPinned,
+            isMuted: tab.isMuted,
             isInSplit: false
         ))
         .accessibilityValue(BrowserAccessibility.tabValue(

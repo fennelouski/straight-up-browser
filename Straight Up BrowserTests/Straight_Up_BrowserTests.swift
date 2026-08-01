@@ -1149,6 +1149,7 @@ struct BrowserAccessibilityTests {
             url: URL(string: "https://example.com"),
             sessionKind: .incognito,
             isPinned: true,
+            isMuted: true,
             isInSplit: true
         )
         let value = BrowserAccessibility.tabValue(
@@ -1161,10 +1162,90 @@ struct BrowserAccessibilityTests {
         #expect(label.contains("Account"))
         #expect(label.contains("Incognito"))
         #expect(label.contains("Pinned"))
+        #expect(label.contains("Muted"))
         #expect(label.contains("split"))
         #expect(value.contains("Selected"))
         #expect(value.contains("42%"))
         #expect(value.contains("2 downloads"))
+    }
+}
+
+struct BrowserLibraryTests {
+    @Test @MainActor
+    func historyIsUniqueNewestFirstAndCanRemoveOneURL() {
+        let first = Tab(title: "First", url: URL(string: "https://one.example/start"))
+        first.historyStrings = [
+            "https://one.example/start",
+            "https://shared.example/page",
+        ]
+        let second = Tab(title: "Second", url: URL(string: "https://two.example/latest"))
+        second.historyStrings = [
+            "https://shared.example/page",
+            "https://two.example/latest",
+        ]
+
+        #expect(BrowserLibrary.historyURLs(from: [first, second]).map(\.absoluteString) == [
+            "https://two.example/latest",
+            "https://shared.example/page",
+            "https://one.example/start",
+        ])
+
+        BrowserLibrary.removeHistory(
+            url: URL(string: "https://shared.example/page")!,
+            from: [first, second]
+        )
+        #expect(!first.historyStrings.contains("https://shared.example/page"))
+        #expect(!second.historyStrings.contains("https://shared.example/page"))
+    }
+
+    @Test
+    func bookmarkExportEscapesHTMLAndPreservesFolders() {
+        let bookmark = Bookmark(
+            title: "Research <Notes>",
+            url: URL(string: "https://example.com/?a=1&b=2")!,
+            category: "Work & Study"
+        )
+
+        let html = BrowserLibrary.bookmarkHTML([bookmark])
+
+        #expect(html.contains("Research &lt;Notes&gt;"))
+        #expect(html.contains("Work &amp; Study"))
+        #expect(html.contains("https://example.com/?a=1&amp;b=2"))
+        #expect(html.contains("<!DOCTYPE NETSCAPE-Bookmark-file-1>"))
+    }
+
+    @Test @MainActor
+    func pinnedTabsSortBeforeRegularTabsWithoutLosingTheirOrder() {
+        let regular = Tab(title: "Regular")
+        regular.orderIndex = 0
+        let secondPinned = Tab(title: "Second pinned")
+        secondPinned.isPinned = true
+        secondPinned.orderIndex = 2
+        let firstPinned = Tab(title: "First pinned")
+        firstPinned.isPinned = true
+        firstPinned.orderIndex = 1
+
+        #expect(BrowserLibrary.sortedTabs([regular, secondPinned, firstPinned]).map(\.title) == [
+            "First pinned",
+            "Second pinned",
+            "Regular",
+        ])
+    }
+
+    @Test
+    func readerModeParsesExtractedPageContent() {
+        let article = ReaderMode.article(from: [
+            "title": "A useful article",
+            "byline": "Ada Writer",
+            "text": "Readable text",
+        ])
+
+        #expect(article == ReaderArticle(
+            title: "A useful article",
+            byline: "Ada Writer",
+            text: "Readable text"
+        ))
+        #expect(ReaderMode.article(from: ["title": "Empty", "text": ""]) == nil)
     }
 }
 
