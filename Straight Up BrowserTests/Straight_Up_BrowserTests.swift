@@ -12,6 +12,12 @@ import AppKit
 import WebKit
 @testable import Browser
 
+struct LoggingPrivacyTests {
+    @Test func dynamicLogPayloadsArePrivateByDefault() {
+        #expect(Logger.defaultPayloadVisibility == .private)
+    }
+}
+
 // The selection ring in the minimal tab bar traces the favicon's own shape, so
 // the shape sniffer has to tell a full-bleed tile from a glyph on transparency.
 struct FaviconShapeTests {

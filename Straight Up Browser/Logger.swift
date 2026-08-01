@@ -8,21 +8,36 @@
 import Foundation
 import os
 
+enum LogPayloadVisibility: Equatable {
+    case `private`
+    case `public`
+}
+
 /// Thin wrapper over unified logging. View output in Console.app or with:
 ///   log stream --predicate 'subsystem == "com.straightupbrowser"'
 struct Logger {
     nonisolated private static let logger = os.Logger(subsystem: "com.straightupbrowser", category: "app")
+    nonisolated static let defaultPayloadVisibility: LogPayloadVisibility = .private
 
     nonisolated static func log(
         _ message: String,
         type: String = "",
+        visibility: LogPayloadVisibility = defaultPayloadVisibility,
         file: String = #file,
         function: String = #function,
         line: Int = #line
     ) {
         let filename = (file as NSString).lastPathComponent
         let context = type.isEmpty ? "" : "[\(type)] "
-        logger.debug("\(filename, privacy: .public):\(line) \(context, privacy: .public)\(message, privacy: .public)")
+        switch visibility {
+        case .private:
+            // Navigation URLs, incognito state, form values, and CLI payloads all
+            // flow through this logger. Keep dynamic data private unless a caller
+            // deliberately opts a coarse, non-user-derived event into visibility.
+            logger.debug("\(filename, privacy: .public):\(line) \(context, privacy: .public)\(message, privacy: .private)")
+        case .public:
+            logger.debug("\(filename, privacy: .public):\(line) \(context, privacy: .public)\(message, privacy: .public)")
+        }
     }
 
     nonisolated static func debug(_ message: String, type: String = "", file: String = #file, function: String = #function, line: Int = #line) {
