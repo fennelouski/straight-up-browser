@@ -27,6 +27,10 @@ struct ClosedTabSnapshot: Codable {
     let title: String
     let url: URL?
     let historyStrings: [String]
+    // Optional for backward compatibility with snapshots written before session
+    // inheritance was preserved.
+    let sessionKind: SessionKind?
+    let sessionId: UUID?
 }
 
 class TabManager: ObservableObject {
@@ -362,7 +366,13 @@ class TabManager: ObservableObject {
         }
 
         // Snapshot before any mutation/deletion so reopen works safely
-        closedTabs.append(ClosedTabSnapshot(title: tab.title, url: tab.url, historyStrings: tab.historyStrings))
+        closedTabs.append(ClosedTabSnapshot(
+            title: tab.title,
+            url: tab.url,
+            historyStrings: tab.historyStrings,
+            sessionKind: tab.sessionKind,
+            sessionId: tab.sessionId
+        ))
 
         // Clean up the web view for this tab
         webViewManager?.removeWebView(for: tab.id)
@@ -396,12 +406,13 @@ class TabManager: ObservableObject {
 
 
     func duplicateTab(_ tab: Tab) -> Tab {
-        let newTab = Tab(title: tab.title + " Copy", url: tab.url, isActive: false)
+        let newTab = createTab(
+            inheriting: (tab.sessionKind, tab.sessionId),
+            url: tab.url
+        )
         newTab.memoryPolicy = tab.memoryPolicy
         // Update the title to use the domain name
         newTab.updateTitleFromURL()
-        modelContext?.insert(newTab)
-        selectedTabId = newTab.id
         return newTab
     }
 
@@ -430,16 +441,19 @@ class TabManager: ObservableObject {
     func reopenLastClosedTab() -> Tab? {
         guard let snapshot = closedTabs.popLast() else { return nil }
 
-        // Create a new tab with the same properties as the closed one
-        let newTab = Tab(title: snapshot.title, url: snapshot.url, isActive: true)
+        // Old snapshots had no session fields and decode as normal. Incognito tabs
+        // are never snapshotted; if one is encountered, createTab still keeps it
+        // memory-only rather than persisting its URL.
+        let newTab = createTab(
+            inheriting: (snapshot.sessionKind ?? .normal, snapshot.sessionId),
+            url: snapshot.url
+        )
         newTab.historyStrings = snapshot.historyStrings
         newTab.currentHistoryIndex = snapshot.historyStrings.isEmpty ? -1 : snapshot.historyStrings.count - 1
 
         // Update the title to use the domain name
         newTab.updateTitleFromURL()
 
-        modelContext?.insert(newTab)
-        selectedTabId = newTab.id
         return newTab
     }
 

@@ -243,6 +243,36 @@ struct SessionIsolationTests {
         #expect(norm.sessionKind == .normal && norm.sessionId == nil)
     }
 
+    @Test @MainActor func duplicateAndReopenPreserveSessionIdentity() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Browser.Tab.self, configurations: configuration)
+        let context = container.mainContext
+        let manager = TabManager(modelContext: context, terminateApplication: {})
+
+        let privateSession = UUID()
+        let privateTab = manager.createIncognitoTab(sessionId: privateSession)
+        privateTab.navigateTo(URL(string: "https://private.example")!)
+        let privateCopy = manager.duplicateTab(privateTab)
+        #expect(privateCopy.sessionKind == .incognito)
+        #expect(privateCopy.sessionId == privateSession)
+        #expect(manager.incognitoTabs.contains { $0.id == privateCopy.id })
+        #expect(try context.fetch(FetchDescriptor<Browser.Tab>()).isEmpty)
+
+        let containerSession = UUID()
+        let containerTab = manager.createTab(
+            inheriting: (.container, containerSession),
+            url: URL(string: "https://work.example")
+        )
+        let containerCopy = manager.duplicateTab(containerTab)
+        #expect(containerCopy.sessionKind == .container)
+        #expect(containerCopy.sessionId == containerSession)
+
+        manager.closeTab(containerTab, tabs: [containerTab, containerCopy])
+        let reopened = try #require(manager.reopenLastClosedTab())
+        #expect(reopened.sessionKind == .container)
+        #expect(reopened.sessionId == containerSession)
+    }
+
     @Test func incognitoColorIsStablePerSession() {
         let id = UUID()
         #expect(BrowserSession.incognitoColor(for: id) == BrowserSession.incognitoColor(for: id))
