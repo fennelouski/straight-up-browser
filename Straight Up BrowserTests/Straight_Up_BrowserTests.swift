@@ -995,3 +995,27 @@ struct WebExtensionPolicyTests {
         #expect(ExtensionPermissionPolicy.approved(requested, userAllowed: true) == requested)
     }
 }
+
+struct CLIAuthorizationTests {
+    @Test func automationIsOffByDefaultAndSensitiveCapabilitiesAreSeparate() {
+        let suiteName = "cli-auth-\(UUID())"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let authorization = CLIAuthorization(defaults: defaults)
+
+        #expect(!authorization.allows(action: "open"))
+        defaults.set(true, forKey: CLIAuthorization.Key.enabled)
+        #expect(authorization.allows(action: "open"))
+        #expect(!authorization.allows(action: "tabs"))
+        #expect(!authorization.allows(action: "js"))
+        #expect(!authorization.allows(action: "screenshot"))
+
+        defaults.set(true, forKey: CLIAuthorization.Key.pageRead)
+        defaults.set(true, forKey: CLIAuthorization.Key.pageScript)
+        defaults.set(true, forKey: CLIAuthorization.Key.screenshot)
+        #expect(authorization.allows(action: "tabs"))
+        #expect(authorization.allows(action: "get"))
+        #expect(authorization.allows(action: "js"))
+        #expect(authorization.allows(action: "screenshot"))
+    }
+}

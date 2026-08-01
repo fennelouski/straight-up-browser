@@ -951,7 +951,18 @@ struct AppearanceSettingsView: View {
 struct SecuritySettingsView: View {
     @AppStorage("sslStrictMode") private var sslStrictMode = true
     @AppStorage("adBlockEnabled") private var adBlockEnabled = false
+    @AppStorage(CLIAuthorization.Key.enabled) private var cliAutomationEnabled = false
+    @AppStorage(CLIAuthorization.Key.pageRead) private var cliPageReadEnabled = false
+    @AppStorage(CLIAuthorization.Key.pageScript) private var cliPageScriptEnabled = false
+    @AppStorage(CLIAuthorization.Key.screenshot) private var cliScreenshotEnabled = false
     @AppStorage("cliRealEventsEnabled") private var cliRealEventsEnabled = false
+
+    private var authorizedRealEvents: Binding<Bool> {
+        Binding(
+            get: { cliAutomationEnabled && cliPageScriptEnabled && cliRealEventsEnabled },
+            set: { cliRealEventsEnabled = $0 && cliAutomationEnabled && cliPageScriptEnabled }
+        )
+    }
 
     var body: some View {
         Form {
@@ -983,12 +994,20 @@ struct SecuritySettingsView: View {
             }
 
             Section {
-                Toggle("Allow the CLI to send real mouse clicks", isOn: $cliRealEventsEnabled)
+                Toggle("Enable CLI automation", isOn: $cliAutomationEnabled)
+                Toggle("Allow tab and page reading", isOn: $cliPageReadEnabled)
+                    .disabled(!cliAutomationEnabled)
+                Toggle("Allow JavaScript and synthetic interaction", isOn: $cliPageScriptEnabled)
+                    .disabled(!cliAutomationEnabled)
+                Toggle("Allow screenshots", isOn: $cliScreenshotEnabled)
+                    .disabled(!cliAutomationEnabled)
+                Toggle("Allow genuine mouse clicks", isOn: $cliRealEventsEnabled)
+                    .disabled(!cliAutomationEnabled || !cliPageScriptEnabled)
                 SettingCaptionRow(
-                    caption: "Lets `browser-cli click --real` post genuine mouse events.",
-                    title: "CLI Real Clicks",
-                    explanation: "By default the CLI's clicks are synthetic — fine for automation, but pages that gate actions behind a real user gesture (autoplay, pop-ups) ignore them. Turning this on lets `browser-cli click --real` post genuine mouse events that count as gestures. The trade-off: any process running as you can then click inside the browser window, so leave it off unless you need it.",
-                    value: $cliRealEventsEnabled
+                    caption: "Automation is off by default. Grant sensitive capabilities separately.",
+                    title: "CLI Authorization",
+                    explanation: "The master switch permits navigation and tab control from browser-cli. Reading page content, running JavaScript or synthetic interaction, taking screenshots, and posting genuine mouse events each require the corresponding permission. File permissions limit access to processes running as you, while these switches decide what those processes may do.",
+                    value: authorizedRealEvents
                 ) { CLIRealClicksDemo(enabled: $0) }
             } header: {
                 SettingsLabel("CLI Automation", systemImage: "terminal", tint: SettingsTint.security)
