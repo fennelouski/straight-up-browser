@@ -174,6 +174,31 @@ struct LastTabLifecycleTests {
         #expect(manager.incognitoTabs.isEmpty)
     }
 
+    @Test func deletingAContainerPurgesItsClosedTabSnapshots() {
+        let deletedSessionId = UUID()
+        let manager = TabManager()
+        manager.closedTabs = [
+            ClosedTabSnapshot(
+                title: "Deleted container",
+                url: URL(string: "https://container.example"),
+                historyStrings: ["https://container.example"],
+                sessionKind: .container,
+                sessionId: deletedSessionId
+            ),
+            ClosedTabSnapshot(
+                title: "Keep",
+                url: URL(string: "https://normal.example"),
+                historyStrings: ["https://normal.example"],
+                sessionKind: .normal,
+                sessionId: nil
+            )
+        ]
+
+        manager.purgeClosedTabs(forSession: deletedSessionId)
+
+        #expect(manager.closedTabs.map(\.title) == ["Keep"])
+    }
+
     @Test @MainActor func closingPersistedLastTabDeletesItBeforeTerminating() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: Browser.Tab.self, configurations: configuration)
@@ -1054,6 +1079,17 @@ struct SiteHistoryTests {
 }
 
 struct BrowsingDataCleanerTests {
+    private struct RemovalFailure: Error {}
+
+    @Test func containerStoreRemovalReportsWebKitFailures() {
+        let result = ContainerStoreRemoval.result(for: RemovalFailure())
+
+        guard case .failure = result else {
+            Issue.record("Expected the WebKit removal error to be preserved")
+            return
+        }
+    }
+
     @Test func eachPrivacyCheckboxMapsOnlyToItsPromisedWebsiteData() {
         #expect(BrowsingDataCleaner.websiteDataTypes(
             cookies: true, cache: false, localStorage: false

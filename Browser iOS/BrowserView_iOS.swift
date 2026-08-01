@@ -61,6 +61,7 @@ struct BrowserView_iOS: View {
     @State private var showSaveWorkspace = false
     @State private var workspaceName = ""
     @State private var savedWorkspaces: [SavedWorkspace] = []
+    @State private var containerDeletionError: String?
 
     @AppStorage("progressBarTop") private var progressBarTop = true
     @AppStorage("progressBarBottom") private var progressBarBottom = false
@@ -220,6 +221,17 @@ struct BrowserView_iOS: View {
             TextField("Workspace name", text: $workspaceName)
             Button("Save") { saveWorkspace(workspaceName) }
             Button("Cancel", role: .cancel) {}
+        }
+        .alert(
+            "Container Data Couldn’t Be Removed",
+            isPresented: Binding(
+                get: { containerDeletionError != nil },
+                set: { if !$0 { containerDeletionError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(containerDeletionError ?? "")
         }
         .sheet(isPresented: $showShortcutSheet) { ShortcutCheatSheet_iOS() }
         .sheet(isPresented: $showGestureGuide) {
@@ -643,8 +655,15 @@ struct BrowserView_iOS: View {
             tabManager.closeTab(tab, tabs: allTabs)
         }
         let id = session.id
-        modelContext.delete(session)
-        WKWebsiteDataStore.remove(forIdentifier: id) { _ in }
+        tabManager.purgeClosedTabs(forSession: id)
+        ContainerStoreRemoval.remove(identifier: id) { result in
+            switch result {
+            case .success:
+                modelContext.delete(session)
+            case .failure(let error):
+                containerDeletionError = error.localizedDescription
+            }
+        }
     }
 
     // Auto tint from the name (djb2) so containers read as distinct without a
