@@ -603,20 +603,20 @@ struct BrowserView_iOS: View {
     }
 
     private func loadWorkspace(_ workspace: SavedWorkspace) {
-        for tab in tabs { modelContext.delete(tab) }
+        tabManager.discardTabsForWorkspaceLoad(tabs)
         for group in tabGroups { modelContext.delete(group) }
         for sg in workspace.groups {
             let g = TabGroup(name: sg.name, color: Color(hex: sg.colorHex) ?? .blue, orderIndex: sg.orderIndex)
             g.id = sg.id
             modelContext.insert(g)
         }
+        var restoredTabs: [Tab] = []
         for st in workspace.tabs {
-            let t = Tab(title: st.title, url: st.urlString.flatMap(URL.init(string:)), isActive: false)
-            t.id = st.id
-            t.groupId = st.groupId
-            t.orderIndex = st.orderIndex
+            let t = st.makeTab()
             modelContext.insert(t)
+            restoredTabs.append(t)
         }
+        webViewManager?.syncSessions(from: restoredTabs)
         DispatchQueue.main.async {
             tabManager.selectedTabId = (try? modelContext.fetch(FetchDescriptor<Tab>()))?.first?.id
         }

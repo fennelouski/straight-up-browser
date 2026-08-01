@@ -64,6 +64,9 @@ struct SavedWorkspaceTab: Codable {
     let isMuted: Bool
     let zoomLevel: Double
     let orderIndex: Int
+    // Optional so older workspace files decode as normal tabs.
+    let sessionKind: SessionKind?
+    let sessionId: UUID?
 
     init(from tab: Tab) {
         self.id = tab.id
@@ -74,5 +77,20 @@ struct SavedWorkspaceTab: Codable {
         self.isMuted = tab.isMuted
         self.zoomLevel = tab.zoomLevel
         self.orderIndex = tab.orderIndex
+        self.sessionKind = tab.sessionKind == .normal ? nil : tab.sessionKind
+        self.sessionId = tab.sessionId
+    }
+
+    func makeTab() -> Tab {
+        let tab = Tab(title: title, url: urlString.flatMap(URL.init(string:)), isActive: false)
+        tab.id = id
+        tab.groupId = groupId
+        tab.isPinned = isPinned
+        tab.isMuted = isMuted
+        tab.zoomLevel = zoomLevel
+        tab.orderIndex = orderIndex
+        tab.sessionKind = sessionKind ?? .normal
+        tab.sessionId = sessionId
+        return tab
     }
 }
