@@ -257,6 +257,136 @@ extension ShortcutCommand {
            omnibar, quickOpen, quickOpenNewTab, tabGrid, shortcutOverlay, settings, help, extensionPopup]
 
     static func by(id: String) -> ShortcutCommand? { all.first { $0.id == id } }
+
+    static var availableOnCurrentPlatform: [ShortcutCommand] {
+        #if os(iOS)
+        BrowserPlatformCommandRegistry.iPad.map(\.command)
+        #else
+        all
+        #endif
+    }
+}
+
+// MARK: - Platform command registry
+
+enum BrowserPlatformCommandGroup: Hashable {
+    case file
+    case go
+    case view
+    case bookmarks
+    case tabs
+}
+
+enum BrowserPlatformCommandAction: Hashable {
+    case newTab
+    case newIncognitoTab
+    case closeTab
+    case closeTabSet
+    case reopenTab
+    case openLocation
+    case back
+    case forward
+    case reload
+    case findInPage
+    case toggleSidebar
+    case zoomIn
+    case zoomOut
+    case actualSize
+    case settings
+    case shortcutOverlay
+    case addBookmark
+    case nextTab
+    case previousTab
+    case switchTab(Int)
+}
+
+struct BrowserPlatformCommandEntry: Identifiable {
+    var id: String { command.id }
+    let group: BrowserPlatformCommandGroup
+    let command: ShortcutCommand
+    let action: BrowserPlatformCommandAction
+
+    var notification: Notification.Name {
+        switch action {
+        case .newTab: .browserNewTab
+        case .newIncognitoTab: .browserNewIncognitoTab
+        case .closeTab: .browserCloseTab
+        case .closeTabSet: .browserCloseTabSet
+        case .reopenTab: .reopenLastClosedTab
+        case .openLocation: .showOmnibar
+        case .back: .browserGoBack
+        case .forward: .browserGoForward
+        case .reload: .browserReload
+        case .findInPage: .browserFindInPage
+        case .toggleSidebar: .browserToggleTabBar
+        case .zoomIn: .browserZoomIn
+        case .zoomOut: .browserZoomOut
+        case .actualSize: .browserZoomReset
+        case .settings: .browserShowSettings
+        case .shortcutOverlay: .browserToggleShortcutOverlay
+        case .addBookmark: .browserAddBookmark
+        case .nextTab: .browserNextTab
+        case .previousTab: .browserPreviousTab
+        case .switchTab: .browserSwitchTab
+        }
+    }
+
+    var userInfo: [AnyHashable: Any]? {
+        guard case .switchTab(let index) = action else { return nil }
+        return ["index": index]
+    }
+}
+
+enum BrowserPlatformCommandRegistry {
+    static let iPad: [BrowserPlatformCommandEntry] = [
+        .init(group: .file, command: .newTab, action: .newTab),
+        .init(group: .file, command: .newIncognitoTab, action: .newIncognitoTab),
+        .init(group: .file, command: .closeTab, action: .closeTab),
+        .init(group: .file, command: .closeTabSet, action: .closeTabSet),
+        .init(group: .file, command: .reopenTab, action: .reopenTab),
+        .init(group: .file, command: .openLocation, action: .openLocation),
+        .init(group: .go, command: .back, action: .back),
+        .init(group: .go, command: .forward, action: .forward),
+        .init(group: .go, command: .reload, action: .reload),
+        .init(group: .go, command: .findInPage, action: .findInPage),
+        .init(group: .view, command: .toggleTabBar, action: .toggleSidebar),
+        .init(group: .view, command: .zoomIn, action: .zoomIn),
+        .init(group: .view, command: .zoomOut, action: .zoomOut),
+        .init(group: .view, command: .actualSize, action: .actualSize),
+        .init(group: .view, command: .settings, action: .settings),
+        .init(group: .view, command: .shortcutOverlay, action: .shortcutOverlay),
+        .init(group: .bookmarks, command: .addBookmark, action: .addBookmark),
+        .init(group: .tabs, command: .nextTab, action: .nextTab),
+        .init(group: .tabs, command: .previousTab, action: .previousTab),
+    ] + ShortcutCommand.switchTabs.enumerated().map { index, command in
+        .init(group: .tabs, command: command, action: .switchTab(index + 1))
+    }
+
+    static func iPadEntries(in group: BrowserPlatformCommandGroup) -> [BrowserPlatformCommandEntry] {
+        iPad.filter { $0.group == group }
+    }
+
+    static var iPadNotificationNames: [Notification.Name] {
+        iPad.reduce(into: []) { names, entry in
+            if !names.contains(entry.notification) {
+                names.append(entry.notification)
+            }
+        }
+    }
+
+    static func iPadEntry(
+        notification: Notification.Name,
+        userInfo: [AnyHashable: Any]?
+    ) -> BrowserPlatformCommandEntry? {
+        let index = userInfo?["index"] as? Int
+        return iPad.first { entry in
+            guard entry.notification == notification else { return false }
+            switch entry.action {
+            case .switchTab(let entryIndex): return entryIndex == index
+            default: return true
+            }
+        }
+    }
 }
 
 // MARK: - Store
@@ -307,20 +437,22 @@ final class ShortcutStore {
     // Commands sharing a chord (the same Shortcut bound to 2+ commands).
     func conflicts() -> [ShortcutCommand] {
         var seen: [Shortcut: [ShortcutCommand]] = [:]
-        for command in ShortcutCommand.all {
+        for command in ShortcutCommand.availableOnCurrentPlatform {
             seen[shortcut(for: command), default: []].append(command)
         }
         return seen.values.filter { $0.count > 1 }.flatMap { $0 }
     }
 
     func commandsSharing(_ shortcut: Shortcut, excluding command: ShortcutCommand) -> [ShortcutCommand] {
-        ShortcutCommand.all.filter { $0.id != command.id && self.shortcut(for: $0) == shortcut }
+        ShortcutCommand.availableOnCurrentPlatform.filter {
+            $0.id != command.id && self.shortcut(for: $0) == shortcut
+        }
     }
 
     // Display projection for the cheat sheet, grouped and ordered by section.
     var groupedForDisplay: [(section: ShortcutSection, commands: [ShortcutCommand])] {
         ShortcutSection.allCases.compactMap { section in
-            let commands = ShortcutCommand.all.filter { $0.section == section }
+            let commands = ShortcutCommand.availableOnCurrentPlatform.filter { $0.section == section }
             return commands.isEmpty ? nil : (section, commands)
         }
     }
@@ -358,7 +490,7 @@ extension ShortcutStore {
     func cheatRows(for section: ShortcutSection) -> [CheatRow] {
         var rows: [CheatRow] = []
         var addedTabSummary = false
-        for command in ShortcutCommand.all where command.section == section {
+        for command in ShortcutCommand.availableOnCurrentPlatform where command.section == section {
             if command.id.hasPrefix("switchTab") {
                 guard !addedTabSummary else { continue }
                 addedTabSummary = true
