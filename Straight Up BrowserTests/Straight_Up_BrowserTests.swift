@@ -970,3 +970,28 @@ struct BrowsingDataCleanerTests {
         ) == [WKWebsiteDataTypeLocalStorage])
     }
 }
+
+struct WebExtensionPolicyTests {
+    @Test func privateTabsStayHiddenUntilTheUserOptsIn() {
+        let normal = UUID()
+        let privateTab = UUID()
+        let ids = [normal, privateTab]
+
+        #expect(ExtensionPermissionPolicy.visibleTabIds(
+            ids,
+            privateAccessAllowed: false,
+            isPrivate: { $0 == privateTab }
+        ) == [normal])
+        #expect(ExtensionPermissionPolicy.visibleTabIds(
+            ids,
+            privateAccessAllowed: true,
+            isPrivate: { $0 == privateTab }
+        ) == ids)
+    }
+
+    @Test func aDeniedPromptGrantsNothing() {
+        let requested = Set(["tabs", "storage"])
+        #expect(ExtensionPermissionPolicy.approved(requested, userAllowed: false).isEmpty)
+        #expect(ExtensionPermissionPolicy.approved(requested, userAllowed: true) == requested)
+    }
+}

@@ -555,6 +555,10 @@ struct Straight_Up_BrowserApp: App {
                     WebExtensionManager.shared.showPopup()
                 }
                 .keyboardShortcut(sc(.extensionPopup))
+                Divider()
+                Button("Manage Extensions…") {
+                    WebExtensionManager.shared.presentManagementPanel()
+                }
             }
 
             CommandGroup(replacing: .help) {
