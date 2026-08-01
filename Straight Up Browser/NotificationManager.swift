@@ -10,6 +10,18 @@ import SwiftUI
 import WebKit
 import UniformTypeIdentifiers
 
+enum CLIPageReader {
+    static func makeConfiguration() -> WKWebViewConfiguration {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        return configuration
+    }
+
+    static func makeWebView() -> WKWebView {
+        WKWebView(frame: .zero, configuration: makeConfiguration())
+    }
+}
+
 extension NotificationCenter {
     /// NotificationCenter's block is Sendable, but a non-nil OperationQueue
     /// guarantees delivery on that queue. Keep the runtime assertion at this
@@ -87,7 +99,7 @@ class NotificationManager {
         self.importBookmarksAction = importBookmarksAction
 
         // Initialize background web view for page data extraction
-        self.backgroundWebView = WKWebView()
+        self.backgroundWebView = CLIPageReader.makeWebView()
     }
 
     // App Intents poll this before posting: a notification sent before
