@@ -13,16 +13,24 @@ import WebKit
 // scope with no deletion) lives in ContentView.hardReload() / ⇧⌘R.
 enum BrowsingDataCleaner {
 
-    // Browsing history is app-owned rather than WebKit-owned: each persisted Tab
-    // keeps its suggestion history, while SiteHistory keeps the cross-tab visit
-    // index used by the omnibar. Clear both sources together so the UI cannot
-    // report success while old destinations remain searchable.
-    static func clearHistory(in tabs: [Tab], siteHistory: SiteHistory = .shared) {
+    // Browsing history is app-owned rather than WebKit-owned. Clear every local
+    // and synced recovery surface together so neither search nor session restore
+    // can reconstruct destinations after the user erases history.
+    static func clearHistory(
+        in tabs: [Tab],
+        siteHistory: SiteHistory = .shared,
+        browsingHistory: BrowsingHistoryStore = .shared
+    ) {
         for tab in tabs {
             tab.historyStrings.removeAll()
             tab.currentHistoryIndex = -1
         }
         siteHistory.clear()
+        browsingHistory.clear()
+        TabSync.clearPageState(in: tabs)
+        TabManager.clearPersistedClosedTabs()
+        WebViewManager.clearPersistedInteractionStateFile()
+        NotificationCenter.default.post(name: .browserHistoryDidClear, object: nil)
     }
 
     // Translate the settings checkboxes into non-overlapping WebKit data types.

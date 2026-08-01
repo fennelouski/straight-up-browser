@@ -127,7 +127,6 @@ enum BrowserLibrarySection: String, CaseIterable, Identifiable {
 
 struct BrowserLibraryView: View {
     let bookmarks: [Bookmark]
-    let tabs: [Tab]
     let initialSection: BrowserLibrarySection
     let onOpen: (URL) -> Void
     let onClose: () -> Void
@@ -135,6 +134,7 @@ struct BrowserLibraryView: View {
     let onDeleteBookmark: (Bookmark) -> Void
     let onDeleteHistory: (URL) -> Void
     let onClearHistory: () -> Void
+    @ObservedObject private var historyStore: BrowsingHistoryStore
 
     @State private var section: BrowserLibrarySection
     @State private var query = ""
@@ -143,7 +143,7 @@ struct BrowserLibraryView: View {
 
     init(
         bookmarks: [Bookmark],
-        tabs: [Tab],
+        historyStore: BrowsingHistoryStore = .shared,
         initialSection: BrowserLibrarySection,
         onOpen: @escaping (URL) -> Void,
         onClose: @escaping () -> Void,
@@ -153,7 +153,7 @@ struct BrowserLibraryView: View {
         onClearHistory: @escaping () -> Void
     ) {
         self.bookmarks = bookmarks
-        self.tabs = tabs
+        self.historyStore = historyStore
         self.initialSection = initialSection
         self.onOpen = onOpen
         self.onClose = onClose
@@ -174,7 +174,7 @@ struct BrowserLibraryView: View {
     }
 
     private var filteredHistory: [URL] {
-        let urls = BrowserLibrary.historyURLs(from: tabs)
+        let urls = historyStore.recentVisits.map(\.url)
         guard !query.isEmpty else { return urls }
         return urls.filter { $0.absoluteString.localizedCaseInsensitiveContains(query) }
     }
@@ -347,7 +347,9 @@ struct BrowserLibraryView: View {
     }
 
     private func historyTitle(for url: URL) -> String {
-        tabs.first { $0.url?.absoluteString == url.absoluteString }?.title
+        historyStore.recentVisits.first {
+            $0.url.absoluteString == url.absoluteString
+        }?.title
             ?? url.host
             ?? url.absoluteString
     }

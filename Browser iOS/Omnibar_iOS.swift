@@ -63,7 +63,12 @@ enum OmnibarInput {
 
 // Ranked history + bookmark matches for the current omnibar text (ported from
 // the Mac OmnibarView.filteredSuggestions).
-func omnibarSuggestions(input: String, tabs: [Tab], bookmarks: [(title: String, url: URL)]) -> [Suggestion] {
+func omnibarSuggestions(
+    input: String,
+    tabs: [Tab],
+    bookmarks: [(title: String, url: URL)],
+    durableHistory: [URL] = []
+) -> [Suggestion] {
     let lowercased = input.lowercased()
     guard !lowercased.isEmpty else { return [] }
 
@@ -74,7 +79,7 @@ func omnibarSuggestions(input: String, tabs: [Tab], bookmarks: [(title: String, 
     }.map { Suggestion(url: $0.url, title: $0.title, type: .bookmark) }
 
     let bookmarkedURLs = Set(bookmarks.map { $0.url.absoluteString })
-    var historyURLs = Set<URL>()
+    var historyURLs = Set(durableHistory)
     for tab in tabs { historyURLs.formUnion(tab.history) }
     let matchingHistory = historyURLs.filter { url in
         !bookmarkedURLs.contains(url.absoluteString)

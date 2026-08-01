@@ -27,6 +27,7 @@ struct BrowserView_iOS: View {
 
     @StateObject private var tabManager = TabManager()
     @ObservedObject private var protectionStore = PageProtectionStore.shared
+    @ObservedObject private var browsingHistory = BrowsingHistoryStore.shared
     @State private var webViewManager: WebViewManager?
     @State private var navigationManager: NavigationManager?
     @State private var bookmarkManager: BookmarkManager?
@@ -111,7 +112,12 @@ struct BrowserView_iOS: View {
 
     private var suggestions: [Suggestion] {
         guard showOmnibar else { return [] }
-        return omnibarSuggestions(input: omnibarText, tabs: tabs, bookmarks: bookmarkPairs)
+        return omnibarSuggestions(
+            input: omnibarText,
+            tabs: tabs,
+            bookmarks: bookmarkPairs,
+            durableHistory: browsingHistory.recentVisits.map(\.url)
+        )
     }
 
     private var colorScheme: ColorScheme? {

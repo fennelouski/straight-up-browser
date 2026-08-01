@@ -1359,7 +1359,6 @@ struct ContentView: View {
             if showLibrary {
                 BrowserLibraryView(
                     bookmarks: allBookmarks,
-                    tabs: allTabs,
                     initialSection: librarySection,
                     onOpen: openFromLibrary,
                     onClose: { showLibrary = false },
@@ -2436,6 +2435,7 @@ struct ContentView: View {
     private func removeHistoryURL(_ url: URL) {
         BrowserLibrary.removeHistory(url: url, from: allTabs)
         SiteHistory.shared.remove(url: url)
+        BrowsingHistoryStore.shared.remove(url: url)
         try? modelContext.save()
     }
 

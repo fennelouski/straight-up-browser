@@ -33,7 +33,7 @@ struct ClosedTabSnapshot: Codable {
     let sessionId: UUID?
 }
 
-class TabManager: ObservableObject {
+class TabManager: NSObject, ObservableObject {
     // The focused tab: owns the omnibar, title, and all key commands. In a split
     // it is always one of splitTabIds; selecting any non-member dissolves the split
     // (see docs/adr/0001-split-is-view-state.md).
@@ -94,19 +94,42 @@ class TabManager: ObservableObject {
         self.modelContext = modelContext
         self.webViewManager = webViewManager
         self.terminateApplication = terminateApplication
+        super.init()
         if let data = UserDefaults.standard.data(forKey: Self.closedTabsKey),
            let saved = try? JSONDecoder().decode([ClosedTabSnapshot].self, from: data) {
             closedTabs = saved
         }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(historyDidClear),
+            name: .browserHistoryDidClear,
+            object: nil
+        )
     }
 
     // Keep only the most recent entries on disk; the in-session stack is small
     // by nature (you'd have to close thousands of tabs to grow it).
     private func persistClosedTabs() {
         let capped = Array(closedTabs.suffix(Self.maxClosedTabs))
+        guard !capped.isEmpty else {
+            UserDefaults.standard.removeObject(forKey: Self.closedTabsKey)
+            return
+        }
         if let data = try? JSONEncoder().encode(capped) {
             UserDefaults.standard.set(data, forKey: Self.closedTabsKey)
         }
+    }
+
+    static func clearPersistedClosedTabs() {
+        UserDefaults.standard.removeObject(forKey: closedTabsKey)
+    }
+
+    @objc private func historyDidClear() {
+        closedTabs.removeAll()
+    }
+
+    isolated deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     func setModelContext(_ modelContext: ModelContext) {

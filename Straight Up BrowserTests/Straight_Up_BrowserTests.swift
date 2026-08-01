@@ -54,6 +54,37 @@ struct PrivateTransferHistoryTests {
     }
 }
 
+@MainActor
+struct DurableBrowsingHistoryTests {
+    @Test func aNormalVisitSurvivesStoreRecreation() {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("browsing-history-\(UUID().uuidString).json")
+        let url = URL(string: "https://example.com/kept-after-tab-close")!
+        let store = BrowsingHistoryStore(storeURL: storeURL)
+
+        store.record(url: url, title: "Durable Visit", sessionKind: .normal)
+
+        let reopened = BrowsingHistoryStore(storeURL: storeURL)
+        #expect(reopened.recentVisits.map(\.url) == [url])
+        #expect(reopened.recentVisits.first?.title == "Durable Visit")
+    }
+
+    @Test func anIncognitoVisitNeverEntersTheStore() {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("private-history-\(UUID().uuidString).json")
+        let store = BrowsingHistoryStore(storeURL: storeURL)
+
+        store.record(
+            url: URL(string: "https://private.example/never-store")!,
+            title: "Private",
+            sessionKind: .incognito
+        )
+
+        #expect(store.visits.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: storeURL.path))
+    }
+}
+
 // The selection ring in the minimal tab bar traces the favicon's own shape, so
 // the shape sniffer has to tell a full-bleed tile from a glyph on transparency.
 struct FaviconShapeTests {
@@ -885,6 +916,24 @@ struct SiteHistoryTests {
     @Test func clearingHistoryRemovesTabAndSiteVisitHistory() {
         let store = freshStore()
         store.record(url: URL(string: "https://example.com/page")!, title: "Example")
+        let historyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clear-history-\(UUID().uuidString).json")
+        let browsingHistory = BrowsingHistoryStore(storeURL: historyURL)
+        browsingHistory.record(
+            url: URL(string: "https://example.com/page")!,
+            title: "Example",
+            sessionKind: .normal
+        )
+        let tabManager = TabManager()
+        tabManager.closedTabs = [
+            ClosedTabSnapshot(
+                title: "Closed",
+                url: URL(string: "https://closed.example"),
+                historyStrings: ["https://closed.example"],
+                sessionKind: .normal,
+                sessionId: nil
+            )
+        ]
 
         let normal = Tab(title: "Example", url: URL(string: "https://example.com"))
         normal.navigateTo(URL(string: "https://example.com/next")!)
@@ -892,13 +941,20 @@ struct SiteHistoryTests {
         container.sessionKind = .container
         container.sessionId = UUID()
 
-        BrowsingDataCleaner.clearHistory(in: [normal, container], siteHistory: store)
+        BrowsingDataCleaner.clearHistory(
+            in: [normal, container],
+            siteHistory: store,
+            browsingHistory: browsingHistory
+        )
 
         #expect(normal.historyStrings.isEmpty)
         #expect(normal.currentHistoryIndex == -1)
         #expect(container.historyStrings.isEmpty)
         #expect(container.currentHistoryIndex == -1)
         #expect(store.sites.isEmpty)
+        #expect(browsingHistory.visits.isEmpty)
+        #expect(tabManager.closedTabs.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: historyURL.path))
     }
 
     @Test func matchRankPrefersHostThenLabelThenTitle() {

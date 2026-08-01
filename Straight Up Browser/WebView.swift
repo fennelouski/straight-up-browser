@@ -314,6 +314,11 @@ struct WebView: NSViewRepresentable {
                 if tab.sessionKind != .incognito {
                     SiteHistory.shared.record(url: currentURL, title: webView.title)
                 }
+                BrowsingHistoryStore.shared.record(
+                    url: currentURL,
+                    title: webView.title,
+                    sessionKind: tab.sessionKind
+                )
 
                 // Notify parent of URL change to update stable URL
                 parent.onURLChange?(currentURL)
