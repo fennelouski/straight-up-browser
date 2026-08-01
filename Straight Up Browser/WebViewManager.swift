@@ -263,6 +263,8 @@ class WebViewManager: NSObject, ObservableObject {
             self, selector: #selector(adBlockSettingChanged), name: .adBlockChanged, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(javaScriptSettingChanged), name: .javaScriptChanged, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(historyDidClear), name: .browserHistoryDidClear, object: nil)
         // Restore last session's per-tab page state; getWebView consumes it the
         // first time each tab is activated. Persist again when the app quits.
         loadPersistedInteractionStates()
@@ -284,6 +286,16 @@ class WebViewManager: NSObject, ObservableObject {
     private static var interactionStateFileURL: URL? {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent("SessionInteractionState.plist")
+    }
+
+    static func clearPersistedInteractionStateFile() {
+        guard let url = interactionStateFileURL else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    @objc private func historyDidClear() {
+        savedInteractionStates.removeAll()
+        Self.clearPersistedInteractionStateFile()
     }
 
     private func loadPersistedInteractionStates() {
@@ -835,6 +847,7 @@ class WebViewManager: NSObject, ObservableObject {
     }
 
     isolated deinit {
+        NotificationCenter.default.removeObserver(self)
         cleanup()
         Logger.log("WebViewManager deallocated", type: "WebViewManager")
     }

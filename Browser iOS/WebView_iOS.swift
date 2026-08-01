@@ -230,6 +230,14 @@ struct TabWebView: UIViewRepresentable {
                         tab.historyStrings.removeFirst(tab.historyStrings.count - maxHistorySize)
                     }
                 }
+                if tab.sessionKind != .incognito {
+                    SiteHistory.shared.record(url: currentURL, title: webView.title)
+                }
+                BrowsingHistoryStore.shared.record(
+                    url: currentURL,
+                    title: webView.title,
+                    sessionKind: tab.sessionKind
+                )
                 parent.onURLChange?(currentURL)
             }
 
