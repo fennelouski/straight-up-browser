@@ -381,7 +381,14 @@ struct TabWebView: UIViewRepresentable {
                 let mods = navigationAction.modifierFlags
                 // ⌘-click: open in a new tab; add Shift to focus it.
                 if mods.contains(.command) {
-                    _ = tabManager?.createNewTab(url: url, select: mods.contains(.shift))
+                    let session = parent.webViewManager?.tabId(for: webView)
+                        .map { parent.webViewManager?.session(for: $0) ?? (.normal, nil) }
+                        ?? (.normal, nil)
+                    _ = tabManager?.createTab(
+                        inheriting: session,
+                        url: url,
+                        select: mods.contains(.shift)
+                    )
                     decisionHandler(.cancel, preferences)
                     return
                 }
@@ -474,7 +481,10 @@ struct TabWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
             guard let tabManager = tabManager, let webViewManager = parent.webViewManager else { return nil }
             let popupWebView = WKWebView(frame: .zero, configuration: configuration)
-            let newTab = tabManager.createNewTab()
+            let openerSession = webViewManager.tabId(for: webView)
+                .map { webViewManager.session(for: $0) }
+                ?? (.normal, nil)
+            let newTab = tabManager.createTab(inheriting: openerSession)
             webViewManager.adoptWebView(popupWebView, for: newTab.id)
             return popupWebView
         }

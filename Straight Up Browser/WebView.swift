@@ -496,7 +496,14 @@ struct WebView: NSViewRepresentable {
 
                 // Cmd+click: open in a new tab (background; add Shift to focus it)
                 if mods.contains(.command) {
-                    _ = tabManager?.createNewTab(url: url, select: mods.contains(.shift))
+                    let session = parent.webViewManager?.tabId(for: webView)
+                        .map { parent.webViewManager?.session(for: $0) ?? (.normal, nil) }
+                        ?? (.normal, nil)
+                    _ = tabManager?.createTab(
+                        inheriting: session,
+                        url: url,
+                        select: mods.contains(.shift)
+                    )
                     decisionHandler(.cancel, preferences)
                     return
                 }
