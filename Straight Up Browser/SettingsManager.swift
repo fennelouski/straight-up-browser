@@ -115,7 +115,7 @@ class SettingsManager {
     /// When on, the browser consumes the configured Quick Open shortcut before
     /// the focused website can handle it. Defaults off when unset.
     var overrideWebsiteQuickOpen: Bool {
-        userDefaults.bool(forKey: KeyboardShortcutsManager.overrideWebsiteQuickOpenKey)
+        userDefaults.bool(forKey: "overrideWebsiteQuickOpen")
     }
 
     // MARK: - Option-Click Download

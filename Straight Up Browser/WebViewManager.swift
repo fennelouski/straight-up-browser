@@ -10,6 +10,14 @@ import WebKit
 import Combine
 #if canImport(AppKit)
 import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
+
+#if canImport(AppKit)
+typealias WebViewThumbnail = NSImage
+#else
+typealias WebViewThumbnail = UIImage
 #endif
 
 extension NSKeyedUnarchiver {
@@ -231,9 +239,9 @@ class WebViewManager: NSObject, ObservableObject {
     // Card previews for the omnibar and the ⌘O tab grid. In-memory only: Tab has a
     // lastThumbnail column, but filling it would sync image blobs to CloudKit for a
     // purely cosmetic cache. Tabs with no capture yet fall back to their favicon.
-    @Published private(set) var thumbnails: [UUID: NSImage] = [:]
+    @Published private(set) var thumbnails: [UUID: WebViewThumbnail] = [:]
 
-    func thumbnail(for tabId: UUID) -> NSImage? { thumbnails[tabId] }
+    func thumbnail(for tabId: UUID) -> WebViewThumbnail? { thumbnails[tabId] }
 
     // ponytail: only a web view that's on screen can be snapshotted, so this
     // captures the tab you're leaving (and, on demand, the one you're on). Tabs
@@ -771,11 +779,15 @@ extension WebViewManager: WKScriptMessageHandler {
                 webView.startDownload(using: URLRequest(url: url)) { download in
                     // The coordinator owns destinations, progress, pause/restart,
                     // and the originating-tab association for every download.
+                    #if os(macOS)
                     if let coordinator = webView.navigationDelegate as? WebView.Coordinator {
                         coordinator.track(download, from: webView)
                     } else {
                         download.delegate = webView.navigationDelegate as? WKDownloadDelegate
                     }
+                    #else
+                    download.delegate = webView.navigationDelegate as? WKDownloadDelegate
+                    #endif
                 }
             }
         case "painted":

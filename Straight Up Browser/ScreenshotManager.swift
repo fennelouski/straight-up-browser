@@ -456,8 +456,9 @@ enum ScreenshotManager {
             // The window's content view is an NSHostingView, which is flipped;
             // the image context the overlays draw into never is.
             if view.isFlipped { frame.origin.y = view.bounds.height - frame.maxY }
+            let snapshotFrame = frame
             pane.takeSnapshot(with: nil) { image, _ in
-                if let image { overlays.append((image, frame)) }
+                if let image { overlays.append((image, snapshotFrame)) }
                 remaining -= 1
                 guard remaining == 0 else { return }
                 completion(compose(overlays))

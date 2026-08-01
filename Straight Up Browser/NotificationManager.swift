@@ -359,18 +359,22 @@ class NotificationManager {
         observers.append(NotificationCenter.default.addObserver(
             forName: .browserToggleTranslation, object: nil, queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
-            self.pageTranslator.toggle(webView: self.webViewManager.activeWebView)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.pageTranslator.toggle(webView: self.webViewManager.activeWebView)
+            }
         })
 
         observers.append(NotificationCenter.default.addObserver(
             forName: .browserTranslateInSplit, object: nil, queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
-            let tabs = self.tabs()
-            guard let activeTab = self.tabManager.getActiveTab(from: tabs) else { return }
-            self.pageTranslator.translateIntoSplitPane(
-                tab: activeTab, tabManager: self.tabManager, webViewManager: self.webViewManager, tabs: tabs)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let tabs = self.tabs()
+                guard let activeTab = self.tabManager.getActiveTab(from: tabs) else { return }
+                self.pageTranslator.translateIntoSplitPane(
+                    tab: activeTab, tabManager: self.tabManager, webViewManager: self.webViewManager, tabs: tabs)
+            }
         })
 
         for (name, kind): (Notification.Name, ScreenshotKind) in [

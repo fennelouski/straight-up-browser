@@ -150,7 +150,7 @@ final class SiteHistory {
             guard let segment, !segment.isEmpty else { return nil }
             let letters = segment
                 .split(whereSeparator: { !$0.isLetter })
-                .flatMap(splitCamelCase)
+                .flatMap { splitCamelCase($0) }
                 .compactMap { $0.first?.lowercased() }
             guard (2...4).contains(letters.count) else { return nil }
             return letters.joined()

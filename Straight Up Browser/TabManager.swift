@@ -8,7 +8,18 @@
 import SwiftUI
 import SwiftData
 import Combine
+#if os(macOS)
 import AppKit
+#endif
+
+#if os(macOS)
+private let defaultTerminateApplication: () -> Void = {
+    NSApp.terminate(nil)
+}
+#else
+// iOS applications must not terminate themselves programmatically.
+private let defaultTerminateApplication: () -> Void = {}
+#endif
 
 // Value snapshot of a closed tab. Holding the deleted SwiftData model itself
 // is undefined behavior once modelContext.delete runs.
@@ -28,7 +39,11 @@ class TabManager: ObservableObject {
                 splitTabIds = []
             }
             // Focusing a fast-forwarded pane means the guess was useful.
-            fastForward?.noteFocus(selectedTabId)
+            let focusedTabId = selectedTabId
+            let fastForward = fastForward
+            Task { @MainActor [weak fastForward] in
+                fastForward?.noteFocus(focusedTabId)
+            }
         }
     }
     // Split view: ordered member tab ids (2–4; empty = normal single view).
@@ -70,7 +85,7 @@ class TabManager: ObservableObject {
     init(
         modelContext: ModelContext? = nil,
         webViewManager: WebViewManager? = nil,
-        terminateApplication: @escaping () -> Void = { NSApp.terminate(nil) }
+        terminateApplication: @escaping () -> Void = defaultTerminateApplication
     ) {
         self.modelContext = modelContext
         self.webViewManager = webViewManager
@@ -318,7 +333,10 @@ class TabManager: ObservableObject {
 
         // Closing a fast-forwarded pane is the "no thanks" — record the verdict
         // before the tab goes away.
-        fastForward?.paneClosed(tab.id)
+        let fastForward = fastForward
+        Task { @MainActor [weak fastForward] in
+            fastForward?.paneClosed(tab.id)
+        }
 
         // Closing a split member collapses just its pane; focus moves to another
         // member so the dissolve-on-outside-selection rule doesn't tear down the rest.
