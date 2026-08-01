@@ -14,6 +14,7 @@ import WebKit
 
 struct Settings_iOS: View {
     @Environment(\.dismiss) private var dismiss
+    @Query private var tabs: [Tab]
 
     @AppStorage(TabSync.Key.enabled) private var tabSyncEnabled = false
     @AppStorage(TabSync.Key.mode) private var tabSyncMode = TabSyncMode.openOnly.rawValue
@@ -159,6 +160,7 @@ struct Settings_iOS: View {
     }
 
     private func clearBrowsingData() {
+        BrowsingDataCleaner.clearHistory(in: tabs)
         let store = WKWebsiteDataStore.default()
         store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
                          modifiedSince: Date(timeIntervalSince1970: 0)) {

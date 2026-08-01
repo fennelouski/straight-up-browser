@@ -13,6 +13,18 @@ import WebKit
 // scope with no deletion) lives in ContentView.hardReload() / ⇧⌘R.
 enum BrowsingDataCleaner {
 
+    // Browsing history is app-owned rather than WebKit-owned: each persisted Tab
+    // keeps its suggestion history, while SiteHistory keeps the cross-tab visit
+    // index used by the omnibar. Clear both sources together so the UI cannot
+    // report success while old destinations remain searchable.
+    static func clearHistory(in tabs: [Tab], siteHistory: SiteHistory = .shared) {
+        for tab in tabs {
+            tab.historyStrings.removeAll()
+            tab.currentHistoryIndex = -1
+        }
+        siteHistory.clear()
+    }
+
     // Remove one site's data (cookies + cache + storage) from a specific store, then
     // run `then` (e.g. reload the page). Scoped to the tab's own store, so clearing a
     // site in one container/incognito session never touches another.

@@ -769,6 +769,25 @@ struct SiteHistoryTests {
         }
     }
 
+    @Test func clearingHistoryRemovesTabAndSiteVisitHistory() {
+        let store = freshStore()
+        store.record(url: URL(string: "https://example.com/page")!, title: "Example")
+
+        let normal = Tab(title: "Example", url: URL(string: "https://example.com"))
+        normal.navigateTo(URL(string: "https://example.com/next")!)
+        let container = Tab(title: "Work", url: URL(string: "https://work.example"))
+        container.sessionKind = .container
+        container.sessionId = UUID()
+
+        BrowsingDataCleaner.clearHistory(in: [normal, container], siteHistory: store)
+
+        #expect(normal.historyStrings.isEmpty)
+        #expect(normal.currentHistoryIndex == -1)
+        #expect(container.historyStrings.isEmpty)
+        #expect(container.currentHistoryIndex == -1)
+        #expect(store.sites.isEmpty)
+    }
+
     @Test func matchRankPrefersHostThenLabelThenTitle() {
         // "giz" starts the host itself; "goog" only starts a later label; "gmail"
         // appears nowhere in mail.google.com and has to come from the page title.
