@@ -85,6 +85,25 @@ struct DurableBrowsingHistoryTests {
     }
 }
 
+@MainActor
+struct ModelContainerStartupTests {
+    private struct PersistentStoreFailure: Error {}
+
+    @Test func persistentStoreFailureFallsBackToAnEphemeralContainer() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let fallback = try ModelContainer(for: Tab.self, configurations: configuration)
+
+        let startup = ModelContainerStartup.recover(
+            persistent: { throw PersistentStoreFailure() },
+            ephemeral: { fallback }
+        )
+
+        #expect(startup.container === fallback)
+        #expect(startup.didRecover)
+        #expect(startup.errorDescription != nil)
+    }
+}
+
 // The selection ring in the minimal tab bar traces the favicon's own shape, so
 // the shape sniffer has to tell a full-bleed tile from a glyph on transparency.
 struct FaviconShapeTests {

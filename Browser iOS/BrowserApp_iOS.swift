@@ -15,22 +15,8 @@ struct BrowserApp: App {
     // Same SwiftData schema as the Mac app (Straight_Up_BrowserApp.swift). `Tab`
     // is the @Model class; the `BrowserTab` typealias lives in the Mac-only
     // ContentView, so iOS code refers to `Tab` directly.
-    var sharedModelContainer: ModelContainer = {
-        // The CloudKit-backed schema and settings disclosure share this list.
-        let schema = Schema(TabSync.cloudBackedModelTypes)
-        // Browser-data sync selects the CloudKit private DB; off = no CloudKit.
-        // Read at launch, so toggling sync takes effect after relaunch.
-        let config = ModelConfiguration(
-            schema: schema,
-            isStoredInMemoryOnly: false,
-            cloudKitDatabase: TabSync.cloudKitDatabase
-        )
-        do {
-            return try ModelContainer(for: schema, configurations: [config])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+    private let modelStartup = ModelContainerStartup.makeDefault()
+    @State private var showStartupRecoveryNotice = true
 
     // Rebuilds the keyboard commands when a shortcut (or preset) changes.
     @AppStorage(ShortcutStore.revisionKey) private var shortcutsRevision = 0
@@ -44,9 +30,28 @@ struct BrowserApp: App {
 
     var body: some Scene {
         WindowGroup {
-            BrowserView_iOS()
+            if let container = modelStartup.container {
+                BrowserView_iOS()
+                    .modelContainer(container)
+                    .alert(
+                        "Browsing Data Recovery Mode",
+                        isPresented: Binding(
+                            get: { showStartupRecoveryNotice && modelStartup.didRecover },
+                            set: { showStartupRecoveryNotice = $0 }
+                        )
+                    ) {
+                        Button("Continue", role: .cancel) {}
+                    } message: {
+                        Text("The persistent browser database could not be opened. This session is using temporary storage, so its tabs and bookmarks won’t be saved. Restart to retry.\n\n\(modelStartup.errorDescription ?? "")")
+                    }
+            } else {
+                ContentUnavailableView(
+                    "Browser Data Unavailable",
+                    systemImage: "externaldrive.badge.xmark",
+                    description: Text(modelStartup.errorDescription ?? "The browser database could not be opened.")
+                )
+            }
         }
-        .modelContainer(sharedModelContainer)
         .commands { browserCommands }
     }
 

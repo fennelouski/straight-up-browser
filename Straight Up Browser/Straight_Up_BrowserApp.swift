@@ -178,6 +178,7 @@ struct Straight_Up_BrowserApp: App {
     // its key equivalents whenever a shortcut is rebound — same invalidation the
     // cmdPExportsPDF toggle relies on.
     @AppStorage(ShortcutStore.revisionKey) private var shortcutsRevision = 0
+    @State private var showStartupRecoveryNotice = true
     @Environment(\.openWindow) private var openWindow
     private var colorScheme: ColorScheme? {
         SettingsManager.shared.colorScheme
@@ -189,45 +190,48 @@ struct Straight_Up_BrowserApp: App {
         return ShortcutStore.shared.shortcut(for: command).keyboardShortcut
     }
 
-    var sharedModelContainer: ModelContainer = {
-        // The CloudKit-backed schema and its settings disclosure share one
-        // descriptor list, so a newly synced model cannot remain undisclosed.
-        let schema = Schema(TabSync.cloudBackedModelTypes)
-        // Browser-data sync selects the CloudKit private DB; off = local. Read
-        // at launch, so toggling sync takes effect after relaunch.
-        let modelConfiguration = ModelConfiguration(
-            schema: schema,
-            isStoredInMemoryOnly: false,
-            cloudKitDatabase: TabSync.cloudKitDatabase
-        )
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+    private let modelStartup = ModelContainerStartup.makeDefault()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .onReceive(NotificationCenter.default.publisher(for: .browserShowSettings)) { _ in
-                    openWindow(id: "settings")
-                }
-                // Links handed to us by the OS: we're the default browser, or the
-                // user picked Browser from "Open With". Must be SwiftUI's hook —
-                // the WindowGroup consumes the Apple Event, so an AppDelegate
-                // application(_:open:) is never called and the link is dropped.
-                // Same funnel the CLI and Shortcuts post to.
+            if let container = modelStartup.container {
+                ContentView()
+                    .modelContainer(container)
+                    .onReceive(NotificationCenter.default.publisher(for: .browserShowSettings)) { _ in
+                        openWindow(id: "settings")
+                    }
+                    .alert(
+                        "Browsing Data Recovery Mode",
+                        isPresented: Binding(
+                            get: { showStartupRecoveryNotice && modelStartup.didRecover },
+                            set: { showStartupRecoveryNotice = $0 }
+                        )
+                    ) {
+                        Button("Continue", role: .cancel) {}
+                    } message: {
+                        Text("The persistent browser database could not be opened. This session is using temporary storage, so its tabs and bookmarks won’t be saved. Restart to retry.\n\n\(modelStartup.errorDescription ?? "")")
+                    }
+            } else {
+                ContentUnavailableView(
+                    "Browser Data Unavailable",
+                    systemImage: "externaldrive.badge.xmark",
+                    description: Text(modelStartup.errorDescription ?? "The browser database could not be opened.")
+                )
+            }
         }
-        .modelContainer(sharedModelContainer)
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1200, height: 800)
 
         Window("Settings", id: "settings") {
-            SettingsWindow()
+            if let container = modelStartup.container {
+                SettingsWindow().modelContainer(container)
+            } else {
+                ContentUnavailableView(
+                    "Settings Unavailable",
+                    systemImage: "externaldrive.badge.xmark"
+                )
+            }
         }
-        .modelContainer(sharedModelContainer)
         .windowStyle(.automatic)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 780, height: 560)

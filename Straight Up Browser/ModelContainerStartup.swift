@@ -1,0 +1,71 @@
+import Foundation
+import SwiftData
+
+/// The browser prefers its durable/CloudKit store, but a corrupt or unavailable
+/// store must not turn launch into an unrecoverable crash. Recovery mode keeps
+/// the app usable in memory and tells the user that changes will not persist.
+@MainActor
+struct ModelContainerStartup {
+    let container: ModelContainer?
+    let didRecover: Bool
+    let errorDescription: String?
+
+    static func recover(
+        persistent: () throws -> ModelContainer,
+        ephemeral: () throws -> ModelContainer
+    ) -> ModelContainerStartup {
+        do {
+            return ModelContainerStartup(
+                container: try persistent(),
+                didRecover: false,
+                errorDescription: nil
+            )
+        } catch {
+            let persistentError = error
+            do {
+                return ModelContainerStartup(
+                    container: try ephemeral(),
+                    didRecover: true,
+                    errorDescription: persistentError.localizedDescription
+                )
+            } catch {
+                return ModelContainerStartup(
+                    container: nil,
+                    didRecover: false,
+                    errorDescription: """
+                    Persistent store: \(persistentError.localizedDescription)
+                    Recovery store: \(error.localizedDescription)
+                    """
+                )
+            }
+        }
+    }
+
+    static func makeDefault() -> ModelContainerStartup {
+        let schema = Schema(TabSync.cloudBackedModelTypes)
+        let persistentConfiguration = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: false,
+            cloudKitDatabase: TabSync.cloudKitDatabase
+        )
+        let ephemeralConfiguration = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: true,
+            cloudKitDatabase: .none
+        )
+        return recover(
+            persistent: {
+                try ModelContainer(
+                    for: schema,
+                    configurations: [persistentConfiguration]
+                )
+            },
+            ephemeral: {
+                try ModelContainer(
+                    for: schema,
+                    configurations: [ephemeralConfiguration]
+                )
+            }
+        )
+    }
+}
