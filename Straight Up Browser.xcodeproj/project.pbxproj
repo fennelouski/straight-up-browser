@@ -26,6 +26,13 @@
 			remoteGlobalIDString = 803E20662F11607F00A31C8D;
 			remoteInfo = Browser;
 		};
+		A13A0000000000000000000A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 803E205F2F11607F00A31C8D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5799E6C8B0A6D3D0970EB02B;
+			remoteInfo = "Browser iOS";
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
@@ -34,6 +41,7 @@
 		803E20672F11607F00A31C8D /* Browser.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Browser.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		803E20762F11608100A31C8D /* Straight Up BrowserTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; name = "Straight Up BrowserTests.xctest"; path = BrowserTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		803E20802F11608100A31C8D /* Straight Up BrowserUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; name = "Straight Up BrowserUITests.xctest"; path = BrowserUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A13A00000000000000000002 /* Browser iOSUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Browser iOSUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -98,6 +106,13 @@
 			path = "Browser iOS";
 			sourceTree = "<group>";
 		};
+		A13A00000000000000000003 /* Browser iOSUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			path = "Browser iOSUITests";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -131,6 +146,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A13A00000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -151,6 +173,7 @@
 				803E20682F11607F00A31C8D /* Products */,
 				FA1CB873CAF1477E1979F61B /* Frameworks */,
 				CACF1DAAEDABC0FCAEF39F90 /* Browser iOS */,
+				A13A00000000000000000003 /* Browser iOSUITests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -161,6 +184,7 @@
 				803E20762F11608100A31C8D /* Straight Up BrowserTests.xctest */,
 				803E20802F11608100A31C8D /* Straight Up BrowserUITests.xctest */,
 				58AA1C45E6DEE7337895173D /* Browser.app */,
+				A13A00000000000000000002 /* Browser iOSUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -196,6 +220,27 @@
 			productName = "Browser iOS";
 			productReference = 58AA1C45E6DEE7337895173D /* Browser.app */;
 			productType = "com.apple.product-type.application";
+		};
+		A13A00000000000000000001 /* Browser iOSUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A13A00000000000000000007 /* Build configuration list for PBXNativeTarget "Browser iOSUITests" */;
+			buildPhases = (
+				A13A00000000000000000004 /* Sources */,
+				A13A00000000000000000005 /* Frameworks */,
+				A13A00000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A13A0000000000000000000B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A13A00000000000000000003 /* Browser iOSUITests */,
+			);
+			name = "Browser iOSUITests";
+			productName = "Browser iOSUITests";
+			productReference = A13A00000000000000000002 /* Browser iOSUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 		803E20662F11607F00A31C8D /* Browser */ = {
 			isa = PBXNativeTarget;
@@ -284,6 +329,10 @@
 						CreatedOnToolsVersion = 26.2;
 						TestTargetID = 803E20662F11607F00A31C8D;
 					};
+					A13A00000000000000000001 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 5799E6C8B0A6D3D0970EB02B;
+					};
 				};
 			};
 			buildConfigurationList = 803E20622F11607F00A31C8D /* Build configuration list for PBXProject "Straight Up Browser" */;
@@ -346,6 +395,7 @@
 				803E20752F11608100A31C8D /* Straight Up BrowserTests */,
 				803E207F2F11608100A31C8D /* Straight Up BrowserUITests */,
 				5799E6C8B0A6D3D0970EB02B /* Browser iOS */,
+				A13A00000000000000000001 /* Browser iOSUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -373,6 +423,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C16F61A6F480C996325AD27F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A13A00000000000000000006 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -433,6 +490,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A13A00000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -445,6 +509,11 @@
 			isa = PBXTargetDependency;
 			target = 803E20662F11607F00A31C8D /* Browser */;
 			targetProxy = 803E20812F11608100A31C8D /* PBXContainerItemProxy */;
+		};
+		A13A0000000000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5799E6C8B0A6D3D0970EB02B /* Browser iOS */;
+			targetProxy = A13A0000000000000000000A /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -759,6 +828,46 @@
 			};
 			name = Release;
 		};
+		A13A00000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 21;
+				DEVELOPMENT_TEAM = EJLR2RPSV2;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 1.9.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser-iOSUITests";
+				PRODUCT_NAME = "Browser iOSUITests";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "Browser iOS";
+			};
+			name = Debug;
+		};
+		A13A00000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 21;
+				DEVELOPMENT_TEAM = EJLR2RPSV2;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 1.9.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser-iOSUITests";
+				PRODUCT_NAME = "Browser iOSUITests";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "Browser iOS";
+			};
+			name = Release;
+		};
 		A2925710064FA6BC8E00F638 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -833,6 +942,15 @@
 			buildConfigurations = (
 				803E20912F11608100A31C8D /* Debug */,
 				803E20922F11608100A31C8D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A13A00000000000000000007 /* Build configuration list for PBXNativeTarget "Browser iOSUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A13A00000000000000000008 /* Debug */,
+				A13A00000000000000000009 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
