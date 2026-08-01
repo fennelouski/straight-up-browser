@@ -1046,3 +1046,41 @@ struct TabSyncDisclosureTests {
         #expect(tab.sessionStorageData == nil)
     }
 }
+
+struct RedirectLoopGuardTests {
+    @Test func blocksTheFourthEquivalentURLInsideTheWindow() {
+        var guardrail = RedirectLoopGuard(maxOccurrences: 3, timeWindow: 10)
+        let start = Date(timeIntervalSince1970: 1_000)
+        let url = URL(string: "https://EXAMPLE.com/path#first")!
+
+        let decisions = [
+            guardrail.shouldBlock(url, at: start),
+            guardrail.shouldBlock(url, at: start.addingTimeInterval(1)),
+            guardrail.shouldBlock(
+                URL(string: "https://example.com/path#another")!,
+                at: start.addingTimeInterval(2)
+            ),
+            guardrail.shouldBlock(url, at: start.addingTimeInterval(3))
+        ]
+        #expect(decisions == [false, false, false, true])
+    }
+
+    @Test func expiryAndResetAllowARealRetry() {
+        var guardrail = RedirectLoopGuard(maxOccurrences: 2, timeWindow: 5)
+        let start = Date(timeIntervalSince1970: 2_000)
+        let url = URL(string: "https://example.com/login")!
+
+        let beforeReset = [
+            guardrail.shouldBlock(url, at: start),
+            guardrail.shouldBlock(url, at: start.addingTimeInterval(1)),
+            guardrail.shouldBlock(url, at: start.addingTimeInterval(6.1)),
+            guardrail.shouldBlock(url, at: start.addingTimeInterval(7.1)),
+            guardrail.shouldBlock(url, at: start.addingTimeInterval(8.1))
+        ]
+        #expect(beforeReset == [false, false, false, false, true])
+
+        guardrail.reset()
+        let afterReset = guardrail.shouldBlock(url, at: start.addingTimeInterval(8.1))
+        #expect(!afterReset)
+    }
+}
