@@ -12,6 +12,25 @@ import Foundation
 import Combine
 import SwiftUI
 
+/// A coordinator serves many tab WebViews, so download URL recovery must be
+/// keyed by the tab that successfully loaded the page—not by whichever tab is
+/// active when WebKit turns a navigation into a download.
+struct DownloadNavigationHistory {
+    private var lastSuccessfulURLByTab: [UUID: URL] = [:]
+
+    mutating func recordSuccessfulLoad(_ url: URL, for tabId: UUID) {
+        lastSuccessfulURLByTab[tabId] = url
+    }
+
+    func restorationURL(for tabId: UUID) -> URL? {
+        lastSuccessfulURLByTab[tabId]
+    }
+
+    mutating func retainOnly(_ tabIds: Set<UUID>) {
+        lastSuccessfulURLByTab = lastSuccessfulURLByTab.filter { tabIds.contains($0.key) }
+    }
+}
+
 enum FileTransferKind: String, Codable {
     case download
     case upload

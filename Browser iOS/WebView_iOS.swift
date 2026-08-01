@@ -123,10 +123,15 @@ struct TabWebView: UIViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
         var parent: TabWebView
         var tabManager: TabManager?
-        var tabs: [Tab]?
+        var tabs: [Tab]? {
+            didSet {
+                guard let tabs else { return }
+                downloadNavigationHistory.retainOnly(Set(tabs.map(\.id)))
+            }
+        }
         private var downloadDestinations: [WKDownload: URL] = [:]
         var lastRequestedURL: URL?
-        var lastSuccessfullyLoadedURL: URL?
+        private var downloadNavigationHistory = DownloadNavigationHistory()
 
         // Each web view owns a separate redirect chain; background tabs must not
         // trip the active tab's loop threshold.
@@ -198,7 +203,10 @@ struct TabWebView: UIViewRepresentable {
                 parent.title = webView.title ?? ""
             }
 
-            if let url = webView.url { lastSuccessfullyLoadedURL = url }
+            if let url = webView.url,
+               let tabId = parent.webViewManager?.tabId(for: webView) {
+                downloadNavigationHistory.recordSuccessfulLoad(url, for: tabId)
+            }
             resetRedirectLoopGuard(for: webView)
 
             if let currentURL = webView.url, let tab = tab(for: webView) {
@@ -439,12 +447,14 @@ struct TabWebView: UIViewRepresentable {
         // snap it back to the last real page — otherwise updateUIView re-requests
         // the file on every view update, downloading it forever.
         private func resetTabURLAfterDownload(_ webView: WKWebView) {
-            parent.isLoading = false
-            lastRequestedURL = lastSuccessfullyLoadedURL
-            if let tabManager = tabManager, let tabs = tabs,
-               let activeTab = tabManager.getActiveTab(from: tabs),
-               Tab.normalizeURLForComparison(activeTab.url) != Tab.normalizeURLForComparison(lastSuccessfullyLoadedURL) {
-                activeTab.url = lastSuccessfullyLoadedURL
+            guard let owningTab = tab(for: webView) else { return }
+            let restorationURL = downloadNavigationHistory.restorationURL(for: owningTab.id)
+            if isActiveWebView(webView) {
+                parent.isLoading = false
+                lastRequestedURL = restorationURL
+            }
+            if Tab.normalizeURLForComparison(owningTab.url) != Tab.normalizeURLForComparison(restorationURL) {
+                owningTab.url = restorationURL
             }
         }
 

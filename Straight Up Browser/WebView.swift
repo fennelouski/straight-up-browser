@@ -180,13 +180,18 @@ struct WebView: NSViewRepresentable {
     class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
         var parent: WebView
         var tabManager: TabManager?
-        var tabs: [Tab]?
+        var tabs: [Tab]? {
+            didSet {
+                guard let tabs else { return }
+                downloadNavigationHistory.retainOnly(Set(tabs.map(\.id)))
+            }
+        }
         private var downloadDestinations: [WKDownload: URL] = [:]
         private var downloadTransferIds: [WKDownload: UUID] = [:]
         private var downloadProgressObservers: [WKDownload: NSKeyValueObservation] = [:]
         private var intentionallyPausedTransfers: Set<UUID> = []
         var lastRequestedURL: URL?
-        var lastSuccessfullyLoadedURL: URL?
+        private var downloadNavigationHistory = DownloadNavigationHistory()
 
         // One guard per WKWebView: background tabs and split panes must not
         // contribute to each other's redirect counts.
@@ -269,9 +274,11 @@ struct WebView: NSViewRepresentable {
                 parent.title = webView.title ?? ""
             }
 
-            // Track the URL that successfully loaded
-            if let url = webView.url {
-                lastSuccessfullyLoadedURL = url
+            // Track the last real page separately for every tab. Download
+            // navigations are provisional and must restore their owning tab.
+            if let url = webView.url,
+               let tabId = parent.webViewManager?.tabId(for: webView) {
+                downloadNavigationHistory.recordSuccessfulLoad(url, for: tabId)
             }
 
             resetRedirectLoopGuard(for: webView)
@@ -416,8 +423,8 @@ struct WebView: NSViewRepresentable {
                 // no delegate callback fires for these. Sync the tab, or the
                 // next view update sees tab != webview and re-loads the stale
                 // URL: the "page randomly reloads a few seconds after loading"
-                // bug. Deliberately leaves lastSuccessfullyLoadedURL alone -
-                // the download path needs it pointing at a real page.
+                // bug. Deliberately leaves downloadNavigationHistory alone -
+                // the download path needs it pointing at the last real page.
                 guard let newURL = webView.url else { return }
                 DispatchQueue.main.async {
                     if self.isActiveWebView(webView) {
@@ -608,12 +615,14 @@ struct WebView: NSViewRepresentable {
         // Note: webView.url is unusable here - it still holds the provisional
         // (file) URL until the cancelled navigation unwinds.
         private func resetTabURLAfterDownload(_ webView: WKWebView) {
-            parent.isLoading = false
-            lastRequestedURL = lastSuccessfullyLoadedURL
-            if let tabManager = tabManager, let tabs = tabs,
-               let activeTab = tabManager.getActiveTab(from: tabs),
-               Tab.normalizeURLForComparison(activeTab.url) != Tab.normalizeURLForComparison(lastSuccessfullyLoadedURL) {
-                activeTab.url = lastSuccessfullyLoadedURL
+            guard let owningTab = tab(for: webView) else { return }
+            let restorationURL = downloadNavigationHistory.restorationURL(for: owningTab.id)
+            if isActiveWebView(webView) {
+                parent.isLoading = false
+                lastRequestedURL = restorationURL
+            }
+            if Tab.normalizeURLForComparison(owningTab.url) != Tab.normalizeURLForComparison(restorationURL) {
+                owningTab.url = restorationURL
             }
         }
 
