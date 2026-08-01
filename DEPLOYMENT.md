@@ -38,7 +38,8 @@ check on demand.
 
 ## Each release
 
-1. **Bump the version.** In Xcode (target *Browser* → General), or in
+1. **Bump, commit, and tag the version.** In Xcode (target *Browser* → General),
+   or in
    `Straight Up Browser.xcodeproj/project.pbxproj`:
    - `CURRENT_PROJECT_VERSION` (build number) — bump **every** release, so a changed
      binary is distinguishable in crash reports.
@@ -46,7 +47,15 @@ check on demand.
      the build number in parentheses, so the marketing version is the only thing users
      can see; two releases sharing one would be indistinguishable to them.
 
-2. **Build the notarized DMG:**
+   Commit the complete release source, merge and push it to `main`, then tag that
+   exact commit. The tag format binds the visible version to the build number:
+
+   ```
+   git tag -a v1.x-N -m "Browser 1.x (build N)"
+   git push origin main v1.x-N
+   ```
+
+2. **Build the notarized DMG from that clean tagged commit:**
 
    ```
    ./scripts/release.sh
@@ -56,17 +65,26 @@ check on demand.
    macOS UI-test build, with warnings treated as errors). Only a clean result
    proceeds to archive → Developer ID export → app notarization/stapling → DMG
    build/sign/notarization/stapling → EdDSA-signed Sparkle appcast.
-   Output: `build/release/Browser.dmg` and `build/release/browser-appcast.xml`. Takes a
-   few minutes (two notarization round-trips to Apple). Override the profile
-   with `NOTARY_PROFILE=name`.
+   The script refuses a dirty tree, an untagged/mismatched version, or a commit
+   not present on `origin/main`. It validates bundle versions, nested signatures,
+   stapled tickets, and Gatekeeper acceptance. Output:
+   `build/release/Browser.dmg`, `build/release/browser-appcast.xml`,
+   `build/release/Browser.dmg.sha256`, and
+   `build/release/release-provenance.json`. The provenance file records the
+   source commit/tag, version/build, Xcode version, and artifact hashes. The
+   process takes a few minutes (two notarization round-trips to Apple). Override
+   the profile with `NOTARY_PROFILE=name`.
 
 3. **Publish to the website:**
 
    ```
    cp build/release/Browser.dmg ~/Documents/GitHub/nathanfennel.com/public/downloads/Browser.dmg
    cp build/release/browser-appcast.xml ~/Documents/GitHub/nathanfennel.com/public/downloads/browser-appcast.xml
+   cp build/release/Browser.dmg.sha256 ~/Documents/GitHub/nathanfennel.com/public/downloads/Browser.dmg.sha256
+   cp build/release/release-provenance.json ~/Documents/GitHub/nathanfennel.com/public/downloads/release-provenance.json
    cd ~/Documents/GitHub/nathanfennel.com
-   git add public/downloads/Browser.dmg public/downloads/browser-appcast.xml
+   git add public/downloads/Browser.dmg public/downloads/browser-appcast.xml \
+     public/downloads/Browser.dmg.sha256 public/downloads/release-provenance.json
    git commit -m "Update Browser.dmg to 1.x (build N)"
    git push                     # Vercel auto-deploys main
    ```
@@ -89,14 +107,6 @@ check on demand.
    curl -sL https://nathanfennel.com/downloads/Browser.dmg | shasum -a 256
    shasum -a 256 build/release/Browser.dmg      # must match
    curl -sL https://nathanfennel.com/downloads/browser-appcast.xml | grep sparkle:version
-   ```
-
-4. **Commit + tag the app source** so the shipped binary is reproducible:
-
-   ```
-   cd "~/Documents/GitHub/Straight Up Browser"
-   git commit -am "Release 1.x (build N)"
-   git tag v1.x-N && git push --tags
    ```
 
 ## Verify

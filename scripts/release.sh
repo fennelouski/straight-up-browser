@@ -25,6 +25,28 @@ xcodebuild -list -project "$PROJECT" 2>/dev/null | grep -q "^        $SCHEME\$" 
     exit 1
 }
 
+# A release must identify one immutable, published source revision. Version tags
+# are v<marketing-version>-<build-number>, for example v1.14.2-31.
+if [ -n "$(git status --porcelain)" ]; then
+    echo "Release worktree is not clean. Commit every source change before releasing."
+    exit 1
+fi
+SOURCE_COMMIT="$(git rev-parse HEAD)"
+SOURCE_TAG="$(git describe --tags --exact-match "$SOURCE_COMMIT" 2>/dev/null || true)"
+BUILD_SETTINGS="$(xcodebuild -project "$PROJECT" -target "$SCHEME" -configuration Release -showBuildSettings)"
+MARKETING_VERSION="$(printf '%s\n' "$BUILD_SETTINGS" | awk '/ MARKETING_VERSION = / { print $3; exit }')"
+BUILD_NUMBER="$(printf '%s\n' "$BUILD_SETTINGS" | awk '/ CURRENT_PROJECT_VERSION = / { print $3; exit }')"
+EXPECTED_TAG="v${MARKETING_VERSION}-${BUILD_NUMBER}"
+if [ "$SOURCE_TAG" != "$EXPECTED_TAG" ]; then
+    echo "Release commit must have exact tag '$EXPECTED_TAG' (found '${SOURCE_TAG:-none}')."
+    exit 1
+fi
+git fetch --quiet origin main
+if ! git merge-base --is-ancestor "$SOURCE_COMMIT" origin/main; then
+    echo "Release commit $SOURCE_COMMIT is not published on origin/main."
+    exit 1
+fi
+
 # Never archive a release that has not passed the same gates as CI.
 ./scripts/verify.sh
 
@@ -56,21 +78,35 @@ xcodebuild -exportArchive -archivePath "$BUILD/Browser.xcarchive" \
 
 STAGE="$BUILD/dmg"
 DMG="$BUILD/Browser.dmg"
+APP="$BUILD/export/Browser.app"
 mkdir -p "$STAGE"
-cp -R "$BUILD/export/Browser.app" "$STAGE/"
+cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
+
+# Verify that the exported bundle is the tagged build and that every nested
+# executable has a valid Developer ID signature before notarization.
+APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+APP_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
+if [ "$APP_VERSION" != "$MARKETING_VERSION" ] || [ "$APP_BUILD" != "$BUILD_NUMBER" ]; then
+    echo "Exported app version $APP_VERSION ($APP_BUILD) does not match $EXPECTED_TAG."
+    exit 1
+fi
+codesign --verify --deep --strict --verbose=2 "$APP"
 
 # Notarize and staple the app itself before it goes into the DMG, so a
 # first launch works offline; the DMG gets its own ticket below.
 ditto -c -k --keepParent "$STAGE/Browser.app" "$BUILD/Browser.zip"
 xcrun notarytool submit "$BUILD/Browser.zip" --keychain-profile "$PROFILE" --wait
 xcrun stapler staple "$STAGE/Browser.app"
+xcrun stapler validate "$STAGE/Browser.app"
+spctl -a -t exec -vv "$STAGE/Browser.app"
 
 hdiutil create -volname "Browser" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 
 codesign --force --sign "Developer ID Application" "$DMG"
 xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
 xcrun stapler staple "$DMG"
+xcrun stapler validate "$DMG"
 spctl -a -t open --context context:primary-signature -v "$DMG"
 
 # Sparkle appcast: reads the version out of the stapled DMG and signs it with
@@ -90,4 +126,26 @@ rm -f "$BUILD/Browser.zip"
     -o "$BUILD/browser-appcast.xml" \
     "$BUILD"
 
-echo "Ready to upload: $DMG and $BUILD/browser-appcast.xml"
+DMG_SHA256="$(shasum -a 256 "$DMG" | awk '{ print $1 }')"
+APPCAST_SHA256="$(shasum -a 256 "$BUILD/browser-appcast.xml" | awk '{ print $1 }')"
+printf '%s  %s\n' "$DMG_SHA256" "Browser.dmg" > "$BUILD/Browser.dmg.sha256"
+
+PROVENANCE="$BUILD/release-provenance.json"
+plutil -create json "$PROVENANCE"
+plutil -insert source -dictionary "$PROVENANCE"
+plutil -insert source.commit -string "$SOURCE_COMMIT" "$PROVENANCE"
+plutil -insert source.tag -string "$SOURCE_TAG" "$PROVENANCE"
+plutil -insert source.commitTimestamp -string "$(git show -s --format=%cI "$SOURCE_COMMIT")" "$PROVENANCE"
+plutil -insert build -dictionary "$PROVENANCE"
+plutil -insert build.marketingVersion -string "$MARKETING_VERSION" "$PROVENANCE"
+plutil -insert build.number -string "$BUILD_NUMBER" "$PROVENANCE"
+plutil -insert build.xcode -string "$(xcodebuild -version | paste -sd ' ' -)" "$PROVENANCE"
+plutil -insert artifacts -dictionary "$PROVENANCE"
+plutil -insert artifacts.dmgSHA256 -string "$DMG_SHA256" "$PROVENANCE"
+plutil -insert artifacts.appcastSHA256 -string "$APPCAST_SHA256" "$PROVENANCE"
+
+echo "Ready to upload:"
+echo "  $DMG"
+echo "  $BUILD/browser-appcast.xml"
+echo "  $BUILD/Browser.dmg.sha256"
+echo "  $PROVENANCE"

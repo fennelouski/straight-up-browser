@@ -17,6 +17,7 @@ COMMON_SETTINGS=(
 )
 
 ./scripts/validate-ci.sh
+./scripts/validate-release-policy.sh
 
 echo "Running macOS unit tests..."
 xcodebuild test -quiet \
