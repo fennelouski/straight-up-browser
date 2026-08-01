@@ -56,13 +56,8 @@ xcodebuild build -quiet \
     "${COMMON_SETTINGS[@]}"
 
 MAC_EXECUTABLE="$DERIVED_DATA_ROOT/macos-release/Build/Products/Release/Browser.app/Contents/MacOS/Browser"
-MAC_ARCHS="$(lipo -archs "$MAC_EXECUTABLE")"
-for required_arch in arm64 x86_64; do
-    if [[ " $MAC_ARCHS " != *" $required_arch "* ]]; then
-        echo "Release architecture gate failed: $MAC_EXECUTABLE has '$MAC_ARCHS'." >&2
-        exit 1
-    fi
-done
+CLI_EXECUTABLE="$DERIVED_DATA_ROOT/macos-release/Build/Products/Release/Browser.app/Contents/Helpers/browser-cli"
+./scripts/validate-macos-architectures.sh "$MAC_EXECUTABLE" "$CLI_EXECUTABLE"
 
 if [ "$RUN_UI_TESTS" = "1" ]; then
     echo "Running macOS UI tests..."
