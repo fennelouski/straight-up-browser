@@ -104,6 +104,44 @@ struct ModelContainerStartupTests {
     }
 }
 
+@MainActor
+struct WebViewLifecycleTests {
+    private final class MessageHandler: NSObject, WKScriptMessageHandler {
+        func userContentController(
+            _ userContentController: WKUserContentController,
+            didReceive message: WKScriptMessage
+        ) {}
+    }
+
+    @Test func scriptMessageProxyDoesNotRetainItsHandler() {
+        var handler: MessageHandler? = MessageHandler()
+        let proxy = WeakScriptMessageHandler(handler: handler!)
+
+        handler = nil
+
+        #expect(!proxy.hasHandler)
+        withExtendedLifetime(proxy) {}
+    }
+
+    @Test func persistedInteractionStateIsBoundedByCountAndBytes() {
+        var entries: [String: Data] = [:]
+        for index in 0..<40 {
+            entries[String(format: "%02d", index)] = Data(repeating: 1, count: 300_000)
+        }
+        entries["oversized"] = Data(
+            repeating: 2,
+            count: InteractionStatePersistencePolicy.maxEntryBytes + 1
+        )
+
+        let bounded = InteractionStatePersistencePolicy.bounded(entries)
+
+        #expect(bounded.count <= InteractionStatePersistencePolicy.maxEntries)
+        #expect(bounded.values.reduce(0) { $0 + $1.count }
+            <= InteractionStatePersistencePolicy.maxTotalBytes)
+        #expect(bounded["oversized"] == nil)
+    }
+}
+
 // The selection ring in the minimal tab bar traces the favicon's own shape, so
 // the shape sniffer has to tell a full-bleed tile from a glyph on transparency.
 struct FaviconShapeTests {

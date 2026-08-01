@@ -32,6 +32,44 @@ extension NSKeyedUnarchiver {
     }
 }
 
+final class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
+    private weak var handler: (any WKScriptMessageHandler)?
+    var hasHandler: Bool { handler != nil }
+
+    init(handler: any WKScriptMessageHandler) {
+        self.handler = handler
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        handler?.userContentController(userContentController, didReceive: message)
+    }
+}
+
+enum InteractionStatePersistencePolicy {
+    static let maxEntries = 32
+    static let maxEntryBytes = 2_000_000
+    static let maxTotalBytes = 8_000_000
+    static let maxFileBytes = 10_000_000
+
+    static func bounded(_ entries: [String: Data]) -> [String: Data] {
+        var result: [String: Data] = [:]
+        var totalBytes = 0
+
+        for key in entries.keys.sorted() {
+            guard result.count < maxEntries else { break }
+            guard let data = entries[key],
+                  data.count <= maxEntryBytes,
+                  data.count <= maxTotalBytes - totalBytes else { continue }
+            result[key] = data
+            totalBytes += data.count
+        }
+        return result
+    }
+}
+
 class WebViewManager: NSObject, ObservableObject {
     // Claiming to be Chrome while running WebKit gets us flagged as an unsafe
     // embedded webview by Google sign-in (no Sec-CH-UA client hints to back it
@@ -300,11 +338,18 @@ class WebViewManager: NSObject, ObservableObject {
 
     private func loadPersistedInteractionStates() {
         guard #available(macOS 12.0, *),
-              let url = Self.interactionStateFileURL,
+              let url = Self.interactionStateFileURL else { return }
+        if let fileSize = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+           fileSize > InteractionStatePersistencePolicy.maxFileBytes {
+            try? FileManager.default.removeItem(at: url)
+            Logger.log("Discarded oversized persisted interaction state", type: "WebViewManager")
+            return
+        }
+        guard
               let data = try? Data(contentsOf: url),
               let raw = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Data]
         else { return }
-        for (idString, stateData) in raw {
+        for (idString, stateData) in InteractionStatePersistencePolicy.bounded(raw) {
             guard let id = UUID(uuidString: idString),
                   let state = NSKeyedUnarchiver.unarchiveTopLevelObject(from: stateData) else { continue }
             savedInteractionStates[id] = state
@@ -312,9 +357,9 @@ class WebViewManager: NSObject, ObservableObject {
         Logger.log("Loaded \(savedInteractionStates.count) persisted interaction states", type: "WebViewManager")
     }
 
-    // Archive every open tab's page state to disk. Live web views win over a
-    // stale saved copy for the same tab. ponytail: uncapped file; if heavy
-    // sessions bloat it, cap total bytes or drop the least-recently-used tabs.
+    // Archive open tabs' page state to disk. Live web views win over a stale
+    // saved copy for the same tab. The bounded payload prevents a large session
+    // or pathological WebKit state from growing Application Support without limit.
     // Internal (not private) so the hold-to-quit gate can trigger it early,
     // while the progress bar is still filling — see KeyboardShortcutsManager.
     @objc func persistInteractionStates() {
@@ -333,9 +378,14 @@ class WebViewManager: NSObject, ObservableObject {
                 out[id.uuidString] = data
             }
         }
-        guard let plist = try? PropertyListSerialization.data(fromPropertyList: out, format: .binary, options: 0) else { return }
+        let bounded = InteractionStatePersistencePolicy.bounded(out)
+        guard let plist = try? PropertyListSerialization.data(
+            fromPropertyList: bounded,
+            format: .binary,
+            options: 0
+        ) else { return }
         try? plist.write(to: url, options: .atomic)
-        Logger.log("Persisted \(out.count) interaction states", type: "WebViewManager")
+        Logger.log("Persisted \(bounded.count) interaction states", type: "WebViewManager")
     }
 
     // MARK: - Memory pressure
@@ -501,6 +551,7 @@ class WebViewManager: NSObject, ObservableObject {
             webView.stopLoading()
             webView.navigationDelegate = nil
             webView.uiDelegate = nil
+            webView.configuration.userContentController.removeScriptMessageHandler(forName: "sub")
             webView.removeFromSuperview()
 
             // Remove from storage
@@ -650,9 +701,12 @@ class WebViewManager: NSObject, ObservableObject {
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.mediaTypesRequiringUserActionForPlayback = .video
 
-        // ponytail: the content controller retains us (handler) and we retain
-        // the webviews - a cycle, but WebViewManager lives for the app lifetime
-        configuration.userContentController.add(self, name: "sub")
+        // WKUserContentController retains handlers. The weak proxy prevents the
+        // manager -> web view -> content controller -> manager retain cycle.
+        configuration.userContentController.add(
+            WeakScriptMessageHandler(handler: self),
+            name: "sub"
+        )
         if UserDefaults.standard.bool(forKey: "adBlockEnabled") {
             Self.reportContentBlocking(false, for: tabId)
             Self.compileAdBlockList { [weak self] list in
@@ -841,6 +895,10 @@ class WebViewManager: NSObject, ObservableObject {
     func cleanup() {
         for (_, webView) in webViews {
             webView.stopLoading()
+            webView.navigationDelegate = nil
+            webView.uiDelegate = nil
+            webView.configuration.userContentController.removeScriptMessageHandler(forName: "sub")
+            webView.removeFromSuperview()
         }
         webViews.removeAll()
         activeWebView = nil
