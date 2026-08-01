@@ -1141,3 +1141,29 @@ struct PageSecurityStateTests {
         #expect(ContentBlockingStatus.resolve(enabled: true, active: true) == .active)
     }
 }
+
+struct BrowserAccessibilityTests {
+    @Test func tabDescriptionNamesIdentityAndNonvisualState() {
+        let label = BrowserAccessibility.tabLabel(
+            title: "Account",
+            url: URL(string: "https://example.com"),
+            sessionKind: .incognito,
+            isPinned: true,
+            isInSplit: true
+        )
+        let value = BrowserAccessibility.tabValue(
+            isSelected: true,
+            isLoading: true,
+            loadProgress: 0.42,
+            activeDownloadCount: 2
+        )
+
+        #expect(label.contains("Account"))
+        #expect(label.contains("Incognito"))
+        #expect(label.contains("Pinned"))
+        #expect(label.contains("split"))
+        #expect(value.contains("Selected"))
+        #expect(value.contains("42%"))
+        #expect(value.contains("2 downloads"))
+    }
+}

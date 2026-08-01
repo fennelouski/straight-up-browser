@@ -48,6 +48,8 @@ struct TabDropDelegate: DropDelegate {
 }
 
 struct TabRowView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let tab: Tab
     let selectedTabId: UUID?
     let availableWidth: CGFloat
@@ -105,7 +107,7 @@ struct TabRowView: View {
                     .stroke(accent, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .frame(width: 21, height: 21)
-                    .animation(.linear(duration: 0.1), value: progress)
+                    .animation(reduceMotion ? nil : .linear(duration: 0.1), value: progress)
             }
 
             ForEach(Array(downloads.enumerated()), id: \.element.id) { layer, transfer in
@@ -125,7 +127,7 @@ struct TabRowView: View {
                     )
                     .rotationEffect(.degrees(-90))
                     .frame(width: diameter, height: diameter)
-                    .animation(.linear(duration: 0.1), value: transfer.progress)
+                    .animation(reduceMotion ? nil : .linear(duration: 0.1), value: transfer.progress)
             }
 
             // Incognito badge on the favicon corner — visible in both layouts.
@@ -188,6 +190,21 @@ struct TabRowView: View {
                 }
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(BrowserAccessibility.tabLabel(
+                title: displayTitle,
+                url: tab.url,
+                sessionKind: tab.sessionKind,
+                isPinned: tab.isPinned,
+                isInSplit: isDisplayedInSplit
+            ))
+            .accessibilityValue(BrowserAccessibility.tabValue(
+                isSelected: isSelected,
+                isLoading: loadingProgress != nil,
+                loadProgress: loadingProgress ?? 0,
+                activeDownloadCount: downloads.count
+            ))
+            .accessibilityHint("Select this tab")
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
         }
         // Session tint stripe on the leading edge — makes container/incognito tabs
         // obvious even when they aren't selected.
