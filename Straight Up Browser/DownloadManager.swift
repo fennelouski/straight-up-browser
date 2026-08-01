@@ -36,6 +36,13 @@ enum FileTransferKind: String, Codable {
     case upload
 }
 
+enum FileTransferPrivacy: Equatable {
+    case standard
+    case privateSession
+
+    var persistsHistory: Bool { self == .standard }
+}
+
 struct FileRecord: Codable, Identifiable, Equatable {
     var id = UUID()
     var kind: FileTransferKind
@@ -69,6 +76,7 @@ struct ActiveDownload: Identifiable, Equatable {
     var filename: String
     var destinationPath: String?
     let source: URL?
+    let privacy: FileTransferPrivacy
     let startedAt: Date
     var progress: Double
     var state: DownloadTransferState
@@ -103,23 +111,38 @@ final class DownloadManager: ObservableObject {
     private var restartHandlers: [UUID: () -> Void] = [:]
     private var nextColorIndex = 0
 
-    private init() {
-        let dir = FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Straight Up Browser", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        storeURL = dir.appendingPathComponent("file-history.json")
+    init(storeURL: URL? = nil) {
+        if let storeURL {
+            self.storeURL = storeURL
+        } else {
+            let dir = FileManager.default
+                .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Straight Up Browser", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            self.storeURL = dir.appendingPathComponent("file-history.json")
+        }
         load()
     }
 
-    func record(_ url: URL, kind: FileTransferKind, source: URL?) {
+    func record(
+        _ url: URL,
+        kind: FileTransferKind,
+        source: URL?,
+        privacy: FileTransferPrivacy = .standard
+    ) {
+        guard privacy.persistsHistory else { return }
         records.insert(FileRecord(kind: kind, path: url.path, source: source?.absoluteString, date: Date()), at: 0)
         if records.count > maxRecords { records.removeLast(records.count - maxRecords) }
         save()
     }
 
     @discardableResult
-    func beginDownload(tabId: UUID, source: URL?, filename: String? = nil) -> UUID {
+    func beginDownload(
+        tabId: UUID,
+        source: URL?,
+        filename: String? = nil,
+        privacy: FileTransferPrivacy = .standard
+    ) -> UUID {
         let id = UUID()
         let colorIndex = nextColorIndex
         nextColorIndex += 1
@@ -130,6 +153,7 @@ final class DownloadManager: ObservableObject {
                 filename: filename ?? source?.lastPathComponent.nonEmpty ?? String(localized: "Download"),
                 destinationPath: nil,
                 source: source,
+                privacy: privacy,
                 startedAt: Date(),
                 progress: 0,
                 state: .downloading,
@@ -203,7 +227,7 @@ final class DownloadManager: ObservableObject {
 
     func finish(_ id: UUID, at url: URL) {
         guard let transfer = activeDownloads.first(where: { $0.id == id }) else { return }
-        record(url, kind: .download, source: transfer.source)
+        record(url, kind: .download, source: transfer.source, privacy: transfer.privacy)
         discardTransfer(id)
     }
 
