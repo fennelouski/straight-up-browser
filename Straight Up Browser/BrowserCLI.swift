@@ -8,10 +8,78 @@
 import Foundation
 
 // File-based CLI IPC. The browser owns a named pipe (FIFO) in its own
-// Application Support directory with owner-only permissions - filesystem
-// permissions are the authentication. The CLI tool writes one command per
-// line; data commands pass --response-file <path>, which must live inside
+// Application Support directory with owner-only permissions. Those permissions
+// limit callers to the signed-in user; explicit in-app settings authorize what
+// their processes may ask the browser to do. The CLI tool writes one command
+// per line; data commands pass --response-file <path>, which must live inside
 // our response directory, and the app writes the JSON result there.
+enum CLICapability {
+    case control
+    case pageRead
+    case pageScript
+    case screenshot
+}
+
+struct CLIAuthorization {
+    enum Key {
+        static let enabled = "cliAutomationEnabled"
+        static let pageRead = "cliPageReadEnabled"
+        static let pageScript = "cliPageScriptEnabled"
+        static let screenshot = "cliScreenshotEnabled"
+    }
+
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    static func capability(for action: String) -> CLICapability {
+        switch action {
+        case "tabs", "get":
+            return .pageRead
+        case "js", "realclick":
+            return .pageScript
+        case "screenshot":
+            return .screenshot
+        default:
+            return .control
+        }
+    }
+
+    func allows(action: String) -> Bool {
+        guard defaults.bool(forKey: Key.enabled) else { return false }
+
+        switch Self.capability(for: action) {
+        case .control:
+            return true
+        case .pageRead:
+            return defaults.bool(forKey: Key.pageRead)
+        case .pageScript:
+            return defaults.bool(forKey: Key.pageScript)
+        case .screenshot:
+            return defaults.bool(forKey: Key.screenshot)
+        }
+    }
+
+    func denialMessage(for action: String) -> String {
+        guard defaults.bool(forKey: Key.enabled) else {
+            return "CLI automation is disabled. Enable it in Settings > Security > CLI Automation."
+        }
+
+        switch Self.capability(for: action) {
+        case .control:
+            return "CLI automation is disabled."
+        case .pageRead:
+            return "CLI page reading is disabled. Enable it in Settings > Security > CLI Automation."
+        case .pageScript:
+            return "CLI JavaScript and synthetic interaction are disabled. Enable them in Settings > Security > CLI Automation."
+        case .screenshot:
+            return "CLI screenshots are disabled. Enable them in Settings > Security > CLI Automation."
+        }
+    }
+}
+
 class BrowserCLI {
     static let shared = BrowserCLI()
 
@@ -117,19 +185,6 @@ class BrowserCLI {
             }
         }
 
-        // Same cold-launch race App Intents guard against: observers attach in
-        // ContentView.onAppear. We're on the dedicated pipe thread and commands
-        // are serial, so a bounded blocking wait is fine.
-        if !NotificationManager.observersReady {
-            for _ in 0..<100 where !NotificationManager.observersReady {
-                Thread.sleep(forTimeInterval: 0.1)
-            }
-            if !NotificationManager.observersReady {
-                Self.writeResponse(["error": "Browser window not ready (first-run EULA screen?)"], to: responseFilePath)
-                return
-            }
-        }
-
         var newTab = false
         if let newFlagIndex = commandParts.firstIndex(of: "--new") {
             commandParts.remove(at: newFlagIndex)
@@ -154,8 +209,31 @@ class BrowserCLI {
             toShared = true
         }
 
-        let action = commandParts.first?.lowercased()
+        guard let action = commandParts.first?.lowercased() else {
+            Self.writeResponse(["error": "missing command"], to: responseFilePath)
+            return
+        }
         let parameter = commandParts.count > 1 ? commandParts[1..<commandParts.count].joined(separator: " ") : nil
+
+        let authorization = CLIAuthorization()
+        guard authorization.allows(action: action) else {
+            Self.writeResponse(["error": authorization.denialMessage(for: action)], to: responseFilePath)
+            return
+        }
+
+        // Same cold-launch race App Intents guard against: observers attach in
+        // ContentView.onAppear. We're on the dedicated pipe thread and commands
+        // are serial, so a bounded blocking wait is fine. Authorization is
+        // checked first so denied commands never wait for or touch browser state.
+        if !NotificationManager.observersReady {
+            for _ in 0..<100 where !NotificationManager.observersReady {
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+            if !NotificationManager.observersReady {
+                Self.writeResponse(["error": "Browser window not ready (first-run EULA screen?)"], to: responseFilePath)
+                return
+            }
+        }
 
         // Acks mean "accepted for execution on the main queue" - agents follow
         // navigation with `wait`. Commands that can fail respond from their
@@ -186,7 +264,7 @@ class BrowserCLI {
             NotificationCenter.default.post(name: .browserCloseTab, object: nil)
             Self.writeResponse(["ok": true], to: responseFilePath)
         case "back", "forward", "reload":
-            NotificationCenter.default.post(name: .browserNavigate, object: nil, userInfo: ["action": action!])
+            NotificationCenter.default.post(name: .browserNavigate, object: nil, userInfo: ["action": action])
             Self.writeResponse(["ok": true], to: responseFilePath)
         case "switch":
             if let parameter = parameter, let index = Int(parameter) {
@@ -254,7 +332,7 @@ class BrowserCLI {
             NotificationCenter.default.post(name: .browserGetPageData, object: nil, userInfo: userInfo)
         default:
             Logger.log("Unknown CLI command: \(command)", type: "BrowserCLI")
-            Self.writeResponse(["error": "unknown command: \(action ?? "")"], to: responseFilePath)
+            Self.writeResponse(["error": "unknown command: \(action)"], to: responseFilePath)
         }
     }
 }
