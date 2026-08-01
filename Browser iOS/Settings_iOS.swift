@@ -14,6 +14,7 @@ import WebKit
 
 struct Settings_iOS: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @Query private var tabs: [Tab]
 
     @AppStorage(TabSync.Key.enabled) private var tabSyncEnabled = false
@@ -39,26 +40,46 @@ struct Settings_iOS: View {
 
     @State private var showClearConfirm = false
     @State private var clearedNote = false
-    @State private var iCloudAvailable = false
+    @State private var iCloudAvailable: Bool?
 
     var body: some View {
         NavigationStack {
             Form {
-                // Only offered when the user's iCloud account can back sync.
-                if iCloudAvailable {
-                    Section {
-                        Toggle("Sync tabs across your devices", isOn: $tabSyncEnabled)
-                        if tabSyncEnabled {
-                            Picker("Sync", selection: $tabSyncMode) {
-                                ForEach(TabSyncMode.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
-                            }
-                            Toggle("Also sync page state (scroll, history, forms)", isOn: $tabSyncCacheState)
+                Section {
+                    Toggle("Sync browser data across your devices", isOn: $tabSyncEnabled)
+                        .disabled(iCloudAvailable != true && !tabSyncEnabled)
+                    if tabSyncEnabled {
+                        Picker("Tab closing", selection: $tabSyncMode) {
+                            ForEach(TabSyncMode.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
                         }
-                    } header: {
-                        Text("Sync")
-                    } footer: {
-                        Text("Uses iCloud. “Just opening tabs” shares the tabs you open but keeps closing a tab a per-device choice; “Opening and closing” keeps one shared set across devices. Page state syncs each tab's scroll position, history, and form fields. Turning sync on or off takes effect after you relaunch.")
+                        Toggle("Also sync live page state", isOn: $tabSyncCacheState)
+                            .onChange(of: tabSyncCacheState) { _, enabled in
+                                guard !enabled else { return }
+                                TabSync.clearPageState(in: tabs)
+                                try? modelContext.save()
+                            }
+
+                        DisclosureGroup("What syncs to iCloud") {
+                            ForEach(TabSync.syncedDataCategories, id: \.self) { category in
+                                Label(category.label, systemImage: category.systemImage)
+                            }
+                            Text("Live page state additionally includes scroll position, back/forward state, form fields, and session storage. Turning it off deletes those saved snapshots.")
+                        }
                     }
+                    if iCloudAvailable == nil {
+                        Label("Checking iCloud availability…", systemImage: "icloud")
+                    } else if iCloudAvailable == false {
+                        Label(
+                            tabSyncEnabled
+                                ? "iCloud is unavailable. You can turn sync off; turning it back on requires iCloud."
+                                : "Sign in to iCloud to enable sync.",
+                            systemImage: "icloud.slash"
+                        )
+                    }
+                } header: {
+                    Text("Sync")
+                } footer: {
+                    Text("Sync uses your private iCloud database. Incognito tabs, cookies, cache, website storage, saved logins, and downloads stay on this device. Changes to the main sync switch take effect after you relaunch.")
                 }
 
                 Section("Search") {

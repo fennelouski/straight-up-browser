@@ -29,8 +29,64 @@ enum TabSyncMode: String, CaseIterable {
     }
 }
 
+enum SyncedDataCategory: String, CaseIterable {
+    case tabs
+    case tabGroups
+    case bookmarks
+    case browserSessions
+
+    var label: String {
+        switch self {
+        case .tabs:
+            return String(localized: "Open tabs: URLs, titles, visit history, and tab settings")
+        case .tabGroups:
+            return String(localized: "Tab groups: names, colors, and ordering")
+        case .bookmarks:
+            return String(localized: "Bookmarks: titles, URLs, categories, and favicons")
+        case .browserSessions:
+            return String(localized: "Browsing containers: names and colors (not cookies or logins)")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .tabs: return "rectangle.on.rectangle"
+        case .tabGroups: return "square.stack.3d.up"
+        case .bookmarks: return "bookmark"
+        case .browserSessions: return "person.crop.square"
+        }
+    }
+}
+
+private struct CloudBackedModelDescriptor {
+    let modelType: any PersistentModel.Type
+    let category: SyncedDataCategory
+}
+
 enum TabSync {
     static let containerID = "iCloud.com.nathanfennel.Straight-Up-Browser"
+
+    // This list drives both ModelContainer schemas and the settings disclosure.
+    // Adding a CloudKit-backed model therefore requires naming its user-visible
+    // data category in the same change.
+    private static let cloudBackedModels: [CloudBackedModelDescriptor] = [
+        CloudBackedModelDescriptor(modelType: Tab.self, category: .tabs),
+        CloudBackedModelDescriptor(modelType: TabGroup.self, category: .tabGroups),
+        CloudBackedModelDescriptor(modelType: Bookmark.self, category: .bookmarks),
+        CloudBackedModelDescriptor(modelType: BrowserSession.self, category: .browserSessions)
+    ]
+
+    static var cloudBackedModelTypes: [any PersistentModel.Type] {
+        cloudBackedModels.map(\.modelType)
+    }
+
+    static var cloudBackedModelTypeNames: [String] {
+        cloudBackedModels.map { String(describing: $0.modelType) }
+    }
+
+    static var syncedDataCategories: [SyncedDataCategory] {
+        cloudBackedModels.map(\.category)
+    }
 
     // UserDefaults keys (mirrored by @AppStorage in the settings UI).
     enum Key {
@@ -101,6 +157,20 @@ enum TabSync {
     // MARK: Cache state (opt-in)
 
     private static let maxSessionStorageBytes = 300_000
+
+    /// Page-state sync is separately opt-in. Removing that permission must also
+    /// remove snapshots already stored on tab records so CloudKit propagates the
+    /// deletion instead of retaining old form/session data.
+    @discardableResult
+    static func clearPageState(in tabs: [Tab]) -> Int {
+        var changed = 0
+        for tab in tabs where tab.interactionStateData != nil || tab.sessionStorageData != nil {
+            tab.interactionStateData = nil
+            tab.sessionStorageData = nil
+            changed += 1
+        }
+        return changed
+    }
 
     /// Snapshot the web view's page state (scroll + back/forward + form state via
     /// interactionState, plus best-effort sessionStorage) onto the tab so it syncs.

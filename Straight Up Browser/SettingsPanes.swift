@@ -15,6 +15,9 @@ import WebKit
 // MARK: - General
 
 struct GeneralSettingsView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query private var tabs: [Tab]
+
     @AppStorage("searchEngine") private var searchEngine = "Google"
     @AppStorage("omnibarPosition") private var omnibarPosition = "Upper"
     @AppStorage(FindBar.positionKey) private var findBarPosition = FindBar.defaultPosition
@@ -32,29 +35,56 @@ struct GeneralSettingsView: View {
     @AppStorage(TabSync.Key.cacheState) private var tabSyncCacheState = false
     @AppStorage(FastForward.Key.enabled) private var fastForwardEnabled = true
     @AppStorage(SiteHistory.useAppleIntelligenceKey) private var siteNicknamesUseAI = true
-    @State private var iCloudAvailable = false
+    @State private var iCloudAvailable: Bool?
 
     private let searchEngines = ["Google", "DuckDuckGo", "Bing", "Yahoo"]
     private let omnibarPositions = ["Top", "Upper", "Center"]
 
     var body: some View {
         Form {
-            // Only offered when the user's iCloud account can back sync.
-            if iCloudAvailable {
-                Section {
-                    Toggle("Sync tabs across your devices", isOn: $tabSyncEnabled)
-                    if tabSyncEnabled {
-                        Picker("Sync", selection: $tabSyncMode) {
-                            ForEach(TabSyncMode.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
-                        }
-                        Toggle("Also sync page state (scroll, history, forms)", isOn: $tabSyncCacheState)
+            Section {
+                Toggle("Sync browser data across your devices", isOn: $tabSyncEnabled)
+                    .disabled(iCloudAvailable != true && !tabSyncEnabled)
+                if tabSyncEnabled {
+                    Picker("Tab closing", selection: $tabSyncMode) {
+                        ForEach(TabSyncMode.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
                     }
-                } header: {
-                    SettingsLabel("Sync", systemImage: "arrow.triangle.2.circlepath", tint: SettingsTint.general)
-                } footer: {
-                    Text("Uses iCloud. “Just opening tabs” shares the tabs you open but keeps closing a tab a per-device choice; “Opening and closing” keeps one shared set across devices. Turning sync on or off takes effect after you relaunch.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle("Also sync live page state", isOn: $tabSyncCacheState)
+                        .onChange(of: tabSyncCacheState) { _, enabled in
+                            guard !enabled else { return }
+                            TabSync.clearPageState(in: tabs)
+                            try? modelContext.save()
+                        }
+
+                    DisclosureGroup("What syncs to iCloud") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(TabSync.syncedDataCategories, id: \.self) { category in
+                                Label(category.label, systemImage: category.systemImage)
+                            }
+                            Text("Live page state additionally includes scroll position, back/forward state, form fields, and session storage. Turning it off deletes those saved snapshots.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.top, 4)
+                    }
                 }
+                if iCloudAvailable == nil {
+                    Label("Checking iCloud availability…", systemImage: "icloud")
+                        .foregroundStyle(.secondary)
+                } else if iCloudAvailable == false {
+                    Label(
+                        tabSyncEnabled
+                            ? "iCloud is unavailable. You can turn sync off; turning it back on requires iCloud."
+                            : "Sign in to iCloud to enable sync.",
+                        systemImage: "icloud.slash"
+                    )
+                    .foregroundStyle(.secondary)
+                }
+            } header: {
+                SettingsLabel("Sync", systemImage: "arrow.triangle.2.circlepath", tint: SettingsTint.general)
+            } footer: {
+                Text("Sync uses your private iCloud database. Incognito tabs, cookies, cache, website storage, saved logins, and downloads stay on this device. Changes to the main sync switch take effect after you relaunch.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Section {
