@@ -6,7 +6,7 @@
 //
 
 import SwiftUI
-import WebKit
+@preconcurrency import WebKit
 #if os(macOS)
 import AppKit
 #endif
@@ -386,17 +386,18 @@ struct WebView: NSViewRepresentable {
                 return
             }
 
+            let webViewTransfer = MainActorTransfer(value: webView)
             URLSession.shared.dataTask(with: url) { [weak self] data, response, _ in
-                guard let self = self else { return }
-
-                if let data = data,
-                   let httpResponse = response as? HTTPURLResponse,
-                   httpResponse.statusCode == 200, data.count > 0,
-                   NSImage(data: data) != nil {
-                    FaviconCache.shared.setFavicon(data, for: url)
-                    self.setFavicon(data, for: webView)
-                } else {
-                    DispatchQueue.main.async {
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let webView = webViewTransfer.value
+                    if let data,
+                       let httpResponse = response as? HTTPURLResponse,
+                       httpResponse.statusCode == 200, data.count > 0,
+                       NSImage(data: data) != nil {
+                        FaviconCache.shared.setFavicon(data, for: url)
+                        self.setFavicon(data, for: webView)
+                    } else {
                         self.generateDomainInitial(for: webView)
                     }
                 }
@@ -417,24 +418,24 @@ struct WebView: NSViewRepresentable {
             }
         }
 
-        override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-            if keyPath == "estimatedProgress", let webView = object as? WKWebView {
-                DispatchQueue.main.async {
+        nonisolated override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
+            let transfer = MainActorTransfer(value: (object, change))
+            MainActor.assumeIsolated {
+                let (object, _) = transfer.value
+                if keyPath == "estimatedProgress", let webView = object as? WKWebView {
                     // Only the focused tab drives the chrome progress bar; a
                     // background split pane loading shouldn't wiggle it.
                     if self.isActiveWebView(webView) {
                         self.parent.progressValue = webView.estimatedProgress
                     }
-                }
-            } else if keyPath == #keyPath(WKWebView.url), let webView = object as? WKWebView {
-                // The page changed its own URL (pushState/replaceState/hash) -
-                // no delegate callback fires for these. Sync the tab, or the
-                // next view update sees tab != webview and re-loads the stale
-                // URL: the "page randomly reloads a few seconds after loading"
-                // bug. Deliberately leaves downloadNavigationHistory alone -
-                // the download path needs it pointing at the last real page.
-                guard let newURL = webView.url else { return }
-                DispatchQueue.main.async {
+                } else if keyPath == #keyPath(WKWebView.url), let webView = object as? WKWebView {
+                    // The page changed its own URL (pushState/replaceState/hash) -
+                    // no delegate callback fires for these. Sync the tab, or the
+                    // next view update sees tab != webview and re-loads the stale
+                    // URL: the "page randomly reloads a few seconds after loading"
+                    // bug. Deliberately leaves downloadNavigationHistory alone -
+                    // the download path needs it pointing at the last real page.
+                    guard let newURL = webView.url else { return }
                     if self.isActiveWebView(webView) {
                         self.lastRequestedURL = newURL
                     }
@@ -475,12 +476,12 @@ struct WebView: NSViewRepresentable {
             }
         }
 
-        func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping @MainActor @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
             // Handle SSL certificate validation
             handleAuthenticationChallenge(challenge, for: webView, completionHandler: completionHandler)
         }
 
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, preferences: WKWebpagePreferences, decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, preferences: WKWebpagePreferences, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
             // <a download> links
             if navigationAction.shouldPerformDownload {
                 decisionHandler(.download, preferences)
@@ -534,7 +535,7 @@ struct WebView: NSViewRepresentable {
             decisionHandler(.allow, preferences)
         }
 
-        func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
             // Anything WebKit can't render inline (zip, dmg, attachments…) is a download
             if !navigationResponse.canShowMIMEType {
                 decisionHandler(.download)
@@ -564,12 +565,14 @@ struct WebView: NSViewRepresentable {
                 source: download.originalRequest?.url
             )
             downloadTransferIds[download] = transferId
+            let downloadTransfer = MainActorTransfer(value: download)
             downloadProgressObservers[download] = download.progress.observe(
                 \.fractionCompleted,
                 options: [.initial, .new]
             ) { _, change in
-                let progress = change.newValue ?? download.progress.fractionCompleted
+                let reportedProgress = change.newValue
                 Task { @MainActor in
+                    let progress = reportedProgress ?? downloadTransfer.value.progress.fractionCompleted
                     DownloadManager.shared.update(transferId, progress: progress)
                 }
             }
@@ -599,7 +602,7 @@ struct WebView: NSViewRepresentable {
 
         private func restart(transferId: UUID, resumeData: Data?, request: URLRequest?, webView: WKWebView) {
             DownloadManager.shared.markRestarting(transferId)
-            let attach: (WKDownload) -> Void = { [weak self, weak webView] resumedDownload in
+            let attach: @MainActor @Sendable (WKDownload) -> Void = { [weak self, weak webView] resumedDownload in
                 guard let self, let webView else { return }
                 self.track(resumedDownload, from: webView, transferId: transferId)
             }
@@ -634,7 +637,7 @@ struct WebView: NSViewRepresentable {
             }
         }
 
-        func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+        func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping @MainActor @Sendable (URL?) -> Void) {
             let configuredPath = UserDefaults.standard.string(forKey: "downloadsFolder") ?? ""
             let folder = configuredPath.isEmpty
                 ? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
@@ -700,7 +703,7 @@ struct WebView: NSViewRepresentable {
         private func handleAuthenticationChallenge(
             _ challenge: URLAuthenticationChallenge,
             for webView: WKWebView,
-            completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+            completionHandler: @escaping @MainActor @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
         ) {
             if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
                 // SSL/TLS certificate challenge
@@ -878,20 +881,20 @@ struct WebView: NSViewRepresentable {
             return alert
         }
 
-        func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable () -> Void) {
             let alert = makeDialogAlert(message: message, frame: frame)
             alert.addButton(withTitle: String(localized: "OK"))
             presentSheet(alert, over: webView) { _ in completionHandler() }
         }
 
-        func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable (Bool) -> Void) {
             let alert = makeDialogAlert(message: message, frame: frame)
             alert.addButton(withTitle: String(localized: "OK"))
             alert.addButton(withTitle: String(localized: "Cancel"))
             presentSheet(alert, over: webView) { completionHandler($0 == .alertFirstButtonReturn) }
         }
 
-        func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+        func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable (String?) -> Void) {
             let alert = makeDialogAlert(message: prompt, frame: frame)
             alert.addButton(withTitle: String(localized: "OK"))
             alert.addButton(withTitle: String(localized: "Cancel"))
@@ -904,11 +907,11 @@ struct WebView: NSViewRepresentable {
 
         // Without this, WebKit denies getUserMedia outright and pages report "no camera or
         // microphone found". .prompt hands the decision to WebKit's own permission UI.
-        func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping @MainActor @Sendable (WKPermissionDecision) -> Void) {
             decisionHandler(.prompt)
         }
 
-        func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+        func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void) {
             let panel = NSOpenPanel()
             panel.canChooseFiles = true
             panel.canChooseDirectories = parameters.allowsDirectories
@@ -1222,7 +1225,7 @@ class WebViewContainer: NSView {
         }
     }
 
-    deinit {
+    isolated deinit {
         if let monitor = clickMonitor { NSEvent.removeMonitor(monitor) }
     }
 
@@ -1241,11 +1244,15 @@ class WebViewContainer: NSView {
     }
 
     // Forward KVO changes to the coordinator
-    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-        if keyPath == "estimatedProgress" || keyPath == #keyPath(WKWebView.url), object is WKWebView {
-            coordinator?.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
-        } else {
-            super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+    nonisolated override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
+        let transfer = MainActorTransfer(value: (object, change, context))
+        MainActor.assumeIsolated {
+            let (object, change, context) = transfer.value
+            if keyPath == "estimatedProgress" || keyPath == #keyPath(WKWebView.url), object is WKWebView {
+                coordinator?.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+            } else {
+                super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+            }
         }
     }
 }

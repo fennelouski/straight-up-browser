@@ -18,6 +18,7 @@ final class TabGroup {
     var createdAt: Date = Date()
     var orderIndex: Int = 0
 
+    @MainActor
     init(name: String, color: Color, orderIndex: Int = 0) {
         self.id = UUID()
         self.name = name
@@ -26,10 +27,12 @@ final class TabGroup {
         self.orderIndex = orderIndex
     }
 
+    @MainActor
     var color: Color {
         Color(hex: colorHex) ?? Color.blue
     }
 
+    @MainActor
     func updateColor(_ color: Color) {
         self.colorHex = color.toHex() ?? "#007AFF"
     }

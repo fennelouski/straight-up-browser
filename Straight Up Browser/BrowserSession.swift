@@ -23,6 +23,7 @@ final class BrowserSession {
     var colorHex: String = "#5E5CE6"
     var createdAt: Date = Date()
 
+    @MainActor
     init(name: String, color: Color) {
         self.id = UUID()
         self.name = name
@@ -31,8 +32,10 @@ final class BrowserSession {
     }
 
     // Reuses Color(hex:) / toHex() defined in TabGroup.swift.
+    @MainActor
     var color: Color { Color(hex: colorHex) ?? .purple }
 
+    @MainActor
     func updateColor(_ color: Color) {
         self.colorHex = color.toHex() ?? "#5E5CE6"
     }

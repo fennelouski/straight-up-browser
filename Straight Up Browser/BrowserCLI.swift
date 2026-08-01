@@ -118,12 +118,19 @@ class BrowserCLI {
         Logger.log("Browser CLI pipe created at: \(pipePath)", type: "BrowserCLI")
         isPipeSetup = true
 
-        DispatchQueue.global(qos: .background).async { [weak self] in
-            self?.listenForCommands(at: pipePath)
+        DispatchQueue.global(qos: .background).async {
+            BrowserCLI.listenForCommands(at: pipePath) { command in
+                Task { @MainActor in
+                    BrowserCLI.shared.handleCommand(command)
+                }
+            }
         }
     }
 
-    private func listenForCommands(at pipePath: String) {
+    nonisolated private static func listenForCommands(
+        at pipePath: String,
+        onCommand: @escaping @Sendable (String) -> Void
+    ) {
         // O_RDWR on our own FIFO: never blocks on open, keeps a reader alive so
         // clients' O_NONBLOCK writes succeed (Darwin returns ENXIO to a
         // nonblocking writer unless the read end is fully open), and read()
@@ -148,7 +155,7 @@ class BrowserCLI {
                 if let command = String(data: lineData, encoding: .utf8)?
                     .trimmingCharacters(in: .whitespacesAndNewlines),
                    !command.isEmpty {
-                    handleCommand(command)
+                    onCommand(command)
                 }
             }
         }

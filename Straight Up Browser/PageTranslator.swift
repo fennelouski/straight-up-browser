@@ -30,7 +30,7 @@ final class PageTranslator: ObservableObject {
     }
 
     private var queue: [PendingRequest] = []
-    private let availability = LanguageAvailability()
+    nonisolated(unsafe) private let availability = LanguageAvailability()
 
     // Set by translateIntoSplitPane before the pane loads: the next didFinish
     // for that web view should translate unconditionally, ignoring both the
@@ -125,26 +125,35 @@ final class PageTranslator: ObservableObject {
 
     // Invoked by ContentView's `.translationTask(pageTranslator.configuration)`
     // whenever `configuration` changes to a fresh (non-nil) value.
-    func perform(session: TranslationSession) async {
+    func perform(session: sending TranslationSession) async {
         guard let request = queue.first else { return }
         queue.removeFirst()
         await runTranslation(request, using: session)
         pump()
     }
 
-    private func runTranslation(_ request: PendingRequest, using session: TranslationSession) async {
+    private func runTranslation(_ request: PendingRequest, using session: sending TranslationSession) async {
         guard let nodes = await extractNodes(from: request.webView), !nodes.isEmpty else { return }
-        let sessionRequests = nodes.map { TranslationSession.Request(sourceText: $0.text, clientIdentifier: $0.id) }
-        guard let responses = try? await session.translations(from: sessionRequests) else { return }
-
-        var map: [String: String] = [:]
-        for response in responses {
-            if let id = response.clientIdentifier { map[id] = response.targetText }
-        }
+        guard let map = await Self.translate(nodes: nodes, using: session) else { return }
         guard !map.isEmpty,
               let json = try? JSONSerialization.data(withJSONObject: map),
               let jsonString = String(data: json, encoding: .utf8) else { return }
         _ = try? await request.webView.evaluateJavaScript("window.__subTranslate.apply(\(jsonString))")
+    }
+
+    nonisolated private static func translate(
+        nodes: [(id: String, text: String)],
+        using session: sending TranslationSession
+    ) async -> [String: String]? {
+        let requests = nodes.map {
+            TranslationSession.Request(sourceText: $0.text, clientIdentifier: $0.id)
+        }
+        guard let responses = try? await session.translations(from: requests) else { return nil }
+        var map: [String: String] = [:]
+        for response in responses {
+            if let id = response.clientIdentifier { map[id] = response.targetText }
+        }
+        return map
     }
 
     // MARK: - JS bridge helpers

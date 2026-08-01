@@ -6,9 +6,30 @@
 //
 
 import SwiftUI
-import Foundation
+@preconcurrency import Foundation
 import WebKit
 import UniformTypeIdentifiers
+
+extension NotificationCenter {
+    /// NotificationCenter's block is Sendable, but a non-nil OperationQueue
+    /// guarantees delivery on that queue. Keep the runtime assertion at this
+    /// boundary so UI-only observer bodies retain their MainActor contract.
+    @discardableResult
+    func addMainActorObserver(
+        forName name: Notification.Name?,
+        object objectToObserve: Any?,
+        queue: OperationQueue,
+        using block: @escaping @MainActor @Sendable (Notification) -> Void
+    ) -> NSObjectProtocol {
+        precondition(queue === OperationQueue.main)
+        return addObserver(forName: name, object: objectToObserve, queue: queue) { notification in
+            let transfer = MainActorTransfer(value: notification)
+            MainActor.assumeIsolated {
+                block(transfer.value)
+            }
+        }
+    }
+}
 
 class NotificationManager {
     private var tabManager: TabManager
@@ -77,7 +98,7 @@ class NotificationManager {
         guard observers.isEmpty else { return } // idempotent; cleanup() re-arms
         defer { Self.observersReady = true }
 
-        let openURLOobserver = NotificationCenter.default.addObserver(
+        let openURLOobserver = NotificationCenter.default.addMainActorObserver(
             forName: .browserOpenURL,
             object: nil,
             queue: .main
@@ -95,7 +116,7 @@ class NotificationManager {
         }
         observers.append(openURLOobserver)
 
-        let closeTabObserver = NotificationCenter.default.addObserver(
+        let closeTabObserver = NotificationCenter.default.addMainActorObserver(
             forName: .browserCloseTab,
             object: nil,
             queue: .main
@@ -106,7 +127,7 @@ class NotificationManager {
         }
         observers.append(closeTabObserver)
 
-        let closeTabSetObserver = NotificationCenter.default.addObserver(
+        let closeTabSetObserver = NotificationCenter.default.addMainActorObserver(
             forName: .browserCloseTabSet,
             object: nil,
             queue: .main
@@ -115,7 +136,7 @@ class NotificationManager {
         }
         observers.append(closeTabSetObserver)
 
-        let newTabObserver = NotificationCenter.default.addObserver(
+        let newTabObserver = NotificationCenter.default.addMainActorObserver(
             forName: .browserNewTab,
             object: nil,
             queue: .main
@@ -125,7 +146,7 @@ class NotificationManager {
         observers.append(newTabObserver)
 
 
-        let reopenLastClosedTabObserver = NotificationCenter.default.addObserver(
+        let reopenLastClosedTabObserver = NotificationCenter.default.addMainActorObserver(
             forName: .reopenLastClosedTab,
             object: nil,
             queue: .main
@@ -134,7 +155,7 @@ class NotificationManager {
         }
         observers.append(reopenLastClosedTabObserver)
         
-        let showOmnibarObserver = NotificationCenter.default.addObserver(
+        let showOmnibarObserver = NotificationCenter.default.addMainActorObserver(
             forName: .showOmnibar,
             object: nil,
             queue: .main
@@ -143,7 +164,7 @@ class NotificationManager {
         }
         observers.append(showOmnibarObserver)
 
-        let listTabsObserver = NotificationCenter.default.addObserver(
+        let listTabsObserver = NotificationCenter.default.addMainActorObserver(
             forName: .browserListTabs,
             object: nil,
             queue: .main
@@ -168,7 +189,7 @@ class NotificationManager {
         observers.append(listTabsObserver)
 
         // Tab bar control observers
-        let hideTabBarObserver = NotificationCenter.default.addObserver(
+        let hideTabBarObserver = NotificationCenter.default.addMainActorObserver(
             forName: .browserHideTabBar,
             object: nil,
             queue: .main
@@ -177,7 +198,7 @@ class NotificationManager {
         }
         observers.append(hideTabBarObserver)
 
-        let minimalTabBarObserver = NotificationCenter.default.addObserver(
+        let minimalTabBarObserver = NotificationCenter.default.addMainActorObserver(
             forName: .browserMinimalTabBar,
             object: nil,
             queue: .main
@@ -186,7 +207,7 @@ class NotificationManager {
         }
         observers.append(minimalTabBarObserver)
 
-        let compactTabBarObserver = NotificationCenter.default.addObserver(
+        let compactTabBarObserver = NotificationCenter.default.addMainActorObserver(
             forName: .browserCompactTabBar,
             object: nil,
             queue: .main
@@ -195,7 +216,7 @@ class NotificationManager {
         }
         observers.append(compactTabBarObserver)
 
-        let wideTabBarObserver = NotificationCenter.default.addObserver(
+        let wideTabBarObserver = NotificationCenter.default.addMainActorObserver(
             forName: .browserWideTabBar,
             object: nil,
             queue: .main
@@ -208,7 +229,7 @@ class NotificationManager {
         observers.append(wideTabBarObserver)
 
         // Tab switching observers
-        let nextTabObserver = NotificationCenter.default.addObserver(
+        let nextTabObserver = NotificationCenter.default.addMainActorObserver(
             forName: .browserNextTab,
             object: nil,
             queue: .main
@@ -217,7 +238,7 @@ class NotificationManager {
         }
         observers.append(nextTabObserver)
 
-        let previousTabObserver = NotificationCenter.default.addObserver(
+        let previousTabObserver = NotificationCenter.default.addMainActorObserver(
             forName: .browserPreviousTab,
             object: nil,
             queue: .main
@@ -227,7 +248,7 @@ class NotificationManager {
         observers.append(previousTabObserver)
 
         // Direct tab switching observers
-        let tab1Observer = NotificationCenter.default.addObserver(
+        let tab1Observer = NotificationCenter.default.addMainActorObserver(
             forName: .browserSwitchToTab1,
             object: nil,
             queue: .main
@@ -236,7 +257,7 @@ class NotificationManager {
         }
         observers.append(tab1Observer)
 
-        let tab2Observer = NotificationCenter.default.addObserver(
+        let tab2Observer = NotificationCenter.default.addMainActorObserver(
             forName: .browserSwitchToTab2,
             object: nil,
             queue: .main
@@ -245,7 +266,7 @@ class NotificationManager {
         }
         observers.append(tab2Observer)
 
-        let tab3Observer = NotificationCenter.default.addObserver(
+        let tab3Observer = NotificationCenter.default.addMainActorObserver(
             forName: .browserSwitchToTab3,
             object: nil,
             queue: .main
@@ -254,7 +275,7 @@ class NotificationManager {
         }
         observers.append(tab3Observer)
 
-        let tab4Observer = NotificationCenter.default.addObserver(
+        let tab4Observer = NotificationCenter.default.addMainActorObserver(
             forName: .browserSwitchToTab4,
             object: nil,
             queue: .main
@@ -263,7 +284,7 @@ class NotificationManager {
         }
         observers.append(tab4Observer)
 
-        let tab5Observer = NotificationCenter.default.addObserver(
+        let tab5Observer = NotificationCenter.default.addMainActorObserver(
             forName: .browserSwitchToTab5,
             object: nil,
             queue: .main
@@ -272,7 +293,7 @@ class NotificationManager {
         }
         observers.append(tab5Observer)
 
-        let tab6Observer = NotificationCenter.default.addObserver(
+        let tab6Observer = NotificationCenter.default.addMainActorObserver(
             forName: .browserSwitchToTab6,
             object: nil,
             queue: .main
@@ -281,7 +302,7 @@ class NotificationManager {
         }
         observers.append(tab6Observer)
 
-        let tab7Observer = NotificationCenter.default.addObserver(
+        let tab7Observer = NotificationCenter.default.addMainActorObserver(
             forName: .browserSwitchToTab7,
             object: nil,
             queue: .main
@@ -290,7 +311,7 @@ class NotificationManager {
         }
         observers.append(tab7Observer)
 
-        let tab8Observer = NotificationCenter.default.addObserver(
+        let tab8Observer = NotificationCenter.default.addMainActorObserver(
             forName: .browserSwitchToTab8,
             object: nil,
             queue: .main
@@ -299,7 +320,7 @@ class NotificationManager {
         }
         observers.append(tab8Observer)
 
-        let tab9Observer = NotificationCenter.default.addObserver(
+        let tab9Observer = NotificationCenter.default.addMainActorObserver(
             forName: .browserSwitchToTab9,
             object: nil,
             queue: .main
@@ -308,7 +329,7 @@ class NotificationManager {
         }
         observers.append(tab9Observer)
 
-        let addBookmarkObserver = NotificationCenter.default.addObserver(
+        let addBookmarkObserver = NotificationCenter.default.addMainActorObserver(
             forName: .browserAddBookmark,
             object: nil,
             queue: .main
@@ -317,7 +338,7 @@ class NotificationManager {
         }
         observers.append(addBookmarkObserver)
 
-        let showBookmarksObserver = NotificationCenter.default.addObserver(
+        let showBookmarksObserver = NotificationCenter.default.addMainActorObserver(
             forName: .browserShowBookmarks,
             object: nil,
             queue: .main
@@ -326,7 +347,7 @@ class NotificationManager {
         }
         observers.append(showBookmarksObserver)
 
-        let importBookmarksObserver = NotificationCenter.default.addObserver(
+        let importBookmarksObserver = NotificationCenter.default.addMainActorObserver(
             forName: .browserImportBookmarks,
             object: nil,
             queue: .main
@@ -336,27 +357,27 @@ class NotificationManager {
         observers.append(importBookmarksObserver)
 
         // Zoom and print act on the active web view directly
-        observers.append(NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addMainActorObserver(
             forName: .browserZoomIn, object: nil, queue: .main
         ) { [weak self] _ in self?.scaleZoom(by: 1.1) })
 
-        observers.append(NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addMainActorObserver(
             forName: .browserZoomOut, object: nil, queue: .main
         ) { [weak self] _ in self?.scaleZoom(by: 1 / 1.1) })
 
-        observers.append(NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addMainActorObserver(
             forName: .browserZoomReset, object: nil, queue: .main
         ) { [weak self] _ in self?.resetZoom() })
 
-        observers.append(NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addMainActorObserver(
             forName: .browserPrint, object: nil, queue: .main
         ) { [weak self] _ in self?.printCurrentPage() })
 
-        observers.append(NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addMainActorObserver(
             forName: .browserExportPDF, object: nil, queue: .main
         ) { [weak self] _ in self?.exportPDF() })
 
-        observers.append(NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addMainActorObserver(
             forName: .browserToggleTranslation, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
@@ -365,7 +386,7 @@ class NotificationManager {
             }
         })
 
-        observers.append(NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addMainActorObserver(
             forName: .browserTranslateInSplit, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
@@ -383,7 +404,7 @@ class NotificationManager {
             (.browserScreenshotElement, .element),
             (.browserScreenshotWindow, .window),
         ] {
-            observers.append(NotificationCenter.default.addObserver(
+            observers.append(NotificationCenter.default.addMainActorObserver(
                 forName: name, object: nil, queue: .main
             ) { [weak self] _ in
                 guard let self else { return }
@@ -391,7 +412,7 @@ class NotificationManager {
             })
         }
 
-        let getPageDataObserver = NotificationCenter.default.addObserver(
+        let getPageDataObserver = NotificationCenter.default.addMainActorObserver(
             forName: .browserGetPageData,
             object: nil,
             queue: .main
@@ -413,7 +434,7 @@ class NotificationManager {
 
         // CLI agent commands - each writes its JSON result to the response
         // file the CLI is polling (BrowserCLI.writeResponse no-ops on nil path)
-        observers.append(NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addMainActorObserver(
             forName: .browserNavigate, object: nil, queue: .main
         ) { [weak self] notification in
             switch notification.userInfo?["action"] as? String {
@@ -424,7 +445,7 @@ class NotificationManager {
             }
         })
 
-        observers.append(NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addMainActorObserver(
             forName: .browserSwitchTab, object: nil, queue: .main
         ) { [weak self] notification in
             let path = notification.userInfo?["responseFilePath"] as? String
@@ -438,7 +459,7 @@ class NotificationManager {
             }
         })
 
-        observers.append(NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addMainActorObserver(
             forName: .browserRunJS, object: nil, queue: .main
         ) { [weak self] notification in
             let path = notification.userInfo?["responseFilePath"] as? String
@@ -450,7 +471,7 @@ class NotificationManager {
             self?.runJS(script, in: webView, responseFilePath: path)
         })
 
-        observers.append(NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addMainActorObserver(
             forName: .browserWaitForLoad, object: nil, queue: .main
         ) { [weak self] notification in
             let path = notification.userInfo?["responseFilePath"] as? String
@@ -472,7 +493,7 @@ class NotificationManager {
             }
         })
 
-        observers.append(NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addMainActorObserver(
             forName: .browserScreenshot, object: nil, queue: .main
         ) { [weak self] notification in
             let path = notification.userInfo?["responseFilePath"] as? String
@@ -508,7 +529,7 @@ class NotificationManager {
             }
         })
 
-        observers.append(NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addMainActorObserver(
             forName: .browserRealClick, object: nil, queue: .main
         ) { [weak self] notification in
             let path = notification.userInfo?["responseFilePath"] as? String
@@ -516,7 +537,7 @@ class NotificationManager {
             self?.performRealClick(selector: selector, responseFilePath: path)
         })
 
-        observers.append(NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addMainActorObserver(
             forName: .browserNotifyUser, object: nil, queue: .main
         ) { [weak self] notification in
             let message = notification.userInfo?["message"] as? String ?? "The browser needs your attention."
@@ -532,7 +553,7 @@ class NotificationManager {
             }
         })
 
-        observers.append(NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addMainActorObserver(
             forName: .browserFocusWindow, object: nil, queue: .main
         ) { [weak self] _ in
             self?.focusWindow()
@@ -591,7 +612,7 @@ class NotificationManager {
         // macOS silently drops CGEvents from untrusted processes; surface the
         // system prompt instead of a click that goes nowhere
         guard AXIsProcessTrusted() else {
-            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+            let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
             AXIsProcessTrustedWithOptions(options)
             BrowserCLI.writeResponse(["error": "macOS blocked the synthetic click. Ask the user to allow Browser under System Settings > Privacy & Security > Accessibility (a prompt was just shown), then relaunch the browser and retry."], to: responseFilePath)
             return

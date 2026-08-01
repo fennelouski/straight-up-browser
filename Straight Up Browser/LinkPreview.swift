@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+@preconcurrency import Foundation
 import WebKit
 import Combine
 
@@ -31,19 +32,26 @@ final class LinkPreviewManager: NSObject, ObservableObject, WKNavigationDelegate
 
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: .browserLinkPreviewDown, object: nil, queue: .main) { [weak self] note in
-            if let url = note.userInfo?["url"] as? URL {
-                self?.linkDown(url)
+            let transfer = MainActorTransfer(value: note)
+            MainActor.assumeIsolated {
+                if let url = transfer.value.userInfo?["url"] as? URL {
+                    self?.linkDown(url)
+                }
             }
         })
         observers.append(center.addObserver(forName: .browserLinkPreviewLongPress, object: nil, queue: .main) { [weak self] _ in
-            self?.wantPreview = true
-            self?.maybeShow()
+            MainActor.assumeIsolated {
+                self?.wantPreview = true
+                self?.maybeShow()
+            }
         })
         observers.append(center.addObserver(forName: .browserLinkPreviewUp, object: nil, queue: .main) { [weak self] _ in
-            // Short click: the real navigation is happening; drop the prefetch
-            guard let self = self, !self.isShowing else { return }
-            self.webView.stopLoading()
-            self.wantPreview = false
+            MainActor.assumeIsolated {
+                // Short click: the real navigation is happening; drop the prefetch
+                guard let self = self, !self.isShowing else { return }
+                self.webView.stopLoading()
+                self.wantPreview = false
+            }
         })
     }
 
@@ -81,7 +89,7 @@ final class LinkPreviewManager: NSObject, ObservableObject, WKNavigationDelegate
         }
     }
 
-    deinit {
+    isolated deinit {
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         if let monitor = escMonitor {
             NSEvent.removeMonitor(monitor)

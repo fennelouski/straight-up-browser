@@ -47,7 +47,7 @@ enum BrowsingDataCleaner {
         cache: Bool,
         localStorage: Bool,
         in store: WKWebsiteDataStore = .default(),
-        then: @escaping () -> Void = {}
+        then: @escaping @MainActor @Sendable () -> Void = {}
     ) {
         if cache { URLCache.shared.removeAllCachedResponses() }
         let types = websiteDataTypes(
