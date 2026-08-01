@@ -627,6 +627,37 @@ struct ShortcutTests {
         #expect(store.conflicts().isEmpty)
     }
 
+    @Test func iPadCommandRegistryOnlyAdvertisesDispatchableCommands() {
+        let entries = BrowserPlatformCommandRegistry.iPad
+        let commandIDs = Set(entries.map(\.command.id))
+
+        #expect(entries.count == commandIDs.count)
+        #expect(commandIDs.isSubset(of: Set(ShortcutCommand.all.map(\.id))))
+        #expect(commandIDs.contains(ShortcutCommand.newTab.id))
+        #expect(commandIDs.contains(ShortcutCommand.findInPage.id))
+        #expect(commandIDs.contains(ShortcutCommand.switchTabs.last!.id))
+
+        for unsupported in [
+            ShortcutCommand.hardReload,
+            .reloadAll,
+            .printPage,
+            .exportPDF,
+            .toggleTranslation,
+            .showBookmarks,
+            .clearSiteData,
+            .extensionPopup,
+        ] {
+            #expect(!commandIDs.contains(unsupported.id))
+        }
+
+        for entry in entries {
+            #expect(BrowserPlatformCommandRegistry.iPadEntry(
+                notification: entry.notification,
+                userInfo: entry.userInfo
+            )?.command == entry.command)
+        }
+    }
+
     @Test func presetsAndSystemConflicts() {
         let store = ShortcutStore.shared
         store.resetAll()

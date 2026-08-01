@@ -245,48 +245,47 @@ struct BrowserView_iOS: View {
     }
 
     private var commandPublisher: AnyPublisher<Notification, Never> {
-        let names: [Notification.Name] = [
-            .browserNewTab, .browserNewIncognitoTab, .browserCloseTab, .reopenLastClosedTab, .showOmnibar,
-            .browserCloseTabSet,
-            .browserGoBack, .browserGoForward, .browserReload,
-            .browserNextTab, .browserPreviousTab, .browserSwitchTab, .browserAddBookmark,
-            .browserZoomIn, .browserZoomOut, .browserZoomReset,
-            .browserToggleTabBar, .browserToggleShortcutOverlay, .browserShowSettings,
-            .browserFindInPage,
-        ]
         let center = NotificationCenter.default
-        return Publishers.MergeMany(names.map { center.publisher(for: $0) }).eraseToAnyPublisher()
+        return Publishers.MergeMany(
+            BrowserPlatformCommandRegistry.iPadNotificationNames.map {
+                center.publisher(for: $0)
+            }
+        )
+        .eraseToAnyPublisher()
     }
 
     private func handleCommand(_ note: Notification) {
-        switch note.name {
-        case .browserNewTab: createNewTab()
-        case .browserNewIncognitoTab: _ = tabManager.createIncognitoTab(); focusOmnibar()
-        case .browserCloseTab: closeActiveTab()
-        case .browserCloseTabSet: tabManager.closeTabSet(tabs: visibleTabs)
-        case .reopenLastClosedTab: _ = tabManager.reopenLastClosedTab()
-        case .showOmnibar: focusOmnibar()
-        case .browserGoBack: webViewManager?.goBack()
-        case .browserGoForward: webViewManager?.goForward()
-        case .browserReload: reloadOrStop()
-        case .browserNextTab: tabManager.switchToNextTab(tabs: visibleTabs)
-        case .browserPreviousTab: tabManager.switchToPreviousTab(tabs: visibleTabs)
-        case .browserSwitchTab:
-            if let idx = note.userInfo?["index"] as? Int { tabManager.switchToTab(at: idx - 1, tabs: visibleTabs) }
-        case .browserAddBookmark: toggleBookmark()
-        case .browserZoomIn: zoom(by: 1.1)
-        case .browserZoomOut: zoom(by: 1 / 1.1)
-        case .browserZoomReset: setZoom(1)
-        case .browserToggleTabBar: toggleSidebar()
-        case .browserToggleShortcutOverlay: showShortcutSheet.toggle()
-        case .browserShowSettings: showSettings = true
-        case .browserFindInPage:
+        guard let entry = BrowserPlatformCommandRegistry.iPadEntry(
+            notification: note.name,
+            userInfo: note.userInfo
+        ) else { return }
+
+        switch entry.action {
+        case .newTab: createNewTab()
+        case .newIncognitoTab: _ = tabManager.createIncognitoTab(); focusOmnibar()
+        case .closeTab: closeActiveTab()
+        case .closeTabSet: tabManager.closeTabSet(tabs: visibleTabs)
+        case .reopenTab: _ = tabManager.reopenLastClosedTab()
+        case .openLocation: focusOmnibar()
+        case .back: webViewManager?.goBack()
+        case .forward: webViewManager?.goForward()
+        case .reload: reloadOrStop()
+        case .nextTab: tabManager.switchToNextTab(tabs: visibleTabs)
+        case .previousTab: tabManager.switchToPreviousTab(tabs: visibleTabs)
+        case .switchTab(let index): tabManager.switchToTab(at: index - 1, tabs: visibleTabs)
+        case .addBookmark: toggleBookmark()
+        case .zoomIn: zoom(by: 1.1)
+        case .zoomOut: zoom(by: 1 / 1.1)
+        case .actualSize: setZoom(1)
+        case .toggleSidebar: toggleSidebar()
+        case .shortcutOverlay: showShortcutSheet.toggle()
+        case .settings: showSettings = true
+        case .findInPage:
             if let wv = webViewManager?.activeWebView {
                 wv.isFindInteractionEnabled = true
                 wv.becomeFirstResponder()
                 wv.findInteraction?.presentFindNavigator(showingReplace: false)
             }
-        default: break
         }
     }
 

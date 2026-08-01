@@ -61,52 +61,37 @@ struct BrowserApp: App {
     @CommandsBuilder
     private var browserCommands: some Commands {
         CommandMenu("File") {
-            cmd("New Tab", .browserNewTab, .newTab)
-            cmd("New Incognito Tab", .browserNewIncognitoTab, .newIncognitoTab)
-            cmd("Close Tab", .browserCloseTab, .closeTab)
-            cmd("Close Tab Set", .browserCloseTabSet, .closeTabSet)
-            cmd("Reopen Closed Tab", .reopenLastClosedTab, .reopenTab)
-            Divider()
-            cmd("Open Location…", .showOmnibar, .openLocation)
+            commandButtons(in: .file)
         }
         CommandMenu("Go") {
-            cmd("Back", .browserGoBack, .back)
-            cmd("Forward", .browserGoForward, .forward)
-            cmd("Reload", .browserReload, .reload)
-            Divider()
-            cmd("Find…", .browserFindInPage, .findInPage)
+            commandButtons(in: .go)
         }
         CommandMenu("View") {
-            cmd("Toggle Sidebar", .browserToggleTabBar, .toggleTabBar)
-            Divider()
-            cmd("Zoom In", .browserZoomIn, .zoomIn)
-            cmd("Zoom Out", .browserZoomOut, .zoomOut)
-            cmd("Actual Size", .browserZoomReset, .actualSize)
-            Divider()
-            cmd("Settings…", .browserShowSettings, .settings)
-            cmd("Keyboard Shortcuts", .browserToggleShortcutOverlay, .shortcutOverlay)
+            commandButtons(in: .view)
         }
         CommandMenu("Bookmarks") {
-            cmd("Add Bookmark", .browserAddBookmark, .addBookmark)
+            commandButtons(in: .bookmarks)
         }
         CommandMenu("Tabs") {
-            cmd("Show Next Tab", .browserNextTab, .nextTab)
-            cmd("Show Previous Tab", .browserPreviousTab, .previousTab)
-            Divider()
-            ForEach(Array(ShortcutCommand.switchTabs.enumerated()), id: \.element.id) { index, command in
-                Button("Show Tab \(index + 1)") {
-                    NotificationCenter.default.post(name: .browserSwitchTab, object: nil, userInfo: ["index": index + 1])
-                }
-                .keyboardShortcut(shortcut(command))
-            }
+            commandButtons(in: .tabs)
         }
     }
 
-    // A command button that posts a notification, keyed by the store's current
-    // shortcut for `command` so presets/rebindings take effect live.
-    private func cmd(_ title: String, _ name: Notification.Name, _ command: ShortcutCommand) -> some View {
-        Button(title) { NotificationCenter.default.post(name: name, object: nil) }
-            .keyboardShortcut(shortcut(command))
+    // Menu registration and dispatch metadata come from the same registry the
+    // handler and cheat sheet consume, preventing advertised but inert commands.
+    private func commandButtons(in group: BrowserPlatformCommandGroup) -> some View {
+        ForEach(BrowserPlatformCommandRegistry.iPadEntries(in: group)) { entry in
+            Button {
+                NotificationCenter.default.post(
+                    name: entry.notification,
+                    object: nil,
+                    userInfo: entry.userInfo
+                )
+            } label: {
+                Text(entry.command.title)
+            }
+            .keyboardShortcut(shortcut(entry.command))
+        }
     }
 
     private func shortcut(_ command: ShortcutCommand) -> KeyboardShortcut {
