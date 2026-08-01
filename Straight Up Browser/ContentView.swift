@@ -373,6 +373,9 @@ struct ContentView: View {
     @State private var isLoading = false
     @State private var isImportBookmarksDialogPresented = false
     @State private var availableBrowsers: [BrowserType] = []
+    @State private var showLibrary = false
+    @State private var librarySection = BrowserLibrarySection.bookmarks
+    @State private var readerArticle: ReaderArticle?
     @State private var showCreateGroupDialog = false
     @State private var newGroupName = ""
     @State private var newGroupColor = Color.blue
@@ -533,17 +536,21 @@ struct ContentView: View {
 
         // Add tabs without groups first (ungrouped tabs)
         if let ungroupedTabs = groupedById[nil] {
-            result.append((group: nil, tabs: ungroupedTabs.sorted(by: { $0.orderIndex < $1.orderIndex })))
+            result.append((group: nil, tabs: sortTabs(ungroupedTabs)))
         }
 
         // Add tabs with groups
         for group in tabGroups.sorted(by: { $0.orderIndex < $1.orderIndex }) {
             if let groupTabs = groupedById[group.id] {
-                result.append((group: group, tabs: groupTabs.sorted(by: { $0.orderIndex < $1.orderIndex })))
+                result.append((group: group, tabs: sortTabs(groupTabs)))
             }
         }
 
         return result
+    }
+
+    private func sortTabs(_ tabs: [BrowserTab]) -> [BrowserTab] {
+        BrowserLibrary.sortedTabs(tabs)
     }
 
     private func sidebarY(for tabId: UUID, availableHeight: CGFloat) -> CGFloat {
@@ -724,6 +731,15 @@ struct ContentView: View {
                         .contextMenu {
                             Button("Close Tab", action: { tabManager.closeTab(tab, tabs: allTabs) })
                             Button("Duplicate Tab", action: { _ = tabManager.duplicateTab(tab) })
+                            Button(tab.isPinned ? "Unpin Tab" : "Pin Tab") {
+                                tab.isPinned.toggle()
+                                try? modelContext.save()
+                            }
+                            Button(tab.isMuted ? "Unmute Tab" : "Mute Tab") {
+                                tab.isMuted.toggle()
+                                webViewManager?.setMuted(tab.isMuted, for: tab.id)
+                                try? modelContext.save()
+                            }
                             if tabManager.splitTabIds.contains(tab.id) {
                                 Button("Remove from Split", action: { tabManager.toggleSplitMembership(tab, tabs: allTabs) })
                             } else if tabManager.splitTabIds.count < TabManager.maxSplitTabs {
@@ -1338,6 +1354,84 @@ struct ContentView: View {
         }
     }
 
+    private var libraryOverlay: some View {
+        Group {
+            if showLibrary {
+                BrowserLibraryView(
+                    bookmarks: allBookmarks,
+                    tabs: allTabs,
+                    initialSection: librarySection,
+                    onOpen: openFromLibrary,
+                    onClose: { showLibrary = false },
+                    onUpdateBookmark: { bookmark, title, url, category in
+                        bookmarkManager?.updateBookmark(
+                            bookmark,
+                            title: title,
+                            url: url,
+                            category: category
+                        )
+                    },
+                    onDeleteBookmark: { bookmarkManager?.removeBookmark($0) },
+                    onDeleteHistory: removeHistoryURL,
+                    onClearHistory: clearHistoryFromLibrary
+                )
+            }
+        }
+    }
+
+    private var readerOverlay: some View {
+        Group {
+            if let article = readerArticle {
+                ZStack {
+                    Color.black.opacity(0.35)
+                        .ignoresSafeArea()
+                        .onTapGesture { readerArticle = nil }
+
+                    VStack(spacing: 0) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(article.title)
+                                    .font(.title2.bold())
+                                    .lineLimit(2)
+                                if let byline = article.byline, !byline.isEmpty {
+                                    Text(byline)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            Button {
+                                readerArticle = nil
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Close Reader Mode")
+                        }
+                        .padding()
+
+                        Divider()
+
+                        ScrollView {
+                            Text(article.text)
+                                .font(.system(size: 18, design: .serif))
+                                .lineSpacing(6)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: 700, alignment: .leading)
+                                .padding(32)
+                        }
+                    }
+                    .frame(width: 820, height: 650)
+                    .background(Color(.textBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .shadow(radius: 24)
+                }
+            }
+        }
+    }
+
     private var linkPreviewOverlay: some View {
         Group {
             if linkPreview.isShowing {
@@ -1489,6 +1583,8 @@ struct ContentView: View {
         .overlay(createContainerDialogOverlay.zIndex(4))
         .overlay(saveWorkspaceDialogOverlay.zIndex(5))
         .overlay(importBookmarksDialogOverlay.zIndex(6))
+        .overlay(libraryOverlay.zIndex(7))
+        .overlay(readerOverlay.zIndex(7))
         .overlay(quitHoldOverlay.zIndex(7))
         .overlay(shortcutCheatSheetOverlay.zIndex(8))
         .overlay(tabGridOverlay.zIndex(8))
@@ -1930,6 +2026,12 @@ struct ContentView: View {
             let critical = (note.userInfo?["critical"] as? Bool) ?? false
             handleMemoryPressure(critical: critical)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .browserShowHistory)) { _ in
+            showHistory()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .browserToggleReader)) { _ in
+            showReaderMode()
+        }
         .onChange(of: isLoading) { oldValue, newValue in
             if newValue {
                 // Page started loading: show the loading bar right away
@@ -2317,8 +2419,48 @@ struct ContentView: View {
     }
 
     private func showBookmarks() {
-        // For now, just show the omnibar - in a full implementation this would show a dedicated bookmarks panel
-        showOmnibar = true
+        librarySection = .bookmarks
+        showLibrary = true
+    }
+
+    private func showHistory() {
+        librarySection = .history
+        showLibrary = true
+    }
+
+    private func openFromLibrary(_ url: URL) {
+        _ = navigationManager?.navigateToURL(url.absoluteString, activeTab: activeTab)
+        showLibrary = false
+    }
+
+    private func removeHistoryURL(_ url: URL) {
+        BrowserLibrary.removeHistory(url: url, from: allTabs)
+        SiteHistory.shared.remove(url: url)
+        try? modelContext.save()
+    }
+
+    private func clearHistoryFromLibrary() {
+        confirmClear(
+            String(localized: "Clear all browsing history?"),
+            informative: String(localized: "Removes visited URLs and site suggestions. This can’t be undone.")
+        ) {
+            BrowsingDataCleaner.clearHistory(in: allTabs)
+        }
+    }
+
+    private func showReaderMode() {
+        guard let webViewManager else { return }
+        webViewManager.evaluateJavaScript(ReaderMode.extractionScript) { value, error in
+            if let article = ReaderMode.article(from: value) {
+                readerArticle = article
+            } else {
+                let alert = NSAlert()
+                alert.messageText = String(localized: "Reader Mode Unavailable")
+                alert.informativeText = error?.localizedDescription
+                    ?? String(localized: "This page does not contain readable text.")
+                alert.runModal()
+            }
+        }
     }
 
     private func presentImportBookmarksDialog() {

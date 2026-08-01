@@ -76,6 +76,8 @@ extension Notification.Name {
     static let browserShowBookmarks = Notification.Name("browserShowBookmarks")
     static let browserAddBookmark = Notification.Name("browserAddBookmark")
     static let browserImportBookmarks = Notification.Name("browserImportBookmarks")
+    static let browserShowHistory = Notification.Name("browserShowHistory")
+    static let browserToggleReader = Notification.Name("browserToggleReader")
 
     // Window menu
     static let browserNextTab = Notification.Name("browserNextTab")

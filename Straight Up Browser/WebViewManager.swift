@@ -799,6 +799,32 @@ class WebViewManager: NSObject, ObservableObject {
         activeWebView?.evaluateJavaScript(javaScriptString, completionHandler: completionHandler)
     }
 
+    func setMuted(_ muted: Bool, for tabId: UUID) {
+        guard let webView = webViews[tabId] else { return }
+        let value = muted ? "true" : "false"
+        webView.evaluateJavaScript("""
+            (() => {
+              const shouldMute = \(value);
+              const key = 'straightUpOriginalMuted';
+              const apply = (root) => root.querySelectorAll('audio, video').forEach(media => {
+                if (shouldMute) {
+                  if (!(key in media.dataset)) media.dataset[key] = media.muted ? '1' : '0';
+                  media.muted = true;
+                } else if (key in media.dataset) {
+                  media.muted = media.dataset[key] === '1';
+                  delete media.dataset[key];
+                }
+              });
+              apply(document);
+              if (window.__straightUpMuteObserver) window.__straightUpMuteObserver.disconnect();
+              if (shouldMute) {
+                window.__straightUpMuteObserver = new MutationObserver(() => apply(document));
+                window.__straightUpMuteObserver.observe(document.documentElement, { childList: true, subtree: true });
+              }
+            })()
+            """)
+    }
+
     // Clean up all web views
     func cleanup() {
         for (_, webView) in webViews {

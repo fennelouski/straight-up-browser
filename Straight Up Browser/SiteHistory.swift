@@ -114,6 +114,12 @@ final class SiteHistory {
         defaults.removeObject(forKey: Self.storeKey)
     }
 
+    func remove(url: URL) {
+        guard let host = Self.normalizedHost(url) else { return }
+        sites.removeValue(forKey: host)
+        save()
+    }
+
     // MARK: - Matching
 
     // How well `query` starts this site's name. Prefix-only: typing "z" shouldn't

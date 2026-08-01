@@ -1,0 +1,432 @@
+import Foundation
+#if os(macOS)
+import AppKit
+import SwiftUI
+import UniformTypeIdentifiers
+#endif
+
+enum BrowserLibrary {
+    static func historyURLs(from tabs: [Tab]) -> [URL] {
+        var seen: Set<String> = []
+        var result: [URL] = []
+
+        for tab in tabs.reversed() {
+            for url in tab.history.reversed()
+            where url.scheme == "http" || url.scheme == "https" {
+                if seen.insert(url.absoluteString).inserted {
+                    result.append(url)
+                }
+            }
+        }
+        return result
+    }
+
+    static func sortedTabs(_ tabs: [Tab]) -> [Tab] {
+        tabs.sorted {
+            if $0.isPinned != $1.isPinned { return $0.isPinned && !$1.isPinned }
+            return $0.orderIndex < $1.orderIndex
+        }
+    }
+
+    static func removeHistory(url: URL, from tabs: [Tab]) {
+        for tab in tabs {
+            tab.historyStrings.removeAll { $0 == url.absoluteString }
+            tab.currentHistoryIndex = min(
+                tab.currentHistoryIndex,
+                tab.historyStrings.count - 1
+            )
+        }
+    }
+
+    static func bookmarkHTML(_ bookmarks: [Bookmark]) -> String {
+        let grouped = Dictionary(grouping: bookmarks) {
+            let category = $0.category?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return category.isEmpty ? String(localized: "Bookmarks") : category
+        }
+
+        let folders = grouped.keys.sorted().map { folder in
+            let links = (grouped[folder] ?? [])
+                .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+                .map { bookmark in
+                    "        <DT><A HREF=\"\(escape(bookmark.url.absoluteString))\">\(escape(bookmark.title))</A>"
+                }
+                .joined(separator: "\n")
+            return """
+                <DT><H3>\(escape(folder))</H3>
+                <DL><p>
+            \(links)
+                </DL><p>
+            """
+        }.joined(separator: "\n")
+
+        return """
+        <!DOCTYPE NETSCAPE-Bookmark-file-1>
+        <META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+        <TITLE>Browser Bookmarks</TITLE>
+        <H1>Browser Bookmarks</H1>
+        <DL><p>
+        \(folders)
+        </DL><p>
+        """
+    }
+
+    private static func escape(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+    }
+}
+
+struct ReaderArticle: Equatable {
+    let title: String
+    let byline: String?
+    let text: String
+}
+
+enum ReaderMode {
+    static let extractionScript = """
+        (() => {
+          const source = document.querySelector('article') || document.querySelector('main') || document.body;
+          if (!source) return null;
+          const copy = source.cloneNode(true);
+          copy.querySelectorAll('script, style, nav, form, button, aside, footer, noscript').forEach(node => node.remove());
+          const text = (copy.innerText || copy.textContent || '').replace(/\\n{3,}/g, '\\n\\n').trim();
+          if (!text) return null;
+          const author = document.querySelector('[rel="author"], .byline, [class*="author"]');
+          return {
+            title: document.title || location.hostname,
+            byline: author ? author.textContent.trim() : '',
+            text
+          };
+        })()
+        """
+
+    static func article(from value: Any?) -> ReaderArticle? {
+        guard let object = value as? [String: Any],
+              let title = object["title"] as? String,
+              let text = object["text"] as? String,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let byline = (object["byline"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ReaderArticle(
+            title: title.isEmpty ? String(localized: "Reader Mode") : title,
+            byline: byline?.isEmpty == true ? nil : byline,
+            text: text
+        )
+    }
+}
+
+#if os(macOS)
+enum BrowserLibrarySection: String, CaseIterable, Identifiable {
+    case bookmarks = "Bookmarks"
+    case history = "History"
+
+    var id: Self { self }
+}
+
+struct BrowserLibraryView: View {
+    let bookmarks: [Bookmark]
+    let tabs: [Tab]
+    let initialSection: BrowserLibrarySection
+    let onOpen: (URL) -> Void
+    let onClose: () -> Void
+    let onUpdateBookmark: (Bookmark, String, URL, String?) -> Void
+    let onDeleteBookmark: (Bookmark) -> Void
+    let onDeleteHistory: (URL) -> Void
+    let onClearHistory: () -> Void
+
+    @State private var section: BrowserLibrarySection
+    @State private var query = ""
+    @State private var editingBookmark: Bookmark?
+    @State private var errorMessage: String?
+
+    init(
+        bookmarks: [Bookmark],
+        tabs: [Tab],
+        initialSection: BrowserLibrarySection,
+        onOpen: @escaping (URL) -> Void,
+        onClose: @escaping () -> Void,
+        onUpdateBookmark: @escaping (Bookmark, String, URL, String?) -> Void,
+        onDeleteBookmark: @escaping (Bookmark) -> Void,
+        onDeleteHistory: @escaping (URL) -> Void,
+        onClearHistory: @escaping () -> Void
+    ) {
+        self.bookmarks = bookmarks
+        self.tabs = tabs
+        self.initialSection = initialSection
+        self.onOpen = onOpen
+        self.onClose = onClose
+        self.onUpdateBookmark = onUpdateBookmark
+        self.onDeleteBookmark = onDeleteBookmark
+        self.onDeleteHistory = onDeleteHistory
+        self.onClearHistory = onClearHistory
+        _section = State(initialValue: initialSection)
+    }
+
+    private var filteredBookmarks: [Bookmark] {
+        guard !query.isEmpty else { return bookmarks }
+        return bookmarks.filter {
+            $0.title.localizedCaseInsensitiveContains(query)
+                || $0.url.absoluteString.localizedCaseInsensitiveContains(query)
+                || ($0.category?.localizedCaseInsensitiveContains(query) ?? false)
+        }
+    }
+
+    private var filteredHistory: [URL] {
+        let urls = BrowserLibrary.historyURLs(from: tabs)
+        guard !query.isEmpty else { return urls }
+        return urls.filter { $0.absoluteString.localizedCaseInsensitiveContains(query) }
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+                .onTapGesture(perform: onClose)
+
+            VStack(spacing: 0) {
+                header
+                Divider()
+                content
+            }
+            .frame(width: 680, height: 520)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .shadow(radius: 24)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Browser Library")
+        }
+        .sheet(item: $editingBookmark) { bookmark in
+            BookmarkEditor(
+                bookmark: bookmark,
+                onSave: { title, url, category in
+                    onUpdateBookmark(bookmark, title, url, category)
+                    editingBookmark = nil
+                },
+                onCancel: { editingBookmark = nil }
+            )
+        }
+        .alert("Export Failed", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    private var header: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("Library")
+                    .font(.title2.bold())
+                Spacer()
+                if section == .bookmarks {
+                    Button("Export…", action: exportBookmarks)
+                } else if !filteredHistory.isEmpty {
+                    Button("Clear History", role: .destructive, action: onClearHistory)
+                }
+                Button(action: onClose) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close Library")
+            }
+
+            Picker("Library Section", selection: $section) {
+                ForEach(BrowserLibrarySection.allCases) { section in
+                    Text(section.rawValue).tag(section)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            TextField("Search \(section.rawValue.lowercased())", text: $query)
+                .textFieldStyle(.roundedBorder)
+        }
+        .padding()
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if section == .bookmarks {
+            if filteredBookmarks.isEmpty {
+                emptyState("No bookmarks", systemImage: "star")
+            } else {
+                List {
+                    ForEach(bookmarkFolders, id: \.name) { folder in
+                        Section(folder.name) {
+                            ForEach(folder.bookmarks) { bookmark in
+                                bookmarkRow(bookmark)
+                            }
+                        }
+                    }
+                }
+                .listStyle(.inset)
+            }
+        } else if filteredHistory.isEmpty {
+            emptyState("No browsing history", systemImage: "clock")
+        } else {
+            List(filteredHistory, id: \.absoluteString) { url in
+                historyRow(url)
+            }
+            .listStyle(.inset)
+        }
+    }
+
+    private var bookmarkFolders: [(name: String, bookmarks: [Bookmark])] {
+        let grouped = Dictionary(grouping: filteredBookmarks) {
+            let category = $0.category?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return category.isEmpty ? String(localized: "Bookmarks") : category
+        }
+        return grouped.keys.sorted().map { name in
+            (
+                name,
+                (grouped[name] ?? []).sorted {
+                    $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+                }
+            )
+        }
+    }
+
+    private func bookmarkRow(_ bookmark: Bookmark) -> some View {
+        HStack {
+            Button {
+                onOpen(bookmark.url)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(bookmark.title).lineLimit(1)
+                    Text(bookmark.url.absoluteString)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+
+            Button("Edit") { editingBookmark = bookmark }
+            Button(role: .destructive) {
+                onDeleteBookmark(bookmark)
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Delete \(bookmark.title)")
+        }
+    }
+
+    private func historyRow(_ url: URL) -> some View {
+        HStack {
+            Button {
+                onOpen(url)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(historyTitle(for: url))
+                        .lineLimit(1)
+                    Text(url.absoluteString)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+
+            Button(role: .destructive) {
+                onDeleteHistory(url)
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Remove \(url.absoluteString) from history")
+        }
+    }
+
+    private func historyTitle(for url: URL) -> String {
+        tabs.first { $0.url?.absoluteString == url.absoluteString }?.title
+            ?? url.host
+            ?? url.absoluteString
+    }
+
+    private func emptyState(_ title: String, systemImage: String) -> some View {
+        ContentUnavailableView(title, systemImage: systemImage)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func exportBookmarks() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "Browser Bookmarks.html"
+        panel.allowedContentTypes = [.html]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try BrowserLibrary.bookmarkHTML(bookmarks).write(
+                to: url,
+                atomically: true,
+                encoding: .utf8
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct BookmarkEditor: View {
+    let bookmark: Bookmark
+    let onSave: (String, URL, String?) -> Void
+    let onCancel: () -> Void
+
+    @State private var title: String
+    @State private var urlString: String
+    @State private var category: String
+
+    init(
+        bookmark: Bookmark,
+        onSave: @escaping (String, URL, String?) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.bookmark = bookmark
+        self.onSave = onSave
+        self.onCancel = onCancel
+        _title = State(initialValue: bookmark.title)
+        _urlString = State(initialValue: bookmark.url.absoluteString)
+        _category = State(initialValue: bookmark.category ?? "")
+    }
+
+    private var validURL: URL? {
+        guard let url = URL(string: urlString),
+              url.scheme == "http" || url.scheme == "https",
+              url.host != nil else { return nil }
+        return url
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Edit Bookmark").font(.headline)
+            TextField("Title", text: $title)
+            TextField("URL", text: $urlString)
+            TextField("Folder", text: $category)
+            HStack {
+                Spacer()
+                Button("Cancel", action: onCancel)
+                Button("Save") {
+                    guard let validURL else { return }
+                    let folder = category.trimmingCharacters(in: .whitespacesAndNewlines)
+                    onSave(
+                        title.trimmingCharacters(in: .whitespacesAndNewlines),
+                        validURL,
+                        folder.isEmpty ? nil : folder
+                    )
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || validURL == nil)
+            }
+        }
+        .padding(20)
+        .frame(width: 440)
+    }
+}
+#endif
