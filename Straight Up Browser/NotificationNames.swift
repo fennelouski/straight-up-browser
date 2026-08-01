@@ -60,6 +60,8 @@ extension Notification.Name {
 
     // Ad blocker toggled in Settings
     static let adBlockChanged = Notification.Name("adBlockChanged")
+    // JavaScript policy toggled in Settings
+    static let javaScriptChanged = Notification.Name("javaScriptChanged")
     // System memory pressure (userInfo["critical"]: Bool)
     static let memoryPressure = Notification.Name("memoryPressure")
     // Cmd+Shift+H shortcut cheat-sheet overlay

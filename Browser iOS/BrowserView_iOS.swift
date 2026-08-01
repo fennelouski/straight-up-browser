@@ -25,6 +25,7 @@ struct BrowserView_iOS: View {
     @Query(sort: \BrowserSession.createdAt) private var browserSessions: [BrowserSession]
 
     @StateObject private var tabManager = TabManager()
+    @ObservedObject private var protectionStore = PageProtectionStore.shared
     @State private var webViewManager: WebViewManager?
     @State private var navigationManager: NavigationManager?
     @State private var bookmarkManager: BookmarkManager?
@@ -64,6 +65,8 @@ struct BrowserView_iOS: View {
     @AppStorage("progressBarLeft") private var progressBarLeft = false
     @AppStorage("progressBarRight") private var progressBarRight = false
     @AppStorage("theme") private var theme = "System"
+    @AppStorage("javaScriptEnabled") private var javaScriptEnabled = true
+    @AppStorage("adBlockEnabled") private var adBlockEnabled = false
 
     // MARK: Derived
 
@@ -73,6 +76,18 @@ struct BrowserView_iOS: View {
     private var allTabs: [Tab] { tabs + tabManager.incognitoTabs }
 
     private var activeTab: Tab? { allTabs.first { $0.id == tabManager.selectedTabId } }
+
+    private var pageProtectionSummary: PageProtectionSummary? {
+        guard let tab = activeTab, tab.url != nil else { return nil }
+        return PageProtectionSummary(
+            securityLevel: tab.securityLevel,
+            contentBlocking: .resolve(
+                enabled: adBlockEnabled,
+                active: protectionStore.isContentBlockingActive(for: tab.id)
+            ),
+            javaScriptEnabled: javaScriptEnabled
+        )
+    }
 
     // Tabs shown on this device: drops open-only local closes (their records stay
     // in the cloud so they remain open on your other devices). Incognito isn't
@@ -310,6 +325,9 @@ struct BrowserView_iOS: View {
                 Image(systemName: "square.stack").foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            if let pageProtectionSummary {
+                PageProtectionButton(summary: pageProtectionSummary)
+            }
             Image(systemName: isLoading ? "arrow.triangle.2.circlepath" : "magnifyingglass")
                 .foregroundStyle(.secondary)
             TextField("Search or enter address", text: $omnibarText)
