@@ -1019,3 +1019,30 @@ struct CLIAuthorizationTests {
         #expect(authorization.allows(action: "screenshot"))
     }
 }
+
+struct TabSyncDisclosureTests {
+    @Test func everyCloudBackedModelHasAVisibleDataCategory() {
+        #expect(TabSync.cloudBackedModelTypeNames == [
+            "Tab",
+            "TabGroup",
+            "Bookmark",
+            "BrowserSession"
+        ])
+        #expect(TabSync.syncedDataCategories == [
+            .tabs,
+            .tabGroups,
+            .bookmarks,
+            .browserSessions
+        ])
+    }
+
+    @Test func disablingPageStateDeletesExistingSnapshots() {
+        let tab = Tab(title: "Sensitive form", url: URL(string: "https://example.com"))
+        tab.interactionStateData = Data([1, 2, 3])
+        tab.sessionStorageData = Data([4, 5, 6])
+
+        #expect(TabSync.clearPageState(in: [tab]) == 1)
+        #expect(tab.interactionStateData == nil)
+        #expect(tab.sessionStorageData == nil)
+    }
+}
