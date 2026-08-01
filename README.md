@@ -1,214 +1,172 @@
 # Straight Up Browser
 
-A chromeless web browser for macOS. No toolbar, no title bar — the page fills
-the window. Tabs live in a thin vertical sidebar you can hide entirely.
+A chromeless `WKWebView` browser for macOS, with a companion iPadOS app. The
+page fills the window; tabs live in a thin vertical sidebar that can be resized,
+reduced to favicons, or hidden entirely.
 
 ## Download
 
-Just want to try it? Download the notarized app from
-[nathanfennel.com](https://nathanfennel.com) — no build required. Drag
-`Browser` to Applications, launch it, and accept the license agreement on
-first run.
+Download the signed and notarized macOS app from
+[nathanfennel.com](https://nathanfennel.com). Drag `Browser` to Applications,
+launch it, and accept the license agreement on first run.
 
-## Features
+## What is implemented
 
-- **No chrome**: no toolbar, no title bar, no traffic lights. Web content runs
-  edge to edge, maximizing vertical space.
-- **Vertical tabs**: a left sidebar (resizable, and hideable with `⌘⇧L`) instead
-  of a horizontal tab strip that eats page height.
-- **Popup omnibar**: `⌃Space` to navigate or search; it appears over the page and
-  gets out of the way.
-- **Global omnibar**: `⌥Space` from *any* app summons a floating omnibar over
-  whatever you're doing — search or enter a URL and it opens in a new tab.
-- **Command-line interface**: drive the running browser from the terminal.
+- **Tabs and layouts**: vertical tabs, drag reordering, pinning, recently closed
+  tabs, groups, saved workspaces, thumbnails, and 2–4 pane splits.
+- **Browsing sessions**: normal tabs, persistent isolated containers, and
+  in-memory incognito sessions. New tabs inherit the current session.
+- **Navigation tools**: popup and global omnibars, configurable search engine,
+  history/bookmark suggestions, find on page, zoom, hard reload, page
+  translation, reader mode, print, and PDF export.
+- **Bookmarks and history**: a searchable Library for opening, editing,
+  organizing, deleting, importing, and exporting bookmarks, plus searchable
+  browsing history with per-URL removal and clear-all.
+- **Media and downloads**: per-tab muting, a download manager, upload/download
+  history, and visible/full-page/element/window screenshots.
+- **Privacy controls**: per-session website data stores, cookie inspection and
+  deletion, clear-site/session/all-data actions, media permission prompts,
+  content blocking, redirect-loop protection, and secure/mixed/insecure
+  connection state.
+- **Sync**: optional private CloudKit sync for tabs, groups, container metadata,
+  and bookmarks. Live page state is a separate opt-in. Incognito data, saved
+  workspaces, cookies, website storage, logins, downloads, and extension state
+  do not sync.
+- **macOS extensions**: load unpacked `WKWebExtension` folders, approve requested
+  scopes, open extension popups, control private-tab access, and remove loaded
+  extensions.
+- **Automation**: an App Intents/Shortcuts surface and an optional CLI for
+  navigation, page inspection, JavaScript, interaction, and screenshots.
 
-### Keyboard Shortcuts
+### Platform scope
+
+The macOS app has the full feature set above. The iPadOS target shares tabs,
+containers/incognito, sync, bookmarks, downloads, settings, keyboard commands,
+and touch navigation. macOS-only integrations—global hotkeys, the terminal CLI,
+AppKit screenshot/window tools, and the unpacked-extension loader—are not
+present in the iPadOS build.
+
+Browser does not currently expose passkey/WebAuthn sign-in. Apple gates
+third-party browser access behind the
+`com.apple.developer.web-browser.public-key-credential` entitlement; without
+that entitlement, Browser hides WebAuthn APIs so websites fall back instead of
+offering a passkey flow that cannot complete. Browser also does not ship a
+password vault or form-autofill database. Website camera and microphone requests
+use WebKit's permission prompt. Website data can be cleared in Browser, but the
+app does not maintain a separate per-site permission ledger.
+
+## Default keyboard shortcuts
+
+Shortcuts can be changed or replaced with a browser preset in Settings. These
+are the defaults:
 
 | Shortcut | Action |
 |---|---|
 | `⌃Space` | Show omnibar |
-| `⌥Space` | Global omnibar, from any app (configurable in Settings) |
-| `⌘L` | Show omnibar (Open Location) |
+| `⌥Space` | Global omnibar from any app (macOS) |
+| `⌘L` / `⌘K` | Open location / quick open |
 | `⌘T` / `⌘N` | New tab |
+| `⌘⇧N` | New incognito tab |
 | `⌘W` | Close current tab |
 | `⌘⇧T` | Reopen last closed tab |
-| `⌘R` | Reload page |
-| `⌘⇧R` | Reload all tabs |
+| `⌘R` / `⌘⇧R` | Reload / hard reload |
+| `⌘⌥⇧R` | Reload all tabs |
 | `⌘[` / `⌘]` | Back / Forward |
 | `⌃Tab` / `⌃⇧Tab` | Next / Previous tab |
 | `⌘1`–`⌘9` | Switch to tab N |
+| `⌘O` | Show all tabs |
+| `⌘D` | Add or remove bookmark |
+| `⌘⇧B` | Show bookmark Library |
+| `⌘Y` | Show history Library |
+| `⌘⌥R` | Reader mode |
+| `⌘F` | Find on page |
+| `⌘+` / `⌘-` / `⌘0` | Zoom in / out / actual size |
 | `⌘⇧L` | Toggle the tab sidebar |
-| `⌘⌥\`` / `⌘⌥1` / `⌘⌥2` / `⌘⌥3` | Tab bar: hidden / minimal / compact / wide |
-| `⌘D` | Bookmark current page |
+| `⌘⌥\`` / `⌘⌥1` / `⌘⌥2` / `⌘⌥3` | Hidden / minimal / compact / wide sidebar |
 | `⌘,` | Settings |
 
-Back and forward also work with the standard two-finger trackpad swipe.
+Back and forward also use the standard trackpad or screen-edge gestures.
 
-## Command Line Interface
+## Command-line interface
 
-Full browser control from the terminal, designed for AI agents: navigate,
-snapshot, click, type, screenshot, and hand off to a human when needed. See
-[CLI_USAGE.md](CLI_USAGE.md), or run `browser-cli docs` for the complete
-agent-oriented guide. The tool ships inside the app bundle:
+The helper ships inside the macOS app bundle:
 
 ```bash
 sudo ln -sf "/Applications/Browser.app/Contents/Helpers/browser-cli" /usr/local/bin/browser-cli
+```
 
+CLI automation is **off by default**. Enable it in **Settings → Security → CLI
+Automation**, then enable page reading, JavaScript/interaction, screenshots, or
+real input only when needed. Real clicks additionally require the macOS
+Accessibility permission.
+
+```bash
 browser-cli open https://example.com && browser-cli wait
-browser-cli snapshot                        # compact page outline + selectors
+browser-cli snapshot
 browser-cli click '#more-info' && browser-cli wait
 browser-cli screenshot page.png
 browser-cli notify "Please solve the captcha"
 ```
 
-The browser launches automatically if it isn't running. Commands travel over
-an owner-only named pipe at
-`~/Library/Application Support/Straight Up Browser/cli.pipe` — filesystem
-permissions are the authentication, so only your user can send commands.
+Commands use an owner-only named pipe at
+`~/Library/Application Support/Straight Up Browser/cli.pipe`. The pipe limits
+transport to the current user; the in-app capability switches authorize what
+those processes may do. See [CLI_USAGE.md](CLI_USAGE.md), or run
+`browser-cli docs`.
 
-## Building the Application
+## Build and verify
+
+Requirements:
+
+- macOS 15.6 or later for the Mac app
+- iPadOS 18 or later for the iPad app
+- Xcode 16 or later
+- Swift 6
+
+Run the same warning-free gates used by CI and releases:
 
 ```bash
-xcodebuild -project "Straight Up Browser.xcodeproj" -scheme Browser -configuration Release build
+./scripts/verify.sh
 ```
 
-To produce the signed, notarized DMG for distribution, run
-`./scripts/release.sh` (one-time credential setup is documented in the
-script header).
+This runs the macOS unit suite, builds the iOS simulator app, and builds the
+macOS UI-test target. Swift and Clang warnings are treated as errors.
+
+For a standalone release build:
+
+```bash
+xcodebuild -project "Straight Up Browser.xcodeproj" \
+  -scheme Browser -configuration Release build
+```
+
+To produce the signed, notarized DMG, run `./scripts/release.sh`. It runs
+`scripts/verify.sh` before archiving. Credential and publishing setup is in
+[DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Architecture
 
-- **WebView**: `NSViewRepresentable` wrapper around `WKWebView`. One `WKWebView`
-  per tab, owned by `WebViewManager`; the container shows the active one.
-- **Tabs**: SwiftData `@Model`. SwiftData *is* the session store — tabs and the
-  active selection persist across launches with no parallel JSON copy.
-- **Navigation**: `WKWebView`'s own back-forward list is the single source of
-  truth. A tab's `historyStrings` is only a visit log for omnibar suggestions.
-- **Window chrome**: configured in exactly one place (`WindowManager`), which
-  hides the title bar and traffic lights while keeping the window `.titled` so
-  dragging, focus, and fullscreen keep working.
-- **CLI**: named-pipe IPC into `NotificationCenter`.
-- **Logger**: thin wrapper over `os.Logger` (view in Console.app).
+- **Web views**: one `WKWebView` per live tab, owned by `WebViewManager`; memory
+  saving can release eligible background views while preserving restoration
+  state.
+- **Models**: SwiftData stores tabs, groups, sessions, and bookmarks. Incognito
+  tabs and their website data stores are memory-only.
+- **Navigation**: WebKit's back-forward list is authoritative.
+  `historyStrings` is the bounded visit list used by the Library and omnibar.
+- **Isolation**: each normal/container/incognito session is assigned the
+  appropriate persistent or ephemeral `WKWebsiteDataStore`.
+- **Window chrome**: `WindowManager` hides the title bar and traffic lights
+  while retaining a titled window for dragging, focus, and fullscreen.
+- **Automation**: the CLI uses named-pipe IPC into the same notification-based
+  command paths as menus and App Intents, after capability authorization.
+- **Logging**: `Logger` wraps `os.Logger`; inspect output in Console.app.
 
-## Future Development Roadmap
+## Tests and release policy
 
-### 🚀 High Priority Features
-
-#### Tab Management
-- [x] Tab state persistence across app restarts (SwiftData)
-- [x] Tab reordering with drag and drop
-- [ ] Tab pinning (keep important tabs at front)
-- [x] Recently closed tabs (Cmd+Shift+T to reopen)
-- [x] Tab groups/workspaces
-- [ ] Tab thumbnails/previews
-
-#### Navigation & History
-- [ ] Enhanced history management with timestamps
-- [ ] History search and filtering
-- [x] Forward/back trackpad gestures
-- [x] URL validation and security warnings
-- [x] Auto-complete in omnibar (history + bookmarks)
-- [x] Multiple search engine support (Google/DuckDuckGo/Bing/Yahoo)
-
-#### User Interface
-- [ ] Omnibar animations and transitions
-- [ ] Find-in-page functionality (Cmd+F)
-- [ ] Page zoom controls (Cmd+/-)
-- [ ] Reader mode toggle
-- [ ] Full-screen optimizations
-- [ ] Dark/light mode support
-
-### 🔧 Medium Priority Features
-
-#### Bookmarks & Organization
-- [ ] Bookmark management system
-- [ ] Bookmark folders and organization
-- [ ] Bookmark sync across devices
-- [x] Import/export bookmarks (Chrome, Edge support; Safari/Firefox in progress)
-- [ ] Quick bookmark access in omnibar
-
-#### Privacy & Security
-- [ ] Cookie management
-- [ ] Tracking protection
-- [ ] Ad blocking/content blockers
-- [ ] HTTPS Everywhere enforcement
-- [ ] Password management
-- [ ] Form auto-fill
-
-#### Performance
-- [ ] Page preload for faster navigation
-- [x] Memory management for multiple tabs (closed tabs release their WKWebView)
-- [ ] Cache management
-- [ ] Background tab throttling
-- [x] Session restoration across restarts
-
-### 🛠️ Developer Features
-
-#### CLI Integration
-- [x] CLI commands: open, search, new, close, tabs, get (page data)
-- [ ] JavaScript injection capabilities
-- [ ] Cookie inspection and management
-- [ ] Network request monitoring
-- [ ] Extension API for CLI plugins
-
-#### Extensions & Customization
-- [ ] Browser extension system
-- [ ] Theme customization
-- [ ] Keyboard shortcut customization
-- [ ] User script support
-- [ ] Custom CSS injection
-
-#### Advanced Features
-- [ ] Developer tools integration
-- [ ] WebRTC and media controls
-- [ ] Download manager
-- [ ] Print preview and customization
-- [ ] Touch Bar support
-- [ ] Notification integration
-
-### 🐛 Bug Fixes & Edge Cases
-
-#### Tab Handling
-- [x] Proper handling of closing last tab (resets to a clean New Tab)
-- [ ] Tab state during app minimization
-- [x] Memory cleanup when tabs are closed
-- [ ] URL encoding/decoding edge cases
-
-#### Navigation
-- [x] Handling of invalid URLs gracefully
-- [x] Redirect loop detection
-- [x] Mixed content warnings
-- [ ] SSL certificate validation display
-
-#### UI/UX
-- [ ] Keyboard focus management
-- [ ] Window resizing edge cases
-- [ ] High DPI display support
-- [ ] Accessibility improvements
-
-### 📚 Documentation & Testing
-
-#### Testing
-- [ ] Unit tests for core functionality
-- [ ] UI tests for critical user flows
-- [ ] Performance benchmarking
-- [ ] Memory leak detection
-
-#### Documentation
-- [ ] API documentation for CLI
-- [ ] Extension development guide
-- [ ] User manual and tutorials
-- [ ] Contributing guidelines
-
-## Requirements
-
-- macOS 15.0+
-- Xcode 16+
-- Swift 6+
-
-## Contributing
-
-See the TODO comments throughout the codebase for specific implementation details and requirements for each feature.
+Core navigation, sessions, cleanup, extension permissions, downloads, security
+state, accessibility, Library behavior, and WebKit integration have automated
+coverage. The shared `Browser`, `Browser iOS`, and `Browser UI` schemes are
+checked by `.github/workflows/ci.yml`; releases cannot archive until the same
+verification script passes.
 
 ## License
 

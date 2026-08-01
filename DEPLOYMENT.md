@@ -52,8 +52,10 @@ check on demand.
    ./scripts/release.sh
    ```
 
-   Archives → exports Developer ID → notarizes + staples the app → builds, signs,
-   notarizes + staples the DMG → generates + EdDSA-signs the Sparkle appcast.
+   First runs `scripts/verify.sh` (macOS unit tests, iOS simulator build, and
+   macOS UI-test build, with warnings treated as errors). Only a clean result
+   proceeds to archive → Developer ID export → app notarization/stapling → DMG
+   build/sign/notarization/stapling → EdDSA-signed Sparkle appcast.
    Output: `build/release/Browser.dmg` and `build/release/browser-appcast.xml`. Takes a
    few minutes (two notarization round-trips to Apple). Override the profile
    with `NOTARY_PROFILE=name`.

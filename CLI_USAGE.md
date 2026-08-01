@@ -15,6 +15,18 @@ sudo ln -sf "/Applications/Browser.app/Contents/Helpers/browser-cli" /usr/local/
 
 For development, `./build-cli.sh` still produces a standalone `./browser-cli-tool`.
 
+## Authorization
+
+CLI automation is disabled by default. In the macOS app, open **Settings →
+Security → CLI Automation** and enable the main switch before using commands.
+Page reading, JavaScript/synthetic interaction, and screenshots each have a
+separate capability switch. `click --real` also requires its own switch and the
+macOS Accessibility grant.
+
+Leave capabilities off when they are not needed. The named pipe restricts the
+transport to processes running as your user; the settings determine which
+browser capabilities those processes are authorized to use.
+
 ## Contract
 
 - Every command prints JSON to **stdout** (`{"ok":true,...}`) and exits **0**
@@ -87,17 +99,18 @@ The app creates a named pipe (FIFO) at:
 ~/Library/Application Support/Straight Up Browser/cli.pipe
 ```
 
-with owner-only permissions (`prw-------`). Filesystem permissions *are* the
-authentication — only your user account can send commands. The CLI writes one
-command per line to that pipe; structured payloads (`js` code, selectors) are
-base64-encoded so anything survives the line protocol.
+with owner-only permissions (`prw-------`). This prevents other user accounts
+from writing commands; it does not replace the in-app authorization switches.
+The CLI writes one command per line to that pipe; structured payloads (`js`
+code, selectors) are base64-encoded so anything survives the line protocol.
 
 Every command passes a response filename; the app writes the result into its
 own response directory (`.../Straight Up Browser/responses/`) — JSON, or raw
 PNG for `screenshot` — which the CLI reads and deletes. The app only writes
 inside that directory; it will not accept an arbitrary path from the pipe.
 
-You can also drive it from plain shell, one command per line:
+After CLI automation is enabled, you can also drive it from plain shell, one
+command per line:
 
 ```bash
 echo "open https://example.com" > ~/Library/Application\ Support/Straight\ Up\ Browser/cli.pipe
