@@ -124,6 +124,10 @@ class TabManager: NSObject, ObservableObject {
         UserDefaults.standard.removeObject(forKey: closedTabsKey)
     }
 
+    func purgeClosedTabs(forSession sessionId: UUID) {
+        closedTabs.removeAll { $0.sessionId == sessionId }
+    }
+
     @objc private func historyDidClear() {
         closedTabs.removeAll()
     }

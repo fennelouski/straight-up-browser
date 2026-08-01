@@ -2220,8 +2220,19 @@ struct ContentView: View {
         let toClose = tabs.filter { $0.sessionKind == .container && $0.sessionId == session.id }
         for tab in toClose { tabManager.closeTab(tab, tabs: allTabs) }
         let id = session.id
-        modelContext.delete(session)
-        WKWebsiteDataStore.remove(forIdentifier: id) { _ in }
+        tabManager.purgeClosedTabs(forSession: id)
+        ContainerStoreRemoval.remove(identifier: id) { result in
+            switch result {
+            case .success:
+                modelContext.delete(session)
+            case .failure(let error):
+                let alert = NSAlert()
+                alert.alertStyle = .critical
+                alert.messageText = String(localized: "Container Data Couldn’t Be Removed")
+                alert.informativeText = error.localizedDescription
+                alert.runModal()
+            }
+        }
     }
 
     private func deleteGroup(_ group: TabGroup) {

@@ -8,6 +8,22 @@
 import Foundation
 import WebKit
 
+enum ContainerStoreRemoval {
+    static func result(for error: Error?) -> Result<Void, Error> {
+        if let error { return .failure(error) }
+        return .success(())
+    }
+
+    static func remove(
+        identifier: UUID,
+        completion: @escaping @MainActor @Sendable (Result<Void, Error>) -> Void
+    ) {
+        WKWebsiteDataStore.remove(forIdentifier: identifier) { error in
+            completion(result(for: error))
+        }
+    }
+}
+
 // Scoped browsing-data clearing for the Privacy menu. WebKit can't un-delete data,
 // so the caller confirms with a warning first; there is no undo. Hard-reload (a page
 // scope with no deletion) lives in ContentView.hardReload() / ⇧⌘R.
