@@ -1129,6 +1129,8 @@ struct PrivacySettingsView: View {
 // MARK: - Clear Data Dialog
 
 struct ClearDataDialog: View {
+    @Query private var tabs: [Tab]
+
     @Binding var isPresented: Bool
     @Binding var clearHistory: Bool
     @Binding var clearCookies: Bool
@@ -1170,8 +1172,7 @@ struct ClearDataDialog: View {
 
     private func clearSelectedData() {
         if clearHistory {
-            UserDefaults.standard.removeObject(forKey: "normal_session_data")
-            UserDefaults.standard.synchronize()
+            BrowsingDataCleaner.clearHistory(in: tabs)
         }
 
         if clearCookies {
