@@ -129,6 +129,7 @@ final class Tab {
 
     // Back/forward navigation lives in WKWebView's back-forward list.
     // historyStrings is only a visit log for omnibar suggestions.
+    @MainActor
     func navigateTo(_ url: URL) {
         Logger.log("Tab.navigateTo: setting URL to \(url.absoluteString)", type: "Tab")
         self.url = url

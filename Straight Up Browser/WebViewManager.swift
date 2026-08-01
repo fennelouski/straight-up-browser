@@ -795,7 +795,7 @@ class WebViewManager: NSObject, ObservableObject {
     }
 
     // Evaluate JavaScript on the active web view
-    func evaluateJavaScript(_ javaScriptString: String, completionHandler: ((Any?, Error?) -> Void)? = nil) {
+    func evaluateJavaScript(_ javaScriptString: String, completionHandler: (@MainActor @Sendable (Any?, Error?) -> Void)? = nil) {
         activeWebView?.evaluateJavaScript(javaScriptString, completionHandler: completionHandler)
     }
 
@@ -808,7 +808,7 @@ class WebViewManager: NSObject, ObservableObject {
         activeWebView = nil
     }
 
-    deinit {
+    isolated deinit {
         cleanup()
         Logger.log("WebViewManager deallocated", type: "WebViewManager")
     }

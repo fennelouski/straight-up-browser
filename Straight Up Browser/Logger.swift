@@ -11,9 +11,9 @@ import os
 /// Thin wrapper over unified logging. View output in Console.app or with:
 ///   log stream --predicate 'subsystem == "com.straightupbrowser"'
 struct Logger {
-    private static let logger = os.Logger(subsystem: "com.straightupbrowser", category: "app")
+    nonisolated private static let logger = os.Logger(subsystem: "com.straightupbrowser", category: "app")
 
-    static func log(
+    nonisolated static func log(
         _ message: String,
         type: String = "",
         file: String = #file,
@@ -25,19 +25,19 @@ struct Logger {
         logger.debug("\(filename, privacy: .public):\(line) \(context, privacy: .public)\(message, privacy: .public)")
     }
 
-    static func debug(_ message: String, type: String = "", file: String = #file, function: String = #function, line: Int = #line) {
+    nonisolated static func debug(_ message: String, type: String = "", file: String = #file, function: String = #function, line: Int = #line) {
         log("[DEBUG] \(message)", type: type, file: file, function: function, line: line)
     }
 
-    static func info(_ message: String, type: String = "", file: String = #file, function: String = #function, line: Int = #line) {
+    nonisolated static func info(_ message: String, type: String = "", file: String = #file, function: String = #function, line: Int = #line) {
         log("[INFO] \(message)", type: type, file: file, function: function, line: line)
     }
 
-    static func warning(_ message: String, type: String = "", file: String = #file, function: String = #function, line: Int = #line) {
+    nonisolated static func warning(_ message: String, type: String = "", file: String = #file, function: String = #function, line: Int = #line) {
         log("[WARNING] \(message)", type: type, file: file, function: function, line: line)
     }
 
-    static func error(_ message: String, type: String = "", file: String = #file, function: String = #function, line: Int = #line) {
+    nonisolated static func error(_ message: String, type: String = "", file: String = #file, function: String = #function, line: Int = #line) {
         log("[ERROR] \(message)", type: type, file: file, function: function, line: line)
     }
 }

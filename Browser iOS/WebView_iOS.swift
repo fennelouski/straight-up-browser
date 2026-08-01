@@ -298,14 +298,18 @@ struct TabWebView: UIViewRepresentable {
                 setFavicon(cachedData, for: webView)
                 return
             }
+            let webViewTransfer = MainActorTransfer(value: webView)
             URLSession.shared.dataTask(with: url) { [weak self] data, response, _ in
-                guard let self = self else { return }
-                if let data = data,
-                   let httpResponse = response as? HTTPURLResponse,
-                   httpResponse.statusCode == 200, data.count > 0,
-                   UIImage(data: data) != nil {
-                    FaviconCache.shared.setFavicon(data, for: url)
-                    self.setFavicon(data, for: webView)
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let webView = webViewTransfer.value
+                    if let data,
+                       let httpResponse = response as? HTTPURLResponse,
+                       httpResponse.statusCode == 200, data.count > 0,
+                       UIImage(data: data) != nil {
+                        FaviconCache.shared.setFavicon(data, for: url)
+                        self.setFavicon(data, for: webView)
+                    }
                 }
             }.resume()
         }
@@ -314,15 +318,16 @@ struct TabWebView: UIViewRepresentable {
             DispatchQueue.main.async { self.tab(for: webView)?.favicon = data }
         }
 
-        override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-            if keyPath == "estimatedProgress", let webView = object as? WKWebView {
-                DispatchQueue.main.async { self.parent.progressValue = webView.estimatedProgress }
-            } else if keyPath == #keyPath(WKWebView.url), let webView = object as? WKWebView {
-                // The page rewrote its own URL (pushState/replaceState/hash) — no
-                // delegate callback fires. Sync the tab, or the next view update
-                // sees tab != web view and re-loads the stale URL.
-                guard let newURL = webView.url else { return }
-                DispatchQueue.main.async {
+        nonisolated override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
+            let transfer = MainActorTransfer(value: object)
+            MainActor.assumeIsolated {
+                if keyPath == "estimatedProgress", let webView = transfer.value as? WKWebView {
+                    self.parent.progressValue = webView.estimatedProgress
+                } else if keyPath == #keyPath(WKWebView.url), let webView = transfer.value as? WKWebView {
+                    // The page rewrote its own URL (pushState/replaceState/hash) — no
+                    // delegate callback fires. Sync the tab, or the next view update
+                    // sees tab != web view and re-loads the stale URL.
+                    guard let newURL = webView.url else { return }
                     if self.isActiveWebView(webView) { self.lastRequestedURL = newURL }
                     if let tab = self.tab(for: webView),
                        Tab.normalizeURLForComparison(tab.url) != Tab.normalizeURLForComparison(newURL) {
@@ -334,7 +339,7 @@ struct TabWebView: UIViewRepresentable {
 
         // MARK: - SSL
 
-        func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping @MainActor @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
             guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
                   let serverTrust = challenge.protectionSpace.serverTrust else {
                 completionHandler(.performDefaultHandling, nil)
@@ -383,7 +388,7 @@ struct TabWebView: UIViewRepresentable {
 
         // MARK: - Navigation policy (downloads, ⌘/⌥-click, JS toggle)
 
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, preferences: WKWebpagePreferences, decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, preferences: WKWebpagePreferences, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
             if navigationAction.shouldPerformDownload {
                 decisionHandler(.download, preferences)
                 return
@@ -436,7 +441,7 @@ struct TabWebView: UIViewRepresentable {
             decisionHandler(.allow, preferences)
         }
 
-        func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
             // Anything WebKit can't render inline (zip, attachments…) is a download.
             decisionHandler(navigationResponse.canShowMIMEType ? .allow : .download)
         }
@@ -468,7 +473,7 @@ struct TabWebView: UIViewRepresentable {
             }
         }
 
-        func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+        func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping @MainActor @Sendable (URL?) -> Void) {
             // iPad sandbox: downloads land in Documents/Downloads (the only writable
             // spot). The macOS `downloadsFolder` setting has no iPad equivalent.
             let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -522,20 +527,20 @@ struct TabWebView: UIViewRepresentable {
 
         // Without this, WebKit denies getUserMedia outright and pages report "no camera or
         // microphone found". .prompt hands the decision to WebKit's own permission UI.
-        func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping @MainActor @Sendable (WKPermissionDecision) -> Void) {
             decisionHandler(.prompt)
         }
 
         // MARK: - JS dialogs (file uploads use WKWebView's native iOS picker)
 
-        func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable () -> Void) {
             guard let presenter = topPresenter() else { completionHandler(); return }
             let alert = UIAlertController(title: frame.request.url?.host ?? String(localized: "This page"), message: message, preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default) { _ in completionHandler() })
             presenter.present(alert, animated: true)
         }
 
-        func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable (Bool) -> Void) {
             guard let presenter = topPresenter() else { completionHandler(false); return }
             let alert = UIAlertController(title: frame.request.url?.host ?? String(localized: "This page"), message: message, preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel) { _ in completionHandler(false) })
@@ -543,7 +548,7 @@ struct TabWebView: UIViewRepresentable {
             presenter.present(alert, animated: true)
         }
 
-        func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+        func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable (String?) -> Void) {
             guard let presenter = topPresenter() else { completionHandler(nil); return }
             let alert = UIAlertController(title: frame.request.url?.host ?? String(localized: "This page"), message: prompt, preferredStyle: .alert)
             alert.addTextField { $0.text = defaultText }
@@ -651,11 +656,15 @@ final class WebViewContainer_iOS: UIView {
         super.willRemoveSubview(subview)
     }
 
-    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-        if keyPath == "estimatedProgress" || keyPath == #keyPath(WKWebView.url), object is WKWebView {
-            coordinator?.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
-        } else {
-            super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+    nonisolated override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
+        let transfer = MainActorTransfer(value: (object, change, context))
+        MainActor.assumeIsolated {
+            let (object, change, context) = transfer.value
+            if keyPath == "estimatedProgress" || keyPath == #keyPath(WKWebView.url), object is WKWebView {
+                coordinator?.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+            } else {
+                super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+            }
         }
     }
 }

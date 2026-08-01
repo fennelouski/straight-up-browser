@@ -7,6 +7,16 @@
 
 import Foundation
 
+/// Explicitly marks values crossing legacy callback boundaries whose runtime
+/// queue/actor guarantee is stronger than their imported Objective-C type.
+struct MainActorTransfer<Value>: @unchecked Sendable {
+    nonisolated(unsafe) let value: Value
+
+    nonisolated init(value: Value) {
+        self.value = value
+    }
+}
+
 nonisolated enum BrowserAccessibility {
     static func tabLabel(
         title: String,

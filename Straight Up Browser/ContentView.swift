@@ -1747,7 +1747,7 @@ struct ContentView: View {
                 preloadFaviconsForAllTabs()
 
                 // Setup observer for tab title display mode changes
-                NotificationCenter.default.addObserver(
+                NotificationCenter.default.addMainActorObserver(
                     forName: .browserTabTitleDisplayModeChanged,
                     object: nil,
                     queue: .main
@@ -1756,7 +1756,7 @@ struct ContentView: View {
                 }
 
                 // Find in page (Cmd+F)
-                NotificationCenter.default.addObserver(
+                NotificationCenter.default.addMainActorObserver(
                     forName: .browserFindInPage,
                     object: nil,
                     queue: .main
@@ -1770,7 +1770,7 @@ struct ContentView: View {
                 }
 
                 // Cmd+G / Cmd+Shift+G cycle through matches
-                NotificationCenter.default.addObserver(
+                NotificationCenter.default.addMainActorObserver(
                     forName: .browserFindNext,
                     object: nil,
                     queue: .main
@@ -1778,7 +1778,7 @@ struct ContentView: View {
                     performFind()
                 }
 
-                NotificationCenter.default.addObserver(
+                NotificationCenter.default.addMainActorObserver(
                     forName: .browserFindPrevious,
                     object: nil,
                     queue: .main
@@ -1789,7 +1789,7 @@ struct ContentView: View {
                 // Hold-Cmd+Q progress HUD. The manager sends a target and the
                 // hold duration; Core Animation sweeps the bar smoothly, so it
                 // can't stutter the way the old per-frame feed did.
-                NotificationCenter.default.addObserver(
+                NotificationCenter.default.addMainActorObserver(
                     forName: .browserQuitHoldProgress,
                     object: nil,
                     queue: .main
@@ -1812,7 +1812,7 @@ struct ContentView: View {
                 }
 
                 // Screenshot shutter flash
-                NotificationCenter.default.addObserver(
+                NotificationCenter.default.addMainActorObserver(
                     forName: .browserScreenshotFlash,
                     object: nil,
                     queue: .main
@@ -1824,7 +1824,7 @@ struct ContentView: View {
                 }
 
                 // Cmd+Shift+H shortcut cheat sheet
-                NotificationCenter.default.addObserver(
+                NotificationCenter.default.addMainActorObserver(
                     forName: .browserToggleShortcutOverlay,
                     object: nil,
                     queue: .main
@@ -1833,7 +1833,7 @@ struct ContentView: View {
                 }
 
                 // Toggle tab bar between hidden and last visible width (Cmd+Shift+L)
-                NotificationCenter.default.addObserver(
+                NotificationCenter.default.addMainActorObserver(
                     forName: .browserToggleTabBar,
                     object: nil,
                     queue: .main
@@ -1847,7 +1847,7 @@ struct ContentView: View {
                     }
                 }
 
-                NotificationCenter.default.addObserver(forName: .browserShowTabGrid, object: nil, queue: .main) { [self] _ in
+                NotificationCenter.default.addMainActorObserver(forName: .browserShowTabGrid, object: nil, queue: .main) { [self] _ in
                     // Snapshot the tab you're on first; every other tab was captured
                     // when you switched away from it.
                     webViewManager?.captureThumbnail(for: tabManager.selectedTabId)
@@ -1855,26 +1855,26 @@ struct ContentView: View {
                 }
 
                 // Privacy & session commands (Privacy menu + ⇧⌘N / ⇧⌘E)
-                NotificationCenter.default.addObserver(forName: .browserNewIncognitoTab, object: nil, queue: .main) { [self] _ in
+                NotificationCenter.default.addMainActorObserver(forName: .browserNewIncognitoTab, object: nil, queue: .main) { [self] _ in
                     _ = tabManager.createIncognitoTab()   // fresh, isolated private session
                     showOmnibar = true
                 }
-                NotificationCenter.default.addObserver(forName: .browserNewRegularTab, object: nil, queue: .main) { [self] _ in
+                NotificationCenter.default.addMainActorObserver(forName: .browserNewRegularTab, object: nil, queue: .main) { [self] _ in
                     _ = tabManager.createNewTab()          // force a normal tab, leaving any session
                     showOmnibar = true
                 }
-                NotificationCenter.default.addObserver(forName: .browserConvertTabToIncognito, object: nil, queue: .main) { [self] _ in
+                NotificationCenter.default.addMainActorObserver(forName: .browserConvertTabToIncognito, object: nil, queue: .main) { [self] _ in
                     if let tab = allTabs.first(where: { $0.id == tabManager.selectedTabId }) {
                         tabManager.convertToIncognito(tab)
                     }
                 }
-                NotificationCenter.default.addObserver(forName: .browserClearSiteData, object: nil, queue: .main) { [self] _ in
+                NotificationCenter.default.addMainActorObserver(forName: .browserClearSiteData, object: nil, queue: .main) { [self] _ in
                     clearActiveSite()
                 }
-                NotificationCenter.default.addObserver(forName: .browserClearSessionData, object: nil, queue: .main) { [self] _ in
+                NotificationCenter.default.addMainActorObserver(forName: .browserClearSessionData, object: nil, queue: .main) { [self] _ in
                     clearActiveSession()
                 }
-                NotificationCenter.default.addObserver(forName: .browserClearAllData, object: nil, queue: .main) { [self] _ in
+                NotificationCenter.default.addMainActorObserver(forName: .browserClearAllData, object: nil, queue: .main) { [self] _ in
                     clearAllData()
                 }
 
@@ -2230,22 +2230,21 @@ struct ContentView: View {
     private func preloadFaviconForTab(tab: Tab, url: URL) {
         guard let faviconURL = URL(string: "\(url.scheme ?? "https")://\(url.host ?? "")/favicon.ico") else { return }
 
+        let tabTransfer = MainActorTransfer(value: tab)
         URLSession.shared.dataTask(with: faviconURL) { data, response, error in
-            if let data = data,
-               let httpResponse = response as? HTTPURLResponse,
-               httpResponse.statusCode == 200,
-               data.count > 0,
-               NSImage(data: data) != nil {
-                // Cache the favicon and update the tab on the main thread
-                FaviconCache.shared.setFavicon(data, for: url)
-                DispatchQueue.main.async {
+            Task { @MainActor in
+                let tab = tabTransfer.value
+                if let data,
+                   let httpResponse = response as? HTTPURLResponse,
+                   httpResponse.statusCode == 200,
+                   data.count > 0,
+                   NSImage(data: data) != nil {
+                    FaviconCache.shared.setFavicon(data, for: url)
                     tab.favicon = data
+                    return
                 }
-                return
-            }
 
-            // No favicon.ico: fall back to a generated domain-initial icon
-            DispatchQueue.main.async {
+                // No favicon.ico: fall back to a generated domain-initial icon
                 if tab.favicon == nil, let host = url.host,
                    let domainInitial = DomainInitialsGenerator.shared.generateInitialImage(for: host) {
                     tab.favicon = domainInitial

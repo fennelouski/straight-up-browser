@@ -211,15 +211,8 @@ struct Straight_Up_BrowserApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .onAppear {
-                    // Set up notification observer for settings
-                    NotificationCenter.default.addObserver(
-                        forName: .browserShowSettings,
-                        object: nil,
-                        queue: .main
-                    ) { _ in
-                        openWindow(id: "settings")
-                    }
+                .onReceive(NotificationCenter.default.publisher(for: .browserShowSettings)) { _ in
+                    openWindow(id: "settings")
                 }
                 // Links handed to us by the OS: we're the default browser, or the
                 // user picked Browser from "Open With". Must be SwiftUI's hook —

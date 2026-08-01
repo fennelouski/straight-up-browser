@@ -21,8 +21,8 @@ struct TabDropDelegate: DropDelegate {
         }
 
         itemProvider.loadObject(ofClass: NSString.self) { (string, error) in
+            let draggedTabIdString = string as? String
             DispatchQueue.main.async {
-                let draggedTabIdString = string as? String
                 if let draggedTabIdString = draggedTabIdString,
                    let draggedTabId = UUID(uuidString: draggedTabIdString) {
                     Logger.log("Dropped tab \(draggedTabId) onto tab \(self.tabId)", type: "TabRowView")
