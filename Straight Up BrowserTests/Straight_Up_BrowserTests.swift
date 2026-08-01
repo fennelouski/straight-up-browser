@@ -1167,3 +1167,61 @@ struct BrowserAccessibilityTests {
         #expect(value.contains("2 downloads"))
     }
 }
+
+@MainActor
+private final class WebKitNavigationProbe: NSObject, WKNavigationDelegate {
+    private var continuation: CheckedContinuation<URL?, Error>?
+
+    func load(_ html: String, baseURL: URL, in webView: WKWebView) async throws -> URL? {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+            webView.navigationDelegate = self
+            webView.loadHTMLString(html, baseURL: baseURL)
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        continuation?.resume(returning: webView.url)
+        continuation = nil
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFail navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        continuation?.resume(throwing: error)
+        continuation = nil
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        continuation?.resume(throwing: error)
+        continuation = nil
+    }
+}
+
+struct WebKitNavigationIntegrationTests {
+    @Test @MainActor
+    func localNavigationCommitsAndExposesTheLoadedDocument() async throws {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let probe = WebKitNavigationProbe()
+        let baseURL = try #require(URL(string: "https://integration.test/page"))
+
+        let committedURL = try await probe.load(
+            "<html><head><title>Navigation Ready</title></head><body>Loaded</body></html>",
+            baseURL: baseURL,
+            in: webView
+        )
+        let title = try await webView.evaluateJavaScript("document.title") as? String
+
+        #expect(committedURL?.host == "integration.test")
+        #expect(title == "Navigation Ready")
+        webView.navigationDelegate = nil
+    }
+}
