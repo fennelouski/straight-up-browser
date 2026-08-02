@@ -152,11 +152,13 @@ enum ExtensionWindowRouting {
     }
 }
 
-struct ExtensionPathRegistry {
+final class ExtensionPathRegistry {
     private static let pathsKey = "loadedExtensionPaths"
     private static let legacyPathKey = "loadedExtensionPath"
+    private static let bookmarksKey = "loadedExtensionBookmarks"
 
     private let defaults: UserDefaults
+    private var activeURLs: [String: URL] = [:]
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -165,21 +167,65 @@ struct ExtensionPathRegistry {
 
     var paths: [URL] {
         let stored = defaults.stringArray(forKey: Self.pathsKey) ?? []
-        return uniqueStandardizedURLs(stored.map { URL(fileURLWithPath: $0) })
+        let bookmarks = bookmarkDataByPath()
+        return uniqueStandardizedURLs(stored.compactMap { path in
+            if let active = activeURLs[path] {
+                return active
+            }
+            guard let encoded = bookmarks[path],
+                  let data = Data(base64Encoded: encoded),
+                  let resolved = SecurityScopedBookmark.resolve(data) else {
+                // Pre-sandbox path records cannot confer access. Returning the
+                // URL lets the normal load error explain that the folder must
+                // be selected again instead of silently deleting the record.
+                return URL(fileURLWithPath: path)
+            }
+            activeURLs[path] = resolved
+            return resolved
+        })
     }
 
     func remember(_ directory: URL) {
-        store(paths + [directory])
+        let standardized = directory.standardizedFileURL
+        let existing = (defaults.stringArray(forKey: Self.pathsKey) ?? [])
+            .map { URL(fileURLWithPath: $0) }
+        store(existing + [standardized])
+
+        guard let data = SecurityScopedBookmark.data(for: standardized) else {
+            Logger.log(
+                "Could not persist extension folder access: \(standardized.path)",
+                type: "WebExtension"
+            )
+            return
+        }
+        var bookmarks = bookmarkDataByPath()
+        bookmarks[standardized.path] = data.base64EncodedString()
+        defaults.set(bookmarks, forKey: Self.bookmarksKey)
     }
 
     func forget(_ directory: URL) {
         let removedPath = directory.standardizedFileURL.path
-        store(paths.filter { $0.path != removedPath })
+        let stored = defaults.stringArray(forKey: Self.pathsKey) ?? []
+        store(
+            stored
+                .filter { URL(fileURLWithPath: $0).standardizedFileURL.path != removedPath }
+                .map { URL(fileURLWithPath: $0) }
+        )
+        var bookmarks = bookmarkDataByPath()
+        bookmarks.removeValue(forKey: removedPath)
+        defaults.set(bookmarks, forKey: Self.bookmarksKey)
+        activeURLs.removeValue(forKey: removedPath)?
+            .stopAccessingSecurityScopedResource()
     }
 
     func forgetAll() {
+        activeURLs.values.forEach {
+            $0.stopAccessingSecurityScopedResource()
+        }
+        activeURLs.removeAll()
         defaults.removeObject(forKey: Self.pathsKey)
         defaults.removeObject(forKey: Self.legacyPathKey)
+        defaults.removeObject(forKey: Self.bookmarksKey)
     }
 
     private func migrateLegacyPathIfNeeded() {
@@ -196,6 +242,10 @@ struct ExtensionPathRegistry {
             uniqueStandardizedURLs(urls).map(\.path),
             forKey: Self.pathsKey
         )
+    }
+
+    private func bookmarkDataByPath() -> [String: String] {
+        defaults.dictionary(forKey: Self.bookmarksKey) as? [String: String] ?? [:]
     }
 
     private func uniqueStandardizedURLs(_ urls: [URL]) -> [URL] {

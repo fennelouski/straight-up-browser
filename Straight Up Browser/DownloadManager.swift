@@ -114,6 +114,152 @@ enum DownloadVisuals {
     }
 }
 
+#if os(macOS)
+enum SecurityScopedBookmark {
+    static func data(for url: URL) -> Data? {
+        try? url.bookmarkData(
+            options: .withSecurityScope,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+    }
+
+    static func resolve(_ data: Data) -> URL? {
+        var isStale = false
+        guard let url = try? URL(
+            resolvingBookmarkData: data,
+            options: [.withSecurityScope, .withoutUI],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        ), url.startAccessingSecurityScopedResource() else { return nil }
+        return url
+    }
+}
+
+@MainActor
+final class SecurityScopedFolderRegistry {
+    static let shared = SecurityScopedFolderRegistry()
+
+    private static let bookmarksKey = "securityScopedFolderBookmarks"
+    private let defaults: UserDefaults
+    private var activeURLs: [String: URL] = [:]
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    @discardableResult
+    func remember(_ url: URL) -> Bool {
+        let standardized = url.standardizedFileURL
+        guard let data = SecurityScopedBookmark.data(for: standardized),
+              let resolved = SecurityScopedBookmark.resolve(data) else {
+            return false
+        }
+        activeURLs[standardized.path]?
+            .stopAccessingSecurityScopedResource()
+        activeURLs[standardized.path] = resolved
+        var bookmarks = bookmarkDataByPath()
+        bookmarks[standardized.path] = data.base64EncodedString()
+        defaults.set(bookmarks, forKey: Self.bookmarksKey)
+        return true
+    }
+
+    func accessibleURL(for url: URL) -> URL {
+        let standardized = url.standardizedFileURL
+        if let active = activeURLs[standardized.path] {
+            return active
+        }
+        guard let encoded = bookmarkDataByPath()[standardized.path],
+              let data = Data(base64Encoded: encoded),
+              let resolved = SecurityScopedBookmark.resolve(data) else {
+            return standardized
+        }
+        activeURLs[standardized.path] = resolved
+        return resolved
+    }
+
+    func forget(_ url: URL) {
+        let path = url.standardizedFileURL.path
+        activeURLs.removeValue(forKey: path)?
+            .stopAccessingSecurityScopedResource()
+        var bookmarks = bookmarkDataByPath()
+        bookmarks.removeValue(forKey: path)
+        defaults.set(bookmarks, forKey: Self.bookmarksKey)
+    }
+
+    private func bookmarkDataByPath() -> [String: String] {
+        defaults.dictionary(forKey: Self.bookmarksKey) as? [String: String] ?? [:]
+    }
+
+    deinit {
+        activeURLs.values.forEach {
+            $0.stopAccessingSecurityScopedResource()
+        }
+    }
+}
+
+@MainActor
+final class DownloadFolderAccess {
+    static let shared = DownloadFolderAccess()
+
+    private enum Key {
+        static let bookmark = "downloadsFolderSecurityScopedBookmark"
+        static let path = "downloadsFolderSecurityScopedPath"
+        static let configuredPath = "downloadsFolder"
+    }
+
+    private let defaults: UserDefaults
+    private var activeURL: URL?
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    @discardableResult
+    func remember(_ url: URL) -> Bool {
+        guard let data = SecurityScopedBookmark.data(for: url),
+              let resolved = SecurityScopedBookmark.resolve(data) else {
+            return false
+        }
+        activeURL?.stopAccessingSecurityScopedResource()
+        activeURL = resolved
+        defaults.set(data, forKey: Key.bookmark)
+        defaults.set(url.standardizedFileURL.path, forKey: Key.path)
+        defaults.set(url.standardizedFileURL.path, forKey: Key.configuredPath)
+        return true
+    }
+
+    func configuredFolder() -> URL? {
+        guard let configuredPath = defaults.string(forKey: Key.configuredPath),
+              !configuredPath.isEmpty,
+              configuredPath
+                == defaults.string(forKey: Key.path) else { return nil }
+        if let activeURL {
+            return activeURL
+        }
+        guard let data = defaults.data(forKey: Key.bookmark),
+              let resolved = SecurityScopedBookmark.resolve(data),
+              resolved.standardizedFileURL.path == configuredPath else {
+            return nil
+        }
+        activeURL = resolved
+        return resolved
+    }
+
+    func useSystemDownloadsFolder() {
+        activeURL?.stopAccessingSecurityScopedResource()
+        activeURL = nil
+        defaults.removeObject(forKey: Key.bookmark)
+        defaults.removeObject(forKey: Key.path)
+        defaults.set("", forKey: Key.configuredPath)
+    }
+
+    deinit {
+        activeURL?.stopAccessingSecurityScopedResource()
+    }
+}
+#endif
+
 @MainActor
 final class DownloadManager: ObservableObject {
     static let shared = DownloadManager()
@@ -129,6 +275,9 @@ final class DownloadManager: ObservableObject {
     private var nextColorIndex = 0
 
     init(storeURL: URL? = nil) {
+        #if os(macOS)
+        _ = DownloadFolderAccess.shared.configuredFolder()
+        #endif
         if let storeURL {
             self.storeURL = storeURL
         } else {
