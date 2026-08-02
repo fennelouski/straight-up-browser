@@ -257,6 +257,9 @@ class WebViewManager: NSObject, ObservableObject {
 
     // Store web views per tab ID
     private var webViews: [UUID: WKWebView] = [:]
+    // Includes memory-unloaded tabs. Extensions still regard those as open,
+    // and this ownership map keeps their window routing stable until real close.
+    private var ownedTabIds: Set<UUID> = []
 
     // Session isolation (see SessionKind). A tab's session is registered here so
     // getWebView can pick its WKWebsiteDataStore when the web view is first built.
@@ -511,9 +514,12 @@ class WebViewManager: NSObject, ObservableObject {
         Logger.log("WebViewManager: Creating new WKWebView for tab \(tabId)", type: "WebViewManager")
         let webView = createWebView(for: tabId)
         webViews[tabId] = webView
+        ownedTabIds.insert(tabId)
         applyMediaSuspension(mediaSuspendedTabs.contains(tabId), to: webView)
         #if canImport(AppKit)
-        MainActor.assumeIsolated { WebExtensionManager.shared.tabOpened(tabId) }
+        MainActor.assumeIsolated {
+            WebExtensionManager.shared.tabOpened(tabId, in: self)
+        }
         #endif
         // Restore scroll + back/forward if this tab was unloaded under memory pressure
         if #available(macOS 12.0, *), let state = savedInteractionStates.removeValue(forKey: tabId) {
@@ -539,7 +545,13 @@ class WebViewManager: NSObject, ObservableObject {
             Logger.log("WebViewManager: Switching active web view for tab \(tabId)", type: "WebViewManager")
             activeWebView = webView
             #if canImport(AppKit)
-            MainActor.assumeIsolated { WebExtensionManager.shared.activeTabChanged(to: tabId, from: previousTabId) }
+            MainActor.assumeIsolated {
+                WebExtensionManager.shared.activeTabChanged(
+                    to: tabId,
+                    from: previousTabId,
+                    in: self
+                )
+            }
             #endif
         } else {
             Logger.log("WebViewManager setActiveTab: activeWebView already correct for tab \(tabId)", type: "WebViewManager")
@@ -552,8 +564,8 @@ class WebViewManager: NSObject, ObservableObject {
         webViews.first(where: { $0.value === webView })?.key
     }
 
-    // Live tab state read by the web extension bridge (WebExtension.swift).
-    var liveTabIds: [UUID] { Array(webViews.keys) }
+    // Open-tab state read by the web extension bridge (WebExtension.swift).
+    var liveTabIds: [UUID] { Array(ownedTabIds) }
     func existingWebView(for id: UUID) -> WKWebView? { webViews[id] }
     var activeTabId: UUID? { activeWebView.flatMap { tabId(for: $0) } }
 
@@ -580,7 +592,9 @@ class WebViewManager: NSObject, ObservableObject {
 
             if notifyClosed {
                 #if canImport(AppKit)
-                MainActor.assumeIsolated { WebExtensionManager.shared.tabClosed(tabId) }
+                MainActor.assumeIsolated {
+                    WebExtensionManager.shared.tabClosed(tabId, in: self)
+                }
                 #endif
             }
             Logger.log("Removed web view for tab \(tabId)", type: "WebViewManager")
@@ -591,6 +605,7 @@ class WebViewManager: NSObject, ObservableObject {
         // rebuild in the same store); drop it only on a genuine close. This must
         // run even when the tab never materialized a WebView.
         if notifyClosed {
+            ownedTabIds.remove(tabId)
             tabSessions.removeValue(forKey: tabId)
             thumbnails.removeValue(forKey: tabId)
             mediaSuspendedTabs.remove(tabId)
@@ -614,6 +629,7 @@ class WebViewManager: NSObject, ObservableObject {
     func adoptWebView(_ webView: WKWebView, for tabId: UUID) {
         applyStandardSetup(to: webView)
         webViews[tabId] = webView
+        ownedTabIds.insert(tabId)
         let blockingActive = UserDefaults.standard.bool(forKey: "adBlockEnabled")
             && Self.adBlockList != nil
         if blockingActive, let list = Self.adBlockList {
@@ -623,7 +639,9 @@ class WebViewManager: NSObject, ObservableObject {
         }
         Self.reportContentBlocking(blockingActive, for: tabId)
         #if canImport(AppKit)
-        MainActor.assumeIsolated { WebExtensionManager.shared.tabOpened(tabId) }
+        MainActor.assumeIsolated {
+            WebExtensionManager.shared.tabOpened(tabId, in: self)
+        }
         #endif
         Logger.log("WebViewManager: adopted external WebView for tab \(tabId)", type: "WebViewManager")
     }
