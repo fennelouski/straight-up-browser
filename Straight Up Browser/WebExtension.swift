@@ -32,6 +32,17 @@ enum ExtensionIntegrityError: LocalizedError {
     }
 }
 
+enum WebExtensionBridgeError: LocalizedError {
+    case tabCreationUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .tabCreationUnavailable:
+            String(localized: "The browser couldn't create the extension's requested tab.")
+        }
+    }
+}
+
 enum ExtensionIntegrityFingerprint {
     static func fingerprint(of directory: URL) throws -> String {
         let root = directory.standardizedFileURL
@@ -667,15 +678,14 @@ extension WebExtensionManager: WKWebExtensionControllerDelegate {
 
     // Route the extension's "open a tab" through the app's existing new-tab path.
     func webExtensionController(_ controller: WKWebExtensionController, openNewTabUsing configuration: WKWebExtension.TabConfiguration, for context: WKWebExtensionContext, completionHandler: @escaping ((any WKWebExtensionTab)?, (any Error)?) -> Void) {
-        if let url = configuration.url {
-            NotificationCenter.default.post(name: .browserOpenURL, object: nil,
-                                            userInfo: ["url": url.absoluteString, "newTab": true])
-        } else {
-            NotificationCenter.default.post(name: .browserNewTab, object: nil)
+        guard let id = activeManager?.createExtensionTab(
+            at: configuration.url,
+            shouldActivate: configuration.shouldBeActive
+        ) else {
+            completionHandler(nil, WebExtensionBridgeError.tabCreationUnavailable)
+            return
         }
-        // ponytail: don't hand back a tab object yet — the extension just won't
-        // track this specific tab. Wire a real handoff if that matters.
-        completionHandler(nil, nil)
+        completionHandler(tab(for: id), nil)
     }
 }
 

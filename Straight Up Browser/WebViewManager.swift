@@ -277,6 +277,17 @@ class WebViewManager: NSObject, ObservableObject {
     // Active web view for the currently selected tab
     @Published var activeWebView: WKWebView?
 
+    // Installed by the owning ContentView so extension requests create a real
+    // app tab and can return its identity to WebKit.
+    var extensionTabCreationHandler: ((URL?, Bool) -> UUID?)?
+
+    func createExtensionTab(
+        at url: URL?,
+        shouldActivate: Bool
+    ) -> UUID? {
+        extensionTabCreationHandler?(url, shouldActivate)
+    }
+
     // Card previews for the omnibar and the ⌘O tab grid. In-memory only: Tab has a
     // lastThumbnail column, but filling it would sync image blobs to CloudKit for a
     // purely cosmetic cache. Tabs with no capture yet fall back to their favicon.

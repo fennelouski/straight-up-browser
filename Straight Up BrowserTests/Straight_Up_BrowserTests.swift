@@ -1288,6 +1288,26 @@ struct WebExtensionPolicyTests {
         #expect(defaults.string(forKey: "loadedExtensionPath") == nil)
     }
 
+    @Test func extensionTabCreationReturnsTheCreatedTabIdentity() {
+        let manager = WebViewManager()
+        let expectedId = UUID()
+        let requestedURL = URL(string: "https://extension.example/new")!
+        var receivedURL: URL?
+        manager.extensionTabCreationHandler = { url, shouldActivate in
+            receivedURL = url
+            #expect(shouldActivate)
+            return expectedId
+        }
+
+        let createdId = manager.createExtensionTab(
+            at: requestedURL,
+            shouldActivate: true
+        )
+
+        #expect(createdId == expectedId)
+        #expect(receivedURL == requestedURL)
+    }
+
     @Test func privateTabsStayHiddenUntilTheUserOptsIn() {
         let normal = UUID()
         let privateTab = UUID()
