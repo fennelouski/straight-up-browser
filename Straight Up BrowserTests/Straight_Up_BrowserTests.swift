@@ -1253,6 +1253,41 @@ struct BrowsingDataCleanerTests {
 }
 
 struct WebExtensionPolicyTests {
+    @Test func everyLoadedExtensionPathPersistsAndCanBeRemovedIndividually() {
+        let suiteName = "extension-paths-\(UUID())"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let first = URL(fileURLWithPath: "/tmp/first-extension")
+        let second = URL(fileURLWithPath: "/tmp/second-extension")
+
+        var registry = ExtensionPathRegistry(defaults: defaults)
+        registry.remember(first)
+        registry.remember(second)
+
+        registry = ExtensionPathRegistry(defaults: defaults)
+        #expect(registry.paths == [first.standardizedFileURL, second.standardizedFileURL])
+
+        registry.forget(first)
+        #expect(ExtensionPathRegistry(defaults: defaults).paths == [
+            second.standardizedFileURL
+        ])
+    }
+
+    @Test func theLegacySingleExtensionPathMigratesIntoTheRegistry() {
+        let suiteName = "legacy-extension-path-\(UUID())"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let legacy = URL(fileURLWithPath: "/tmp/legacy-extension")
+        defaults.set(legacy.path, forKey: "loadedExtensionPath")
+
+        let registry = ExtensionPathRegistry(defaults: defaults)
+
+        #expect(registry.paths == [legacy.standardizedFileURL])
+        #expect(defaults.string(forKey: "loadedExtensionPath") == nil)
+    }
+
     @Test func privateTabsStayHiddenUntilTheUserOptsIn() {
         let normal = UUID()
         let privateTab = UUID()
