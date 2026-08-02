@@ -3,9 +3,9 @@
 //  Straight Up Browser
 //
 //  Remembers files that passed through the browser (downloaded or uploaded).
-//  Deliberately NOT SwiftData/CloudKit: these are absolute paths on THIS Mac,
-//  so syncing them to other devices would just be broken links. Plain local
-//  JSON. The app is not sandboxed, so raw paths are fine (no security scopes).
+//  Deliberately NOT SwiftData/CloudKit: these are device-local file URLs, so
+//  syncing them to another device would create broken links. Plain local JSON
+//  keeps the history beside the files it describes.
 //
 
 import Foundation
@@ -85,6 +85,23 @@ struct ActiveDownload: Identifiable, Equatable {
 
     var destinationURL: URL? {
         destinationPath.map { URL(fileURLWithPath: $0) }
+    }
+}
+
+enum DownloadFailureFeedback {
+    static func newMessage(
+        previous: [ActiveDownload],
+        current: [ActiveDownload]
+    ) -> String? {
+        let previouslyFailed = Set(
+            previous.filter { $0.state == .failed }.map(\.id)
+        )
+        guard let failure = current.first(where: {
+            $0.state == .failed && !previouslyFailed.contains($0.id)
+        }) else { return nil }
+        let reason = failure.errorMessage
+            ?? String(localized: "The download failed.")
+        return "\(failure.filename): \(reason)"
     }
 }
 

@@ -29,6 +29,7 @@ struct BrowserView_iOS: View {
     @StateObject private var tabManager = TabManager()
     @ObservedObject private var protectionStore = PageProtectionStore.shared
     @ObservedObject private var browsingHistory = BrowsingHistoryStore.shared
+    @ObservedObject private var downloadManager = DownloadManager.shared
     @State private var webViewManager: WebViewManager?
     @State private var navigationManager: NavigationManager?
     @State private var bookmarkManager: BookmarkManager?
@@ -54,7 +55,9 @@ struct BrowserView_iOS: View {
     @State private var showGestureGuide = false
     @State private var showSettings = false
     @State private var showLibrary = false
+    @State private var showDownloads = false
     @State private var librarySection = BrowserLibrarySection.bookmarks
+    @State private var downloadFailureMessage: String?
 
     // Group / workspace dialogs
     @State private var showNewGroup = false
@@ -241,11 +244,28 @@ struct BrowserView_iOS: View {
         } message: {
             Text(containerDeletionError ?? "")
         }
+        .alert(
+            "Download Failed",
+            isPresented: Binding(
+                get: { downloadFailureMessage != nil },
+                set: { if !$0 { downloadFailureMessage = nil } }
+            )
+        ) {
+            Button("View Downloads") { showDownloads = true }
+            Button("Dismiss", role: .cancel) {}
+        } message: {
+            Text(downloadFailureMessage ?? "")
+        }
         .sheet(isPresented: $showShortcutSheet) { ShortcutCheatSheet_iOS() }
         .sheet(isPresented: $showGestureGuide) {
             GestureGuide_iOS().presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showSettings) { Settings_iOS() }
+        .sheet(isPresented: $showDownloads) {
+            Downloads_iOS()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .sheet(isPresented: $showLibrary) {
             BrowserLibrary_iOS(
                 bookmarks: bookmarks,
@@ -271,6 +291,13 @@ struct BrowserView_iOS: View {
         // one merged publisher — a chain of ~16 .onReceive modifiers overwhelms
         // the SwiftUI type-checker.
         .onReceive(commandPublisher) { handleCommand($0) }
+        .onChange(of: downloadManager.activeDownloads) { previous, current in
+            guard let message = DownloadFailureFeedback.newMessage(
+                previous: previous,
+                current: current
+            ) else { return }
+            downloadFailureMessage = message
+        }
         .onReceive(NotificationCenter.default.publisher(for: .memoryPressure)) { note in
             handleMemoryPressure(
                 critical: note.userInfo?["critical"] as? Bool ?? false
@@ -338,6 +365,7 @@ struct BrowserView_iOS: View {
                 progressValue: progressValue,
                 isLoading: isLoading,
                 showFaviconProgress: progressFaviconRing,
+                downloads: downloadManager.activeDownloads,
                 onNewTab: createNewTab,
                 onCloseTab: { tabManager.closeTab($0, tabs: visibleTabs) },
                 onTogglePinned: {
@@ -354,6 +382,7 @@ struct BrowserView_iOS: View {
                 onMoveTab: { $0.groupId = $1 },
                 onSaveWorkspace: { workspaceName = ""; showSaveWorkspace = true },
                 onLibrary: { presentLibrary(.bookmarks) },
+                onDownloads: { showDownloads = true },
                 onSettings: { showSettings = true },
                 onShortcuts: { showShortcutSheet = true },
                 onGestures: { withAnimation { showSidebar = false }; showGestureGuide = true },

@@ -20,6 +20,35 @@ struct LoggingPrivacyTests {
 
 @MainActor
 struct PrivateTransferHistoryTests {
+    @Test func aNewDownloadFailureProducesOneUserFacingNotice() {
+        let id = UUID()
+        let downloading = ActiveDownload(
+            id: id,
+            tabId: UUID(),
+            filename: "archive.zip",
+            destinationPath: nil,
+            source: URL(string: "https://example.com/archive.zip"),
+            privacy: .standard,
+            startedAt: Date(),
+            progress: 0.4,
+            state: .downloading,
+            errorMessage: nil,
+            colorIndex: 0
+        )
+        var failed = downloading
+        failed.state = .failed
+        failed.errorMessage = "The network connection was lost."
+
+        #expect(DownloadFailureFeedback.newMessage(
+            previous: [downloading],
+            current: [failed]
+        ) == "archive.zip: The network connection was lost.")
+        #expect(DownloadFailureFeedback.newMessage(
+            previous: [failed],
+            current: [failed]
+        ) == nil)
+    }
+
     @Test func privateTransfersNeverEnterPersistentHistory() {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("private-transfer-\(UUID().uuidString).json")

@@ -133,6 +133,8 @@ struct TabWebView: UIViewRepresentable {
             }
         }
         private var downloadDestinations: [WKDownload: URL] = [:]
+        private var downloadTransferIds: [WKDownload: UUID] = [:]
+        private var downloadProgressObservers: [WKDownload: NSKeyValueObservation] = [:]
         var lastRequestedURL: URL?
         private var downloadNavigationHistory = DownloadNavigationHistory()
         private var certificateOverrideWebViews: Set<ObjectIdentifier> = []
@@ -461,13 +463,40 @@ struct TabWebView: UIViewRepresentable {
         // MARK: - Downloads
 
         func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
-            download.delegate = self
+            track(download, from: webView)
             resetTabURLAfterDownload(webView)
         }
 
         func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
-            download.delegate = self
+            track(download, from: webView)
             resetTabURLAfterDownload(webView)
+        }
+
+        private func track(_ download: WKDownload, from webView: WKWebView) {
+            download.delegate = self
+            let owningTab = tab(for: webView)
+            let transferId = DownloadManager.shared.beginDownload(
+                tabId: owningTab?.id ?? UUID(),
+                source: download.originalRequest?.url,
+                privacy: owningTab?.sessionKind == .incognito
+                    ? .privateSession
+                    : .standard
+            )
+            downloadTransferIds[download] = transferId
+            let downloadTransfer = MainActorTransfer(value: download)
+            downloadProgressObservers[download] = download.progress.observe(
+                \.fractionCompleted,
+                options: [.initial, .new]
+            ) { _, change in
+                Task { @MainActor in
+                    let progress = change.newValue
+                        ?? downloadTransfer.value.progress.fractionCompleted
+                    DownloadManager.shared.update(
+                        transferId,
+                        progress: progress
+                    )
+                }
+            }
         }
 
         // A download is not a navigation. If the tab's URL points at the file,
@@ -490,7 +519,23 @@ struct TabWebView: UIViewRepresentable {
             // spot). The macOS `downloadsFolder` setting has no iPad equivalent.
             let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             let folder = docs.appendingPathComponent("Downloads", isDirectory: true)
-            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            do {
+                try FileManager.default.createDirectory(
+                    at: folder,
+                    withIntermediateDirectories: true
+                )
+            } catch {
+                if let transferId = downloadTransferIds[download] {
+                    DownloadManager.shared.markFailed(
+                        transferId,
+                        error: error,
+                        canRestart: false
+                    )
+                }
+                cleanup(download)
+                completionHandler(nil)
+                return
+            }
 
             var destination = folder.appendingPathComponent(suggestedFilename)
             let base = destination.deletingPathExtension().lastPathComponent
@@ -502,14 +547,24 @@ struct TabWebView: UIViewRepresentable {
                 counter += 1
             }
             downloadDestinations[download] = destination
+            if let transferId = downloadTransferIds[download] {
+                DownloadManager.shared.setDestination(
+                    transferId,
+                    url: destination,
+                    suggestedFilename: suggestedFilename
+                )
+            }
             completionHandler(destination)
         }
 
         func downloadDidFinish(_ download: WKDownload) {
-            guard let url = downloadDestinations.removeValue(forKey: download) else { return }
-            // ponytail: a share sheet is the whole downloads UI on iPad (Save to
-            // Files / AirDrop reachable from here); a downloads panel is the
-            // upgrade path if this grates with multi-file downloads.
+            guard let url = downloadDestinations[download],
+                  let transferId = downloadTransferIds[download] else {
+                cleanup(download)
+                return
+            }
+            DownloadManager.shared.finish(transferId, at: url)
+            cleanup(download)
             DispatchQueue.main.async {
                 guard let presenter = self.topPresenter() else { return }
                 let av = UIActivityViewController(activityItems: [url], applicationActivities: nil)
@@ -520,8 +575,21 @@ struct TabWebView: UIViewRepresentable {
         }
 
         func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
-            downloadDestinations.removeValue(forKey: download)
             Logger.log("Download failed: \(error.localizedDescription)", type: "WebView")
+            if let transferId = downloadTransferIds[download] {
+                DownloadManager.shared.markFailed(
+                    transferId,
+                    error: error,
+                    canRestart: false
+                )
+            }
+            cleanup(download)
+        }
+
+        private func cleanup(_ download: WKDownload) {
+            downloadProgressObservers.removeValue(forKey: download)?.invalidate()
+            downloadTransferIds.removeValue(forKey: download)
+            downloadDestinations.removeValue(forKey: download)
         }
 
         // MARK: - Popups (window.open / target="_blank" → new tab)
