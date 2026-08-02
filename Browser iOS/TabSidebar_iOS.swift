@@ -20,6 +20,7 @@ struct TabSidebar_iOS: View {
     let progressValue: Double
     let isLoading: Bool
     let showFaviconProgress: Bool
+    let downloads: [ActiveDownload]
     let onNewTab: () -> Void
     let onCloseTab: (Tab) -> Void
     let onTogglePinned: (Tab) -> Void
@@ -29,6 +30,7 @@ struct TabSidebar_iOS: View {
     let onMoveTab: (Tab, UUID?) -> Void
     let onSaveWorkspace: () -> Void
     let onLibrary: () -> Void
+    let onDownloads: () -> Void
     let onSettings: () -> Void
     let onShortcuts: () -> Void
     let onGestures: () -> Void
@@ -88,6 +90,9 @@ struct TabSidebar_iOS: View {
                     workspaceMenu
                     Divider()
                     Button(action: onLibrary) { Label("Library", systemImage: "books.vertical") }
+                    Button(action: onDownloads) {
+                        Label("Downloads", systemImage: "arrow.down.circle")
+                    }
                     Button(action: onSettings) { Label("Settings", systemImage: "gearshape") }
                     Button(action: onShortcuts) { Label("Keyboard Shortcuts", systemImage: "keyboard") }
                     Button(action: onGestures) { Label("Touch Gestures", systemImage: "hand.draw") }
@@ -108,7 +113,10 @@ struct TabSidebar_iOS: View {
                        isIncognito: tab.sessionKind == .incognito,
                        progressValue: progressValue,
                        isLoading: isLoading,
-                       showFaviconProgress: showFaviconProgress)
+                       showFaviconProgress: showFaviconProgress,
+                       activeDownloadCount: downloads.filter {
+                           $0.tabId == tab.id
+                       }.count)
                 .tag(tab.id)
                 .swipeActions(edge: .trailing) {
                     Button(role: .destructive) { onCloseTab(tab) } label: {
@@ -148,6 +156,7 @@ struct TabRow_iOS: View {
     let progressValue: Double
     let isLoading: Bool
     let showFaviconProgress: Bool
+    let activeDownloadCount: Int
 
     private var displayTitle: String {
         if !tab.title.isEmpty && tab.title != String(localized: "New Tab") { return tab.title }
@@ -179,6 +188,15 @@ struct TabRow_iOS: View {
             if tab.isMuted {
                 Image(systemName: "speaker.slash.fill").font(.system(size: 10)).foregroundStyle(.secondary)
             }
+            if activeDownloadCount > 0 {
+                Label(
+                    "\(activeDownloadCount)",
+                    systemImage: "arrow.down.circle.fill"
+                )
+                .labelStyle(.titleAndIcon)
+                .font(.caption2)
+                .foregroundStyle(.blue)
+            }
         }
         .padding(.vertical, 2)
         // Leading tint stripe so container/incognito tabs are obvious unselected.
@@ -200,7 +218,7 @@ struct TabRow_iOS: View {
             isSelected: isActive,
             isLoading: isActive && isLoading,
             loadProgress: progressValue,
-            activeDownloadCount: 0
+            activeDownloadCount: activeDownloadCount
         ))
         .accessibilityHint("Select this tab")
         .accessibilityAddTraits(isActive ? .isSelected : [])
