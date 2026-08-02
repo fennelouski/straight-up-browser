@@ -1609,6 +1609,29 @@ struct PageSecurityStateTests {
 }
 
 struct BrowserAccessibilityTests {
+    @Test func modalChromeHidesTheUnderlyingWebContent() {
+        #expect(!BrowserAccessibility.backgroundIsHidden(
+            sidebarPresented: false,
+            omnibarPresented: false,
+            modalPresented: false
+        ))
+        #expect(BrowserAccessibility.backgroundIsHidden(
+            sidebarPresented: true,
+            omnibarPresented: false,
+            modalPresented: false
+        ))
+        #expect(BrowserAccessibility.backgroundIsHidden(
+            sidebarPresented: false,
+            omnibarPresented: true,
+            modalPresented: false
+        ))
+        #expect(BrowserAccessibility.backgroundIsHidden(
+            sidebarPresented: false,
+            omnibarPresented: false,
+            modalPresented: true
+        ))
+    }
+
     @Test func tabDescriptionNamesIdentityAndNonvisualState() {
         let label = BrowserAccessibility.tabLabel(
             title: "Account",

@@ -18,6 +18,14 @@ struct MainActorTransfer<Value>: @unchecked Sendable {
 }
 
 nonisolated enum BrowserAccessibility {
+    static func backgroundIsHidden(
+        sidebarPresented: Bool,
+        omnibarPresented: Bool,
+        modalPresented: Bool
+    ) -> Bool {
+        sidebarPresented || omnibarPresented || modalPresented
+    }
+
     static func tabLabel(
         title: String,
         url: URL?,
