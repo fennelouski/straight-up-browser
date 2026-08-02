@@ -446,6 +446,7 @@ struct DownloadsSettingsView: View {
     @AppStorage("optionClickFileTypes") private var optionClickFileTypes = ""
     @AppStorage("optionClickAlwaysDomains") private var optionClickAlwaysDomains = ""
     @AppStorage("optionClickNeverDomains") private var optionClickNeverDomains = ""
+    @State private var folderAccessError: String?
 
     var body: some View {
         Form {
@@ -482,7 +483,15 @@ struct DownloadsSettingsView: View {
                     HStack {
                         TextField("System Downloads folder", text: $downloadsFolder)
                             .textFieldStyle(.roundedBorder)
+                            .disabled(true)
                         Button("Choose…") { chooseFolder() }
+                        if !downloadsFolder.isEmpty {
+                            Button("Use System Folder") {
+                                DownloadFolderAccess.shared
+                                    .useSystemDownloadsFolder()
+                                downloadsFolder = ""
+                            }
+                        }
                     }
                 }
                 SettingCaptionRow(
@@ -496,6 +505,21 @@ struct DownloadsSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .alert(
+            "Folder Access Couldn’t Be Saved",
+            isPresented: Binding(
+                get: { folderAccessError != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        folderAccessError = nil
+                    }
+                }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(folderAccessError ?? "")
+        }
     }
 
     private func chooseFolder() {
@@ -508,7 +532,13 @@ struct DownloadsSettingsView: View {
         panel.message = "Select a folder to save downloaded files"
 
         if panel.runModal() == .OK, let url = panel.url {
-            downloadsFolder = url.path
+            if DownloadFolderAccess.shared.remember(url) {
+                downloadsFolder = url.path
+            } else {
+                folderAccessError = String(
+                    localized: "Choose the folder again, or keep using the system Downloads folder."
+                )
+            }
         }
     }
 }
@@ -689,6 +719,7 @@ struct ScreenshotsSettingsView: View {
     // out of touching twelve pickers by hand.
     @State private var bulkFormat = ScreenshotFormat.png
     @State private var showingCaptureHelp = false
+    @State private var folderAccessError: String?
 
     private var settings: ScreenshotSettings { .shared }
     private var store: ShortcutStore { .shared }
@@ -700,7 +731,16 @@ struct ScreenshotsSettingsView: View {
                     HStack {
                         TextField("~/Pictures/Browser Screenshots", text: $sharedFolder)
                             .textFieldStyle(.roundedBorder)
+                            .disabled(true)
                         Button("Choose…") { chooseFolder(into: $sharedFolder) }
+                        if !sharedFolder.isEmpty {
+                            Button("Use Pictures Folder") {
+                                SecurityScopedFolderRegistry.shared.forget(
+                                    URL(fileURLWithPath: sharedFolder)
+                                )
+                                sharedFolder = ""
+                            }
+                        }
                     }
                 }
                 SettingCaptionRow(
@@ -760,6 +800,21 @@ struct ScreenshotsSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .alert(
+            "Folder Access Couldn’t Be Saved",
+            isPresented: Binding(
+                get: { folderAccessError != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        folderAccessError = nil
+                    }
+                }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(folderAccessError ?? "")
+        }
     }
 
     @ViewBuilder
@@ -774,7 +829,15 @@ struct ScreenshotsSettingsView: View {
                 HStack {
                     TextField("Choose a folder for this shortcut", text: ownFolder)
                         .textFieldStyle(.roundedBorder)
+                        .disabled(true)
                     Button("Choose…") { chooseFolder(into: ownFolder) }
+                    Button("Clear") {
+                        SecurityScopedFolderRegistry.shared.forget(
+                            URL(fileURLWithPath: ownFolder.wrappedValue)
+                        )
+                        ownFolder.wrappedValue = ""
+                    }
+                    .disabled(ownFolder.wrappedValue.isEmpty)
                 }
                 .padding(.leading, 20)
             }
@@ -874,7 +937,13 @@ struct ScreenshotsSettingsView: View {
         panel.message = "Select a folder to save screenshots"
 
         if panel.runModal() == .OK, let url = panel.url {
-            path.wrappedValue = url.path
+            if SecurityScopedFolderRegistry.shared.remember(url) {
+                path.wrappedValue = url.path
+            } else {
+                folderAccessError = String(
+                    localized: "Choose the folder again, or leave the destination disabled."
+                )
+            }
         }
     }
 }

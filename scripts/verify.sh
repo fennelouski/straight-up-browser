@@ -25,6 +25,7 @@ RUN_UI_TESTS="${RUN_UI_TESTS:-0}"
 
 ./scripts/validate-ci.sh
 ./scripts/validate-release-policy.sh
+./scripts/validate-security-policy.sh
 
 echo "Running macOS unit tests..."
 xcodebuild test -quiet \

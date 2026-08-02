@@ -277,6 +277,48 @@ struct FaviconLoadingPolicyTests {
     }
 }
 
+struct SandboxFileAccessTests {
+    @Test
+    func securityScopedBookmarkRoundTripsASelectedFolder() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: folder,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let bookmark = try #require(SecurityScopedBookmark.data(for: folder))
+        let resolved = try #require(SecurityScopedBookmark.resolve(bookmark))
+        defer { resolved.stopAccessingSecurityScopedResource() }
+
+        #expect(resolved.standardizedFileURL == folder.standardizedFileURL)
+    }
+
+    @Test
+    func selectedFolderRegistryRestoresAccessAcrossInstances() throws {
+        let suiteName = "sandbox-folders-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: folder,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let first = SecurityScopedFolderRegistry(defaults: defaults)
+        #expect(first.remember(folder))
+
+        let restored = SecurityScopedFolderRegistry(defaults: defaults)
+            .accessibleURL(for: folder)
+
+        #expect(restored.standardizedFileURL == folder.standardizedFileURL)
+    }
+}
+
 // The selection ring in the minimal tab bar traces the favicon's own shape, so
 // the shape sniffer has to tell a full-bleed tile from a glyph on transparency.
 struct FaviconShapeTests {

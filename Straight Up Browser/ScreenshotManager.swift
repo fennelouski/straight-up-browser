@@ -144,7 +144,11 @@ final class ScreenshotSettings {
     /// Where "save to the shared folder" writes. Empty setting = ~/Pictures/Browser Screenshots.
     var sharedFolder: URL {
         let custom = UserDefaults.standard.string(forKey: Key.sharedFolder) ?? ""
-        guard custom.isEmpty else { return URL(fileURLWithPath: custom) }
+        guard custom.isEmpty else {
+            return SecurityScopedFolderRegistry.shared.accessibleURL(
+                for: URL(fileURLWithPath: custom)
+            )
+        }
         return FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Browser Screenshots", isDirectory: true)
     }
@@ -521,7 +525,13 @@ enum ScreenshotManager {
         }
 
         if config.own.enabled, !config.ownFolder.isEmpty,
-           write(shot, format: config.own.format, to: URL(fileURLWithPath: config.ownFolder)) {
+           write(
+               shot,
+               format: config.own.format,
+               to: SecurityScopedFolderRegistry.shared.accessibleURL(
+                   for: URL(fileURLWithPath: config.ownFolder)
+               )
+           ) {
             wrote = true
         }
 

@@ -12,14 +12,19 @@ import Foundation
 // Usage: browser-cli <command> [arguments]
 // Run `browser-cli docs` for the full agent-oriented guide.
 //
-// Talks to the app over a named pipe in the app's own Application Support
-// directory (owner-only permissions - filesystem permissions are the auth).
+// Talks to the sandboxed app over a named pipe in its container's Application
+// Support directory (owner-only permissions - filesystem permissions are the auth).
 // Every command passes a response file name inside the app's response
 // directory and polls it for the JSON result. Contract: {"ok":true,...} to
 // stdout with exit 0; {"error":"..."} to stderr with exit 1.
 
-let supportDirectory = FileManager.default
-    .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+let supportDirectory = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent("Library/Containers", isDirectory: true)
+    .appendingPathComponent(
+        "com.nathanfennel.Straight-Up-Browser",
+        isDirectory: true
+    )
+    .appendingPathComponent("Data/Library/Application Support", isDirectory: true)
     .appendingPathComponent("Straight Up Browser", isDirectory: true)
 let pipePath = supportDirectory.appendingPathComponent("cli.pipe").path
 let responseDirectory = supportDirectory.appendingPathComponent("responses", isDirectory: true)

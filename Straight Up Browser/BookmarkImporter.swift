@@ -28,7 +28,7 @@ enum BrowserType: String, CaseIterable {
         }
     }
 
-    var bookmarkFilePath: String? {
+    var suggestedBookmarkFileURL: URL {
         let homeDirectory = NSHomeDirectory()
         let path: String
         switch self {
@@ -37,7 +37,7 @@ enum BrowserType: String, CaseIterable {
         case .edge:
             path = "\(homeDirectory)/Library/Application Support/Microsoft Edge/Default/Bookmarks"
         }
-        return FileManager.default.fileExists(atPath: path) ? path : nil
+        return URL(fileURLWithPath: path)
     }
 }
 
@@ -52,12 +52,8 @@ class BookmarkImporter {
         var availableBrowsers: [BrowserType] = []
 
         for browser in BrowserType.allCases {
-            // Check if the app is installed
             if NSWorkspace.shared.urlForApplication(withBundleIdentifier: browser.bundleIdentifier) != nil {
-                // Check if bookmark file exists
-                if browser.bookmarkFilePath != nil {
-                    availableBrowsers.append(browser)
-                }
+                availableBrowsers.append(browser)
             }
         }
 
@@ -65,21 +61,36 @@ class BookmarkImporter {
     }
 
     static func importBookmarks(from browser: BrowserType) -> [ImportedBookmark] {
-        guard let filePath = browser.bookmarkFilePath else {
-            return []
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.title = String(localized: "Choose \(browser.displayName) Bookmarks")
+        panel.message = String(
+            localized: "Select the Bookmarks file exported or stored by \(browser.displayName)."
+        )
+        panel.prompt = String(localized: "Import")
+        panel.directoryURL = browser.suggestedBookmarkFileURL
+            .deletingLastPathComponent()
+        guard panel.runModal() == .OK, let fileURL = panel.url else { return [] }
+        let accessed = fileURL.startAccessingSecurityScopedResource()
+        defer {
+            if accessed {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
         }
 
         switch browser {
         case .chrome, .edge:
-            return importChromeBookmarks(from: filePath)
+            return importChromeBookmarks(from: fileURL)
         }
     }
 
-    private static func importChromeBookmarks(from filePath: String) -> [ImportedBookmark] {
+    private static func importChromeBookmarks(from fileURL: URL) -> [ImportedBookmark] {
         var bookmarks: [ImportedBookmark] = []
 
         do {
-            let data = try Data(contentsOf: URL(fileURLWithPath: filePath))
+            let data = try Data(contentsOf: fileURL)
             if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
                 if let roots = json["roots"] as? [String: Any] {
                     for (_, rootValue) in roots {

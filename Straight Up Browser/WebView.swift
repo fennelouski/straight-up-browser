@@ -662,9 +662,13 @@ struct WebView: NSViewRepresentable {
 
         func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping @MainActor @Sendable (URL?) -> Void) {
             let configuredPath = UserDefaults.standard.string(forKey: "downloadsFolder") ?? ""
+            let defaultFolder = FileManager.default.urls(
+                for: .downloadsDirectory,
+                in: .userDomainMask
+            )[0]
             let folder = configuredPath.isEmpty
-                ? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-                : URL(fileURLWithPath: (configuredPath as NSString).expandingTildeInPath)
+                ? defaultFolder
+                : DownloadFolderAccess.shared.configuredFolder() ?? defaultFolder
 
             // Dedupe "name.ext" -> "name-2.ext" so WKDownload doesn't fail on collision
             var destination = folder.appendingPathComponent(suggestedFilename)
