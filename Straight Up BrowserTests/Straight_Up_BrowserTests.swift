@@ -1308,6 +1308,38 @@ struct WebExtensionPolicyTests {
         #expect(receivedURL == requestedURL)
     }
 
+    @Test func extensionRoutingUsesTheWindowThatOwnsTheTabAndTheFocusedWindow() {
+        final class WindowToken {}
+        final class Candidate {
+            let tabs: [UUID]
+            let window: WindowToken
+
+            init(tabs: [UUID], window: WindowToken) {
+                self.tabs = tabs
+                self.window = window
+            }
+        }
+
+        let firstTab = UUID()
+        let secondTab = UUID()
+        let firstWindow = WindowToken()
+        let secondWindow = WindowToken()
+        let first = Candidate(tabs: [firstTab], window: firstWindow)
+        let second = Candidate(tabs: [secondTab], window: secondWindow)
+        let candidates = [first, second]
+
+        #expect(ExtensionWindowRouting.owner(
+            of: secondTab,
+            in: candidates,
+            tabIds: { $0.tabs }
+        ) === second)
+        #expect(ExtensionWindowRouting.focused(
+            in: candidates,
+            keyWindow: secondWindow,
+            window: { $0.window }
+        ) === second)
+    }
+
     @Test func privateTabsStayHiddenUntilTheUserOptsIn() {
         let normal = UUID()
         let privateTab = UUID()

@@ -133,6 +133,25 @@ enum ExtensionPermissionPolicy {
     }
 }
 
+enum ExtensionWindowRouting {
+    static func owner<Candidate>(
+        of tabId: UUID,
+        in candidates: [Candidate],
+        tabIds: (Candidate) -> [UUID]
+    ) -> Candidate? {
+        candidates.first { tabIds($0).contains(tabId) }
+    }
+
+    static func focused<Candidate, Window: AnyObject>(
+        in candidates: [Candidate],
+        keyWindow: Window?,
+        window: (Candidate) -> Window?
+    ) -> Candidate? {
+        guard let keyWindow else { return nil }
+        return candidates.first { window($0) === keyWindow }
+    }
+}
+
 struct ExtensionPathRegistry {
     private static let pathsKey = "loadedExtensionPaths"
     private static let legacyPathKey = "loadedExtensionPath"
@@ -205,16 +224,34 @@ final class WebExtensionManager: NSObject {
         let directory: URL
     }
 
+    private final class WindowRegistration {
+        weak var webViewManager: WebViewManager?
+        let normalWindow: ExtWindow
+        let privateWindow: ExtWindow
+
+        init(
+            extensionManager: WebExtensionManager,
+            webViewManager: WebViewManager
+        ) {
+            self.webViewManager = webViewManager
+            normalWindow = ExtWindow(
+                manager: extensionManager,
+                webViewManager: webViewManager,
+                privateMode: false
+            )
+            privateWindow = ExtWindow(
+                manager: extensionManager,
+                webViewManager: webViewManager,
+                privateMode: true
+            )
+        }
+    }
+
     private var loadedExtensions: [LoadedExtension] = []
     private var loadingPaths: Set<String> = []
     private var restoredPersistedExtensions = false
     private var extTabs: [UUID: ExtTab] = [:]
-    private lazy var normalWindow = ExtWindow(manager: self, privateMode: false)
-    private lazy var privateWindow = ExtWindow(manager: self, privateMode: true)
-
-    // Whichever window's WebViewManager most recently created a web view; the
-    // bridge answers tabs.query / activeTab from this one.
-    private weak var activeManager: WebViewManager?
+    private var windowRegistrations: [WindowRegistration] = []
 
     private let approvalRecordsKey = "approvedExtensionRecords"
     private let legacyApprovedScopesKey = "approvedExtensionScopes"
@@ -241,7 +278,16 @@ final class WebExtensionManager: NSObject {
     /// live manager to read tabs from, and restores every remembered extension
     /// once there's somewhere to host them.
     func register(_ manager: WebViewManager) {
-        activeManager = manager
+        if !liveRegistrations().contains(where: {
+            $0.webViewManager === manager
+        }) {
+            windowRegistrations.append(
+                WindowRegistration(
+                    extensionManager: self,
+                    webViewManager: manager
+                )
+            )
+        }
         guard !restoredPersistedExtensions else { return }
         restoredPersistedExtensions = true
         for directory in pathRegistry.paths {
@@ -554,9 +600,42 @@ final class WebExtensionManager: NSObject {
 
     // MARK: - Tab bridge (reads live state from the active WebViewManager)
 
-    fileprivate func currentTabs(privateMode: Bool, for context: WKWebExtensionContext) -> [ExtTab] {
+    private func liveRegistrations() -> [WindowRegistration] {
+        windowRegistrations.removeAll { $0.webViewManager == nil }
+        return windowRegistrations
+    }
+
+    private func ownerRegistration(forTab id: UUID) -> WindowRegistration? {
+        ExtensionWindowRouting.owner(
+            of: id,
+            in: liveRegistrations(),
+            tabIds: { $0.webViewManager?.liveTabIds ?? [] }
+        )
+    }
+
+    private func focusedRegistration() -> WindowRegistration? {
+        let registrations = liveRegistrations()
+        if let focused = ExtensionWindowRouting.focused(
+            in: registrations,
+            keyWindow: NSApp.keyWindow,
+            window: { $0.webViewManager?.activeWebView?.window }
+        ) {
+            return focused
+        }
+        return registrations.first {
+            $0.webViewManager?.activeWebView?.window?.isKeyWindow == true
+        } ?? registrations.first {
+            $0.webViewManager?.activeTabId != nil
+        } ?? registrations.first
+    }
+
+    fileprivate func currentTabs(
+        privateMode: Bool,
+        for context: WKWebExtensionContext,
+        in manager: WebViewManager
+    ) -> [ExtTab] {
         guard !privateMode || context.hasAccessToPrivateData else { return [] }
-        let ids = activeManager?.liveTabIds ?? []
+        let ids = manager.liveTabIds
         let visibleIds = ExtensionPermissionPolicy.visibleTabIds(
             ids,
             privateAccessAllowed: context.hasAccessToPrivateData,
@@ -565,29 +644,52 @@ final class WebExtensionManager: NSObject {
         return visibleIds.filter { isPrivateTab($0) == privateMode }.map(tab(for:))
     }
 
-    fileprivate func currentActiveTab(for context: WKWebExtensionContext) -> ExtTab? {
-        guard let id = activeManager?.activeTabId,
+    fileprivate func currentActiveTab(
+        for context: WKWebExtensionContext,
+        in manager: WebViewManager
+    ) -> ExtTab? {
+        guard let id = manager.activeTabId,
               !isPrivateTab(id) || context.hasAccessToPrivateData else { return nil }
         return tab(for: id)
     }
 
-    fileprivate func window(privateMode: Bool) -> ExtWindow {
-        privateMode ? privateWindow : normalWindow
+    fileprivate func currentActiveTab(
+        for context: WKWebExtensionContext
+    ) -> ExtTab? {
+        guard let manager = focusedRegistration()?.webViewManager else {
+            return nil
+        }
+        return currentActiveTab(for: context, in: manager)
     }
 
     fileprivate func window(forTab id: UUID, context: WKWebExtensionContext) -> ExtWindow? {
         let privateMode = isPrivateTab(id)
         guard !privateMode || context.hasAccessToPrivateData else { return nil }
-        return window(privateMode: privateMode)
+        guard let registration = ownerRegistration(forTab: id) else {
+            return nil
+        }
+        return privateMode
+            ? registration.privateWindow
+            : registration.normalWindow
     }
 
     fileprivate func isPrivateTab(_ id: UUID) -> Bool {
-        activeManager?.isPrivateTab(id) ?? false
+        ownerRegistration(forTab: id)?.webViewManager?.isPrivateTab(id) ?? false
     }
 
     fileprivate func webView(forTab id: UUID, context: WKWebExtensionContext) -> WKWebView? {
         guard !isPrivateTab(id) || context.hasAccessToPrivateData else { return nil }
-        return activeManager?.existingWebView(for: id)
+        return ownerRegistration(forTab: id)?.webViewManager?.existingWebView(for: id)
+    }
+
+    fileprivate func isSelectedTab(
+        _ id: UUID,
+        for context: WKWebExtensionContext
+    ) -> Bool {
+        guard !isPrivateTab(id) || context.hasAccessToPrivateData else {
+            return false
+        }
+        return ownerRegistration(forTab: id)?.webViewManager?.activeTabId == id
     }
 
     private func tab(for id: UUID) -> ExtTab {
@@ -601,21 +703,28 @@ final class WebExtensionManager: NSObject {
 
     // Idempotent: a tab reactivated after a memory unload re-creates its web
     // view but is not a new tab, so only announce genuinely-new ids.
-    func tabOpened(_ id: UUID) {
+    func tabOpened(_ id: UUID, in manager: WebViewManager) {
+        register(manager)
         guard hasExtensions,
-              (!isPrivateTab(id) || allowsPrivateAccess),
+              (!manager.isPrivateTab(id) || allowsPrivateAccess),
               extTabs[id] == nil else { return }
         controller.didOpenTab(tab(for: id))
     }
 
-    func tabClosed(_ id: UUID) {
+    func tabClosed(_ id: UUID, in manager: WebViewManager) {
+        register(manager)
         guard hasExtensions, let t = extTabs.removeValue(forKey: id) else { return }
         controller.didCloseTab(t, windowIsClosing: false)
     }
 
-    func activeTabChanged(to id: UUID?, from previous: UUID?) {
+    func activeTabChanged(
+        to id: UUID?,
+        from previous: UUID?,
+        in manager: WebViewManager
+    ) {
+        register(manager)
         guard hasExtensions, let id,
-              !isPrivateTab(id) || allowsPrivateAccess else { return }
+              !manager.isPrivateTab(id) || allowsPrivateAccess else { return }
         controller.didActivateTab(tab(for: id), previousActiveTab: previous.map(tab(for:)))
     }
 }
@@ -624,18 +733,22 @@ final class WebExtensionManager: NSObject {
 
 extension WebExtensionManager: WKWebExtensionControllerDelegate {
     func webExtensionController(_ controller: WKWebExtensionController, openWindowsFor context: WKWebExtensionContext) -> [any WKWebExtensionWindow] {
-        var windows: [any WKWebExtensionWindow] = [window(privateMode: false)]
-        if context.hasAccessToPrivateData {
-            windows.append(window(privateMode: true))
+        liveRegistrations().flatMap { registration -> [any WKWebExtensionWindow] in
+            var windows: [any WKWebExtensionWindow] = [registration.normalWindow]
+            if context.hasAccessToPrivateData {
+                windows.append(registration.privateWindow)
+            }
+            return windows
         }
-        return windows
     }
 
     func webExtensionController(_ controller: WKWebExtensionController, focusedWindowFor context: WKWebExtensionContext) -> (any WKWebExtensionWindow)? {
-        guard let id = activeManager?.activeTabId else {
-            return window(privateMode: false)
+        guard let registration = focusedRegistration() else { return nil }
+        guard let id = registration.webViewManager?.activeTabId else {
+            return registration.normalWindow
         }
         return window(forTab: id, context: context)
+            ?? registration.normalWindow
     }
 
     func webExtensionController(_ controller: WKWebExtensionController, promptForPermissions permissions: Set<WKWebExtension.Permission>, in tab: (any WKWebExtensionTab)?, for context: WKWebExtensionContext, completionHandler: @escaping (Set<WKWebExtension.Permission>, Date?) -> Void) {
@@ -678,7 +791,9 @@ extension WebExtensionManager: WKWebExtensionControllerDelegate {
 
     // Route the extension's "open a tab" through the app's existing new-tab path.
     func webExtensionController(_ controller: WKWebExtensionController, openNewTabUsing configuration: WKWebExtension.TabConfiguration, for context: WKWebExtensionContext, completionHandler: @escaping ((any WKWebExtensionTab)?, (any Error)?) -> Void) {
-        guard let id = activeManager?.createExtensionTab(
+        let targetManager = (configuration.window as? ExtWindow)?.webViewManager
+            ?? focusedRegistration()?.webViewManager
+        guard let id = targetManager?.createExtensionTab(
             at: configuration.url,
             shouldActivate: configuration.shouldBeActive
         ) else {
@@ -694,18 +809,33 @@ extension WebExtensionManager: WKWebExtensionControllerDelegate {
 @MainActor
 final class ExtWindow: NSObject, WKWebExtensionWindow {
     private weak var manager: WebExtensionManager?
+    fileprivate weak var webViewManager: WebViewManager?
     private let privateMode: Bool
 
-    init(manager: WebExtensionManager, privateMode: Bool) {
+    init(
+        manager: WebExtensionManager,
+        webViewManager: WebViewManager,
+        privateMode: Bool
+    ) {
         self.manager = manager
+        self.webViewManager = webViewManager
         self.privateMode = privateMode
     }
 
     func tabs(for context: WKWebExtensionContext) -> [any WKWebExtensionTab] {
-        manager?.currentTabs(privateMode: privateMode, for: context) ?? []
+        guard let webViewManager else { return [] }
+        return manager?.currentTabs(
+            privateMode: privateMode,
+            for: context,
+            in: webViewManager
+        ) ?? []
     }
     func activeTab(for context: WKWebExtensionContext) -> (any WKWebExtensionTab)? {
-        guard let tab = manager?.currentActiveTab(for: context),
+        guard let webViewManager,
+              let tab = manager?.currentActiveTab(
+                  for: context,
+                  in: webViewManager
+              ),
               manager?.isPrivateTab(tab.tabIdentity) == privateMode else { return nil }
         return tab
     }
@@ -738,7 +868,7 @@ final class ExtTab: NSObject, WKWebExtensionTab {
         allowedWebView(for: context)?.title
     }
     func isSelected(for context: WKWebExtensionContext) -> Bool {
-        id == manager?.currentActiveTab(for: context)?.tabIdentity
+        manager?.isSelectedTab(id, for: context) ?? false
     }
 
     // Navigation the extension may drive (trivial via the web view).
