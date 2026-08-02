@@ -140,6 +140,20 @@ struct WebViewLifecycleTests {
             <= InteractionStatePersistencePolicy.maxTotalBytes)
         #expect(bounded["oversized"] == nil)
     }
+
+    @Test func mediaSuspensionStateSurvivesUnloadButNotTabClose() {
+        let manager = WebViewManager()
+        let tabID = UUID()
+
+        manager.setMuted(true, for: tabID)
+        #expect(manager.isMediaSuspended(for: tabID))
+
+        manager.removeWebView(for: tabID, notifyClosed: false)
+        #expect(manager.isMediaSuspended(for: tabID))
+
+        manager.removeWebView(for: tabID, notifyClosed: true)
+        #expect(!manager.isMediaSuspended(for: tabID))
+    }
 }
 
 struct BrowserResourcePolicyTests {

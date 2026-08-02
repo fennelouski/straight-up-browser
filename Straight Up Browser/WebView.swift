@@ -92,6 +92,11 @@ struct WebView: NSViewRepresentable {
         nsView.onPaneFocus = { [tabManager] id in tabManager?.selectedTabId = id }
         nsView.whitePoint = pageWhitePoint
         nsView.setDisplayedTabs(displayedTabIds, focusedTabId: activeTabId)
+        for id in displayedTabIds {
+            if let tab = tabs?.first(where: { $0.id == id }) {
+                webViewManager?.setMuted(tab.isMuted, for: id)
+            }
+        }
 
         // Non-focused panes never go through the url-binding load path below, so a
         // pane restored at launch would sit blank: load its tab's URL once here.
