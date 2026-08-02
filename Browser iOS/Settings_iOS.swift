@@ -16,6 +16,7 @@ struct Settings_iOS: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Query private var tabs: [Tab]
+    @ObservedObject private var permissionStore = SitePermissionStore.shared
 
     @AppStorage(TabSync.Key.enabled) private var tabSyncEnabled = false
     @AppStorage(TabSync.Key.mode) private var tabSyncMode = TabSyncMode.openOnly.rawValue
@@ -158,6 +159,47 @@ struct Settings_iOS: View {
                         ForEach(MemoryPolicy.allCases, id: \.self) { Text($0.label).tag($0.rawValue) }
                     }
                     .disabled(!memorySaverEnabled)
+                }
+
+                Section {
+                    if permissionStore.records.isEmpty {
+                        Text("No saved site permissions.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(permissionStore.records) { record in
+                            HStack(spacing: 10) {
+                                Image(systemName: record.kind.systemImage)
+                                    .frame(width: 18)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(record.origin)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                    Text(
+                                        "\(record.kind.title) · \(record.decision.title)"
+                                    )
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                }
+                            }
+                            .swipeActions {
+                                Button(role: .destructive) {
+                                    permissionStore.revoke(
+                                        origin: record.origin,
+                                        kind: record.kind
+                                    )
+                                } label: {
+                                    Label("Revoke", systemImage: "trash")
+                                }
+                            }
+                        }
+                        Button("Revoke All", role: .destructive) {
+                            permissionStore.clear()
+                        }
+                    }
+                } header: {
+                    Text("Site Permissions")
+                } footer: {
+                    Text("Camera and microphone choices are stored per website. Revoked sites ask again. Private tabs never add entries here.")
                 }
 
                 Section {

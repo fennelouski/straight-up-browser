@@ -319,6 +319,12 @@ class WebViewManager: NSObject, ObservableObject {
         NotificationCenter.default.addObserver(
             self, selector: #selector(javaScriptSettingChanged), name: .javaScriptChanged, object: nil)
         NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(sitePermissionsChanged),
+            name: .sitePermissionsChanged,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
             self, selector: #selector(historyDidClear), name: .browserHistoryDidClear, object: nil)
         // Restore last session's per-tab page state; getWebView consumes it the
         // first time each tab is activated. Persist again when the app quits.
@@ -500,6 +506,10 @@ class WebViewManager: NSObject, ObservableObject {
     }
 
     @objc private func javaScriptSettingChanged() {
+        reloadAllTabs()
+    }
+
+    @objc private func sitePermissionsChanged() {
         reloadAllTabs()
     }
 

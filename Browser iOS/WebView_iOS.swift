@@ -605,10 +605,69 @@ struct TabWebView: UIViewRepresentable {
             return popupWebView
         }
 
-        // Without this, WebKit denies getUserMedia outright and pages report "no camera or
-        // microphone found". .prompt hands the decision to WebKit's own permission UI.
         func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping @MainActor @Sendable (WKPermissionDecision) -> Void) {
-            decisionHandler(.prompt)
+            let originKey = SitePermissionOrigin.canonical(origin)
+            let kinds = type.sitePermissionKinds
+            if let stored = SitePermissionStore.shared.decision(
+                for: kinds,
+                origin: originKey
+            ) {
+                decisionHandler(stored.webKitDecision)
+                return
+            }
+
+            guard let presenter = topPresenter() else {
+                decisionHandler(.deny)
+                return
+            }
+            let owningTab = tab(for: webView)
+            let isPrivate = owningTab?.sessionKind == .incognito
+            let capabilities = kinds
+                .sorted { $0.rawValue < $1.rawValue }
+                .map(\.title)
+                .joined(separator: String(localized: " and "))
+                .lowercased()
+            let message = isPrivate
+                ? String(localized: "This choice applies only to this private session.")
+                : String(localized: "You can revoke this choice in Privacy settings.")
+            let alert = UIAlertController(
+                title: String(
+                    localized: "Allow \(originKey) to use \(capabilities)?"
+                ),
+                message: message,
+                preferredStyle: .alert
+            )
+            alert.addAction(
+                UIAlertAction(
+                    title: String(localized: "Block"),
+                    style: .cancel
+                ) { _ in
+                    if !isPrivate {
+                        SitePermissionStore.shared.set(
+                            .denied,
+                            for: kinds,
+                            origin: originKey
+                        )
+                    }
+                    decisionHandler(.deny)
+                }
+            )
+            alert.addAction(
+                UIAlertAction(
+                    title: String(localized: "Allow"),
+                    style: .default
+                ) { _ in
+                    if !isPrivate {
+                        SitePermissionStore.shared.set(
+                            .allowed,
+                            for: kinds,
+                            origin: originKey
+                        )
+                    }
+                    decisionHandler(.grant)
+                }
+            )
+            presenter.present(alert, animated: true)
         }
 
         // MARK: - JS dialogs (file uploads use WKWebView's native iOS picker)

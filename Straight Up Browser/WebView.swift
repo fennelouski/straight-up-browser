@@ -917,10 +917,48 @@ struct WebView: NSViewRepresentable {
             presentSheet(alert, over: webView) { completionHandler($0 == .alertFirstButtonReturn ? input.stringValue : nil) }
         }
 
-        // Without this, WebKit denies getUserMedia outright and pages report "no camera or
-        // microphone found". .prompt hands the decision to WebKit's own permission UI.
         func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping @MainActor @Sendable (WKPermissionDecision) -> Void) {
-            decisionHandler(.prompt)
+            let originKey = SitePermissionOrigin.canonical(origin)
+            let kinds = type.sitePermissionKinds
+            if let stored = SitePermissionStore.shared.decision(
+                for: kinds,
+                origin: originKey
+            ) {
+                decisionHandler(stored.webKitDecision)
+                return
+            }
+
+            let tabId = parent.webViewManager?.tabId(for: webView)
+            let isPrivate = tabId.map {
+                parent.webViewManager?.isPrivateTab($0) == true
+            } ?? false
+            let capabilities = kinds
+                .sorted { $0.rawValue < $1.rawValue }
+                .map(\.title)
+                .joined(separator: String(localized: " and "))
+                .lowercased()
+            let alert = NSAlert()
+            alert.messageText = String(
+                localized: "Allow \(originKey) to use \(capabilities)?"
+            )
+            alert.informativeText = isPrivate
+                ? String(localized: "This choice applies only to this private session.")
+                : String(localized: "You can revoke this choice in Privacy settings.")
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: String(localized: "Allow"))
+            alert.addButton(withTitle: String(localized: "Block"))
+            presentSheet(alert, over: webView) { response in
+                let decision: SitePermissionDecision =
+                    response == .alertFirstButtonReturn ? .allowed : .denied
+                if !isPrivate {
+                    SitePermissionStore.shared.set(
+                        decision,
+                        for: kinds,
+                        origin: originKey
+                    )
+                }
+                decisionHandler(decision.webKitDecision)
+            }
         }
 
         func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void) {

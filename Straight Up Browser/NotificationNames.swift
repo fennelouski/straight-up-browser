@@ -100,6 +100,7 @@ extension Notification.Name {
     static let browserClearSessionData = Notification.Name("browserClearSessionData")
     static let browserClearAllData = Notification.Name("browserClearAllData")
     static let browserHistoryDidClear = Notification.Name("browserHistoryDidClear")
+    static let sitePermissionsChanged = Notification.Name("sitePermissionsChanged")
 
     // Settings
     static let browserShowSettings = Notification.Name("browserShowSettings")
