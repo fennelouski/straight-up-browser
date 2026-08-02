@@ -34,11 +34,18 @@ final class BrowsingHistoryStore: ObservableObject {
             let directory = FileManager.default
                 .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("Straight Up Browser", isDirectory: true)
-            try? FileManager.default.createDirectory(
-                at: directory,
-                withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700]
-            )
+            do {
+                try FileManager.default.createDirectory(
+                    at: directory,
+                    withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700]
+                )
+            } catch {
+                PersistenceDiagnostics.shared.report(
+                    operation: "Create browsing history folder",
+                    error: error
+                )
+            }
             self.storeURL = directory.appendingPathComponent("browsing-history.json")
         }
         self.maxVisits = max(1, maxVisits)
@@ -81,20 +88,32 @@ final class BrowsingHistoryStore: ObservableObject {
 
     func clear() {
         visits.removeAll()
-        try? FileManager.default.removeItem(at: storeURL)
+        guard FileManager.default.fileExists(atPath: storeURL.path) else { return }
+        do {
+            try FileManager.default.removeItem(at: storeURL)
+        } catch {
+            PersistenceDiagnostics.shared.report(operation: "Clear browsing history", error: error)
+        }
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: storeURL),
-              let decoded = try? JSONDecoder().decode([HistoryVisit].self, from: data) else {
-            return
+        guard FileManager.default.fileExists(atPath: storeURL.path) else { return }
+        do {
+            let data = try Data(contentsOf: storeURL)
+            let decoded = try JSONDecoder().decode([HistoryVisit].self, from: data)
+            visits = Array(decoded.sorted { $0.visitedAt > $1.visitedAt }.prefix(maxVisits))
+        } catch {
+            PersistenceDiagnostics.shared.report(operation: "Load browsing history", error: error)
         }
-        visits = Array(decoded.sorted { $0.visitedAt > $1.visitedAt }.prefix(maxVisits))
     }
 
     private func save() {
-        guard let data = try? JSONEncoder().encode(visits) else { return }
-        try? data.write(to: storeURL, options: [.atomic, .completeFileProtection])
+        do {
+            let data = try JSONEncoder().encode(visits)
+            try data.write(to: storeURL, options: [.atomic, .completeFileProtection])
+        } catch {
+            PersistenceDiagnostics.shared.report(operation: "Save browsing history", error: error)
+        }
     }
 }
 

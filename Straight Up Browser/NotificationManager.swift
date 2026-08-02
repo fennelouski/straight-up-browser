@@ -35,8 +35,8 @@ extension NotificationCenter {
     ) -> NSObjectProtocol {
         precondition(queue === OperationQueue.main)
         return addObserver(forName: name, object: objectToObserve, queue: queue) { notification in
-            let transfer = MainActorTransfer(value: notification)
-            MainActor.assumeIsolated {
+            let transfer = MainActorNotification(notification)
+            Task { @MainActor in
                 block(transfer.value)
             }
         }

@@ -21,6 +21,14 @@ require_pattern '^  DEVELOPER_DIR: /Applications/Xcode_16\.4\.app/Contents/Devel
     "pin the Xcode toolchain"
 require_pattern 'uses: actions/checkout@[0-9a-f]{40}' \
     "pin actions/checkout to an immutable commit"
+require_pattern 'uses: actions/upload-artifact@[0-9a-f]{40}' \
+    "pin diagnostics upload to an immutable commit"
+require_pattern 'if: failure\(\)' "retain result bundles when verification fails"
+
+if ! grep -q 'onlyUsePackageVersionsFromResolvedFile' scripts/verify.sh; then
+    echo "CI policy violation: verification must enforce Package.resolved" >&2
+    exit 1
+fi
 
 if grep -Eq 'uses: [^ ]+@(main|master|v[0-9]+)$' "$workflow"; then
     echo "CI policy violation: mutable action reference found" >&2

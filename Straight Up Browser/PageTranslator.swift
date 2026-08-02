@@ -30,7 +30,6 @@ final class PageTranslator: ObservableObject {
     }
 
     private var queue: [PendingRequest] = []
-    nonisolated(unsafe) private let availability = LanguageAvailability()
 
     // Set by translateIntoSplitPane before the pane loads: the next didFinish
     // for that web view should translate unconditionally, ignoring both the
@@ -112,7 +111,9 @@ final class PageTranslator: ObservableObject {
 
         let source = Locale.Language(identifier: sourceCode)
         let target = Locale.Language(identifier: targetCode)
-        guard await availability.status(from: source, to: target) != .unsupported else { return }
+        // LanguageAvailability is not Sendable, so keep each instance scoped to
+        // the async call instead of retaining it across actor boundaries.
+        guard await LanguageAvailability().status(from: source, to: target) != .unsupported else { return }
 
         queue.append(PendingRequest(webView: webView, source: source, target: target))
         if configuration == nil { pump() }

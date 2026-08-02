@@ -7,13 +7,32 @@
 
 import Foundation
 
-/// Explicitly marks values crossing legacy callback boundaries whose runtime
-/// queue/actor guarantee is stronger than their imported Objective-C type.
-struct MainActorTransfer<Value>: @unchecked Sendable {
-    nonisolated(unsafe) let value: Value
+/// Narrow bridge for Foundation notifications delivered by a legacy observer.
+/// The notification is read only after the receiving task reaches MainActor.
+struct MainActorNotification: @unchecked Sendable {
+    nonisolated(unsafe) let value: Notification
 
-    nonisolated init(value: Value) {
+    nonisolated init(_ value: Notification) {
         self.value = value
+    }
+}
+
+/// Narrow bridge for KVO's Objective-C callback payload. The callback copies
+/// its references into this immutable value, then schedules all access on the
+/// main actor instead of asserting that KVO happened to call on main.
+struct MainActorKVOChange: @unchecked Sendable {
+    nonisolated(unsafe) let object: Any?
+    nonisolated(unsafe) let change: [NSKeyValueChangeKey: Any]?
+    nonisolated(unsafe) let context: UnsafeMutableRawPointer?
+
+    nonisolated init(
+        object: Any?,
+        change: [NSKeyValueChangeKey: Any]?,
+        context: UnsafeMutableRawPointer? = nil
+    ) {
+        self.object = object
+        self.change = change
+        self.context = context
     }
 }
 

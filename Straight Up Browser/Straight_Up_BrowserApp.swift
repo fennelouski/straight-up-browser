@@ -115,7 +115,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification, object: nil, queue: .main
         ) { _ in
-            MainActor.assumeIsolated { GlobalOmnibarHotkey.applyFromDefaults() }
+            Task { @MainActor in GlobalOmnibarHotkey.applyFromDefaults() }
         }
     }
 

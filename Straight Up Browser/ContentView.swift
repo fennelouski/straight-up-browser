@@ -473,6 +473,7 @@ struct ContentView: View {
     @StateObject private var pageTranslator = PageTranslator()
     @StateObject private var fastForward = FastForward()
     @ObservedObject private var downloadManager = DownloadManager.shared
+    @ObservedObject private var persistenceDiagnostics = PersistenceDiagnostics.shared
     @ObservedObject private var protectionStore = PageProtectionStore.shared
     @State private var navigationManager: NavigationManager?
     @State private var notificationManager: NotificationManager?
@@ -2217,6 +2218,13 @@ struct ContentView: View {
             case .reader(let article):
                 readerSheet(article)
             }
+        }
+        .alert(item: $persistenceDiagnostics.latestIssue) { issue in
+            Alert(
+                title: Text("Browser Data Couldn’t Be Saved"),
+                message: Text("\(issue.operation): \(issue.message)"),
+                dismissButton: .default(Text("OK"))
+            )
         }
         // Hides the traffic lights and titlebar on the window actually hosting this
         // view, once it has one — see WindowChrome for why this isn't done at onAppear.

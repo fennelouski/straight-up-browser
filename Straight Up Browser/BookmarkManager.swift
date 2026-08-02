@@ -20,7 +20,7 @@ class BookmarkManager {
     func addBookmark(title: String, url: URL, category: String? = nil) -> Bookmark {
         let bookmark = Bookmark(title: title, url: url, category: category)
         modelContext.insert(bookmark)
-        try? modelContext.save()
+        save("Save bookmark")
         return bookmark
     }
 
@@ -32,7 +32,7 @@ class BookmarkManager {
 
     func removeBookmark(_ bookmark: Bookmark) {
         modelContext.delete(bookmark)
-        try? modelContext.save()
+        save("Remove bookmark")
     }
 
     func updateBookmark(_ bookmark: Bookmark, title: String, url: URL, category: String?) {
@@ -40,14 +40,19 @@ class BookmarkManager {
         bookmark.url = url
         bookmark.category = category
         bookmark.lastVisited = Date()
-        try? modelContext.save()
+        save("Update bookmark")
     }
 
     // MARK: - Query Operations
 
     func fetchAllBookmarks() -> [Bookmark] {
         let descriptor = FetchDescriptor<Bookmark>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
-        return (try? modelContext.fetch(descriptor)) ?? []
+        do {
+            return try modelContext.fetch(descriptor)
+        } catch {
+            PersistenceDiagnostics.shared.report(operation: "Load bookmarks", error: error)
+            return []
+        }
     }
 
     func fetchBookmarks(matching query: String) -> [Bookmark] {
@@ -76,8 +81,7 @@ class BookmarkManager {
             existing.insert(item.url.absoluteString)
             added += 1
         }
-        try? modelContext.save()
-        return added
+        return save("Import bookmarks") ? added : 0
     }
 
     func importBookmarks(_ items: [ImportedLibraryBookmark]) -> Int {
@@ -90,7 +94,18 @@ class BookmarkManager {
             existing.insert(item.url.absoluteString)
             added += 1
         }
-        try? modelContext.save()
-        return added
+        return save("Import bookmarks") ? added : 0
+    }
+
+    @discardableResult
+    private func save(_ operation: String) -> Bool {
+        do {
+            try modelContext.save()
+            return true
+        } catch {
+            modelContext.rollback()
+            PersistenceDiagnostics.shared.report(operation: operation, error: error)
+            return false
+        }
     }
 }

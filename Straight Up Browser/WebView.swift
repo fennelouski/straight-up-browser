@@ -439,9 +439,9 @@ struct WebView: NSViewRepresentable {
         }
 
         nonisolated override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-            let transfer = MainActorTransfer(value: (object, change))
-            MainActor.assumeIsolated {
-                let (object, _) = transfer.value
+            let transfer = MainActorKVOChange(object: object, change: change)
+            Task { @MainActor in
+                let object = transfer.object
                 if keyPath == "estimatedProgress", let webView = object as? WKWebView {
                     // Only the focused tab drives the chrome progress bar; a
                     // background split pane loading shouldn't wiggle it.
@@ -588,14 +588,12 @@ struct WebView: NSViewRepresentable {
                 privacy: privacy
             )
             downloadTransferIds[download] = transferId
-            let downloadTransfer = MainActorTransfer(value: download)
             downloadProgressObservers[download] = download.progress.observe(
                 \.fractionCompleted,
                 options: [.initial, .new]
             ) { _, change in
-                let reportedProgress = change.newValue
+                guard let progress = change.newValue else { return }
                 Task { @MainActor in
-                    let progress = reportedProgress ?? downloadTransfer.value.progress.fractionCompleted
                     DownloadManager.shared.update(transferId, progress: progress)
                 }
             }
@@ -1313,14 +1311,35 @@ class WebViewContainer: NSView {
 
     // Forward KVO changes to the coordinator
     nonisolated override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-        let transfer = MainActorTransfer(value: (object, change, context))
-        MainActor.assumeIsolated {
-            let (object, change, context) = transfer.value
-            if keyPath == "estimatedProgress" || keyPath == #keyPath(WKWebView.url), object is WKWebView {
-                coordinator?.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
-            } else {
-                super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
-            }
+        let transfer = MainActorKVOChange(
+            object: object,
+            change: change,
+            context: context
+        )
+        Task { @MainActor in
+            self.handleObservedValue(forKeyPath: keyPath, transfer: transfer)
+        }
+    }
+
+    private func handleObservedValue(
+        forKeyPath keyPath: String?,
+        transfer: MainActorKVOChange
+    ) {
+        if keyPath == "estimatedProgress" || keyPath == #keyPath(WKWebView.url),
+           transfer.object is WKWebView {
+            coordinator?.observeValue(
+                forKeyPath: keyPath,
+                of: transfer.object,
+                change: transfer.change,
+                context: transfer.context
+            )
+        } else {
+            super.observeValue(
+                forKeyPath: keyPath,
+                of: transfer.object,
+                change: transfer.change,
+                context: transfer.context
+            )
         }
     }
 }

@@ -527,9 +527,7 @@ class WebViewManager: NSObject, ObservableObject {
         ownedTabIds.insert(tabId)
         applyMediaSuspension(mediaSuspendedTabs.contains(tabId), to: webView)
         #if canImport(AppKit)
-        MainActor.assumeIsolated {
-            WebExtensionManager.shared.tabOpened(tabId, in: self)
-        }
+        WebExtensionManager.shared.tabOpened(tabId, in: self)
         #endif
         // Restore scroll + back/forward if this tab was unloaded under memory pressure
         if #available(macOS 12.0, *), let state = savedInteractionStates.removeValue(forKey: tabId) {
@@ -555,13 +553,11 @@ class WebViewManager: NSObject, ObservableObject {
             Logger.log("WebViewManager: Switching active web view for tab \(tabId)", type: "WebViewManager")
             activeWebView = webView
             #if canImport(AppKit)
-            MainActor.assumeIsolated {
-                WebExtensionManager.shared.activeTabChanged(
-                    to: tabId,
-                    from: previousTabId,
-                    in: self
-                )
-            }
+            WebExtensionManager.shared.activeTabChanged(
+                to: tabId,
+                from: previousTabId,
+                in: self
+            )
             #endif
         } else {
             Logger.log("WebViewManager setActiveTab: activeWebView already correct for tab \(tabId)", type: "WebViewManager")
@@ -602,9 +598,7 @@ class WebViewManager: NSObject, ObservableObject {
 
             if notifyClosed {
                 #if canImport(AppKit)
-                MainActor.assumeIsolated {
-                    WebExtensionManager.shared.tabClosed(tabId, in: self)
-                }
+                WebExtensionManager.shared.tabClosed(tabId, in: self)
                 #endif
             }
             Logger.log("Removed web view for tab \(tabId)", type: "WebViewManager")
@@ -649,9 +643,7 @@ class WebViewManager: NSObject, ObservableObject {
         }
         Self.reportContentBlocking(blockingActive, for: tabId)
         #if canImport(AppKit)
-        MainActor.assumeIsolated {
-            WebExtensionManager.shared.tabOpened(tabId, in: self)
-        }
+        WebExtensionManager.shared.tabOpened(tabId, in: self)
         #endif
         Logger.log("WebViewManager: adopted external WebView for tab \(tabId)", type: "WebViewManager")
     }
@@ -789,10 +781,8 @@ class WebViewManager: NSObject, ObservableObject {
         // ponytail: web extensions are macOS-only in v1; the controller wiring is
         // compiled out on iPad. Port WebExtension.swift when iPad needs extensions.
         #if canImport(AppKit)
-        MainActor.assumeIsolated {
-            configuration.webExtensionController = WebExtensionManager.shared.controller
-            WebExtensionManager.shared.register(self)
-        }
+        configuration.webExtensionController = WebExtensionManager.shared.controller
+        WebExtensionManager.shared.register(self)
         #endif
 
         let webView = WKWebView(frame: .zero, configuration: configuration)

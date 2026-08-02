@@ -2,15 +2,19 @@
 
 # Dev-loop build of the CLI tool. The app's Xcode build compiles and signs
 # this same source into Browser.app/Contents/Helpers/browser-cli.
+set -euo pipefail
+cd "$(dirname "$0")"
+
 echo "Building Straight Up Browser CLI..."
 
-swiftc -O browser-cli/main.swift -o browser-cli-tool
+xcrun swiftc \
+    -O \
+    -swift-version 6 \
+    -warnings-as-errors \
+    -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
+    -target arm64-apple-macos15.6 \
+    browser-cli/main.swift \
+    -o browser-cli-tool
 
-if [ $? -eq 0 ]; then
-    echo "CLI tool built successfully: ./browser-cli-tool"
-    chmod +x ./browser-cli-tool
-    echo "Made executable"
-else
-    echo "Build failed"
-    exit 1
-fi
+./scripts/validate-macos-architectures.sh browser-cli-tool
+echo "CLI tool built successfully: ./browser-cli-tool"
