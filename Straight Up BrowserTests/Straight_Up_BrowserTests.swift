@@ -142,6 +142,39 @@ struct WebViewLifecycleTests {
     }
 }
 
+struct BrowserResourcePolicyTests {
+    @Test func memoryPressureRespectsEachTabPolicy() {
+        #expect(BrowserResourcePolicy.shouldUnload(.always, critical: false))
+        #expect(BrowserResourcePolicy.shouldUnload(.whenNeeded, critical: false))
+        #expect(!BrowserResourcePolicy.shouldUnload(.lastResort, critical: false))
+        #expect(BrowserResourcePolicy.shouldUnload(.lastResort, critical: true))
+        #expect(!BrowserResourcePolicy.shouldUnload(.never, critical: true))
+    }
+
+    @Test func faviconProgressRequiresSettingActiveTabAndLoading() {
+        #expect(BrowserResourcePolicy.showFaviconProgress(
+            enabled: true,
+            isActive: true,
+            isLoading: true
+        ))
+        #expect(!BrowserResourcePolicy.showFaviconProgress(
+            enabled: false,
+            isActive: true,
+            isLoading: true
+        ))
+        #expect(!BrowserResourcePolicy.showFaviconProgress(
+            enabled: true,
+            isActive: false,
+            isLoading: true
+        ))
+        #expect(!BrowserResourcePolicy.showFaviconProgress(
+            enabled: true,
+            isActive: true,
+            isLoading: false
+        ))
+    }
+}
+
 // The selection ring in the minimal tab bar traces the favicon's own shape, so
 // the shape sniffer has to tell a full-bleed tile from a glyph on transparency.
 struct FaviconShapeTests {

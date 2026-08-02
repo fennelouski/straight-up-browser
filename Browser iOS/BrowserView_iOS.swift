@@ -70,6 +70,8 @@ struct BrowserView_iOS: View {
     @AppStorage("progressBarBottom") private var progressBarBottom = false
     @AppStorage("progressBarLeft") private var progressBarLeft = false
     @AppStorage("progressBarRight") private var progressBarRight = false
+    @AppStorage("progressFaviconRing") private var progressFaviconRing = false
+    @AppStorage("memorySaverEnabled") private var memorySaverEnabled = false
     @AppStorage("theme") private var theme = "System"
     @AppStorage("javaScriptEnabled") private var javaScriptEnabled = true
     @AppStorage("adBlockEnabled") private var adBlockEnabled = false
@@ -266,6 +268,11 @@ struct BrowserView_iOS: View {
         // one merged publisher — a chain of ~16 .onReceive modifiers overwhelms
         // the SwiftUI type-checker.
         .onReceive(commandPublisher) { handleCommand($0) }
+        .onReceive(NotificationCenter.default.publisher(for: .memoryPressure)) { note in
+            handleMemoryPressure(
+                critical: note.userInfo?["critical"] as? Bool ?? false
+            )
+        }
     }
 
     private var commandPublisher: AnyPublisher<Notification, Never> {
@@ -326,6 +333,7 @@ struct BrowserView_iOS: View {
                 sessionColor: sessionColor,
                 progressValue: progressValue,
                 isLoading: isLoading,
+                showFaviconProgress: progressFaviconRing,
                 onNewTab: createNewTab,
                 onCloseTab: { tabManager.closeTab($0, tabs: visibleTabs) },
                 onTogglePinned: {
@@ -670,6 +678,14 @@ struct BrowserView_iOS: View {
 
     private func clearHistory() {
         BrowsingDataCleaner.clearHistory(in: tabs)
+    }
+
+    private func handleMemoryPressure(critical: Bool) {
+        guard memorySaverEnabled else { return }
+        for tab in allTabs where tab.id != tabManager.selectedTabId
+            && BrowserResourcePolicy.shouldUnload(tab.memoryPolicy, critical: critical) {
+            webViewManager?.unloadWebView(for: tab.id)
+        }
     }
 
     private func zoom(by factor: Double) {
