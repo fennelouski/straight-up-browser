@@ -270,6 +270,9 @@ class WebViewManager: NSObject, ObservableObject {
     // Saved WKWebView.interactionState for tabs unloaded under memory pressure,
     // consumed when the tab is reactivated (restores scroll + back/forward).
     private var savedInteractionStates: [UUID: Any] = [:]
+    // Native WebKit media suspension is reapplied when an unloaded tab's web
+    // view is recreated. A real close removes the intent with the tab.
+    private var mediaSuspendedTabs: Set<UUID> = []
 
     // Active web view for the currently selected tab
     @Published var activeWebView: WKWebView?
@@ -497,6 +500,7 @@ class WebViewManager: NSObject, ObservableObject {
         Logger.log("WebViewManager: Creating new WKWebView for tab \(tabId)", type: "WebViewManager")
         let webView = createWebView(for: tabId)
         webViews[tabId] = webView
+        applyMediaSuspension(mediaSuspendedTabs.contains(tabId), to: webView)
         #if canImport(AppKit)
         MainActor.assumeIsolated { WebExtensionManager.shared.tabOpened(tabId) }
         #endif
@@ -578,6 +582,7 @@ class WebViewManager: NSObject, ObservableObject {
         if notifyClosed {
             tabSessions.removeValue(forKey: tabId)
             thumbnails.removeValue(forKey: tabId)
+            mediaSuspendedTabs.remove(tabId)
         }
     }
 
@@ -866,29 +871,25 @@ class WebViewManager: NSObject, ObservableObject {
     }
 
     func setMuted(_ muted: Bool, for tabId: UUID) {
+        let wasSuspended = mediaSuspendedTabs.contains(tabId)
+        if muted {
+            mediaSuspendedTabs.insert(tabId)
+        } else {
+            mediaSuspendedTabs.remove(tabId)
+        }
+        guard wasSuspended != muted else { return }
         guard let webView = webViews[tabId] else { return }
-        let value = muted ? "true" : "false"
-        webView.evaluateJavaScript("""
-            (() => {
-              const shouldMute = \(value);
-              const key = 'straightUpOriginalMuted';
-              const apply = (root) => root.querySelectorAll('audio, video').forEach(media => {
-                if (shouldMute) {
-                  if (!(key in media.dataset)) media.dataset[key] = media.muted ? '1' : '0';
-                  media.muted = true;
-                } else if (key in media.dataset) {
-                  media.muted = media.dataset[key] === '1';
-                  delete media.dataset[key];
-                }
-              });
-              apply(document);
-              if (window.__straightUpMuteObserver) window.__straightUpMuteObserver.disconnect();
-              if (shouldMute) {
-                window.__straightUpMuteObserver = new MutationObserver(() => apply(document));
-                window.__straightUpMuteObserver.observe(document.documentElement, { childList: true, subtree: true });
-              }
-            })()
-            """)
+        applyMediaSuspension(muted, to: webView)
+    }
+
+    func isMediaSuspended(for tabId: UUID) -> Bool {
+        mediaSuspendedTabs.contains(tabId)
+    }
+
+    private func applyMediaSuspension(_ suspended: Bool, to webView: WKWebView) {
+        // Native suspension covers frames, WebAudio, current media, and media
+        // created later. Page script cannot resume it until the app revokes it.
+        webView.setAllMediaPlaybackSuspended(suspended, completionHandler: nil)
     }
 
     // Clean up all web views
@@ -901,6 +902,7 @@ class WebViewManager: NSObject, ObservableObject {
             webView.removeFromSuperview()
         }
         webViews.removeAll()
+        mediaSuspendedTabs.removeAll()
         activeWebView = nil
     }
 

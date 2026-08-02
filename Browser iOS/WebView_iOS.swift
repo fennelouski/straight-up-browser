@@ -77,6 +77,9 @@ struct TabWebView: UIViewRepresentable {
         uiView.setActiveTab(activeTabId)
 
         guard let activeWebView = uiView.activeWebView else { return }
+        if let tab = tabs?.first(where: { $0.id == activeTabId }) {
+            webViewManager?.setMuted(tab.isMuted, for: tab.id)
+        }
 
         // Reapply the tab's persisted zoom (the zoom shortcuts write it).
         if let tab = tabs?.first(where: { $0.id == activeTabId }), activeWebView.pageZoom != tab.zoomLevel {
