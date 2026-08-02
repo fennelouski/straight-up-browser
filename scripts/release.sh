@@ -18,6 +18,7 @@ PROJECT="Straight Up Browser.xcodeproj"
 SCHEME="Browser"
 PROFILE="${NOTARY_PROFILE:-notary}"
 BUILD="build/release"
+SIGNING_IDENTITY="Developer ID Application: Nathan Fennel (EJLR2RPSV2)"
 
 # The release scheme is shared in source control; verify it still resolves.
 xcodebuild -list -project "$PROJECT" 2>/dev/null | grep -q "^        $SCHEME\$" || {
@@ -47,20 +48,33 @@ if ! git merge-base --is-ancestor "$SOURCE_COMMIT" origin/main; then
     exit 1
 fi
 
-# Never archive a release that has not passed the same gates as CI.
-RUN_UI_TESTS=1 ./scripts/verify.sh
-
-security find-identity -v -p codesigning | grep -q "Developer ID Application" || {
-    echo "No 'Developer ID Application' certificate in the keychain."
-    echo "Create one: Xcode -> Settings -> Accounts -> Manage Certificates -> + -> Developer ID Application"
+# Fail before the costly build if any identity, notarization, or update-signing
+# credential required by the finished release is unavailable.
+security find-identity -v -p codesigning | grep -Fq "\"$SIGNING_IDENTITY\"" || {
+    echo "Required signing identity '$SIGNING_IDENTITY' is not in the keychain."
     exit 1
 }
+security find-generic-password \
+    -s "https://sparkle-project.org" \
+    -a ed25519 >/dev/null || {
+    echo "Sparkle EdDSA signing key is not in the keychain."
+    exit 1
+}
+xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null || {
+    echo "Notarization profile '$PROFILE' is unavailable or invalid."
+    exit 1
+}
+
+# Never archive a release that has not passed the same gates as CI.
+RUN_UI_TESTS=1 ./scripts/verify.sh
 
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
 
 xcodebuild archive -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
-    -archivePath "$BUILD/Browser.xcarchive" -allowProvisioningUpdates
+    -onlyUsePackageVersionsFromResolvedFile \
+    -archivePath "$BUILD/Browser.xcarchive" -allowProvisioningUpdates \
+    ARCHS=arm64 ONLY_ACTIVE_ARCH=YES
 
 cat > "$BUILD/exportOptions.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -103,11 +117,26 @@ spctl -a -t exec -vv "$STAGE/Browser.app"
 
 hdiutil create -volname "Browser" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 
-codesign --force --sign "Developer ID Application" "$DMG"
+codesign --force --sign "$SIGNING_IDENTITY" "$DMG"
 xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
 xcrun stapler staple "$DMG"
 xcrun stapler validate "$DMG"
 spctl -a -t open --context context:primary-signature -v "$DMG"
+
+# Verify the actual application inside the finished disk image, not only the
+# staging copy used to create it.
+MOUNT_POINT="$(mktemp -d /tmp/straight-up-browser-release.XXXXXX)"
+cleanup_mount() {
+    hdiutil detach "$MOUNT_POINT" >/dev/null 2>&1 || true
+    rmdir "$MOUNT_POINT" >/dev/null 2>&1 || true
+}
+trap cleanup_mount EXIT
+hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT_POINT" "$DMG" >/dev/null
+test -x "$MOUNT_POINT/Browser.app/Contents/MacOS/Browser"
+codesign --verify --deep --strict --verbose=2 "$MOUNT_POINT/Browser.app"
+spctl -a -t exec -vv "$MOUNT_POINT/Browser.app"
+cleanup_mount
+trap - EXIT
 
 # Sparkle appcast: reads the version out of the stapled DMG and signs it with
 # the EdDSA private key in this Mac's Keychain (scripts/sparkle-bin/generate_keys
@@ -126,8 +155,25 @@ rm -f "$BUILD/Browser.zip"
     -o "$BUILD/browser-appcast.xml" \
     "$BUILD"
 
+APPCAST="$BUILD/browser-appcast.xml"
+APPCAST_URL="$(xmllint --xpath 'string(//*[local-name()="enclosure"]/@url)' "$APPCAST")"
+APPCAST_VERSION="$(xmllint --xpath 'string(//*[local-name()="item"]/*[local-name()="shortVersionString"])' "$APPCAST")"
+APPCAST_BUILD="$(xmllint --xpath 'string(//*[local-name()="item"]/*[local-name()="version"])' "$APPCAST")"
+APPCAST_LENGTH="$(xmllint --xpath 'string(//*[local-name()="enclosure"]/@length)' "$APPCAST")"
+APPCAST_SIGNATURE="$(xmllint --xpath 'string(//*[local-name()="enclosure"]/@*[local-name()="edSignature"])' "$APPCAST")"
+DMG_LENGTH="$(stat -f%z "$DMG")"
+EXPECTED_APPCAST_URL="https://nathanfennel.com/downloads/Browser.dmg"
+if [ "$APPCAST_URL" != "$EXPECTED_APPCAST_URL" ] ||
+   [ "$APPCAST_VERSION" != "$MARKETING_VERSION" ] ||
+   [ "$APPCAST_BUILD" != "$BUILD_NUMBER" ] ||
+   [ "$APPCAST_LENGTH" != "$DMG_LENGTH" ] ||
+   [ -z "$APPCAST_SIGNATURE" ]; then
+    echo "Generated appcast does not match the signed DMG." >&2
+    exit 1
+fi
+
 DMG_SHA256="$(shasum -a 256 "$DMG" | awk '{ print $1 }')"
-APPCAST_SHA256="$(shasum -a 256 "$BUILD/browser-appcast.xml" | awk '{ print $1 }')"
+APPCAST_SHA256="$(shasum -a 256 "$APPCAST" | awk '{ print $1 }')"
 printf '%s  %s\n' "$DMG_SHA256" "Browser.dmg" > "$BUILD/Browser.dmg.sha256"
 
 PROVENANCE="$BUILD/release-provenance.json"
@@ -140,6 +186,7 @@ plutil -insert build -dictionary "$PROVENANCE"
 plutil -insert build.marketingVersion -string "$MARKETING_VERSION" "$PROVENANCE"
 plutil -insert build.number -string "$BUILD_NUMBER" "$PROVENANCE"
 plutil -insert build.xcode -string "$(xcodebuild -version | paste -sd ' ' -)" "$PROVENANCE"
+plutil -insert build.architecture -string "arm64" "$PROVENANCE"
 plutil -insert artifacts -dictionary "$PROVENANCE"
 plutil -insert artifacts.dmgSHA256 -string "$DMG_SHA256" "$PROVENANCE"
 plutil -insert artifacts.appcastSHA256 -string "$APPCAST_SHA256" "$PROVENANCE"

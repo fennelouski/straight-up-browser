@@ -31,27 +31,32 @@ final class LinkPreviewManager: NSObject, ObservableObject, WKNavigationDelegate
         webView.navigationDelegate = self
 
         let center = NotificationCenter.default
-        observers.append(center.addObserver(forName: .browserLinkPreviewDown, object: nil, queue: .main) { [weak self] note in
-            let transfer = MainActorTransfer(value: note)
-            MainActor.assumeIsolated {
-                if let url = transfer.value.userInfo?["url"] as? URL {
-                    self?.linkDown(url)
-                }
+        observers.append(center.addMainActorObserver(
+            forName: .browserLinkPreviewDown,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            if let url = note.userInfo?["url"] as? URL {
+                self?.linkDown(url)
             }
         })
-        observers.append(center.addObserver(forName: .browserLinkPreviewLongPress, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.wantPreview = true
-                self?.maybeShow()
-            }
+        observers.append(center.addMainActorObserver(
+            forName: .browserLinkPreviewLongPress,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.wantPreview = true
+            self?.maybeShow()
         })
-        observers.append(center.addObserver(forName: .browserLinkPreviewUp, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                // Short click: the real navigation is happening; drop the prefetch
-                guard let self = self, !self.isShowing else { return }
-                self.webView.stopLoading()
-                self.wantPreview = false
-            }
+        observers.append(center.addMainActorObserver(
+            forName: .browserLinkPreviewUp,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            // Short click: the real navigation is happening; drop the prefetch.
+            guard let self, !self.isShowing else { return }
+            self.webView.stopLoading()
+            self.wantPreview = false
         })
     }
 

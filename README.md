@@ -52,8 +52,8 @@ third-party browser access behind the
 that entitlement, Browser hides WebAuthn APIs so websites fall back instead of
 offering a passkey flow that cannot complete. Browser also does not ship a
 password vault or form-autofill database. Website camera and microphone requests
-use WebKit's permission prompt. Website data can be cleared in Browser, but the
-app does not maintain a separate per-site permission ledger.
+use WebKit's permission prompt, and remembered per-site choices can be reviewed
+or revoked in Privacy settings. Private tabs never persist permission choices.
 
 ## Default keyboard shortcuts
 
@@ -130,12 +130,12 @@ Run the same warning-free gates used by CI and releases:
 ```
 
 This runs the macOS unit suite, builds both apps in Release, verifies that the
-macOS executable is universal (`arm64` + `x86_64`), and builds the macOS UI-test
+macOS executable is Apple Silicon-only (`arm64`), and builds the macOS UI-test
 target. On CI and in `scripts/release.sh`, it also executes the macOS and iPadOS
 UI suites. Set `RUN_UI_TESTS=1` locally on a Mac with Developer Mode/UI
 automation enabled to run the same executable UI gates. Swift and Clang warnings
-are treated as errors, and UI failures retain `.xcresult` bundles under the
-verification directory.
+are treated as errors, Browser.app line coverage must remain at or above 25%,
+and CI failures retain `.xcresult` bundles for diagnosis.
 
 For a standalone release build:
 
@@ -156,7 +156,8 @@ To produce the signed, notarized DMG, run `./scripts/release.sh`. It runs
 - **Models**: SwiftData stores tabs, groups, sessions, and bookmarks. Incognito
   tabs and their website data stores are memory-only.
 - **Navigation**: WebKit's back-forward list is authoritative.
-  `historyStrings` is the bounded visit list used by the Library and omnibar.
+  `BrowsingHistoryStore` is the durable, local-only visit list used by the
+  Library and omnibar; private visits are excluded.
 - **Isolation**: each normal/container/incognito session is assigned the
   appropriate persistent or ephemeral `WKWebsiteDataStore`.
 - **Window chrome**: `WindowManager` hides the title bar and traffic lights

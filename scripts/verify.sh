@@ -22,22 +22,76 @@ UI_TEST_SETTINGS=(
     SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
 )
 RUN_UI_TESTS="${RUN_UI_TESTS:-0}"
+RUN_TSAN="${RUN_TSAN:-1}"
+MIN_APP_COVERAGE_PERCENT="${MIN_APP_COVERAGE_PERCENT:-25}"
 
 ./scripts/validate-ci.sh
 ./scripts/validate-release-policy.sh
 ./scripts/validate-security-policy.sh
 
+# xcodebuild refuses to overwrite an existing result bundle. Remove only the
+# named diagnostic artifacts so repeated local runs remain deterministic.
+for result_bundle in \
+    "$DERIVED_DATA_ROOT/macos-tests.xcresult" \
+    "$DERIVED_DATA_ROOT/macos-tsan.xcresult" \
+    "$DERIVED_DATA_ROOT/macos-ui-tests.xcresult" \
+    "$DERIVED_DATA_ROOT/ios-ui-tests.xcresult"; do
+    if [ -e "$result_bundle" ]; then
+        rm -rf -- "$result_bundle"
+    fi
+done
+
 echo "Running macOS unit tests..."
 xcodebuild test -quiet \
+    -onlyUsePackageVersionsFromResolvedFile \
     -project "$PROJECT" \
     -scheme "Browser" \
     -destination "platform=macOS,arch=arm64" \
     -derivedDataPath "$DERIVED_DATA_ROOT/macos-tests" \
+    -resultBundlePath "$DERIVED_DATA_ROOT/macos-tests.xcresult" \
     -parallel-testing-enabled NO \
+    -enableCodeCoverage YES \
+    -test-timeouts-enabled YES \
+    -default-test-execution-time-allowance 60 \
+    -maximum-test-execution-time-allowance 120 \
     "${COMMON_SETTINGS[@]}"
+
+APP_COVERAGE_PERCENT="$(
+    xcrun xccov view --report "$DERIVED_DATA_ROOT/macos-tests.xcresult" |
+        awk '$1 == "Browser.app" { gsub("%", "", $2); print $2; exit }'
+)"
+if [ -z "$APP_COVERAGE_PERCENT" ]; then
+    echo "Coverage gate failed: Browser.app coverage was not found." >&2
+    exit 1
+fi
+if ! awk -v actual="$APP_COVERAGE_PERCENT" -v minimum="$MIN_APP_COVERAGE_PERCENT" \
+    'BEGIN { exit !(actual + 0 >= minimum + 0) }'; then
+    echo "Coverage gate failed: Browser.app is ${APP_COVERAGE_PERCENT}%; minimum is ${MIN_APP_COVERAGE_PERCENT}%." >&2
+    exit 1
+fi
+echo "Coverage gate passed: Browser.app is ${APP_COVERAGE_PERCENT}% (minimum ${MIN_APP_COVERAGE_PERCENT}%)."
+
+if [ "$RUN_TSAN" = "1" ]; then
+    echo "Running macOS unit tests with Thread Sanitizer..."
+    xcodebuild test -quiet \
+        -onlyUsePackageVersionsFromResolvedFile \
+        -project "$PROJECT" \
+        -scheme "Browser" \
+        -destination "platform=macOS,arch=arm64" \
+        -derivedDataPath "$DERIVED_DATA_ROOT/macos-tsan" \
+        -resultBundlePath "$DERIVED_DATA_ROOT/macos-tsan.xcresult" \
+        -parallel-testing-enabled NO \
+        -enableThreadSanitizer YES \
+        ENABLE_DEBUG_DYLIB=NO \
+        -test-timeouts-enabled YES \
+        -default-test-execution-time-allowance 60 \
+        -maximum-test-execution-time-allowance 120 \
+        "${COMMON_SETTINGS[@]}"
+fi
 
 echo "Building the iOS app in Release..."
 xcodebuild build -quiet \
+    -onlyUsePackageVersionsFromResolvedFile \
     -project "$PROJECT" \
     -scheme "Browser iOS" \
     -configuration Release \
@@ -45,15 +99,16 @@ xcodebuild build -quiet \
     -derivedDataPath "$DERIVED_DATA_ROOT/ios-build" \
     "${COMMON_SETTINGS[@]}"
 
-echo "Building the universal macOS app in Release..."
+echo "Building the Apple Silicon macOS app in Release..."
 xcodebuild build -quiet \
+    -onlyUsePackageVersionsFromResolvedFile \
     -project "$PROJECT" \
     -scheme "Browser" \
     -configuration Release \
     -destination "generic/platform=macOS" \
     -derivedDataPath "$DERIVED_DATA_ROOT/macos-release" \
-    ARCHS="arm64 x86_64" \
-    ONLY_ACTIVE_ARCH=NO \
+    ARCHS=arm64 \
+    ONLY_ACTIVE_ARCH=YES \
     "${COMMON_SETTINGS[@]}"
 
 MAC_EXECUTABLE="$DERIVED_DATA_ROOT/macos-release/Build/Products/Release/Browser.app/Contents/MacOS/Browser"
@@ -63,6 +118,7 @@ CLI_EXECUTABLE="$DERIVED_DATA_ROOT/macos-release/Build/Products/Release/Browser.
 if [ "$RUN_UI_TESTS" = "1" ]; then
     echo "Running macOS UI tests..."
     xcodebuild test -quiet \
+        -onlyUsePackageVersionsFromResolvedFile \
         -project "$PROJECT" \
         -scheme "Browser UI" \
         -destination "platform=macOS,arch=arm64" \
@@ -84,6 +140,7 @@ if [ "$RUN_UI_TESTS" = "1" ]; then
     }
     trap cleanup_simulator EXIT
     xcodebuild test -quiet \
+        -onlyUsePackageVersionsFromResolvedFile \
         -project "$PROJECT" \
         -scheme "Browser iOS" \
         -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_ID" \
@@ -97,6 +154,7 @@ else
     echo "UI test execution skipped (set RUN_UI_TESTS=1 on a UI-automation-enabled host)."
     echo "Building macOS UI tests..."
     xcodebuild build-for-testing -quiet \
+        -onlyUsePackageVersionsFromResolvedFile \
         -project "$PROJECT" \
         -scheme "Browser UI" \
         -destination "platform=macOS,arch=arm64" \

@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Combine
 import os
 
 enum LogPayloadVisibility: Equatable {
@@ -54,5 +55,25 @@ struct Logger {
 
     nonisolated static func error(_ message: String, type: String = "", file: String = #file, function: String = #function, line: Int = #line) {
         log("[ERROR] \(message)", type: type, file: file, function: function, line: line)
+    }
+}
+
+struct PersistenceIssue: Identifiable, Equatable {
+    let id = UUID()
+    let operation: String
+    let message: String
+}
+
+@MainActor
+final class PersistenceDiagnostics: ObservableObject {
+    static let shared = PersistenceDiagnostics()
+    @Published var latestIssue: PersistenceIssue?
+
+    func report(operation: String, error: Error) {
+        Logger.error("\(operation): \(error.localizedDescription)", type: "Persistence")
+        latestIssue = PersistenceIssue(
+            operation: operation,
+            message: error.localizedDescription
+        )
     }
 }

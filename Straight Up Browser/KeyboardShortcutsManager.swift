@@ -219,7 +219,7 @@ class KeyboardShortcutsManager {
         // the end, in .common mode so a tracking run loop (menus, scrollbars)
         // can't delay it.
         let timer = Timer(timeInterval: duration, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
+            Task { @MainActor in
                 self?.openReleaseWindow()
             }
         }
@@ -236,7 +236,7 @@ class KeyboardShortcutsManager {
         // If the key wasn't released during this window, quit at the end so a
         // long hold still closes this app instead of leaking into the next one.
         let releaseWindowTimer = Timer(timeInterval: Self.quitReleaseWindowDuration, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
+            Task { @MainActor in
                 self?.performQuitNow()
             }
         }

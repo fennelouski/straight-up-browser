@@ -13,12 +13,10 @@ for binary in "$@"; do
         exit 1
     fi
     architectures="$(lipo -archs "$binary")"
-    for required_arch in arm64 x86_64; do
-        if [[ " $architectures " != *" $required_arch "* ]]; then
-            echo "Architecture gate failed: $binary has '$architectures'." >&2
-            exit 1
-        fi
-    done
+    if [ "$architectures" != "arm64" ]; then
+        echo "Architecture gate failed: $binary must be arm64-only, found '$architectures'." >&2
+        exit 1
+    fi
 done
 
-echo "Universal architecture gate passed."
+echo "Apple Silicon architecture gate passed."

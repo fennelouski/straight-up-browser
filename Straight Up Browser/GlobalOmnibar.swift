@@ -29,7 +29,7 @@ enum GlobalOmnibarHotkey {
             eventKind: UInt32(kEventHotKeyPressed)
         )
         InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
-            MainActor.assumeIsolated { GlobalOmnibarHotkey.onPress?() }
+            Task { @MainActor in GlobalOmnibarHotkey.onPress?() }
             return noErr
         }, 1, &eventType, nil, nil)
     }

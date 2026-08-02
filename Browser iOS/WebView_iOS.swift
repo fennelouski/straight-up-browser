@@ -340,11 +340,11 @@ struct TabWebView: UIViewRepresentable {
         }
 
         nonisolated override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-            let transfer = MainActorTransfer(value: object)
-            MainActor.assumeIsolated {
-                if keyPath == "estimatedProgress", let webView = transfer.value as? WKWebView {
+            let transfer = MainActorKVOChange(object: object, change: change)
+            Task { @MainActor in
+                if keyPath == "estimatedProgress", let webView = transfer.object as? WKWebView {
                     self.parent.progressValue = webView.estimatedProgress
-                } else if keyPath == #keyPath(WKWebView.url), let webView = transfer.value as? WKWebView {
+                } else if keyPath == #keyPath(WKWebView.url), let webView = transfer.object as? WKWebView {
                     // The page rewrote its own URL (pushState/replaceState/hash) — no
                     // delegate callback fires. Sync the tab, or the next view update
                     // sees tab != web view and re-loads the stale URL.
@@ -490,14 +490,12 @@ struct TabWebView: UIViewRepresentable {
                     : .standard
             )
             downloadTransferIds[download] = transferId
-            let downloadTransfer = MainActorTransfer(value: download)
             downloadProgressObservers[download] = download.progress.observe(
                 \.fractionCompleted,
                 options: [.initial, .new]
             ) { _, change in
+                guard let progress = change.newValue else { return }
                 Task { @MainActor in
-                    let progress = change.newValue
-                        ?? downloadTransfer.value.progress.fractionCompleted
                     DownloadManager.shared.update(
                         transferId,
                         progress: progress
@@ -803,14 +801,35 @@ final class WebViewContainer_iOS: UIView {
     }
 
     nonisolated override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-        let transfer = MainActorTransfer(value: (object, change, context))
-        MainActor.assumeIsolated {
-            let (object, change, context) = transfer.value
-            if keyPath == "estimatedProgress" || keyPath == #keyPath(WKWebView.url), object is WKWebView {
-                coordinator?.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
-            } else {
-                super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
-            }
+        let transfer = MainActorKVOChange(
+            object: object,
+            change: change,
+            context: context
+        )
+        Task { @MainActor in
+            self.handleObservedValue(forKeyPath: keyPath, transfer: transfer)
+        }
+    }
+
+    private func handleObservedValue(
+        forKeyPath keyPath: String?,
+        transfer: MainActorKVOChange
+    ) {
+        if keyPath == "estimatedProgress" || keyPath == #keyPath(WKWebView.url),
+           transfer.object is WKWebView {
+            coordinator?.observeValue(
+                forKeyPath: keyPath,
+                of: transfer.object,
+                change: transfer.change,
+                context: transfer.context
+            )
+        } else {
+            super.observeValue(
+                forKeyPath: keyPath,
+                of: transfer.object,
+                change: transfer.change,
+                context: transfer.context
+            )
         }
     }
 }

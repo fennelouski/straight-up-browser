@@ -62,13 +62,14 @@ check on demand.
    ```
 
    First runs `scripts/verify.sh` with executable macOS and iPadOS UI tests,
-   Release builds, universal-architecture validation, and warnings treated as
+   Release builds, Apple-Silicon architecture validation, and warnings treated as
    errors. Only a clean result proceeds to archive → Developer ID export → app
    notarization/stapling → DMG
    build/sign/notarization/stapling → EdDSA-signed Sparkle appcast.
    The script refuses a dirty tree, an untagged/mismatched version, or a commit
    not present on `origin/main`. It validates bundle versions, nested signatures,
-   stapled tickets, and Gatekeeper acceptance. Output:
+   stapled tickets, Gatekeeper acceptance, the app mounted from the finished DMG,
+   and the appcast URL/version/build/size/signature. Output:
    `build/release/Browser.dmg`, `build/release/browser-appcast.xml`,
    `build/release/Browser.dmg.sha256`, and
    `build/release/release-provenance.json`. The provenance file records the
