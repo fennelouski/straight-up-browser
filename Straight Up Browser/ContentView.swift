@@ -336,6 +336,25 @@ enum FindBar {
     }
 }
 
+private enum ContentAccessibilityFocus: Hashable {
+    case page
+    case omnibar
+    case library
+    case reader
+}
+
+private enum ContentModal: Identifiable, Equatable {
+    case library
+    case reader(ReaderArticle)
+
+    var id: String {
+        switch self {
+        case .library: "library"
+        case .reader: "reader"
+        }
+    }
+}
+
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -373,9 +392,9 @@ struct ContentView: View {
     @State private var isLoading = false
     @State private var isImportBookmarksDialogPresented = false
     @State private var availableBrowsers: [BrowserType] = []
-    @State private var showLibrary = false
     @State private var librarySection = BrowserLibrarySection.bookmarks
-    @State private var readerArticle: ReaderArticle?
+    @State private var contentModal: ContentModal?
+    @AccessibilityFocusState private var accessibilityFocus: ContentAccessibilityFocus?
     @State private var showCreateGroupDialog = false
     @State private var newGroupName = ""
     @State private var newGroupColor = Color.blue
@@ -962,6 +981,12 @@ struct ContentView: View {
                                 pageProtection: pageProtectionSummary
                             )
                             .allowsHitTesting(true)
+                            .accessibilityElement(children: .contain)
+                            .accessibilityAddTraits(.isModal)
+                            .accessibilityFocused(
+                                $accessibilityFocus,
+                                equals: .omnibar
+                            )
                             Spacer(minLength: 0)
                         }
                         .frame(maxWidth: .infinity)
@@ -1329,80 +1354,79 @@ struct ContentView: View {
         }
     }
 
-    private var libraryOverlay: some View {
-        Group {
-            if showLibrary {
-                BrowserLibraryView(
-                    bookmarks: allBookmarks,
-                    initialSection: librarySection,
-                    onOpen: openFromLibrary,
-                    onClose: { showLibrary = false },
-                    onUpdateBookmark: { bookmark, title, url, category in
-                        bookmarkManager?.updateBookmark(
-                            bookmark,
-                            title: title,
-                            url: url,
-                            category: category
-                        )
-                    },
-                    onDeleteBookmark: { bookmarkManager?.removeBookmark($0) },
-                    onDeleteHistory: removeHistoryURL,
-                    onClearHistory: clearHistoryFromLibrary
+    private var librarySheet: some View {
+        BrowserLibraryView(
+            bookmarks: allBookmarks,
+            initialSection: librarySection,
+            onOpen: openFromLibrary,
+            onClose: { contentModal = nil },
+            onUpdateBookmark: { bookmark, title, url, category in
+                bookmarkManager?.updateBookmark(
+                    bookmark,
+                    title: title,
+                    url: url,
+                    category: category
                 )
-            }
-        }
+            },
+            onDeleteBookmark: { bookmarkManager?.removeBookmark($0) },
+            onDeleteHistory: removeHistoryURL,
+            onClearHistory: clearHistoryFromLibrary
+        )
+        .accessibilityFocused(
+            $accessibilityFocus,
+            equals: .library
+        )
     }
 
-    private var readerOverlay: some View {
-        Group {
-            if let article = readerArticle {
-                ZStack {
-                    Color.black.opacity(0.35)
-                        .ignoresSafeArea()
-                        .onTapGesture { readerArticle = nil }
-
-                    VStack(spacing: 0) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(article.title)
-                                    .font(.title2.bold())
-                                    .lineLimit(2)
-                                if let byline = article.byline, !byline.isEmpty {
-                                    Text(byline)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                            Button {
-                                readerArticle = nil
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.title2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Close Reader Mode")
-                        }
-                        .padding()
-
-                        Divider()
-
-                        ScrollView {
-                            Text(article.text)
-                                .font(.system(size: 18, design: .serif))
-                                .lineSpacing(6)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: 700, alignment: .leading)
-                                .padding(32)
-                        }
+    private func readerSheet(_ article: ReaderArticle) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(article.title)
+                        .font(.title2.bold())
+                        .lineLimit(2)
+                    if let byline = article.byline, !byline.isEmpty {
+                        Text(byline)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
-                    .frame(width: 820, height: 650)
-                    .background(Color(.textBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-                    .shadow(radius: 24)
                 }
+                Spacer()
+                Button {
+                    contentModal = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close Reader Mode")
             }
+            .padding()
+
+            Divider()
+
+            ScrollView {
+                Text(article.text)
+                    .font(.system(size: 18, design: .serif))
+                    .lineSpacing(6)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: 700, alignment: .leading)
+                    .padding(32)
+            }
+        }
+        .frame(width: 820, height: 650)
+        .background(Color(.textBackgroundColor))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Reader Mode")
+        .accessibilityAddTraits(.isModal)
+        .accessibilityFocused(
+            $accessibilityFocus,
+            equals: .reader
+        )
+        .onKeyPress(.escape) {
+            contentModal = nil
+            return .handled
         }
     }
 
@@ -1545,6 +1569,17 @@ struct ContentView: View {
     private var mainContent: some View {
         ZStack {
             webViewContent
+                .accessibilityHidden(
+                    BrowserAccessibility.backgroundIsHidden(
+                        sidebarPresented: false,
+                        omnibarPresented: showOmnibar,
+                        modalPresented: contentModal != nil
+                    )
+                )
+                .accessibilityFocused(
+                    $accessibilityFocus,
+                    equals: .page
+                )
                 .zIndex(0)
         }
         .overlay(progressBarOverlay.zIndex(1))
@@ -1557,8 +1592,6 @@ struct ContentView: View {
         .overlay(createContainerDialogOverlay.zIndex(4))
         .overlay(saveWorkspaceDialogOverlay.zIndex(5))
         .overlay(importBookmarksDialogOverlay.zIndex(6))
-        .overlay(libraryOverlay.zIndex(7))
-        .overlay(readerOverlay.zIndex(7))
         .overlay(quitHoldOverlay.zIndex(7))
         .overlay(shortcutCheatSheetOverlay.zIndex(8))
         .overlay(tabGridOverlay.zIndex(8))
@@ -1979,7 +2012,23 @@ struct ContentView: View {
             // Dismissing the omnibar (Esc, click-away) without navigating takes
             // the blank tab it was opened for with it. Navigating first gives the
             // tab a URL, so this no-ops there.
-            if !isShowing { tabManager.closePendingNewTab(tabs: allTabs) }
+            if isShowing {
+                DispatchQueue.main.async {
+                    accessibilityFocus = .omnibar
+                }
+            } else {
+                tabManager.closePendingNewTab(tabs: allTabs)
+                accessibilityFocus = .page
+            }
+        }
+        .onChange(of: contentModal) { _, modal in
+            DispatchQueue.main.async {
+                switch modal {
+                case .library: accessibilityFocus = .library
+                case .reader: accessibilityFocus = .reader
+                case nil: accessibilityFocus = .page
+                }
+            }
         }
         .onChange(of: tabManager.selectedTabId) { oldValue, newValue in
             Logger.log("ContentView onChange selectedTabId: \(oldValue?.uuidString ?? "nil") -> \(newValue?.uuidString ?? "nil")", type: "ContentView")
@@ -2045,6 +2094,14 @@ struct ContentView: View {
         .onDisappear {
             notificationManager?.cleanup()
             keyboardShortcutsManager?.teardown()
+        }
+        .sheet(item: $contentModal) { modal in
+            switch modal {
+            case .library:
+                librarySheet
+            case .reader(let article):
+                readerSheet(article)
+            }
         }
         // Hides the traffic lights and titlebar on the window actually hosting this
         // view, once it has one — see WindowChrome for why this isn't done at onAppear.
@@ -2425,17 +2482,17 @@ struct ContentView: View {
 
     private func showBookmarks() {
         librarySection = .bookmarks
-        showLibrary = true
+        contentModal = .library
     }
 
     private func showHistory() {
         librarySection = .history
-        showLibrary = true
+        contentModal = .library
     }
 
     private func openFromLibrary(_ url: URL) {
         _ = navigationManager?.navigateToURL(url.absoluteString, activeTab: activeTab)
-        showLibrary = false
+        contentModal = nil
     }
 
     private func removeHistoryURL(_ url: URL) {
@@ -2458,7 +2515,7 @@ struct ContentView: View {
         guard let webViewManager else { return }
         webViewManager.evaluateJavaScript(ReaderMode.extractionScript) { value, error in
             if let article = ReaderMode.article(from: value) {
-                readerArticle = article
+                contentModal = .reader(article)
             } else {
                 let alert = NSAlert()
                 alert.messageText = String(localized: "Reader Mode Unavailable")

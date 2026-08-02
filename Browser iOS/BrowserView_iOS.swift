@@ -18,6 +18,12 @@ import WebKit
 import Combine
 import GameController  // GCKeyboard: detect a hardware keyboard to gate the touch guide
 
+private enum BrowserAccessibilityFocus_iOS: Hashable {
+    case page
+    case sidebar
+    case omnibar
+}
+
 struct BrowserView_iOS: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -58,6 +64,8 @@ struct BrowserView_iOS: View {
     @State private var showDownloads = false
     @State private var librarySection = BrowserLibrarySection.bookmarks
     @State private var downloadFailureMessage: String?
+    @AccessibilityFocusState private var accessibilityFocus:
+        BrowserAccessibilityFocus_iOS?
 
     // Group / workspace dialogs
     @State private var showNewGroup = false
@@ -87,6 +95,28 @@ struct BrowserView_iOS: View {
     private var allTabs: [Tab] { tabs + tabManager.incognitoTabs }
 
     private var activeTab: Tab? { allTabs.first { $0.id == tabManager.selectedTabId } }
+
+    private var isDownloadFailurePresented: Binding<Bool> {
+        Binding(
+            get: { downloadFailureMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    downloadFailureMessage = nil
+                }
+            }
+        )
+    }
+
+    private var isContainerDeletionErrorPresented: Binding<Bool> {
+        Binding(
+            get: { containerDeletionError != nil },
+            set: { isPresented in
+                if !isPresented {
+                    containerDeletionError = nil
+                }
+            }
+        )
+    }
 
     private var pageProtectionSummary: PageProtectionSummary? {
         guard let tab = activeTab, tab.url != nil else { return nil }
@@ -149,6 +179,10 @@ struct BrowserView_iOS: View {
     // MARK: Body
 
     var body: some View {
+        eventContent
+    }
+
+    private var browserLayout: some View {
         // Custom immersive layout (not NavigationSplitView, whose detail wouldn't
         // instantiate the WKWebView representable): full-bleed web with the sidebar
         // and omnibar as summoned overlays, so the chrome truly disappears.
@@ -169,6 +203,17 @@ struct BrowserView_iOS: View {
                            activeTabId: tabManager.selectedTabId,
                            onURLChange: { _ in })
                     .ignoresSafeArea()
+                    .accessibilityHidden(
+                        BrowserAccessibility.backgroundIsHidden(
+                            sidebarPresented: showSidebar,
+                            omnibarPresented: showOmnibar,
+                            modalPresented: false
+                        )
+                    )
+                    .accessibilityFocused(
+                        $accessibilityFocus,
+                        equals: .page
+                    )
             }
 
             EdgeProgressBar(progress: progressValue, show: showProgressBar,
@@ -193,6 +238,10 @@ struct BrowserView_iOS: View {
                 omnibarOverlay.transition(.opacity)
             }
         }
+    }
+
+    private var configuredBrowser: some View {
+        browserLayout
         .preferredColorScheme(colorScheme)
         .transaction {
             if reduceMotion { $0.disablesAnimations = true }
@@ -209,6 +258,16 @@ struct BrowserView_iOS: View {
             withAnimation { showSidebar = false }  // picking a tab dismisses the panel
         }
         .onChange(of: activeTab?.url) { _, _ in if !showOmnibar { syncOmnibarToActiveTab() } }
+        .onChange(of: showSidebar) { _, isShowing in
+            DispatchQueue.main.async {
+                accessibilityFocus = isShowing ? .sidebar : .page
+            }
+        }
+        .onChange(of: showOmnibar) { _, isShowing in
+            DispatchQueue.main.async {
+                accessibilityFocus = isShowing ? .omnibar : .page
+            }
+        }
         .onChange(of: isLoading) { _, loading in withAnimation { showProgressBar = loading } }
         .onChange(of: tabs) { _, newTabs in
             // Keep restored container tabs' sessions registered, and keep a valid
@@ -216,6 +275,10 @@ struct BrowserView_iOS: View {
             webViewManager?.syncSessions(from: newTabs)
             tabManager.ensureSelectedTab(from: TabSync.visible(newTabs) + tabManager.incognitoTabs)
         }
+    }
+
+    private var alertContent: some View {
+        configuredBrowser
         .alert("New Group", isPresented: $showNewGroup) {
             TextField("Group name", text: $newGroupName)
             Button("Create") { createGroup(newGroupName) }
@@ -235,10 +298,7 @@ struct BrowserView_iOS: View {
         }
         .alert(
             "Container Data Couldn’t Be Removed",
-            isPresented: Binding(
-                get: { containerDeletionError != nil },
-                set: { if !$0 { containerDeletionError = nil } }
-            )
+            isPresented: isContainerDeletionErrorPresented
         ) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -246,16 +306,17 @@ struct BrowserView_iOS: View {
         }
         .alert(
             "Download Failed",
-            isPresented: Binding(
-                get: { downloadFailureMessage != nil },
-                set: { if !$0 { downloadFailureMessage = nil } }
-            )
+            isPresented: isDownloadFailurePresented
         ) {
             Button("View Downloads") { showDownloads = true }
             Button("Dismiss", role: .cancel) {}
         } message: {
             Text(downloadFailureMessage ?? "")
         }
+    }
+
+    private var sheetContent: some View {
+        alertContent
         .sheet(isPresented: $showShortcutSheet) { ShortcutCheatSheet_iOS() }
         .sheet(isPresented: $showGestureGuide) {
             GestureGuide_iOS().presentationDetents([.medium, .large])
@@ -287,6 +348,10 @@ struct BrowserView_iOS: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+    }
+
+    private var eventContent: some View {
+        sheetContent
         // Keyboard commands (posted by BrowserApp_iOS.commands), handled through
         // one merged publisher — a chain of ~16 .onReceive modifiers overwhelms
         // the SwiftUI type-checker.
@@ -394,6 +459,17 @@ struct BrowserView_iOS: View {
         .frame(maxHeight: .infinity)
         .background(.regularMaterial)
         .ignoresSafeArea(edges: .bottom)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Tabs")
+        .accessibilityAddTraits(.isModal)
+        .accessibilityFocused(
+            $accessibilityFocus,
+            equals: .sidebar
+        )
+        .onKeyPress(.escape) {
+            withAnimation { showSidebar = false }
+            return .handled
+        }
     }
 
     // Floating omnibar summoned over the page (the Mac app's model) so the chrome
@@ -416,6 +492,13 @@ struct BrowserView_iOS: View {
             .frame(maxWidth: 640)
             .padding(.horizontal, 16)
             .padding(.top, 10)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Address and Search")
+        .accessibilityAddTraits(.isModal)
+        .onKeyPress(.escape) {
+            dismissOmnibar()
+            return .handled
         }
     }
 
@@ -467,6 +550,10 @@ struct BrowserView_iOS: View {
         .overlay(Capsule().stroke(Color.primary.opacity(0.08)))
         .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
         .onChange(of: omnibarText) { _, _ in selectedSuggestion = -1 }
+        .accessibilityFocused(
+            $accessibilityFocus,
+            equals: .omnibar
+        )
     }
 
     // MARK: Bottom gesture bar (touch's stand-in for the keyboard)

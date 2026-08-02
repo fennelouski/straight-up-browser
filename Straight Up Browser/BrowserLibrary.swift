@@ -242,22 +242,19 @@ struct BrowserLibraryView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.3)
-                .ignoresSafeArea()
-                .onTapGesture(perform: onClose)
-
-            VStack(spacing: 0) {
-                header
-                Divider()
-                content
-            }
-            .frame(width: 680, height: 520)
-            .background(.regularMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .shadow(radius: 24)
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Browser Library")
+        VStack(spacing: 0) {
+            header
+            Divider()
+            content
+        }
+        .frame(width: 680, height: 520)
+        .background(.regularMaterial)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Browser Library")
+        .accessibilityAddTraits(.isModal)
+        .onKeyPress(.escape) {
+            onClose()
+            return .handled
         }
         .sheet(item: $editingBookmark) { bookmark in
             BookmarkEditor(
