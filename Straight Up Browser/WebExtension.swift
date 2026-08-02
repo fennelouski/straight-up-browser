@@ -122,6 +122,61 @@ enum ExtensionPermissionPolicy {
     }
 }
 
+struct ExtensionPathRegistry {
+    private static let pathsKey = "loadedExtensionPaths"
+    private static let legacyPathKey = "loadedExtensionPath"
+
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        migrateLegacyPathIfNeeded()
+    }
+
+    var paths: [URL] {
+        let stored = defaults.stringArray(forKey: Self.pathsKey) ?? []
+        return uniqueStandardizedURLs(stored.map { URL(fileURLWithPath: $0) })
+    }
+
+    func remember(_ directory: URL) {
+        store(paths + [directory])
+    }
+
+    func forget(_ directory: URL) {
+        let removedPath = directory.standardizedFileURL.path
+        store(paths.filter { $0.path != removedPath })
+    }
+
+    func forgetAll() {
+        defaults.removeObject(forKey: Self.pathsKey)
+        defaults.removeObject(forKey: Self.legacyPathKey)
+    }
+
+    private func migrateLegacyPathIfNeeded() {
+        guard defaults.stringArray(forKey: Self.pathsKey) == nil,
+              let legacyPath = defaults.string(forKey: Self.legacyPathKey) else {
+            return
+        }
+        store([URL(fileURLWithPath: legacyPath)])
+        defaults.removeObject(forKey: Self.legacyPathKey)
+    }
+
+    private func store(_ urls: [URL]) {
+        defaults.set(
+            uniqueStandardizedURLs(urls).map(\.path),
+            forKey: Self.pathsKey
+        )
+    }
+
+    private func uniqueStandardizedURLs(_ urls: [URL]) -> [URL] {
+        var seen: Set<String> = []
+        return urls.compactMap {
+            let standardized = $0.standardizedFileURL
+            return seen.insert(standardized.path).inserted ? standardized : nil
+        }
+    }
+}
+
 // The bridge exposes one normal and one private extension window so WebKit can
 // enforce private-data access independently even though the app can show both
 // session kinds in one native window.
@@ -134,7 +189,14 @@ final class WebExtensionManager: NSObject {
     // a web view after the fact. Inert until an extension is loaded.
     let controller = WKWebExtensionController()
 
-    private var contexts: [WKWebExtensionContext] = []
+    private struct LoadedExtension {
+        let context: WKWebExtensionContext
+        let directory: URL
+    }
+
+    private var loadedExtensions: [LoadedExtension] = []
+    private var loadingPaths: Set<String> = []
+    private var restoredPersistedExtensions = false
     private var extTabs: [UUID: ExtTab] = [:]
     private lazy var normalWindow = ExtWindow(manager: self, privateMode: false)
     private lazy var privateWindow = ExtWindow(manager: self, privateMode: true)
@@ -143,10 +205,11 @@ final class WebExtensionManager: NSObject {
     // bridge answers tabs.query / activeTab from this one.
     private weak var activeManager: WebViewManager?
 
-    private let lastPathKey = "loadedExtensionPath"
     private let approvalRecordsKey = "approvedExtensionRecords"
     private let legacyApprovedScopesKey = "approvedExtensionScopes"
     private let privateAccessKey = "extensionsPrivateAccess"
+    private let preferredPopupPathKey = "preferredExtensionPopupPath"
+    private let pathRegistry = ExtensionPathRegistry()
 
     private struct ApprovalRecord: Codable {
         let scopes: [String]
@@ -158,18 +221,20 @@ final class WebExtensionManager: NSObject {
         controller.delegate = self
     }
 
-    var hasExtensions: Bool { !contexts.isEmpty }
+    var hasExtensions: Bool { !loadedExtensions.isEmpty }
     var allowsPrivateAccess: Bool {
         UserDefaults.standard.bool(forKey: privateAccessKey)
     }
 
     /// Called by WebViewManager as it creates web views. Gives the bridge a
-    /// live manager to read tabs from, and reloads the last-used extension once
-    /// there's somewhere to host it.
+    /// live manager to read tabs from, and restores every remembered extension
+    /// once there's somewhere to host them.
     func register(_ manager: WebViewManager) {
         activeManager = manager
-        if contexts.isEmpty, let path = UserDefaults.standard.string(forKey: lastPathKey) {
-            loadExtension(at: URL(fileURLWithPath: path), remember: false)
+        guard !restoredPersistedExtensions else { return }
+        restoredPersistedExtensions = true
+        for directory in pathRegistry.paths {
+            loadExtension(at: directory, remember: false)
         }
     }
 
@@ -192,8 +257,15 @@ final class WebExtensionManager: NSObject {
 
     func loadExtension(at directory: URL, remember: Bool = true) {
         Task {
+            let extensionDirectory = directory.standardizedFileURL
+            guard !loadingPaths.contains(extensionDirectory.path),
+                  !loadedExtensions.contains(where: {
+                      $0.directory.path == extensionDirectory.path
+                  }) else { return }
+            loadingPaths.insert(extensionDirectory.path)
+            defer { loadingPaths.remove(extensionDirectory.path) }
+
             do {
-                let extensionDirectory = directory.standardizedFileURL
                 let fingerprint = try ExtensionIntegrityFingerprint.fingerprint(
                     of: extensionDirectory
                 )
@@ -238,16 +310,24 @@ final class WebExtensionManager: NSObject {
                 context.hasAccessToPrivateData = allowsPrivateAccess
 
                 try controller.load(context)
-                contexts.append(context)
+                loadedExtensions.append(
+                    LoadedExtension(
+                        context: context,
+                        directory: extensionDirectory
+                    )
+                )
                 rememberApproval(
                     scopes,
                     fingerprint: fingerprint,
                     at: extensionDirectory
                 )
                 if remember {
+                    pathRegistry.remember(extensionDirectory)
+                }
+                if UserDefaults.standard.string(forKey: preferredPopupPathKey) == nil {
                     UserDefaults.standard.set(
                         extensionDirectory.path,
-                        forKey: lastPathKey
+                        forKey: preferredPopupPathKey
                     )
                 }
                 Logger.log("Loaded extension: \(ext.displayName ?? "?")", type: "WebExtension")
@@ -325,10 +405,24 @@ final class WebExtensionManager: NSObject {
     func presentManagementPanel() {
         let alert = NSAlert()
         alert.messageText = String(localized: "Extensions")
-        let names = contexts.map { $0.webExtension.displayName ?? "Unnamed Extension" }
+        let names = loadedExtensions.map {
+            $0.context.webExtension.displayName ?? "Unnamed Extension"
+        }
         alert.informativeText = names.isEmpty
             ? String(localized: "No extensions are loaded.")
-            : names.joined(separator: "\n")
+            : String(localized: "Choose which extension opens from the popup command, or remove an extension.")
+
+        let extensionSelector = NSPopUpButton()
+        extensionSelector.addItems(withTitles: names)
+        extensionSelector.isEnabled = !names.isEmpty
+        if let preferredPath = UserDefaults.standard.string(
+            forKey: preferredPopupPathKey
+        ),
+           let preferredIndex = loadedExtensions.firstIndex(where: {
+               $0.directory.path == preferredPath
+           }) {
+            extensionSelector.selectItem(at: preferredIndex)
+        }
 
         let privateToggle = NSButton(
             checkboxWithTitle: String(localized: "Allow extensions in private tabs"),
@@ -336,38 +430,100 @@ final class WebExtensionManager: NSObject {
             action: nil
         )
         privateToggle.state = allowsPrivateAccess ? .on : .off
-        alert.accessoryView = privateToggle
+        let accessory = NSStackView(views: [extensionSelector, privateToggle])
+        accessory.orientation = .vertical
+        accessory.alignment = .leading
+        accessory.spacing = 8
+        alert.accessoryView = accessory
         alert.addButton(withTitle: String(localized: "Done"))
+        alert.addButton(withTitle: String(localized: "Remove Selected"))
         alert.addButton(withTitle: String(localized: "Remove All"))
 
         let response = alert.runModal()
         let allowPrivate = privateToggle.state == .on
         UserDefaults.standard.set(allowPrivate, forKey: privateAccessKey)
-        for context in contexts {
-            context.hasAccessToPrivateData = allowPrivate
+        for loaded in loadedExtensions {
+            loaded.context.hasAccessToPrivateData = allowPrivate
+        }
+        if extensionSelector.indexOfSelectedItem >= 0,
+           loadedExtensions.indices.contains(extensionSelector.indexOfSelectedItem) {
+            UserDefaults.standard.set(
+                loadedExtensions[extensionSelector.indexOfSelectedItem].directory.path,
+                forKey: preferredPopupPathKey
+            )
         }
 
         if response == .alertSecondButtonReturn {
-            for context in contexts {
-                _ = try? controller.unload(context)
+            let index = extensionSelector.indexOfSelectedItem
+            guard loadedExtensions.indices.contains(index) else { return }
+            removeExtension(at: index)
+        } else if response == .alertThirdButtonReturn {
+            for index in loadedExtensions.indices.reversed() {
+                removeExtension(at: index)
             }
-            contexts.removeAll()
-            extTabs.removeAll()
-            UserDefaults.standard.removeObject(forKey: lastPathKey)
-            UserDefaults.standard.removeObject(forKey: approvalRecordsKey)
-            UserDefaults.standard.removeObject(forKey: legacyApprovedScopesKey)
+            if loadedExtensions.isEmpty {
+                pathRegistry.forgetAll()
+                UserDefaults.standard.removeObject(forKey: preferredPopupPathKey)
+                UserDefaults.standard.removeObject(forKey: approvalRecordsKey)
+                UserDefaults.standard.removeObject(forKey: legacyApprovedScopesKey)
+            }
         }
+    }
+
+    private func removeExtension(at index: Int) {
+        let loaded = loadedExtensions[index]
+        do {
+            try controller.unload(loaded.context)
+            loadedExtensions.remove(at: index)
+            pathRegistry.forget(loaded.directory)
+            forgetApproval(at: loaded.directory)
+            if loadedExtensions.isEmpty {
+                extTabs.removeAll()
+                UserDefaults.standard.removeObject(forKey: preferredPopupPathKey)
+            } else if UserDefaults.standard.string(forKey: preferredPopupPathKey)
+                        == loaded.directory.path {
+                UserDefaults.standard.set(
+                    loadedExtensions[0].directory.path,
+                    forKey: preferredPopupPathKey
+                )
+            }
+        } catch {
+            presentManagementError(error)
+        }
+    }
+
+    private func forgetApproval(at directory: URL) {
+        var records = approvalRecords()
+        records.removeValue(forKey: directory.path)
+        if records.isEmpty {
+            UserDefaults.standard.removeObject(forKey: approvalRecordsKey)
+        } else if let data = try? JSONEncoder().encode(records) {
+            UserDefaults.standard.set(data, forKey: approvalRecordsKey)
+        }
+    }
+
+    private func presentManagementError(_ error: Error) {
+        Logger.log("Extension management failed: \(error)", type: "WebExtension")
+        let alert = NSAlert(error: error)
+        alert.messageText = String(localized: "Couldn't update extensions")
+        alert.runModal()
     }
 
     // MARK: - Popup
 
-    /// Open the first loaded extension's toolbar popup (its unlock/vault UI).
+    /// Open the user's selected extension toolbar popup (its unlock/vault UI).
     /// macOS hands us a ready-made NSPopover via the action.
     func showPopup() {
-        guard let context = contexts.first else {
+        let preferredPath = UserDefaults.standard.string(
+            forKey: preferredPopupPathKey
+        )
+        guard let loaded = loadedExtensions.first(where: {
+            $0.directory.path == preferredPath
+        }) ?? loadedExtensions.first else {
             Logger.log("No extension loaded", type: "WebExtension")
             return
         }
+        let context = loaded.context
         let tab = currentActiveTab(for: context)
         if let popover = context.action(for: tab)?.popupPopover {
             present(popover)
