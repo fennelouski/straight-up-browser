@@ -1129,6 +1129,7 @@ struct MemorySettingsView: View {
 // MARK: - Privacy
 
 struct PrivacySettingsView: View {
+    @ObservedObject private var permissionStore = SitePermissionStore.shared
     @AppStorage("convertToIncognitoEnabled") private var convertToIncognitoEnabled = false
     @State private var showClearDataDialog = false
     @State private var clearHistory = true
@@ -1146,6 +1147,49 @@ struct PrivacySettingsView: View {
                 SettingsLabel("Incognito", systemImage: "eyeglasses", tint: SettingsTint.privacy)
             } footer: {
                 Text("Adds “Switch Tab to Incognito” to the Privacy menu. It moves the current tab into a private session: your logins come along (cookies are copied over), but everything after the switch is kept only in memory and vanishes when the tab closes. What happened before the switch is already in your history, and sites that keep you signed in with local storage may ask you to sign in again.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                if permissionStore.records.isEmpty {
+                    Text("No saved site permissions.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(permissionStore.records) { record in
+                        HStack(spacing: 10) {
+                            Image(systemName: record.kind.systemImage)
+                                .frame(width: 18)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(record.origin)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Text("\(record.kind.title) · \(record.decision.title)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Revoke") {
+                                permissionStore.revoke(
+                                    origin: record.origin,
+                                    kind: record.kind
+                                )
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                    Button("Revoke All", role: .destructive) {
+                        permissionStore.clear()
+                    }
+                }
+            } header: {
+                SettingsLabel(
+                    "Site Permissions",
+                    systemImage: "video.badge.ellipsis",
+                    tint: SettingsTint.privacy
+                )
+            } footer: {
+                Text("Camera and microphone choices are stored per website. Revoked sites ask again. Private tabs never add entries here.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -1417,6 +1417,42 @@ struct WebExtensionPolicyTests {
     }
 }
 
+@MainActor
+struct SitePermissionStoreTests {
+    @Test func permissionsPersistPerOriginAndCanBeRevokedIndividually() {
+        let suiteName = "site-permissions-\(UUID())"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let origin = "https://meet.example"
+        var store = SitePermissionStore(defaults: defaults)
+
+        store.set(
+            .allowed,
+            for: [.camera, .microphone],
+            origin: origin
+        )
+        #expect(store.decision(
+            for: [.camera, .microphone],
+            origin: origin
+        ) == .allowed)
+
+        store.set(.denied, for: [.camera], origin: origin)
+        #expect(store.decision(
+            for: [.camera, .microphone],
+            origin: origin
+        ) == nil)
+
+        store.revoke(origin: origin, kind: .camera)
+        store = SitePermissionStore(defaults: defaults)
+        #expect(store.decision(for: [.camera], origin: origin) == nil)
+        #expect(store.decision(
+            for: [.microphone],
+            origin: origin
+        ) == .allowed)
+    }
+}
+
 struct CLIAuthorizationTests {
     @Test func automationIsOffByDefaultAndSensitiveCapabilitiesAreSeparate() {
         let suiteName = "cli-auth-\(UUID())"
