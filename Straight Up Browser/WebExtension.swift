@@ -13,6 +13,97 @@
 
 import WebKit
 import AppKit
+import CryptoKit
+
+enum ExtensionIntegrityError: LocalizedError {
+    case notDirectory
+    case symbolicLink(URL)
+    case unsupportedItem(URL)
+
+    var errorDescription: String? {
+        switch self {
+        case .notDirectory:
+            String(localized: "The selected extension location is not a directory.")
+        case .symbolicLink(let url):
+            String(localized: "Extensions containing symbolic links aren’t supported: \(url.lastPathComponent)")
+        case .unsupportedItem(let url):
+            String(localized: "The extension contains an unsupported file type: \(url.lastPathComponent)")
+        }
+    }
+}
+
+enum ExtensionIntegrityFingerprint {
+    static func fingerprint(of directory: URL) throws -> String {
+        let root = directory.standardizedFileURL
+        let rootValues = try root.resourceValues(
+            forKeys: [.isDirectoryKey, .isSymbolicLinkKey]
+        )
+        guard rootValues.isDirectory == true else {
+            throw ExtensionIntegrityError.notDirectory
+        }
+        if rootValues.isSymbolicLink == true {
+            throw ExtensionIntegrityError.symbolicLink(root)
+        }
+
+        var files: [URL] = []
+        try collectFiles(in: root, into: &files)
+        files.sort {
+            relativePath(for: $0, root: root) < relativePath(for: $1, root: root)
+        }
+
+        var hasher = SHA256()
+        for file in files {
+            let relative = Data(relativePath(for: file, root: root).utf8)
+            hasher.update(data: lengthPrefix(relative.count))
+            hasher.update(data: relative)
+            let fileSize = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            hasher.update(data: lengthPrefix(fileSize))
+            try update(&hasher, withContentsOf: file)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func collectFiles(in directory: URL, into files: inout [URL]) throws {
+        let keys: Set<URLResourceKey> = [
+            .isDirectoryKey,
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+        ]
+        for item in try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: Array(keys),
+            options: []
+        ) {
+            let values = try item.resourceValues(forKeys: keys)
+            if values.isSymbolicLink == true {
+                throw ExtensionIntegrityError.symbolicLink(item)
+            } else if values.isDirectory == true {
+                try collectFiles(in: item, into: &files)
+            } else if values.isRegularFile == true {
+                files.append(item)
+            } else {
+                throw ExtensionIntegrityError.unsupportedItem(item)
+            }
+        }
+    }
+
+    private static func relativePath(for file: URL, root: URL) -> String {
+        String(file.path.dropFirst(root.path.count + 1))
+    }
+
+    private static func update(_ hasher: inout SHA256, withContentsOf file: URL) throws {
+        let handle = try FileHandle(forReadingFrom: file)
+        defer { try? handle.close() }
+        while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty {
+            hasher.update(data: chunk)
+        }
+    }
+
+    private static func lengthPrefix(_ value: Int) -> Data {
+        var bigEndian = UInt64(value).bigEndian
+        return withUnsafeBytes(of: &bigEndian) { Data($0) }
+    }
+}
 
 enum ExtensionPermissionPolicy {
     static func visibleTabIds(
@@ -53,8 +144,14 @@ final class WebExtensionManager: NSObject {
     private weak var activeManager: WebViewManager?
 
     private let lastPathKey = "loadedExtensionPath"
-    private let approvedScopesKey = "approvedExtensionScopes"
+    private let approvalRecordsKey = "approvedExtensionRecords"
+    private let legacyApprovedScopesKey = "approvedExtensionScopes"
     private let privateAccessKey = "extensionsPrivateAccess"
+
+    private struct ApprovalRecord: Codable {
+        let scopes: [String]
+        let fingerprint: String
+    }
 
     private override init() {
         super.init()
@@ -96,14 +193,34 @@ final class WebExtensionManager: NSObject {
     func loadExtension(at directory: URL, remember: Bool = true) {
         Task {
             do {
-                let ext = try await WKWebExtension(resourceBaseURL: directory)
+                let extensionDirectory = directory.standardizedFileURL
+                let fingerprint = try ExtensionIntegrityFingerprint.fingerprint(
+                    of: extensionDirectory
+                )
+                let ext = try await WKWebExtension(
+                    resourceBaseURL: extensionDirectory
+                )
                 let context = WKWebExtensionContext(for: ext)
 
                 let scopes = requestedScopeDescriptions(for: ext)
-                guard previouslyApproved(scopes, at: directory)
+                let alreadyApproved = previouslyApproved(
+                    scopes,
+                    fingerprint: fingerprint,
+                    at: extensionDirectory
+                )
+                var approvalDetails = scopes
+                if hasStoredApproval(at: extensionDirectory), !alreadyApproved {
+                    approvalDetails.insert(
+                        String(
+                            localized: "The extension’s files or requested access changed since you last approved it."
+                        ),
+                        at: 0
+                    )
+                }
+                guard alreadyApproved
                         || confirmAccess(
                             title: String(localized: "Allow \(ext.displayName ?? "this extension")?"),
-                            details: scopes
+                            details: approvalDetails
                         )
                 else {
                     Logger.log("Extension permission denied: \(ext.displayName ?? "?")", type: "WebExtension")
@@ -122,9 +239,16 @@ final class WebExtensionManager: NSObject {
 
                 try controller.load(context)
                 contexts.append(context)
-                rememberApproval(scopes, at: directory)
+                rememberApproval(
+                    scopes,
+                    fingerprint: fingerprint,
+                    at: extensionDirectory
+                )
                 if remember {
-                    UserDefaults.standard.set(directory.path, forKey: lastPathKey)
+                    UserDefaults.standard.set(
+                        extensionDirectory.path,
+                        forKey: lastPathKey
+                    )
                 }
                 Logger.log("Loaded extension: \(ext.displayName ?? "?")", type: "WebExtension")
             } catch {
@@ -144,16 +268,46 @@ final class WebExtensionManager: NSObject {
         return (permissions + hosts).sorted()
     }
 
-    private func previouslyApproved(_ scopes: [String], at directory: URL) -> Bool {
-        let approvals = UserDefaults.standard.dictionary(forKey: approvedScopesKey)
-        let stored = approvals?[directory.path] as? [String]
-        return stored == scopes
+    private func previouslyApproved(
+        _ scopes: [String],
+        fingerprint: String,
+        at directory: URL
+    ) -> Bool {
+        guard let record = approvalRecords()[directory.path] else { return false }
+        return record.scopes == scopes && record.fingerprint == fingerprint
     }
 
-    private func rememberApproval(_ scopes: [String], at directory: URL) {
-        var stored = UserDefaults.standard.dictionary(forKey: approvedScopesKey) ?? [:]
-        stored[directory.path] = scopes
-        UserDefaults.standard.set(stored, forKey: approvedScopesKey)
+    private func hasStoredApproval(at directory: URL) -> Bool {
+        let legacy = UserDefaults.standard
+            .dictionary(forKey: legacyApprovedScopesKey)?[directory.path] as? [String]
+        return approvalRecords()[directory.path] != nil || legacy != nil
+    }
+
+    private func rememberApproval(
+        _ scopes: [String],
+        fingerprint: String,
+        at directory: URL
+    ) {
+        var records = approvalRecords()
+        records[directory.path] = ApprovalRecord(
+            scopes: scopes,
+            fingerprint: fingerprint
+        )
+        if let data = try? JSONEncoder().encode(records) {
+            UserDefaults.standard.set(data, forKey: approvalRecordsKey)
+        }
+        // Scope-only records are intentionally not migrated: their lack of an
+        // integrity hash forces one fresh approval after this upgrade.
+        UserDefaults.standard.removeObject(forKey: legacyApprovedScopesKey)
+    }
+
+    private func approvalRecords() -> [String: ApprovalRecord] {
+        guard let data = UserDefaults.standard.data(forKey: approvalRecordsKey),
+              let records = try? JSONDecoder().decode(
+                [String: ApprovalRecord].self,
+                from: data
+              ) else { return [:] }
+        return records
     }
 
     private func confirmAccess(title: String, details: [String]) -> Bool {
@@ -200,7 +354,8 @@ final class WebExtensionManager: NSObject {
             contexts.removeAll()
             extTabs.removeAll()
             UserDefaults.standard.removeObject(forKey: lastPathKey)
-            UserDefaults.standard.removeObject(forKey: approvedScopesKey)
+            UserDefaults.standard.removeObject(forKey: approvalRecordsKey)
+            UserDefaults.standard.removeObject(forKey: legacyApprovedScopesKey)
         }
     }
 
