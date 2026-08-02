@@ -1792,15 +1792,84 @@ struct BrowserLibraryTests {
         let article = ReaderMode.article(from: [
             "title": "A useful article",
             "byline": "Ada Writer",
-            "text": "Readable text",
+            "blocks": [
+                [
+                    "kind": "heading",
+                    "level": 2,
+                    "runs": [["text": "A meaningful section"]],
+                ],
+                [
+                    "kind": "paragraph",
+                    "runs": [
+                        ["text": "Read the "],
+                        [
+                            "text": "primary source",
+                            "href": "https://example.com/source",
+                            "strong": true,
+                        ],
+                        ["text": "."],
+                    ],
+                ],
+                [
+                    "kind": "listItem",
+                    "ordered": true,
+                    "ordinal": 1,
+                    "depth": 0,
+                    "runs": [["text": "First finding"]],
+                ],
+                [
+                    "kind": "code",
+                    "text": "let answer = 42",
+                ],
+                [
+                    "kind": "caption",
+                    "runs": [["text": "Figure 1: Results"]],
+                ],
+            ],
         ])
 
-        #expect(article == ReaderArticle(
-            title: "A useful article",
-            byline: "Ada Writer",
-            text: "Readable text"
-        ))
-        #expect(ReaderMode.article(from: ["title": "Empty", "text": ""]) == nil)
+        let expectedBlocks: [ReaderBlock] = [
+            .heading(level: 2, runs: [.plain("A meaningful section")]),
+            .paragraph(runs: [
+                .plain("Read the "),
+                ReaderInline(
+                    text: "primary source",
+                    link: URL(string: "https://example.com/source"),
+                    isStrong: true
+                ),
+                .plain("."),
+            ]),
+            .listItem(
+                ordered: true,
+                ordinal: 1,
+                depth: 0,
+                runs: [.plain("First finding")]
+            ),
+            .code("let answer = 42"),
+            .caption(runs: [.plain("Figure 1: Results")]),
+        ]
+
+        #expect(article?.title == "A useful article")
+        #expect(article?.byline == "Ada Writer")
+        #expect(article?.blocks == expectedBlocks)
+        #expect(article?.plainText.contains("First finding") == true)
+        #expect(ReaderMode.article(from: ["title": "Empty", "blocks": []]) == nil)
+
+        let unsafeLinkArticle = ReaderMode.article(from: [
+            "title": "Unsafe link",
+            "blocks": [[
+                "kind": "paragraph",
+                "runs": [[
+                    "text": "Do not execute",
+                    "href": "javascript:alert(document.cookie)",
+                ]],
+            ]],
+        ])
+        guard case .paragraph(let unsafeRuns) = unsafeLinkArticle?.blocks.first else {
+            Issue.record("Expected the unsafe-link paragraph to remain readable")
+            return
+        }
+        #expect(unsafeRuns.first?.link == nil)
     }
 }
 
@@ -1841,6 +1910,58 @@ private final class WebKitNavigationProbe: NSObject, WKNavigationDelegate {
 }
 
 struct WebKitNavigationIntegrationTests {
+    @Test @MainActor
+    func readerExtractionPreservesDocumentSemantics() async throws {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let probe = WebKitNavigationProbe()
+        let baseURL = try #require(URL(string: "https://reader.test/article"))
+        let html = """
+            <html>
+              <head><title>Semantic Reader</title></head>
+              <body>
+                <article>
+                  <h2>Results</h2>
+                  <p>Read <strong><a href="/source">the source</a></strong>.</p>
+                  <ol start="3"><li>Third finding</li></ol>
+                  <blockquote>Evidence matters.</blockquote>
+                  <pre><code>let answer = 42</code></pre>
+                  <figure><figcaption>Figure 1</figcaption></figure>
+                </article>
+              </body>
+            </html>
+            """
+
+        _ = try await probe.load(html, baseURL: baseURL, in: webView)
+        let result = try await webView.evaluateJavaScript(ReaderMode.extractionScript)
+        let article = try #require(ReaderMode.article(from: result))
+
+        #expect(article.title == "Semantic Reader")
+        #expect(article.blocks == [
+            .heading(level: 2, runs: [.plain("Results")]),
+            .paragraph(runs: [
+                .plain("Read "),
+                ReaderInline(
+                    text: "the source",
+                    link: URL(string: "https://reader.test/source"),
+                    isStrong: true
+                ),
+                .plain("."),
+            ]),
+            .listItem(
+                ordered: true,
+                ordinal: 3,
+                depth: 0,
+                runs: [.plain("Third finding")]
+            ),
+            .quote(runs: [.plain("Evidence matters.")]),
+            .code("let answer = 42"),
+            .caption(runs: [.plain("Figure 1")]),
+        ])
+        webView.navigationDelegate = nil
+    }
+
     @Test @MainActor
     func localNavigationCommitsAndExposesTheLoadedDocument() async throws {
         let configuration = WKWebViewConfiguration()

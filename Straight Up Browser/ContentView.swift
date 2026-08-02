@@ -355,6 +355,110 @@ private enum ContentModal: Identifiable, Equatable {
     }
 }
 
+private struct ReaderBlockRow: View {
+    let block: ReaderBlock
+
+    @ViewBuilder
+    var body: some View {
+        switch block {
+        case .heading(let level, let runs):
+            Text(attributedText(for: runs))
+                .font(headingFont(level))
+                .fontWeight(.semibold)
+                .accessibilityHeading(headingLevel(level))
+                .padding(.top, level <= 2 ? 14 : 8)
+        case .paragraph(let runs):
+            Text(attributedText(for: runs))
+        case .listItem(let ordered, let ordinal, let depth, let runs):
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(ordered ? "\(ordinal ?? 1)." : "•")
+                    .fontWeight(.semibold)
+                    .frame(width: 30, alignment: .trailing)
+                    .accessibilityHidden(true)
+                Text(attributedText(for: runs))
+            }
+            .padding(.leading, CGFloat(depth) * 24)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                ordered
+                    ? "Item \(ordinal ?? 1), \(runs.map(\.text).joined())"
+                    : "List item, \(runs.map(\.text).joined())"
+            )
+        case .quote(let runs):
+            HStack(spacing: 14) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.accentColor.opacity(0.55))
+                    .frame(width: 4)
+                    .accessibilityHidden(true)
+                Text(attributedText(for: runs))
+                    .italic()
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 6)
+        case .code(let code):
+            ScrollView(.horizontal) {
+                Text(code)
+                    .font(.system(size: 15, design: .monospaced))
+                    .textSelection(.enabled)
+                    .padding(14)
+            }
+            .background(Color.primary.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .accessibilityLabel("Code block")
+            .accessibilityValue(code)
+        case .caption(let runs):
+            Text(attributedText(for: runs))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .accessibilityLabel("Caption, \(runs.map(\.text).joined())")
+        }
+    }
+
+    private func attributedText(for runs: [ReaderInline]) -> AttributedString {
+        runs.reduce(into: AttributedString()) { result, run in
+            var fragment = AttributedString(run.text)
+            var intent: InlinePresentationIntent = []
+            if run.isStrong {
+                intent.insert(.stronglyEmphasized)
+            }
+            if run.isEmphasized {
+                intent.insert(.emphasized)
+            }
+            if run.isCode {
+                intent.insert(.code)
+            }
+            if !intent.isEmpty {
+                fragment.inlinePresentationIntent = intent
+            }
+            fragment.link = run.link
+            result.append(fragment)
+        }
+    }
+
+    private func headingFont(_ level: Int) -> Font {
+        switch level {
+        case 1: .title
+        case 2: .title2
+        case 3: .title3
+        case 4: .headline
+        case 5: .subheadline
+        default: .caption
+        }
+    }
+
+    private func headingLevel(_ level: Int) -> AccessibilityHeadingLevel {
+        switch level {
+        case 1: .h1
+        case 2: .h2
+        case 3: .h3
+        case 4: .h4
+        case 5: .h5
+        default: .h6
+        }
+    }
+}
+
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1407,12 +1511,19 @@ struct ContentView: View {
             Divider()
 
             ScrollView {
-                Text(article.text)
-                    .font(.system(size: 18, design: .serif))
-                    .lineSpacing(6)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: 700, alignment: .leading)
-                    .padding(32)
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    ForEach(
+                        Array(article.blocks.enumerated()),
+                        id: \.offset
+                    ) { _, block in
+                        ReaderBlockRow(block: block)
+                    }
+                }
+                .font(.system(size: 18, design: .serif))
+                .lineSpacing(6)
+                .textSelection(.enabled)
+                .frame(maxWidth: 700, alignment: .leading)
+                .padding(32)
             }
         }
         .frame(width: 820, height: 650)
@@ -1428,6 +1539,10 @@ struct ContentView: View {
             contentModal = nil
             return .handled
         }
+        .environment(\.openURL, OpenURLAction { url in
+            openFromLibrary(url)
+            return .handled
+        })
     }
 
     private var linkPreviewOverlay: some View {

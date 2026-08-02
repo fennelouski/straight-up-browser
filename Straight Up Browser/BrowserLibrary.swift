@@ -141,10 +141,67 @@ private extension String {
     }
 }
 
+struct ReaderInline: Equatable {
+    let text: String
+    let link: URL?
+    let isStrong: Bool
+    let isEmphasized: Bool
+    let isCode: Bool
+
+    init(
+        text: String,
+        link: URL? = nil,
+        isStrong: Bool = false,
+        isEmphasized: Bool = false,
+        isCode: Bool = false
+    ) {
+        self.text = text
+        self.link = link
+        self.isStrong = isStrong
+        self.isEmphasized = isEmphasized
+        self.isCode = isCode
+    }
+
+    static func plain(_ text: String) -> ReaderInline {
+        ReaderInline(text: text)
+    }
+}
+
+enum ReaderBlock: Equatable {
+    case heading(level: Int, runs: [ReaderInline])
+    case paragraph(runs: [ReaderInline])
+    case listItem(
+        ordered: Bool,
+        ordinal: Int?,
+        depth: Int,
+        runs: [ReaderInline]
+    )
+    case quote(runs: [ReaderInline])
+    case code(String)
+    case caption(runs: [ReaderInline])
+
+    var plainText: String {
+        switch self {
+        case .heading(_, let runs),
+             .paragraph(let runs),
+             .listItem(_, _, _, let runs),
+             .quote(let runs),
+             .caption(let runs):
+            runs.map(\.text).joined()
+        case .code(let text):
+            text
+        }
+    }
+}
+
 struct ReaderArticle: Equatable {
     let title: String
     let byline: String?
-    let text: String
+    let blocks: [ReaderBlock]
+
+    var plainText: String {
+        blocks.map(\.plainText).joined(separator: "\n\n")
+    }
 }
 
 enum ReaderMode {
@@ -154,28 +211,191 @@ enum ReaderMode {
           if (!source) return null;
           const copy = source.cloneNode(true);
           copy.querySelectorAll('script, style, nav, form, button, aside, footer, noscript').forEach(node => node.remove());
-          const text = (copy.innerText || copy.textContent || '').replace(/\\n{3,}/g, '\\n\\n').trim();
-          if (!text) return null;
+
+          const runsFor = node => {
+            const runs = [];
+            const visit = (current, style) => {
+              if (current.nodeType === Node.TEXT_NODE) {
+                const text = (current.nodeValue || '').replace(/\\s+/g, ' ');
+                if (text) runs.push({ text, ...style });
+                return;
+              }
+              if (current.nodeType !== Node.ELEMENT_NODE) return;
+              const tag = current.tagName;
+              if (tag === 'UL' || tag === 'OL') return;
+              if (tag === 'BR') {
+                runs.push({ text: '\\n', ...style });
+                return;
+              }
+              const next = {
+                href: tag === 'A' ? current.href : style.href,
+                strong: style.strong || tag === 'STRONG' || tag === 'B',
+                emphasized: style.emphasized || tag === 'EM' || tag === 'I',
+                code: style.code || tag === 'CODE'
+              };
+              Array.from(current.childNodes).forEach(child => visit(child, next));
+            };
+            visit(node, {
+              href: '',
+              strong: false,
+              emphasized: false,
+              code: false
+            });
+
+            const merged = [];
+            runs.forEach(run => {
+              const previous = merged[merged.length - 1];
+              if (previous &&
+                  previous.href === run.href &&
+                  previous.strong === run.strong &&
+                  previous.emphasized === run.emphasized &&
+                  previous.code === run.code) {
+                previous.text += run.text;
+              } else {
+                merged.push(run);
+              }
+            });
+            if (merged.length) {
+              merged[0].text = merged[0].text.trimStart();
+              merged[merged.length - 1].text = merged[merged.length - 1].text.trimEnd();
+            }
+            return merged.filter(run => run.text.length > 0);
+          };
+
+          const blocks = [];
+          const addRuns = (kind, node, extra = {}) => {
+            const runs = runsFor(node);
+            if (runs.some(run => run.text.trim().length > 0)) {
+              blocks.push({ kind, runs, ...extra });
+            }
+          };
+
+          const walkList = (list, depth) => {
+            const ordered = list.tagName === 'OL';
+            let ordinal = Number.parseInt(list.getAttribute('start') || '1', 10);
+            Array.from(list.children).forEach(item => {
+              if (item.tagName !== 'LI') return;
+              const content = item.cloneNode(true);
+              content.querySelectorAll('ul, ol').forEach(nested => nested.remove());
+              addRuns('listItem', content, {
+                ordered,
+                ordinal: ordered ? ordinal : null,
+                depth
+              });
+              Array.from(item.children)
+                .filter(child => child.tagName === 'UL' || child.tagName === 'OL')
+                .forEach(nested => walkList(nested, depth + 1));
+              ordinal += 1;
+            });
+          };
+
+          const walk = container => {
+            Array.from(container.children).forEach(node => {
+              const tag = node.tagName;
+              if (/^H[1-6]$/.test(tag)) {
+                addRuns('heading', node, { level: Number(tag.slice(1)) });
+              } else if (tag === 'P') {
+                addRuns('paragraph', node);
+              } else if (tag === 'UL' || tag === 'OL') {
+                walkList(node, 0);
+              } else if (tag === 'BLOCKQUOTE') {
+                addRuns('quote', node);
+              } else if (tag === 'PRE') {
+                const text = (node.textContent || '').trim();
+                if (text) blocks.push({ kind: 'code', text });
+              } else if (tag === 'FIGCAPTION') {
+                addRuns('caption', node);
+              } else if (tag === 'ARTICLE' || tag === 'MAIN' || tag === 'SECTION' ||
+                         tag === 'DIV' || tag === 'FIGURE') {
+                walk(node);
+              } else {
+                addRuns('paragraph', node);
+              }
+            });
+          };
+
+          walk(copy);
+          if (!blocks.length) addRuns('paragraph', copy);
+          if (!blocks.length) return null;
           const author = document.querySelector('[rel="author"], .byline, [class*="author"]');
           return {
             title: document.title || location.hostname,
             byline: author ? author.textContent.trim() : '',
-            text
+            blocks
           };
         })()
         """
 
     static func article(from value: Any?) -> ReaderArticle? {
         guard let object = value as? [String: Any],
-              let title = object["title"] as? String,
-              let text = object["text"] as? String,
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+              let title = object["title"] as? String else { return nil }
+        let blocks = blocks(from: object["blocks"])
+        guard !blocks.isEmpty else { return nil }
         let byline = (object["byline"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         return ReaderArticle(
             title: title.isEmpty ? String(localized: "Reader Mode") : title,
             byline: byline?.isEmpty == true ? nil : byline,
-            text: text
+            blocks: blocks
         )
+    }
+
+    private static func blocks(from value: Any?) -> [ReaderBlock] {
+        guard let objects = value as? [[String: Any]] else { return [] }
+        return objects.compactMap { object in
+            guard let kind = object["kind"] as? String else { return nil }
+            switch kind {
+            case "heading":
+                let level = min(max(object["level"] as? Int ?? 2, 1), 6)
+                let runs = runs(from: object["runs"])
+                return runs.isEmpty ? nil : .heading(level: level, runs: runs)
+            case "paragraph":
+                let runs = runs(from: object["runs"])
+                return runs.isEmpty ? nil : .paragraph(runs: runs)
+            case "listItem":
+                let runs = runs(from: object["runs"])
+                guard !runs.isEmpty else { return nil }
+                return .listItem(
+                    ordered: object["ordered"] as? Bool ?? false,
+                    ordinal: object["ordinal"] as? Int,
+                    depth: max(object["depth"] as? Int ?? 0, 0),
+                    runs: runs
+                )
+            case "quote":
+                let runs = runs(from: object["runs"])
+                return runs.isEmpty ? nil : .quote(runs: runs)
+            case "code":
+                guard let text = (object["text"] as? String)?.trimmedNonEmpty else {
+                    return nil
+                }
+                return .code(text)
+            case "caption":
+                let runs = runs(from: object["runs"])
+                return runs.isEmpty ? nil : .caption(runs: runs)
+            default:
+                return nil
+            }
+        }
+    }
+
+    private static func runs(from value: Any?) -> [ReaderInline] {
+        guard let objects = value as? [[String: Any]] else { return [] }
+        return objects.compactMap { object in
+            guard let text = object["text"] as? String, !text.isEmpty else { return nil }
+            return ReaderInline(
+                text: text,
+                link: safeLink(from: object["href"]),
+                isStrong: object["strong"] as? Bool ?? false,
+                isEmphasized: object["emphasized"] as? Bool ?? false,
+                isCode: object["code"] as? Bool ?? false
+            )
+        }
+    }
+
+    private static func safeLink(from value: Any?) -> URL? {
+        guard let string = value as? String,
+              let url = URL(string: string),
+              url.scheme == "http" || url.scheme == "https" else { return nil }
+        return url
     }
 }
 
