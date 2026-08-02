@@ -36,23 +36,8 @@ struct TabSidebar_iOS: View {
     let containersMenu: AnyView
 
     private var groupedTabs: [(group: TabGroup?, tabs: [Tab])] {
-        let byGroup = Dictionary(grouping: tabs) { $0.groupId }
-        var result: [(group: TabGroup?, tabs: [Tab])] = []
-        if let ungrouped = byGroup[nil] {
-            result.append((nil, sortedTabs(ungrouped)))
-        }
-        for group in tabGroups.sorted(by: { $0.orderIndex < $1.orderIndex }) {
-            if let groupTabs = byGroup[group.id] {
-                result.append((group, sortedTabs(groupTabs)))
-            }
-        }
-        return result
-    }
-
-    private func sortedTabs(_ tabs: [Tab]) -> [Tab] {
-        tabs.sorted {
-            if $0.isPinned != $1.isPinned { return $0.isPinned && !$1.isPinned }
-            return $0.orderIndex < $1.orderIndex
+        BrowserTabOrder.sections(tabs: tabs, groups: tabGroups).map {
+            (group: $0.group, tabs: $0.tabs)
         }
     }
 

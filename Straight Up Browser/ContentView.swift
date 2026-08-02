@@ -519,29 +519,13 @@ struct ContentView: View {
     }
 
     private var groupedTabs: [(group: TabGroup?, tabs: [BrowserTab])] {
-        var result: [(group: TabGroup?, tabs: [BrowserTab])] = []
-
-        // Group tabs by groupId. `allTabs` has already dropped open-only local
-        // closes; incognito tabs are included because they are always local.
-        let groupedById = Dictionary(grouping: allTabs) { $0.groupId }
-
-        // Add tabs without groups first (ungrouped tabs)
-        if let ungroupedTabs = groupedById[nil] {
-            result.append((group: nil, tabs: sortTabs(ungroupedTabs)))
+        BrowserTabOrder.sections(tabs: allTabs, groups: tabGroups).map {
+            (group: $0.group, tabs: $0.tabs)
         }
-
-        // Add tabs with groups
-        for group in tabGroups.sorted(by: { $0.orderIndex < $1.orderIndex }) {
-            if let groupTabs = groupedById[group.id] {
-                result.append((group: group, tabs: sortTabs(groupTabs)))
-            }
-        }
-
-        return result
     }
 
-    private func sortTabs(_ tabs: [BrowserTab]) -> [BrowserTab] {
-        BrowserLibrary.sortedTabs(tabs)
+    private var visibleTabOrder: [BrowserTab] {
+        groupedTabs.flatMap(\.tabs)
     }
 
     private func sidebarY(for tabId: UUID, availableHeight: CGFloat) -> CGFloat {
@@ -2512,27 +2496,17 @@ struct ContentView: View {
     }
 
     private func switchToNextTab() {
-        tabManager.switchToNextTab(tabs: allTabs)
+        tabManager.switchToNextTab(tabs: visibleTabOrder)
         // TabManager is now observed directly, no manual sync needed
     }
 
     private func switchToPreviousTab() {
-        tabManager.switchToPreviousTab(tabs: allTabs)
+        tabManager.switchToPreviousTab(tabs: visibleTabOrder)
         // TabManager is now observed directly, no manual sync needed
     }
 
     private func switchToTab(at index: Int) {
-        Logger.log("ContentView switchToTab: switching to index \(index), tabs.count = \(tabs.count)", type: "ContentView")
-        for (i, tab) in tabs.enumerated() {
-            Logger.log("  Tab \(i): id=\(tab.id), url=\(tab.url?.absoluteString ?? "nil")", type: "ContentView")
-        }
-        tabManager.switchToTab(at: index, tabs: allTabs)
-        // Also update our local state
-        if index >= 0 && index < tabs.count {
-            let targetTabId = tabs[index].id
-        Logger.log("Setting selectedTabId to: \(targetTabId)", type: "ContentView")
-        // TabManager is updated by switchToTab(at:) method, no manual sync needed
-        }
+        tabManager.switchToTab(at: index, tabs: visibleTabOrder)
     }
 
     private func closeCurrentTab() {

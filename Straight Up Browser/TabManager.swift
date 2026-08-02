@@ -537,7 +537,7 @@ class TabManager: NSObject, ObservableObject {
             return
         }
         let tab = tabs[index]
-        Logger.log("TabManager switchToTab: switching to tab at index \(index), id=\(tab.id), url=\(tab.url?.absoluteString ?? "nil")", type: "TabManager")
+        Logger.log("TabManager switchToTab: switching to index \(index)", type: "TabManager")
         selectedTabId = tab.id
     }
 

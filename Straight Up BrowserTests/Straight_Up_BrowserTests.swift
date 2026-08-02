@@ -1528,6 +1528,52 @@ struct BrowserLibraryTests {
         ])
     }
 
+    @Test @MainActor
+    func visibleTabOrderMatchesSidebarGroupsPinsAndRows() {
+        let laterGroup = TabGroup(name: "Later", color: .blue, orderIndex: 2)
+        let earlierGroup = TabGroup(name: "Earlier", color: .red, orderIndex: 1)
+
+        let ungrouped = Tab(title: "Ungrouped")
+        ungrouped.orderIndex = 0
+        let ungroupedPinned = Tab(title: "Ungrouped pinned")
+        ungroupedPinned.isPinned = true
+        ungroupedPinned.orderIndex = 3
+        let orphaned = Tab(title: "Orphaned")
+        orphaned.groupId = UUID()
+        orphaned.orderIndex = 4
+        let earlierRegular = Tab(title: "Earlier regular")
+        earlierRegular.groupId = earlierGroup.id
+        earlierRegular.orderIndex = 0
+        let earlierPinned = Tab(title: "Earlier pinned")
+        earlierPinned.groupId = earlierGroup.id
+        earlierPinned.isPinned = true
+        earlierPinned.orderIndex = 5
+        let later = Tab(title: "Later")
+        later.groupId = laterGroup.id
+
+        let sections = BrowserTabOrder.sections(
+            tabs: [
+                later,
+                earlierRegular,
+                orphaned,
+                ungrouped,
+                earlierPinned,
+                ungroupedPinned,
+            ],
+            groups: [laterGroup, earlierGroup]
+        )
+
+        #expect(sections.map { $0.group?.name } == [nil, "Earlier", "Later"])
+        #expect(sections.flatMap(\.tabs).map(\.title) == [
+            "Ungrouped pinned",
+            "Ungrouped",
+            "Orphaned",
+            "Earlier pinned",
+            "Earlier regular",
+            "Later",
+        ])
+    }
+
     @Test
     func readerModeParsesExtractedPageContent() {
         let article = ReaderMode.article(from: [

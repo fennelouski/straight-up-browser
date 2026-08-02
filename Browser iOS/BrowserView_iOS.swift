@@ -101,6 +101,9 @@ struct BrowserView_iOS: View {
     // in the cloud so they remain open on your other devices). Incognito isn't
     // synced, so it bypasses the visibility filter and always shows.
     private var visibleTabs: [Tab] { TabSync.visible(tabs) + tabManager.incognitoTabs }
+    private var visibleTabOrder: [Tab] {
+        BrowserTabOrder.flattened(tabs: visibleTabs, groups: tabGroups)
+    }
 
     // A tab's isolated-session tint (nil for normal): a container's chosen color,
     // or an auto hue for an incognito session.
@@ -301,9 +304,10 @@ struct BrowserView_iOS: View {
         case .back: webViewManager?.goBack()
         case .forward: webViewManager?.goForward()
         case .reload: reloadOrStop()
-        case .nextTab: tabManager.switchToNextTab(tabs: visibleTabs)
-        case .previousTab: tabManager.switchToPreviousTab(tabs: visibleTabs)
-        case .switchTab(let index): tabManager.switchToTab(at: index - 1, tabs: visibleTabs)
+        case .nextTab: tabManager.switchToNextTab(tabs: visibleTabOrder)
+        case .previousTab: tabManager.switchToPreviousTab(tabs: visibleTabOrder)
+        case .switchTab(let index):
+            tabManager.switchToTab(at: index - 1, tabs: visibleTabOrder)
         case .addBookmark: toggleBookmark()
         case .showBookmarks: presentLibrary(.bookmarks)
         case .showHistory: presentLibrary(.history)
@@ -464,14 +468,18 @@ struct BrowserView_iOS: View {
                 .accessibilityAction { focusOmnibar() }
                 .accessibilityAction(named: "New Tab") { createNewTab() }
                 .accessibilityAction(named: "Show Tabs") { toggleSidebar() }
-                .accessibilityAction(named: "Next Tab") { tabManager.switchToNextTab(tabs: visibleTabs) }
-                .accessibilityAction(named: "Previous Tab") { tabManager.switchToPreviousTab(tabs: visibleTabs) }
+                .accessibilityAction(named: "Next Tab") {
+                    tabManager.switchToNextTab(tabs: visibleTabOrder)
+                }
+                .accessibilityAction(named: "Previous Tab") {
+                    tabManager.switchToPreviousTab(tabs: visibleTabOrder)
+                }
                 .accessibilityAdjustableAction { direction in
                     switch direction {
                     case .increment:
-                        tabManager.switchToNextTab(tabs: visibleTabs)
+                        tabManager.switchToNextTab(tabs: visibleTabOrder)
                     case .decrement:
-                        tabManager.switchToPreviousTab(tabs: visibleTabs)
+                        tabManager.switchToPreviousTab(tabs: visibleTabOrder)
                     @unknown default:
                         break
                     }
@@ -489,9 +497,9 @@ struct BrowserView_iOS: View {
         if dy < -30, abs(dy) > abs(dx) {
             toggleSidebar()                                    // up → all tabs
         } else if dx < -30, abs(dx) > abs(dy) {
-            tabManager.switchToNextTab(tabs: visibleTabs)      // left → next tab
+            tabManager.switchToNextTab(tabs: visibleTabOrder)  // left → next tab
         } else if dx > 30, abs(dx) > abs(dy) {
-            tabManager.switchToPreviousTab(tabs: visibleTabs)  // right → previous tab
+            tabManager.switchToPreviousTab(tabs: visibleTabOrder)  // right → previous tab
         }
     }
 
