@@ -2058,6 +2058,24 @@ struct ContentView: View {
         self.navigationManager = navigationManager
         tabManager.setModelContext(modelContext)
         tabManager.setWebViewManager(webViewManager)
+        #if os(macOS)
+        webViewManager.extensionTabCreationHandler = {
+            [weak tabManager, weak webViewManager] url, shouldActivate in
+            guard let tabManager, let webViewManager else { return nil }
+            let session = webViewManager.activeTabId
+                .map(webViewManager.session(for:)) ?? (.normal, nil)
+            let tab = tabManager.createTab(
+                inheriting: session,
+                url: url,
+                select: shouldActivate
+            )
+            let webView = webViewManager.getWebView(for: tab.id)
+            if let url {
+                webView.load(URLRequest(url: url))
+            }
+            return tab.id
+        }
+        #endif
         tabManager.fastForward = fastForward
         fastForward.configure(tabManager: tabManager,
                               webViewManager: webViewManager,
