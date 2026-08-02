@@ -35,6 +35,24 @@ enum MemoryPolicy: String, Codable, CaseIterable {
     }
 }
 
+enum BrowserResourcePolicy {
+    static func shouldUnload(_ policy: MemoryPolicy, critical: Bool) -> Bool {
+        switch policy {
+        case .never: return false
+        case .lastResort: return critical
+        case .always, .whenNeeded: return true
+        }
+    }
+
+    static func showFaviconProgress(
+        enabled: Bool,
+        isActive: Bool,
+        isLoading: Bool
+    ) -> Bool {
+        enabled && isActive && isLoading
+    }
+}
+
 // Which data store (cookie/cache/storage jar) a tab browses in.
 // normal    = the shared default persistent store (every tab, today).
 // container = a named persistent isolated store keyed by sessionId (a BrowserSession),

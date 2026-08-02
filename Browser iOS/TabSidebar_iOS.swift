@@ -19,6 +19,7 @@ struct TabSidebar_iOS: View {
     let sessionColor: (Tab) -> Color?
     let progressValue: Double
     let isLoading: Bool
+    let showFaviconProgress: Bool
     let onNewTab: () -> Void
     let onCloseTab: (Tab) -> Void
     let onTogglePinned: (Tab) -> Void
@@ -121,7 +122,8 @@ struct TabSidebar_iOS: View {
                        sessionColor: sessionColor(tab),
                        isIncognito: tab.sessionKind == .incognito,
                        progressValue: progressValue,
-                       isLoading: isLoading)
+                       isLoading: isLoading,
+                       showFaviconProgress: showFaviconProgress)
                 .tag(tab.id)
                 .swipeActions(edge: .trailing) {
                     Button(role: .destructive) { onCloseTab(tab) } label: {
@@ -160,6 +162,7 @@ struct TabRow_iOS: View {
     var isIncognito: Bool = false
     let progressValue: Double
     let isLoading: Bool
+    let showFaviconProgress: Bool
 
     private var displayTitle: String {
         if !tab.title.isEmpty && tab.title != String(localized: "New Tab") { return tab.title }
@@ -168,7 +171,15 @@ struct TabRow_iOS: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            TabFaviconView(tab: tab, showProgress: isActive && isLoading, progress: progressValue)
+            TabFaviconView(
+                tab: tab,
+                showProgress: BrowserResourcePolicy.showFaviconProgress(
+                    enabled: showFaviconProgress,
+                    isActive: isActive,
+                    isLoading: isLoading
+                ),
+                progress: progressValue
+            )
             Text(displayTitle)
                 .lineLimit(1)
                 .font(.body)

@@ -457,18 +457,9 @@ struct ContentView: View {
         // Exempt every displayed tab: in a split, the non-focused panes are
         // visible too and must not go blank under pressure.
         let displayed = displayedTabIds
-        for tab in tabs where !displayed.contains(tab.id) && Self.shouldUnload(tab.memoryPolicy, critical: critical) {
+        for tab in tabs where !displayed.contains(tab.id)
+            && BrowserResourcePolicy.shouldUnload(tab.memoryPolicy, critical: critical) {
             webViewManager?.unloadWebView(for: tab.id)
-        }
-    }
-
-    // ponytail: macOS only exposes warning/critical, so "always" and "whenNeeded"
-    // both release at warning; "lastResort" waits for critical; "never" never.
-    static func shouldUnload(_ policy: MemoryPolicy, critical: Bool) -> Bool {
-        switch policy {
-        case .never: return false
-        case .lastResort: return critical
-        case .always, .whenNeeded: return true
         }
     }
 
