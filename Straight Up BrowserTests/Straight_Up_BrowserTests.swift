@@ -1275,6 +1275,30 @@ struct WebExtensionPolicyTests {
         #expect(ExtensionPermissionPolicy.approved(requested, userAllowed: false).isEmpty)
         #expect(ExtensionPermissionPolicy.approved(requested, userAllowed: true) == requested)
     }
+
+    @Test func extensionFingerprintChangesWhenItsImplementationChanges() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("extension-integrity-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let manifest = directory.appendingPathComponent("manifest.json")
+        let script = directory.appendingPathComponent("content.js")
+        try Data(#"{"manifest_version":3,"name":"Test","version":"1"}"#.utf8)
+            .write(to: manifest)
+        try Data("console.log('first')".utf8).write(to: script)
+
+        let first = try ExtensionIntegrityFingerprint.fingerprint(of: directory)
+        let unchanged = try ExtensionIntegrityFingerprint.fingerprint(of: directory)
+        try Data("console.log('replacement')".utf8).write(to: script)
+        let changed = try ExtensionIntegrityFingerprint.fingerprint(of: directory)
+
+        #expect(first == unchanged)
+        #expect(first != changed)
+    }
 }
 
 struct CLIAuthorizationTests {
