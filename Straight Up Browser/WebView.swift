@@ -392,27 +392,36 @@ struct WebView: NSViewRepresentable {
         // ponytail: no OG/JSON-LD/header-logo scraping tiers; a declared icon,
         // favicon.ico, or the generated domain initial covers real sites
         private func downloadFavicon(from url: URL, webView: WKWebView) {
-            if let cachedData = FaviconCache.shared.getFavicon(for: url) {
+            guard let tab = tab(for: webView) else {
+                generateDomainInitial(for: webView)
+                return
+            }
+            let scope = FaviconCacheScope.forTab(tab)
+            if let cachedData = FaviconCache.shared.getFavicon(
+                for: url,
+                scope: scope
+            ) {
                 setFavicon(cachedData, for: webView)
                 return
             }
 
-            let webViewTransfer = MainActorTransfer(value: webView)
-            URLSession.shared.dataTask(with: url) { [weak self] data, response, _ in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    let webView = webViewTransfer.value
-                    if let data,
-                       let httpResponse = response as? HTTPURLResponse,
-                       httpResponse.statusCode == 200, data.count > 0,
-                       NSImage(data: data) != nil {
-                        FaviconCache.shared.setFavicon(data, for: url)
-                        self.setFavicon(data, for: webView)
-                    } else {
-                        self.generateDomainInitial(for: webView)
-                    }
+            let expectedPageURL = webView.url
+            Task { @MainActor [weak self, weak webView] in
+                guard let self, let webView else { return }
+                let data = await FaviconLoadingPolicy.load(from: url, in: webView)
+                guard webView.url == expectedPageURL,
+                      let data,
+                      NSImage(data: data) != nil else {
+                    self.generateDomainInitial(for: webView)
+                    return
                 }
-            }.resume()
+                _ = FaviconCache.shared.setFavicon(
+                    data,
+                    for: url,
+                    scope: scope
+                )
+                self.setFavicon(data, for: webView)
+            }
         }
 
         private func setFavicon(_ data: Data, for webView: WKWebView) {

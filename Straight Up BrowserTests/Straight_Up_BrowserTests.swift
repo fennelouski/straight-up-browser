@@ -218,6 +218,65 @@ struct BrowserResourcePolicyTests {
     }
 }
 
+struct FaviconLoadingPolicyTests {
+    @Test
+    func faviconCacheIsSessionScopedAndPrivateBrowsingLeavesNoEntry() {
+        let cache = FaviconCache(countLimit: 8)
+        let page = URL(string: "https://accounts.example/profile")!
+        let containerID = UUID()
+        let normalData = Data([0x01])
+        let containerData = Data([0x02])
+
+        #expect(cache.setFavicon(normalData, for: page, scope: .normal))
+        #expect(cache.getFavicon(for: page, scope: .normal) == normalData)
+        #expect(cache.getFavicon(for: page, scope: .container(containerID)) == nil)
+
+        #expect(cache.setFavicon(
+            containerData,
+            for: page,
+            scope: .container(containerID)
+        ))
+        #expect(
+            cache.getFavicon(for: page, scope: .container(containerID))
+                == containerData
+        )
+
+        #expect(!cache.setFavicon(normalData, for: page, scope: .privateBrowsing))
+        #expect(cache.getFavicon(for: page, scope: .privateBrowsing) == nil)
+    }
+
+    @Test
+    func faviconPayloadsAreBoundedAndUnsafeSchemesAreRejected() {
+        let maximum = FaviconLoadingPolicy.maximumByteCount
+        let accepted = Data(repeating: 0x01, count: maximum)
+        let oversized = Data(repeating: 0x01, count: maximum + 1)
+
+        #expect(
+            FaviconLoadingPolicy.decodedPayload(accepted.base64EncodedString())
+                == accepted
+        )
+        #expect(
+            FaviconLoadingPolicy.decodedPayload(oversized.base64EncodedString())
+                == nil
+        )
+        #expect(FaviconLoadingPolicy.allows(
+            URL(string: "https://example.com/favicon.ico")!
+        ))
+        #expect(FaviconLoadingPolicy.allows(
+            URL(string: "data:image/png;base64,AQ==")!
+        ))
+        #expect(!FaviconLoadingPolicy.allows(
+            URL(string: "data:text/html;base64,AQ==")!
+        ))
+        #expect(!FaviconLoadingPolicy.allows(
+            URL(string: "file:///tmp/favicon.ico")!
+        ))
+        #expect(!FaviconLoadingPolicy.allows(
+            URL(string: "javascript:alert(1)")!
+        ))
+    }
+}
+
 // The selection ring in the minimal tab bar traces the favicon's own shape, so
 // the shape sniffer has to tell a full-bleed tile from a glyph on transparency.
 struct FaviconShapeTests {

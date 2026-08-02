@@ -2495,41 +2495,24 @@ struct ContentView: View {
             Logger.log("Preloading favicon for tab: \(url.absoluteString)", type: "ContentView")
             
             // First check cache
-            if let cachedFavicon = FaviconCache.shared.getFavicon(for: url) {
+            if let cachedFavicon = FaviconCache.shared.getFavicon(
+                for: url,
+                scope: FaviconCacheScope.forTab(tab)
+            ) {
                 Logger.log("Found cached favicon for \(url.absoluteString), setting on tab", type: "ContentView")
                 tab.favicon = cachedFavicon
                 continue
             }
-            
-            // Try to download favicon directly from common location
-            preloadFaviconForTab(tab: tab, url: url)
-        }
-    }
-    
-    private func preloadFaviconForTab(tab: Tab, url: URL) {
-        guard let faviconURL = URL(string: "\(url.scheme ?? "https")://\(url.host ?? "")/favicon.ico") else { return }
 
-        let tabTransfer = MainActorTransfer(value: tab)
-        URLSession.shared.dataTask(with: faviconURL) { data, response, error in
-            Task { @MainActor in
-                let tab = tabTransfer.value
-                if let data,
-                   let httpResponse = response as? HTTPURLResponse,
-                   httpResponse.statusCode == 200,
-                   data.count > 0,
-                   NSImage(data: data) != nil {
-                    FaviconCache.shared.setFavicon(data, for: url)
-                    tab.favicon = data
-                    return
-                }
-
-                // No favicon.ico: fall back to a generated domain-initial icon
-                if tab.favicon == nil, let host = url.host,
-                   let domainInitial = DomainInitialsGenerator.shared.generateInitialImage(for: host) {
-                    tab.favicon = domainInitial
-                }
+            // Network favicon loads happen only after the tab's WKWebView exists,
+            // so they inherit that tab's normal/container/private data store.
+            if let host = url.host,
+               let domainInitial = DomainInitialsGenerator.shared.generateInitialImage(
+                   for: host
+               ) {
+                tab.favicon = domainInitial
             }
-        }.resume()
+        }
     }
 
     private func updateTabTitle(_ tab: BrowserTab) {
