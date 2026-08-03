@@ -22,6 +22,7 @@ final class Straight_Up_BrowserUITestsLaunchTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = [
             "-ApplePersistenceIgnoreState", "YES",
+            "-acceptedEULAVersion", "1",
             "-tabBarWidth", "200",
         ]
         app.launch()
