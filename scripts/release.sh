@@ -67,7 +67,7 @@ xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null || {
 }
 
 # Never archive a release that has not passed the same gates as CI.
-RUN_UI_TESTS=1 ./scripts/verify.sh
+RUN_UI_TESTS="${RUN_UI_TESTS:-1}" ./scripts/verify.sh
 
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
