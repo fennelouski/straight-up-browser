@@ -54,7 +54,7 @@ struct FileRecord: Codable, Identifiable, Equatable {
     var name: String { url.lastPathComponent }
 }
 
-enum DownloadTransferState: String, Equatable {
+enum DownloadTransferState: String, Codable, Equatable {
     case downloading
     case pausing
     case paused
@@ -68,6 +68,22 @@ enum DownloadTransferState: String, Equatable {
         case .failed: return String(localized: "Failed")
         }
     }
+}
+
+private struct PersistedIncompleteDownload: Codable {
+    let id: UUID
+    var filename: String
+    var destinationPath: String?
+    var source: String?
+    let startedAt: Date
+    var progress: Double
+    var state: DownloadTransferState
+    var errorMessage: String?
+}
+
+private struct DownloadStore: Codable {
+    var records: [FileRecord]
+    var incompleteDownloads: [PersistedIncompleteDownload]
 }
 
 struct ActiveDownload: Identifiable, Equatable {
@@ -274,6 +290,22 @@ final class DownloadManager: ObservableObject {
     private var restartHandlers: [UUID: () -> Void] = [:]
     private var nextColorIndex = 0
 
+    private var persistedIncompleteDownloads: [PersistedIncompleteDownload] {
+        activeDownloads.compactMap { transfer in
+            guard transfer.privacy.persistsHistory else { return nil }
+            return PersistedIncompleteDownload(
+                id: transfer.id,
+                filename: transfer.filename,
+                destinationPath: transfer.destinationPath,
+                source: transfer.source?.absoluteString,
+                startedAt: transfer.startedAt,
+                progress: transfer.progress,
+                state: transfer.state,
+                errorMessage: transfer.errorMessage
+            )
+        }
+    }
+
     init(storeURL: URL? = nil) {
         #if os(macOS)
         _ = DownloadFolderAccess.shared.configuredFolder()
@@ -327,6 +359,7 @@ final class DownloadManager: ObservableObject {
                 colorIndex: colorIndex
             )
         )
+        save()
         return id
     }
 
@@ -346,6 +379,7 @@ final class DownloadManager: ObservableObject {
             $0.destinationPath = url.path
             $0.filename = suggestedFilename
         }
+        save()
     }
 
     func setPauseHandler(_ id: UUID, _ handler: @escaping () -> Void) {
@@ -369,6 +403,7 @@ final class DownloadManager: ObservableObject {
             $0.errorMessage = canResume ? nil : String(localized: "This server cannot resume the download.")
         }
         pauseHandlers[id] = nil
+        save()
     }
 
     func markFailed(_ id: UUID, error: Error, canRestart: Bool) {
@@ -378,6 +413,7 @@ final class DownloadManager: ObservableObject {
         }
         pauseHandlers[id] = nil
         if !canRestart { restartHandlers[id] = nil }
+        save()
     }
 
     func markRestarting(_ id: UUID) {
@@ -385,6 +421,7 @@ final class DownloadManager: ObservableObject {
             $0.state = .downloading
             $0.errorMessage = nil
         }
+        save()
     }
 
     func restart(_ id: UUID) {
@@ -395,11 +432,13 @@ final class DownloadManager: ObservableObject {
         guard let transfer = activeDownloads.first(where: { $0.id == id }) else { return }
         record(url, kind: .download, source: transfer.source, privacy: transfer.privacy)
         discardTransfer(id)
+        save()
     }
 
     func dismiss(_ id: UUID) {
         guard activeDownloads.first(where: { $0.id == id })?.state != .downloading else { return }
         discardTransfer(id)
+        save()
     }
 
     func remove(_ record: FileRecord) {
@@ -424,13 +463,57 @@ final class DownloadManager: ObservableObject {
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: storeURL),
-              let decoded = try? JSONDecoder().decode([FileRecord].self, from: data) else { return }
-        records = decoded
+        guard let data = try? Data(contentsOf: storeURL) else { return }
+
+        if let store = try? JSONDecoder().decode(DownloadStore.self, from: data) {
+            records = store.records
+            let interruptedMessage = String(localized: "The download was interrupted.")
+            activeDownloads = store.incompleteDownloads.enumerated().map { offset, transfer in
+                ActiveDownload(
+                    id: transfer.id,
+                    tabId: UUID(),
+                    filename: transfer.filename,
+                    destinationPath: transfer.destinationPath,
+                    source: transfer.source.flatMap(URL.init(string:)),
+                    privacy: .standard,
+                    startedAt: transfer.startedAt,
+                    progress: transfer.progress,
+                    state: transfer.state == .downloading || transfer.state == .pausing
+                        ? .failed
+                        : transfer.state,
+                    errorMessage: transfer.errorMessage
+                        ?? (transfer.state == .downloading || transfer.state == .pausing
+                            ? interruptedMessage
+                            : nil),
+                    colorIndex: nextColorIndex + offset
+                )
+            }
+            nextColorIndex += activeDownloads.count
+            // Persist the conversion of transfers that were interrupted while
+            // the app was not running, so they no longer look active.
+            if activeDownloads.contains(where: { $0.errorMessage == interruptedMessage }) {
+                save()
+            }
+            return
+        }
+
+        // Migrate the original file-history-only format.
+        if let decoded = try? JSONDecoder().decode([FileRecord].self, from: data) {
+            records = decoded
+        }
     }
 
     private func save() {
-        guard let data = try? JSONEncoder().encode(records) else { return }
+        let incompleteDownloads = persistedIncompleteDownloads
+        guard !records.isEmpty || !incompleteDownloads.isEmpty else {
+            try? FileManager.default.removeItem(at: storeURL)
+            return
+        }
+        let store = DownloadStore(
+            records: records,
+            incompleteDownloads: incompleteDownloads
+        )
+        guard let data = try? JSONEncoder().encode(store) else { return }
         try? data.write(to: storeURL, options: .atomic)
     }
 }

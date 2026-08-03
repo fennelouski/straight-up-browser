@@ -81,6 +81,33 @@ struct PrivateTransferHistoryTests {
         #expect(manager.records.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: storeURL.path))
     }
+
+    @Test func incompleteStandardDownloadsSurviveManagerReload() {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("incomplete-download-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+
+        let manager = DownloadManager(storeURL: storeURL)
+        let transferId = manager.beginDownload(
+            tabId: UUID(),
+            source: URL(string: "https://example.com/archive.zip")
+        )
+        manager.update(transferId, progress: 0.42)
+        manager.markFailed(
+            transferId,
+            error: NSError(domain: "Test", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "The connection was lost."
+            ]),
+            canRestart: false
+        )
+
+        let reloaded = DownloadManager(storeURL: storeURL)
+        #expect(reloaded.records.isEmpty)
+        #expect(reloaded.activeDownloads.count == 1)
+        #expect(reloaded.activeDownloads.first?.state == .failed)
+        #expect(reloaded.activeDownloads.first?.progress == 0.42)
+        #expect(reloaded.activeDownloads.first?.errorMessage == "The connection was lost.")
+    }
 }
 
 @MainActor
