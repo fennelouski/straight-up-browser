@@ -43,7 +43,8 @@ struct ModelContainerStartup {
 
     static func makeDefault() -> ModelContainerStartup {
         let schema = Schema(TabSync.cloudBackedModelTypes)
-        let isRunningUnderTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        let isRunningUnderTests = ProcessInfo.processInfo.arguments.contains("-uiTesting")
+            || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
             || ProcessInfo.processInfo.environment["XCInjectBundleInto"] != nil
         let persistentConfiguration = ModelConfiguration(
             schema: schema,

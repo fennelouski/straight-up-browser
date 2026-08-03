@@ -16,6 +16,7 @@ final class Straight_Up_BrowserUITests: XCTestCase {
     func testBrowserShellOpensTheAddressBarFromNewTab() throws {
         let app = XCUIApplication()
         app.launchArguments = [
+            "-uiTesting",
             "-ApplePersistenceIgnoreState", "YES",
             "-acceptedEULAVersion", "1",
             "-tabSyncEnabled", "NO",
@@ -36,6 +37,7 @@ final class Straight_Up_BrowserUITests: XCTestCase {
     func testHistoryShortcutOpensTheLibrary() throws {
         let app = XCUIApplication()
         app.launchArguments = [
+            "-uiTesting",
             "-ApplePersistenceIgnoreState", "YES",
             "-acceptedEULAVersion", "1",
             "-tabSyncEnabled", "NO",
