@@ -169,7 +169,7 @@ struct FilesWindow: View {
                 ContentUnavailableView(
                     "Nothing here yet",
                     systemImage: "tray.and.arrow.down",
-                    description: Text("Files you download or upload will show up here."))
+                    description: Text("In-progress, failed, and completed downloads will show up here."))
             } else {
                 list
             }
@@ -209,7 +209,7 @@ struct FilesWindow: View {
     private var list: some View {
         List(selection: $selection) {
             if !visibleActiveDownloads.isEmpty {
-                Section("Current Downloads") {
+                Section("Incomplete Downloads") {
                     ForEach(visibleActiveDownloads) { transfer in
                         ActiveDownloadRow(
                             transfer: transfer,

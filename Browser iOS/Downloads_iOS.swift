@@ -23,7 +23,7 @@ struct Downloads_iOS: View {
                 } else {
                     List {
                         if !manager.activeDownloads.isEmpty {
-                            Section("Current") {
+                            Section("Incomplete Downloads") {
                                 ForEach(manager.activeDownloads) {
                                     activeRow($0)
                                 }
@@ -108,12 +108,11 @@ struct Downloads_iOS: View {
     }
 
     private func status(for transfer: ActiveDownload) -> String {
-        if let error = transfer.errorMessage, transfer.state == .failed {
-            return error
-        }
-        return String(
+        let progress = String(
             localized: "\(transfer.state.label) · \(Int(transfer.progress * 100))%"
         )
+        guard let error = transfer.errorMessage else { return progress }
+        return "\(progress) · \(error)"
     }
 
     private func completedRow(_ record: FileRecord) -> some View {
