@@ -851,7 +851,12 @@ struct WebView: NSViewRepresentable {
             // reads as "nothing happened", so opener and popup both stay on screen.
             let isPopup = navigationAction.navigationType != .linkActivated
             let newTab = tabManager.createTab(inheriting: openerSession, select: !isPopup)
-            webViewManager.adoptWebView(popupWebView, for: newTab.id)
+            webViewManager.adoptWebView(
+                popupWebView,
+                for: newTab.id,
+                navigationDelegate: self,
+                uiDelegate: self
+            )
             // ponytail: pairs with the *focused* tab, which is the opener in every case
             // except a popup fired from a background pane — rare enough not to track
             // opener identity for. At the 4-pane cap there's no room, so just focus it.

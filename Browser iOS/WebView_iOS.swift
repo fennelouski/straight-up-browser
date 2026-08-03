@@ -606,7 +606,12 @@ struct TabWebView: UIViewRepresentable {
                 .map { webViewManager.session(for: $0) }
                 ?? (.normal, nil)
             let newTab = tabManager.createTab(inheriting: openerSession)
-            webViewManager.adoptWebView(popupWebView, for: newTab.id)
+            webViewManager.adoptWebView(
+                popupWebView,
+                for: newTab.id,
+                navigationDelegate: self,
+                uiDelegate: self
+            )
             return popupWebView
         }
 

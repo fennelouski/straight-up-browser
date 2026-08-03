@@ -142,6 +142,8 @@ struct WebViewLifecycleTests {
         ) {}
     }
 
+    private final class PopupDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {}
+
     @Test func scriptMessageProxyDoesNotRetainItsHandler() {
         var handler: MessageHandler? = MessageHandler()
         let proxy = WeakScriptMessageHandler(handler: handler!)
@@ -182,6 +184,22 @@ struct WebViewLifecycleTests {
 
         manager.removeWebView(for: tabID, notifyClosed: true)
         #expect(!manager.isMediaSuspended(for: tabID))
+    }
+
+    @Test func adoptedPopupIsDelegatedBeforeItCanReceiveAResponse() {
+        let manager = WebViewManager()
+        let popup = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        let delegate = PopupDelegate()
+
+        manager.adoptWebView(
+            popup,
+            for: UUID(),
+            navigationDelegate: delegate,
+            uiDelegate: delegate
+        )
+
+        #expect(popup.navigationDelegate === delegate)
+        #expect(popup.uiDelegate === delegate)
     }
 }
 

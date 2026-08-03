@@ -630,7 +630,17 @@ class WebViewManager: NSObject, ObservableObject {
 
     // Register an externally created web view (a window.open popup, which must
     // be built from the configuration WebKit hands us) under a tab's ID.
-    func adoptWebView(_ webView: WKWebView, for tabId: UUID) {
+    func adoptWebView(
+        _ webView: WKWebView,
+        for tabId: UUID,
+        navigationDelegate: WKNavigationDelegate,
+        uiDelegate: WKUIDelegate
+    ) {
+        // A popup can immediately receive a download response (Google Docs
+        // exports do), before SwiftUI has a chance to attach it to a container.
+        // Its delegates must be ready before returning it to WebKit.
+        webView.navigationDelegate = navigationDelegate
+        webView.uiDelegate = uiDelegate
         applyStandardSetup(to: webView)
         webViews[tabId] = webView
         ownedTabIds.insert(tabId)
