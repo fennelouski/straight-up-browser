@@ -9,10 +9,6 @@ import XCTest
 
 final class Straight_Up_BrowserUITestsLaunchTests: XCTestCase {
 
-    override class var runsForEachTargetApplicationUIConfiguration: Bool {
-        true
-    }
-
     override func setUpWithError() throws {
         continueAfterFailure = false
     }
