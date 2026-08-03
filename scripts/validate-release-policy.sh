@@ -16,7 +16,7 @@ require_pattern() {
 
 require_pattern 'git status --porcelain' "refuse releases from a dirty worktree"
 require_pattern 'git describe --tags --exact-match' "require an exact source tag"
-require_pattern 'EXPECTED_TAG=' "bind the source tag to app version and build"
+require_pattern 'EXPECTED_TAG=' "bind the source tag to the app marketing version"
 require_pattern 'merge-base --is-ancestor' "require the release commit on origin/main"
 require_pattern 'codesign --verify --deep --strict' "verify the exported app signature"
 require_pattern 'stapler validate' "validate stapled notarization tickets"

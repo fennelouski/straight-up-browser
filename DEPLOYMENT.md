@@ -48,11 +48,12 @@ check on demand.
      can see; two releases sharing one would be indistinguishable to them.
 
    Commit the complete release source, merge and push it to `main`, then tag that
-   exact commit. The tag format binds the visible version to the build number:
+   exact commit. The tag format is the visible version; the build number remains
+   separate metadata:
 
    ```
-   git tag -a v1.x-N -m "Browser 1.x (build N)"
-   git push origin main v1.x-N
+   git tag -a v1.x -m "Browser 1.x (build N)"
+   git push origin main v1.x
    ```
 
 2. **Build the notarized DMG from that clean tagged commit:**

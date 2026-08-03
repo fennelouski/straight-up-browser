@@ -27,7 +27,8 @@ xcodebuild -list -project "$PROJECT" 2>/dev/null | grep -q "^        $SCHEME\$" 
 }
 
 # A release must identify one immutable, published source revision. Version tags
-# are v<marketing-version>-<build-number>, for example v1.14.2-31.
+# use the visible marketing version, for example v1.14.2. The build number stays
+# separate in the bundle and release provenance.
 if [ -n "$(git status --porcelain)" ]; then
     echo "Release worktree is not clean. Commit every source change before releasing."
     exit 1
@@ -37,7 +38,7 @@ SOURCE_TAG="$(git describe --tags --exact-match "$SOURCE_COMMIT" 2>/dev/null || 
 BUILD_SETTINGS="$(xcodebuild -project "$PROJECT" -target "$SCHEME" -configuration Release -showBuildSettings)"
 MARKETING_VERSION="$(printf '%s\n' "$BUILD_SETTINGS" | awk '/ MARKETING_VERSION = / { print $3; exit }')"
 BUILD_NUMBER="$(printf '%s\n' "$BUILD_SETTINGS" | awk '/ CURRENT_PROJECT_VERSION = / { print $3; exit }')"
-EXPECTED_TAG="v${MARKETING_VERSION}-${BUILD_NUMBER}"
+EXPECTED_TAG="v${MARKETING_VERSION}"
 if [ "$SOURCE_TAG" != "$EXPECTED_TAG" ]; then
     echo "Release commit must have exact tag '$EXPECTED_TAG' (found '${SOURCE_TAG:-none}')."
     exit 1
@@ -102,7 +103,7 @@ ln -s /Applications "$STAGE/Applications"
 APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 APP_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
 if [ "$APP_VERSION" != "$MARKETING_VERSION" ] || [ "$APP_BUILD" != "$BUILD_NUMBER" ]; then
-    echo "Exported app version $APP_VERSION ($APP_BUILD) does not match $EXPECTED_TAG."
+    echo "Exported app version $APP_VERSION ($APP_BUILD) does not match the expected build settings."
     exit 1
 fi
 codesign --verify --deep --strict --verbose=2 "$APP"
