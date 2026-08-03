@@ -43,6 +43,8 @@ struct ModelContainerStartup {
 
     static func makeDefault() -> ModelContainerStartup {
         let schema = Schema(TabSync.cloudBackedModelTypes)
+        let isRunningUnderTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            || ProcessInfo.processInfo.environment["XCInjectBundleInto"] != nil
         let persistentConfiguration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
@@ -53,11 +55,17 @@ struct ModelContainerStartup {
             isStoredInMemoryOnly: true,
             cloudKitDatabase: .none
         )
+        // UI-test hosts launch several app instances against the same user
+        // container. Keep those instances isolated so SwiftData does not race
+        // on the user's persistent store while XCTest is exercising the shell.
+        let launchConfiguration = isRunningUnderTests
+            ? ephemeralConfiguration
+            : persistentConfiguration
         return recover(
             persistent: {
                 try ModelContainer(
                     for: schema,
-                    configurations: [persistentConfiguration]
+                    configurations: [launchConfiguration]
                 )
             },
             ephemeral: {
