@@ -22,7 +22,7 @@ final class Straight_Up_BrowserUITestsLaunchTests: XCTestCase {
             "-acceptedEULAVersion", "1",
             "-tabBarWidth", "200",
         ]
-        app.launch()
+        launchBrowserForUITesting(app)
 
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
     }
