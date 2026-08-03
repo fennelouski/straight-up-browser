@@ -29,10 +29,5 @@ final class Straight_Up_BrowserUITestsLaunchTests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
-
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Browser Window"
-        attachment.lifetime = .deleteOnSuccess
-        add(attachment)
     }
 }
