@@ -78,6 +78,7 @@ are the defaults:
 | `⌘D` | Add or remove bookmark |
 | `⌘⇧B` | Show bookmark Library |
 | `⌘Y` | Show history Library |
+| `⌘⇧J` | Show Downloads |
 | `⌘⌥R` | Reader mode |
 | `⌘F` | Find on page |
 | `⌘+` / `⌘-` / `⌘0` | Zoom in / out / actual size |

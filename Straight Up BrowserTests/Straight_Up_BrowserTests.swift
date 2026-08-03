@@ -792,6 +792,9 @@ struct ShortcutTests {
         // Special keys render as glyphs, not raw characters.
         #expect(ShortcutCommand.nextTab.defaultShortcut.displayTokens == ["⌃", "⇥"])
         #expect(ShortcutCommand.omnibar.defaultShortcut.displayString == "⌃Space")
+        #if os(macOS)
+        #expect(ShortcutCommand.showDownloads.defaultShortcut.displayString == "⇧⌘J")
+        #endif
 
         // No two defaults collide.
         var seen = Set<String>()

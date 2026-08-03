@@ -233,6 +233,9 @@ extension ShortcutCommand {
     static let settings     = Self("settings", "Settings", .app, Shortcut(key: ",", command: true))
     static let help         = Self("help", "Help", .app, Shortcut(key: "?", command: true))
     static let extensionPopup = Self("extensionPopup", "Open Extension Popup", .app, Shortcut(key: "e", command: true, option: true))
+    #if os(macOS)
+    static let showDownloads = Self("showDownloads", "Show Downloads", .app, Shortcut(key: "j", command: true, shift: true))
+    #endif
 
     // Jump to tab 1–9 (generated; ids "switchTab1"…"switchTab9").
     static let switchTabs: [ShortcutCommand] = (1...9).map { i in
@@ -246,6 +249,12 @@ extension ShortcutCommand {
     private static let screenshots: [ShortcutCommand] = []
     #endif
 
+    #if os(macOS)
+    private static let platformCommands: [ShortcutCommand] = [showDownloads]
+    #else
+    private static let platformCommands: [ShortcutCommand] = []
+    #endif
+
     static let all: [ShortcutCommand] =
         [newTab, closeTab, closeTabSet, reopenTab, nextTab, previousTab, newIncognitoTab]
         + switchTabs
@@ -256,6 +265,7 @@ extension ShortcutCommand {
            toggleTabBar, hideTabBar, minimalTabBar, compactTabBar, wideTabBar,
            addBookmark, showBookmarks, showHistory, clearSiteData, convertToIncognito,
            omnibar, quickOpen, quickOpenNewTab, tabGrid, shortcutOverlay, settings, help, extensionPopup]
+        + platformCommands
 
     static func by(id: String) -> ShortcutCommand? { all.first { $0.id == id } }
 

@@ -295,7 +295,7 @@ struct Straight_Up_BrowserApp: App {
                 Button("Show Downloads") {
                     openWindow(id: "downloads")
                 }
-                .keyboardShortcut("j", modifiers: [.command, .shift])
+                .keyboardShortcut(sc(.showDownloads))
             }
 
             CommandGroup(replacing: .printItem) {
