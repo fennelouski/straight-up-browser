@@ -67,5 +67,6 @@ func launchBrowserForUITesting(_ app: XCUIApplication) {
         .deletingLastPathComponent()
         .appendingPathComponent("Browser.app")
     _ = NSWorkspace.shared.open(appURL)
+    app.activate()
     #endif
 }
