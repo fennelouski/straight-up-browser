@@ -178,19 +178,32 @@ APPCAST_SHA256="$(shasum -a 256 "$APPCAST" | awk '{ print $1 }')"
 printf '%s  %s\n' "$DMG_SHA256" "Browser.dmg" > "$BUILD/Browser.dmg.sha256"
 
 PROVENANCE="$BUILD/release-provenance.json"
-plutil -create json "$PROVENANCE"
-plutil -insert source -dictionary "$PROVENANCE"
-plutil -insert source.commit -string "$SOURCE_COMMIT" "$PROVENANCE"
-plutil -insert source.tag -string "$SOURCE_TAG" "$PROVENANCE"
-plutil -insert source.commitTimestamp -string "$(git show -s --format=%cI "$SOURCE_COMMIT")" "$PROVENANCE"
-plutil -insert build -dictionary "$PROVENANCE"
-plutil -insert build.marketingVersion -string "$MARKETING_VERSION" "$PROVENANCE"
-plutil -insert build.number -string "$BUILD_NUMBER" "$PROVENANCE"
-plutil -insert build.xcode -string "$(xcodebuild -version | paste -sd ' ' -)" "$PROVENANCE"
-plutil -insert build.architecture -string "arm64" "$PROVENANCE"
-plutil -insert artifacts -dictionary "$PROVENANCE"
-plutil -insert artifacts.dmgSHA256 -string "$DMG_SHA256" "$PROVENANCE"
-plutil -insert artifacts.appcastSHA256 -string "$APPCAST_SHA256" "$PROVENANCE"
+jq -n \
+    --arg commit "$SOURCE_COMMIT" \
+    --arg tag "$SOURCE_TAG" \
+    --arg commit_timestamp "$(git show -s --format=%cI "$SOURCE_COMMIT")" \
+    --arg marketing_version "$MARKETING_VERSION" \
+    --arg build_number "$BUILD_NUMBER" \
+    --arg xcode "$(xcodebuild -version | paste -sd ' ' -)" \
+    --arg dmg_sha256 "$DMG_SHA256" \
+    --arg appcast_sha256 "$APPCAST_SHA256" \
+    '{
+      source: {
+        commit: $commit,
+        tag: $tag,
+        commitTimestamp: $commit_timestamp
+      },
+      build: {
+        marketingVersion: $marketing_version,
+        number: $build_number,
+        xcode: $xcode,
+        architecture: "arm64"
+      },
+      artifacts: {
+        dmgSHA256: $dmg_sha256,
+        appcastSHA256: $appcast_sha256
+      }
+    }' > "$PROVENANCE"
 
 echo "Ready to upload:"
 echo "  $DMG"
