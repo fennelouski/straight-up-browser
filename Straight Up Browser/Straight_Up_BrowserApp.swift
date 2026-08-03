@@ -21,6 +21,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Keep in sync with EULA.md; bump the version to re-prompt existing users.
     private let eulaVersion = 1
+    private var isRunningUnderTests: Bool {
+        let environment = ProcessInfo.processInfo.environment
+        return environment["XCTestConfigurationFilePath"] != nil
+            || environment["XCInjectBundleInto"] != nil
+    }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         #if DEBUG
@@ -37,7 +42,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installURLHandler()
-        if UserDefaults.standard.integer(forKey: "acceptedEULAVersion") < eulaVersion {
+        // Test hosts cannot interact with this modal before the app finishes
+        // bootstrapping. UI tests pass the accepted version explicitly; unit
+        // test hosts use this environment-based bypass instead.
+        if !isRunningUnderTests && UserDefaults.standard.integer(forKey: "acceptedEULAVersion") < eulaVersion {
             guard runEULAAlert() else {
                 NSApp.terminate(nil)
                 return
