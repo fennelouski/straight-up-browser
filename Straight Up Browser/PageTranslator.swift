@@ -142,17 +142,46 @@ final class PageTranslator: ObservableObject {
         _ = try? await request.webView.evaluateJavaScript("window.__subTranslate.apply(\(jsonString))")
     }
 
+    // translationd runs the batch through a 4096-token context. Hand it a whole
+    // page at once and it takes the request, goes idle and never replies — the
+    // await never returns, `pump()` never runs, and every later page queues
+    // behind a translation that will never finish. Batches that fit come back in
+    // a couple of seconds, so send the page in character-budgeted chunks.
+    // ponytail: chars as a token proxy, and no per-chunk deadline — racing a
+    // timeout would mean capturing the non-Sendable session in a child task.
+    // Add one (or a session teardown) if translationd wedges on a small batch.
+    private static let batchCharBudget = 2000
+
     nonisolated private static func translate(
         nodes: [(id: String, text: String)],
         using session: sending TranslationSession
     ) async -> [String: String]? {
-        let requests = nodes.map {
-            TranslationSession.Request(sourceText: $0.text, clientIdentifier: $0.id)
+        var batches: [[(id: String, text: String)]] = []
+        var chunk: [(id: String, text: String)] = []
+        var chunkChars = 0
+        for node in nodes {
+            if !chunk.isEmpty && chunkChars + node.text.count > batchCharBudget {
+                batches.append(chunk)
+                chunk = []
+                chunkChars = 0
+            }
+            chunk.append(node)
+            chunkChars += node.text.count
         }
-        guard let responses = try? await session.translations(from: requests) else { return nil }
+        if !chunk.isEmpty { batches.append(chunk) }
+
         var map: [String: String] = [:]
-        for response in responses {
-            if let id = response.clientIdentifier { map[id] = response.targetText }
+        for batch in batches {
+            let requests = batch.map {
+                TranslationSession.Request(sourceText: $0.text, clientIdentifier: $0.id)
+            }
+            guard let responses = try? await session.translations(from: requests) else {
+                Logger.warning("translation batch of \(requests.count) failed", type: "PageTranslator")
+                continue
+            }
+            for response in responses {
+                if let id = response.clientIdentifier { map[id] = response.targetText }
+            }
         }
         return map
     }
