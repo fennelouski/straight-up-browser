@@ -162,4 +162,22 @@ else
         "${COMMON_SETTINGS[@]}"
 fi
 
+# Every app bundle built above registers with LaunchServices under the shipping
+# bundle identifier, and an unsigned build can outrank /Applications/Browser.app
+# when the user double-clicks — which fails with "The application Browser can't
+# be opened", because an unsigned bundle cannot launch. Unregistering alone does
+# not hold (LaunchServices re-adds anything still on disk), so the bundles have
+# to go. Only the .app products are removed; the compiled objects and the
+# .xcresult diagnostics stay, so the next run is still incremental.
+unregister_built_apps() {
+    local lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+    [ -x "$lsregister" ] || return 0
+    find "$DERIVED_DATA_ROOT" -name "*.app" -type d -path "*/Build/Products/*" -prune 2>/dev/null |
+        while IFS= read -r bundle; do
+            "$lsregister" -u "$bundle" >/dev/null 2>&1 || true
+            rm -rf -- "$bundle"
+        done
+}
+unregister_built_apps
+
 echo "All verification gates passed."

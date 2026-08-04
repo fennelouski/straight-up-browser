@@ -116,7 +116,14 @@ xcrun stapler staple "$STAGE/Browser.app"
 xcrun stapler validate "$STAGE/Browser.app"
 spctl -a -t exec -vv "$STAGE/Browser.app"
 
-hdiutil create -volname "Browser" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+# Build the filesystem image without mounting it. `hdiutil create -srcfolder`
+# mounts the volume to copy into it, and macOS App Management refuses the write
+# to /Volumes/Browser/Browser.app unless the calling terminal holds that
+# permission — which fails the release from some hosts and not others.
+# makehybrid never mounts, so the DMG builds identically everywhere.
+hdiutil makehybrid -hfs -hfs-volume-name "Browser" -ov -o "$BUILD/raw.dmg" "$STAGE"
+hdiutil convert "$BUILD/raw.dmg" -format UDZO -ov -o "$DMG"
+rm -f "$BUILD/raw.dmg"
 
 codesign --force --sign "$SIGNING_IDENTITY" "$DMG"
 xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
@@ -135,6 +142,9 @@ trap cleanup_mount EXIT
 hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT_POINT" "$DMG" >/dev/null
 test -x "$MOUNT_POINT/Browser.app/Contents/MacOS/Browser"
 codesign --verify --deep --strict --verbose=2 "$MOUNT_POINT/Browser.app"
+# The stapled ticket must survive the trip through the disk image, or a first
+# launch offline is refused. spctl alone would pass by asking Apple online.
+xcrun stapler validate "$MOUNT_POINT/Browser.app"
 spctl -a -t exec -vv "$MOUNT_POINT/Browser.app"
 cleanup_mount
 trap - EXIT
@@ -204,6 +214,19 @@ jq -n \
         appcastSHA256: $appcast_sha256
       }
     }' > "$PROVENANCE"
+
+# Same LaunchServices hazard as verify.sh: the staging and export copies keep
+# claiming the shipping bundle identifier long after the release is out. They
+# are pure intermediates — the shipped DMG above is the artifact. The xcarchive
+# stays for crash-report symbolication; its bundle is properly signed, so it is
+# harmless if it ever wins the lookup.
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+if [ -x "$LSREGISTER" ]; then
+    "$LSREGISTER" -u "$STAGE/Browser.app" >/dev/null 2>&1 || true
+    "$LSREGISTER" -u "$APP" >/dev/null 2>&1 || true
+    "$LSREGISTER" -u "$BUILD/Browser.xcarchive/Products/Applications/Browser.app" >/dev/null 2>&1 || true
+fi
+rm -rf "$STAGE" "$BUILD/export"
 
 echo "Ready to upload:"
 echo "  $DMG"

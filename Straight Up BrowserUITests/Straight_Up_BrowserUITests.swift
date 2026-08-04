@@ -28,12 +28,12 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         launchBrowserForUITesting(app)
 
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
-
-        let newTab = app.buttons["New Tab"]
-        XCTAssertTrue(newTab.waitForExistence(timeout: 10))
-        newTab.click()
-
-        XCTAssertTrue(app.textFields["Search or enter address"].waitForExistence(timeout: 5))
+        // The address field is exposed through its placeholder, not a label,
+        // so a plain app.textFields["…"] subscript never matches it.
+        let omnibar = app.textFields.element(
+            matching: NSPredicate(format: "placeholderValue == %@", "Search or enter address")
+        )
+        XCTAssertTrue(omnibar.waitForExistence(timeout: 10))
     }
 
     @MainActor
@@ -50,7 +50,9 @@ final class Straight_Up_BrowserUITests: XCTestCase {
 
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
         app.typeKey("y", modifierFlags: .command)
-        XCTAssertTrue(app.otherElements["Browser Library"].waitForExistence(timeout: 5))
+        // The library opens as a sheet; SwiftUI exposes its labelled container
+        // as a group, not an "other" element.
+        XCTAssertTrue(app.groups["Browser Library"].waitForExistence(timeout: 5))
     }
 }
 
