@@ -1003,6 +1003,95 @@ struct BlackPointDemo: View {
     }
 }
 
+/// A day at a glance: the shaded hours are the ones the white/black point adjustments apply to.
+/// The two state-driven modes have no window to draw, so they report what they see right now.
+struct ToneScheduleDemo: View {
+    @Binding var mode: String
+    @ObservedObject private var schedule = ToneSchedule.shared
+
+    private var selected: ToneSchedule.Mode { ToneSchedule.Mode(rawValue: mode) ?? .always }
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Picker("", selection: $mode) {
+                Text("Always").tag("always")
+                Text("Set times").tag("fixed")
+                Text("Sun").tag("sun")
+                Text("Sleep Focus").tag("sleepFocus")
+                Text("Dark mode").tag("darkMode")
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+
+            if let window = schedule.window(for: selected) {
+                dayBar(window)
+            } else {
+                dayBar(selected == .always ? (0, 1440) : nil)
+            }
+
+            Text(statusLine)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var statusLine: String {
+        switch selected {
+        case .always: return "On around the clock."
+        case .fixed, .sun: return schedule.window(for: selected).map {
+            "On from \(ToneSchedule.clock($0.start)) to \(ToneSchedule.clock($0.end))."
+        } ?? ""
+        case .sleepFocus: return ToneSchedule.sleepFocusIsOn()
+            ? "Sleep Focus is on right now, so pages would be adjusted."
+            : "Sleep Focus is off right now, so pages would be left alone."
+        case .darkMode: return ToneSchedule.systemIsDark()
+            ? "Dark mode is on right now, so pages would be adjusted."
+            : "Dark mode is off right now, so pages would be left alone."
+        }
+    }
+
+    /// Midnight to midnight, with the on-window shaded and now marked.
+    private func dayBar(_ window: (start: Double, end: Double)?) -> some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let x = { (minutes: Double) in ToneSchedule.wrap(minutes) / 1440 * width }
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.15))
+                if let w = window {
+                    // A window that wraps midnight draws as two pieces.
+                    ForEach(spans(w), id: \.0) { span in
+                        Rectangle()
+                            .fill(Color.accentColor.opacity(0.55))
+                            .frame(width: max(x(span.1) - x(span.0), 1))
+                            .offset(x: x(span.0))
+                    }
+                }
+                Rectangle()
+                    .fill(Color.primary)
+                    .frame(width: 2)
+                    .offset(x: x(ToneSchedule.minutesOfDay(Date())))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(alignment: .bottom) {
+                HStack {
+                    Text("12 AM"); Spacer(); Text("Noon"); Spacer(); Text("12 AM")
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .offset(y: 16)
+            }
+        }
+        .frame(height: 46)
+    }
+
+    private func spans(_ w: (start: Double, end: Double)) -> [(Double, Double)] {
+        let s = ToneSchedule.wrap(w.start), e = ToneSchedule.wrap(w.end)
+        return s <= e ? [(s, e)] : [(s, 1440), (0, e)]
+    }
+}
+
 /// The one demo that edits live settings rather than a draft: the loading indicator spans five
 /// toggles, and modelling a five-field draft isn't worth it. Read-only popover (Done), toggles
 /// write straight through — the mock window animates a fake page load so you can see the result.

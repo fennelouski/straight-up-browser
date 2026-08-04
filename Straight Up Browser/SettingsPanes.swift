@@ -967,6 +967,12 @@ struct AppearanceSettingsView: View {
     @AppStorage("pageWhitePoint") private var pageWhitePoint = 100.0
     @AppStorage("pageBlackPoint") private var pageBlackPoint = 0.0
     @AppStorage("toneExtendedRange") private var toneExtendedRange = false
+    @AppStorage("toneScheduleMode") private var toneScheduleMode = "always"
+    @AppStorage("toneFixedStart") private var toneFixedStart = 20.0 * 60
+    @AppStorage("toneFixedEnd") private var toneFixedEnd = 7.0 * 60
+    @AppStorage("toneSunsetOffset") private var toneSunsetOffset = 0.0
+    @AppStorage("toneSunriseOffset") private var toneSunriseOffset = 0.0
+    @ObservedObject private var toneSchedule = ToneSchedule.shared
 
     private var whitePointRange: ClosedRange<Double> { toneExtendedRange ? 10...200 : 25...100 }
     private var blackPointRange: ClosedRange<Double> { toneExtendedRange ? -50...50 : -15...15 }
@@ -1068,8 +1074,62 @@ struct AppearanceSettingsView: View {
             } header: {
                 SettingsLabel("Black Point", systemImage: "circle.righthalf.filled", tint: SettingsTint.appearance)
             }
+
+            Section {
+                Picker("Apply", selection: $toneScheduleMode) {
+                    Text("Always").tag("always")
+                    Text("Between set times").tag("fixed")
+                    Text("Sunset to sunrise").tag("sun")
+                    Text("While Sleep Focus is on").tag("sleepFocus")
+                    Text("While the Mac is in dark mode").tag("darkMode")
+                }
+                if toneScheduleMode == "fixed" {
+                    DatePicker("From", selection: minuteBinding($toneFixedStart), displayedComponents: .hourAndMinute)
+                    DatePicker("Until", selection: minuteBinding($toneFixedEnd), displayedComponents: .hourAndMinute)
+                }
+                if toneScheduleMode == "sun" {
+                    LabeledContent("Start") { offsetSlider($toneSunsetOffset, anchor: "sunset") }
+                    LabeledContent("End") { offsetSlider($toneSunriseOffset, anchor: "sunrise") }
+                }
+                LabeledContent(toneSchedule.isActive ? "On now" : "Off now") {
+                    Text(toneSchedule.status).foregroundStyle(.secondary)
+                }
+                SettingCaptionRow(
+                    caption: "When the white and black point adjustments above are in effect.",
+                    title: "Schedule",
+                    explanation: "Dimming that helps at midnight is just a dull screen at noon, so the adjustments can turn themselves on and off. Set times work anywhere; sunset-to-sunrise follows the calendar, and looks your city up once a week from your IP address — coarse, no location permission, and only ever fetched while this mode is selected. Sleep Focus follows the Focus you already schedule for bed, and dark mode follows whatever the Mac (or this browser's own theme) is doing.",
+                    value: $toneScheduleMode
+                ) { ToneScheduleDemo(mode: $0) }
+            } header: {
+                SettingsLabel("Schedule", systemImage: "clock", tint: SettingsTint.appearance)
+            }
         }
         .formStyle(.grouped)
+        .onChange(of: toneScheduleMode) { _, _ in notifyScheduleChanged() }
+        .onChange(of: toneFixedStart) { _, _ in notifyScheduleChanged() }
+        .onChange(of: toneFixedEnd) { _, _ in notifyScheduleChanged() }
+        .onChange(of: toneSunsetOffset) { _, _ in notifyScheduleChanged() }
+        .onChange(of: toneSunriseOffset) { _, _ in notifyScheduleChanged() }
+    }
+
+    private func notifyScheduleChanged() {
+        NotificationCenter.default.post(name: .toneScheduleChanged, object: nil)
+    }
+
+    // DatePicker wants a Date; the schedule only cares about minutes-of-day.
+    private func minuteBinding(_ minutes: Binding<Double>) -> Binding<Date> {
+        Binding(get: { ToneSchedule.date(minutes: minutes.wrappedValue) },
+                set: { minutes.wrappedValue = ToneSchedule.minutesOfDay($0) })
+    }
+
+    private func offsetSlider(_ offset: Binding<Double>, anchor: String) -> some View {
+        HStack {
+            Slider(value: offset, in: -120...120, step: 15).frame(width: 180)
+            Text(offset.wrappedValue == 0
+                 ? "at \(anchor)"
+                 : String(format: "%+d min from \(anchor)", Int(offset.wrappedValue)))
+                .monospacedDigit().foregroundStyle(.secondary)
+        }
     }
 
     // Leaving the extended range mustn't strand a value outside the narrow one —

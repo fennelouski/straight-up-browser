@@ -42,6 +42,8 @@ struct WebView: NSViewRepresentable {
     // Black point, 0 = untouched. Positive lifts blacks toward grey, negative
     // crushes greys down to black.
     @AppStorage("pageBlackPoint") private var pageBlackPoint = 0.0
+    // Off outside its scheduled hours: pages go back to untouched.
+    @ObservedObject private var toneSchedule = ToneSchedule.shared
 
     init(url: Binding<URL?>,
          canGoBack: Binding<Bool>,
@@ -94,8 +96,8 @@ struct WebView: NSViewRepresentable {
 
         // Update the displayed panes (one pane normally, 2–4 in a split)
         nsView.onPaneFocus = { [tabManager] id in tabManager?.selectedTabId = id }
-        nsView.whitePoint = pageWhitePoint
-        nsView.blackPoint = pageBlackPoint
+        nsView.whitePoint = toneSchedule.isActive ? pageWhitePoint : 100
+        nsView.blackPoint = toneSchedule.isActive ? pageBlackPoint : 0
         nsView.setDisplayedTabs(displayedTabIds, focusedTabId: activeTabId)
         for id in displayedTabIds {
             if let tab = tabs?.first(where: { $0.id == id }) {
