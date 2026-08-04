@@ -1017,7 +1017,7 @@ struct ToneScheduleDemo: View {
                 Text("Always").tag("always")
                 Text("Set times").tag("fixed")
                 Text("Sun").tag("sun")
-                Text("Sleep Focus").tag("sleepFocus")
+                Text("Focus").tag("sleepFocus")
                 Text("Dark mode").tag("darkMode")
             }
             .pickerStyle(.menu)
@@ -1043,9 +1043,9 @@ struct ToneScheduleDemo: View {
         case .fixed, .sun: return schedule.window(for: selected).map {
             "On from \(ToneSchedule.clock($0.start)) to \(ToneSchedule.clock($0.end))."
         } ?? ""
-        case .sleepFocus: return ToneSchedule.sleepFocusIsOn()
-            ? "Sleep Focus is on right now, so pages would be adjusted."
-            : "Sleep Focus is off right now, so pages would be left alone."
+        case .sleepFocus: return ToneSchedule.focusIsOn()
+            ? "A Focus is on right now, so pages would be adjusted."
+            : "No Focus is on right now, so pages would be left alone."
         case .darkMode: return ToneSchedule.systemIsDark()
             ? "Dark mode is on right now, so pages would be adjusted."
             : "Dark mode is off right now, so pages would be left alone."

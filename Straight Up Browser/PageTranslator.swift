@@ -150,7 +150,7 @@ final class PageTranslator: ObservableObject {
     // ponytail: chars as a token proxy, and no per-chunk deadline — racing a
     // timeout would mean capturing the non-Sendable session in a child task.
     // Add one (or a session teardown) if translationd wedges on a small batch.
-    private static let batchCharBudget = 2000
+    nonisolated private static let batchCharBudget = 2000
 
     nonisolated private static func translate(
         nodes: [(id: String, text: String)],

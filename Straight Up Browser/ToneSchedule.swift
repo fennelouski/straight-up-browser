@@ -9,6 +9,7 @@
 import SwiftUI
 import AppKit
 import Combine
+import Intents
 
 @MainActor
 final class ToneSchedule: ObservableObject {
@@ -84,8 +85,16 @@ final class ToneSchedule: ObservableObject {
             }
             set(Self.inWindow(Self.minutesOfDay(Date()), start: w.start, end: w.end), label)
         case .sleepFocus:
-            let sleeping = Self.sleepFocusIsOn()
-            set(sleeping, sleeping ? "Sleep Focus is on." : "Sleep Focus is off.")
+            requestFocusAuthorizationIfNeeded()
+            switch Self.focusAuthorization {
+            case .authorized:
+                let focused = Self.focusIsOn()
+                set(focused, focused ? "A Focus is on." : "No Focus is on.")
+            case .notDetermined:
+                set(false, "Waiting for permission to read Focus.")
+            default:
+                set(false, "Focus access denied — allow it in System Settings › Privacy & Security › Focus.")
+            }
         case .darkMode:
             let dark = Self.systemIsDark()
             set(dark, dark ? "Dark mode is on." : "Dark mode is off.")
@@ -197,30 +206,27 @@ final class ToneSchedule: ObservableObject {
         }
     }
 
-    // MARK: - Sleep Focus
+    // MARK: - Focus
 
-    /// Sleep Focus has no public API — INFocusStatusCenter only reports "some
-    /// focus is on" and needs its own permission prompt. The Focus daemon's own
-    /// store does distinguish modes, so read that instead. Unsandboxed app, so
-    /// the file is readable; the format is private, hence the fail-to-off
-    /// parsing. ponytail: re-check after each macOS major.
-    static func sleepFocusIsOn() -> Bool {
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/DoNotDisturb/DB/Assertions.json")
-        guard let data = try? Data(contentsOf: url),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let records = json["data"] as? [[String: Any]] else { return false }
-        // Apple's epoch for these timestamps is 2001-01-01, same as Date's.
-        let now = Date().timeIntervalSinceReferenceDate
-        return records.contains { store in
-            (store["storeAssertionRecords"] as? [[String: Any]] ?? []).contains { assertion in
-                guard let details = assertion["assertionDetails"] as? [String: Any],
-                      details["assertionDetailsModeIdentifier"] as? String == "com.apple.sleep.sleep-mode"
-                else { return false }
-                // A stale record whose window has passed shouldn't pin it on.
-                if let end = details["assertionDetailsUserVisibleEndDate"] as? Double, end < now { return false }
-                return true
-            }
+    /// Which Focus is on isn't something a sandboxed app can learn: the Focus
+    /// daemon's own store (which does name Sleep) sits outside the container,
+    /// and the public API answers one bit — focused or not. So this mode is
+    /// "any Focus", and Sleep is the one people schedule for bed anyway.
+    /// Permission is asked for only when the mode is selected, and a refusal
+    /// leaves it permanently off rather than nagging.
+    static func focusIsOn() -> Bool {
+        guard INFocusStatusCenter.default.authorizationStatus == .authorized else { return false }
+        return INFocusStatusCenter.default.focusStatus.isFocused ?? false
+    }
+
+    static var focusAuthorization: INFocusStatusAuthorizationStatus {
+        INFocusStatusCenter.default.authorizationStatus
+    }
+
+    func requestFocusAuthorizationIfNeeded() {
+        guard INFocusStatusCenter.default.authorizationStatus == .notDetermined else { return }
+        INFocusStatusCenter.default.requestAuthorization { [weak self] _ in
+            Task { @MainActor in self?.refresh() }
         }
     }
 

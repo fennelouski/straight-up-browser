@@ -1080,7 +1080,7 @@ struct AppearanceSettingsView: View {
                     Text("Always").tag("always")
                     Text("Between set times").tag("fixed")
                     Text("Sunset to sunrise").tag("sun")
-                    Text("While Sleep Focus is on").tag("sleepFocus")
+                    Text("While any Focus is on").tag("sleepFocus")
                     Text("While the Mac is in dark mode").tag("darkMode")
                 }
                 if toneScheduleMode == "fixed" {
@@ -1097,7 +1097,7 @@ struct AppearanceSettingsView: View {
                 SettingCaptionRow(
                     caption: "When the white and black point adjustments above are in effect.",
                     title: "Schedule",
-                    explanation: "Dimming that helps at midnight is just a dull screen at noon, so the adjustments can turn themselves on and off. Set times work anywhere; sunset-to-sunrise follows the calendar, and looks your city up once a week from your IP address — coarse, no location permission, and only ever fetched while this mode is selected. Sleep Focus follows the Focus you already schedule for bed, and dark mode follows whatever the Mac (or this browser's own theme) is doing.",
+                    explanation: "Dimming that helps at midnight is just a dull screen at noon, so the adjustments can turn themselves on and off. Set times work anywhere; sunset-to-sunrise follows the calendar, and looks your city up once a week from your IP address — coarse, no location permission, and only ever fetched while this mode is selected. The Focus option covers any Focus you have on — macOS won't tell an app which one, so a bedtime Sleep Focus counts the same as Do Not Disturb, and it asks permission the first time you pick it. Dark mode follows whatever the Mac (or this browser's own theme) is doing.",
                     value: $toneScheduleMode
                 ) { ToneScheduleDemo(mode: $0) }
             } header: {
