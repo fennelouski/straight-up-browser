@@ -965,6 +965,11 @@ struct AppearanceSettingsView: View {
     @AppStorage("fadeInPages") private var fadeInPages = true
     @AppStorage("fadeInDuration") private var fadeInDuration = 250.0
     @AppStorage("pageWhitePoint") private var pageWhitePoint = 100.0
+    @AppStorage("pageBlackPoint") private var pageBlackPoint = 0.0
+    @AppStorage("toneExtendedRange") private var toneExtendedRange = false
+
+    private var whitePointRange: ClosedRange<Double> { toneExtendedRange ? 10...200 : 25...100 }
+    private var blackPointRange: ClosedRange<Double> { toneExtendedRange ? -50...50 : -15...15 }
 
     private let themes = ["Light", "Dark", "System"]
 
@@ -1030,21 +1035,48 @@ struct AppearanceSettingsView: View {
             Section {
                 LabeledContent("Max page brightness") {
                     HStack {
-                        Slider(value: $pageWhitePoint, in: 50...100, step: 5).frame(width: 180)
+                        Slider(value: $pageWhitePoint, in: whitePointRange, step: 5).frame(width: 180)
                         Text("\(Int(pageWhitePoint))%").monospacedDigit().frame(width: 60, alignment: .trailing)
                     }
                 }
+                Toggle("Extended range", isOn: $toneExtendedRange)
+                    .onChange(of: toneExtendedRange) { _, _ in clampToneToRanges() }
                 SettingCaptionRow(
                     caption: "100% leaves pages alone. Lower caps how bright white can get.",
                     title: "White Point",
-                    explanation: "Bright pages are the other half of screen flicker — a white page after a dark one is a jolt no fade can hide. This caps how bright the brightest parts of a page can go. Because it scales brightness rather than laying grey over the page, dark text barely moves while backgrounds come down, so text stays readable and roughly half as dimmed as the page around it.",
+                    explanation: "Bright pages are the other half of screen flicker — a white page after a dark one is a jolt no fade can hide. This caps how bright the brightest parts of a page can go. Because it scales brightness rather than laying grey over the page, dark text barely moves while backgrounds come down, so text stays readable and roughly half as dimmed as the page around it. Extended range widens both this and the black point well past what most screens want — down to 10% or up to a 200% boost — for dim rooms and odd displays.",
                     value: $pageWhitePoint
-                ) { WhitePointDemo(whitePoint: $0) }
+                ) { WhitePointDemo(whitePoint: $0, range: whitePointRange) }
             } header: {
                 SettingsLabel("White Point", systemImage: "sun.max", tint: SettingsTint.appearance)
             }
+
+            Section {
+                LabeledContent("Black level") {
+                    HStack {
+                        Slider(value: $pageBlackPoint, in: blackPointRange, step: 1).frame(width: 180)
+                        Text(pageBlackPoint == 0 ? "Off" : String(format: "%+d%%", Int(pageBlackPoint)))
+                            .monospacedDigit().frame(width: 60, alignment: .trailing)
+                    }
+                }
+                SettingCaptionRow(
+                    caption: "Below zero deepens near-blacks; above zero lifts them to grey.",
+                    title: "Black Point",
+                    explanation: "Where the white point decides how bright a page can get, this decides how dark it can get. Negative values subtract light, so dark greys fall to true black and dark pages stop looking washed out — while white barely moves. Positive values add light, lifting black to a soft grey, which some people find far easier to read against at night than pure black text. The default range is deliberately gentle; the extended range in White Point above unlocks the heavy-handed settings.",
+                    value: $pageBlackPoint
+                ) { BlackPointDemo(blackPoint: $0, range: blackPointRange) }
+            } header: {
+                SettingsLabel("Black Point", systemImage: "circle.righthalf.filled", tint: SettingsTint.appearance)
+            }
         }
         .formStyle(.grouped)
+    }
+
+    // Leaving the extended range mustn't strand a value outside the narrow one —
+    // the slider would clamp its knob but the page would stay at 200%.
+    private func clampToneToRanges() {
+        pageWhitePoint = min(max(pageWhitePoint, whitePointRange.lowerBound), whitePointRange.upperBound)
+        pageBlackPoint = min(max(pageBlackPoint, blackPointRange.lowerBound), blackPointRange.upperBound)
     }
 }
 

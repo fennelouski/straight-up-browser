@@ -913,6 +913,7 @@ struct FadeInDemo: View {
 /// what it does to backgrounds versus text before you commit.
 struct WhitePointDemo: View {
     @Binding var whitePoint: Double
+    var range: ClosedRange<Double> = 50...100
 
     var body: some View {
         VStack(spacing: 20) {
@@ -920,11 +921,17 @@ struct WhitePointDemo: View {
                 sample(background: .white, text: .black)
                 sample(background: .black, text: .white)
             }
-            .overlay(Color.black.opacity((100 - whitePoint) / 100).allowsHitTesting(false))
+            // Mirrors the real overlay: a black veil below 100, added light above.
+            .overlay(
+                (whitePoint < 100 ? Color.black : Color.white)
+                    .opacity(min(abs(whitePoint - 100) / 100, 1))
+                    .blendMode(whitePoint < 100 ? .normal : .plusLighter)
+                    .allowsHitTesting(false)
+            )
             .clipShape(RoundedRectangle(cornerRadius: 10))
 
             HStack {
-                Slider(value: $whitePoint, in: 50...100, step: 5)
+                Slider(value: $whitePoint, in: range, step: 5)
                 Text("\(Int(whitePoint))%").font(.caption).monospacedDigit().frame(width: 50, alignment: .trailing)
             }
         }
@@ -940,6 +947,59 @@ struct WhitePointDemo: View {
         .padding(12)
         .frame(width: 130, height: 84, alignment: .top)
         .background(background)
+    }
+}
+
+/// A grey ramp plus a dark mock page, so you can see where the shadows land: negative values pull
+/// the dark end down to black, positive ones lift it to grey.
+struct BlackPointDemo: View {
+    @Binding var blackPoint: Double
+    var range: ClosedRange<Double> = -15...15
+
+    private var amount: Double { min(abs(blackPoint) / 100, 1) }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            VStack(spacing: 10) {
+                HStack(spacing: 0) {
+                    ForEach(0..<9) { step in
+                        Color(white: Double(step) / 8)
+                    }
+                }
+                .frame(height: 28)
+
+                HStack(alignment: .top, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("The quick brown fox").font(.caption).foregroundStyle(Color(white: 0.75))
+                        Capsule().fill(Color(white: 0.45)).frame(height: 5)
+                        Capsule().fill(Color(white: 0.45)).frame(maxWidth: 90).frame(height: 5)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(12)
+                .frame(height: 70, alignment: .top)
+                .background(Color(white: 0.08))
+            }
+            // Same maths as the real overlay: add light, or subtract it (plusDarker
+            // is D + S - 1, i.e. linear burn) so near-blacks clip and white holds.
+            .overlay(
+                Group {
+                    if blackPoint >= 0 {
+                        Color.white.opacity(amount).blendMode(.plusLighter)
+                    } else {
+                        Color(white: 1 - amount).blendMode(.plusDarker)
+                    }
+                }
+                .allowsHitTesting(false)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            HStack {
+                Slider(value: $blackPoint, in: range, step: 1)
+                Text(blackPoint == 0 ? "Off" : String(format: "%+d%%", Int(blackPoint)))
+                    .font(.caption).monospacedDigit().frame(width: 50, alignment: .trailing)
+            }
+        }
     }
 }
 
