@@ -105,6 +105,7 @@ extension Notification.Name {
     // Settings
     static let browserShowSettings = Notification.Name("browserShowSettings")
     static let browserTabTitleDisplayModeChanged = Notification.Name("browserTabTitleDisplayModeChanged")
+    static let toneScheduleChanged = Notification.Name("toneScheduleChanged")
 
     // CLI data command
     static let browserGetPageData = Notification.Name("browserGetPageData")

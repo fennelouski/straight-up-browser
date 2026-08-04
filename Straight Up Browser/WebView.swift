@@ -7,6 +7,7 @@
 
 import SwiftUI
 @preconcurrency import WebKit
+import CoreImage
 #if os(macOS)
 import AppKit
 #endif
@@ -38,6 +39,11 @@ struct WebView: NSViewRepresentable {
     // Max page brightness, 100 = untouched. Same deal: @AppStorage so dragging
     // the slider re-runs updateNSView and you see it change under you.
     @AppStorage("pageWhitePoint") private var pageWhitePoint = 100.0
+    // Black point, 0 = untouched. Positive lifts blacks toward grey, negative
+    // crushes greys down to black.
+    @AppStorage("pageBlackPoint") private var pageBlackPoint = 0.0
+    // Off outside its scheduled hours: pages go back to untouched.
+    @ObservedObject private var toneSchedule = ToneSchedule.shared
 
     init(url: Binding<URL?>,
          canGoBack: Binding<Bool>,
@@ -90,7 +96,8 @@ struct WebView: NSViewRepresentable {
 
         // Update the displayed panes (one pane normally, 2–4 in a split)
         nsView.onPaneFocus = { [tabManager] id in tabManager?.selectedTabId = id }
-        nsView.whitePoint = pageWhitePoint
+        nsView.whitePoint = toneSchedule.isActive ? pageWhitePoint : 100
+        nsView.blackPoint = toneSchedule.isActive ? pageBlackPoint : 0
         nsView.setDisplayedTabs(displayedTabIds, focusedTabId: activeTabId)
         for id in displayedTabIds {
             if let tab = tabs?.first(where: { $0.id == id }) {
@@ -1020,21 +1027,50 @@ class WebViewContainer: NSView {
     // Clicking inside a non-focused pane moves focus there (sets selectedTabId).
     var onPaneFocus: ((UUID) -> Void)?
 
-    // Page white point, 100 = untouched. A black veil at (100 - whitePoint)%
-    // composites as a plain multiply: white drops to the chosen level, black text
-    // doesn't move at all, and midtones — most body text — shift about half as
-    // far. It sits over the web views rather than inside the page, so it covers
-    // PDFs and error pages too and can't break a site's layout the way an
-    // injected CSS filter would. ponytail: linear multiply, not a tone curve;
-    // swap in an NSView compositingFilter if the highlight rolloff needs shaping.
+    // Page white point, 100 = untouched. Below 100, a black veil at
+    // (100 - whitePoint)% composites as a plain multiply: white drops to the
+    // chosen level, black text doesn't move at all, and midtones — most body
+    // text — shift about half as far. Above 100 (extended range only) the same
+    // veil turns into added light. It sits over the web views rather than inside
+    // the page, so it covers PDFs and error pages too and can't break a site's
+    // layout the way an injected CSS filter would. ponytail: linear multiply,
+    // not a tone curve; swap in a shaped CIFilter if highlights need rolloff.
     var whitePoint: Double = 100 {
         didSet {
             guard whitePoint != oldValue else { return }
-            dimOverlay.alphaValue = CGFloat((100 - min(max(whitePoint, 0), 100)) / 100)
+            let amount = abs(whitePoint - 100) / 100
+            if whitePoint < 100 {
+                whiteOverlay.set(NSColor.black.withAlphaComponent(CGFloat(min(amount, 1))), filter: nil)
+            } else {
+                whiteOverlay.set(NSColor.white.withAlphaComponent(CGFloat(min(amount, 1))),
+                                 filter: CIFilter(name: "CIAdditionCompositing"))
+            }
         }
     }
 
-    private let dimOverlay = DimOverlay()
+    // Page black point, 0 = untouched. Positive adds light everywhere, so black
+    // lifts to grey (whites are already clipped and barely move). Negative
+    // subtracts via linear burn — out = page - amount — so near-blacks clip to
+    // true black while white only dips a little.
+    var blackPoint: Double = 0 {
+        didSet {
+            guard blackPoint != oldValue else { return }
+            let amount = CGFloat(min(abs(blackPoint) / 100, 1))
+            if blackPoint > 0 {
+                blackOverlay.set(NSColor.white.withAlphaComponent(amount),
+                                 filter: CIFilter(name: "CIAdditionCompositing"))
+            } else if let burn = CIFilter(name: "CILinearBurnBlendMode") {
+                // Opaque grey — linear burn needs the full source colour, and the
+                // filter is what keeps it from just painting over the page.
+                blackOverlay.set(NSColor(white: 1 - amount, alpha: 1), filter: burn)
+            } else {
+                blackOverlay.set(.clear, filter: nil)
+            }
+        }
+    }
+
+    private let whiteOverlay = ToneOverlay()
+    private let blackOverlay = ToneOverlay()
 
     var activeWebView: WKWebView? {
         // The WebView for the focused tab, not necessarily the manager's
@@ -1196,10 +1232,13 @@ class WebViewContainer: NSView {
     }
 
     private func layoutPanes() {
-        // Keep the veil covering everything, and last in z-order — attach() and
-        // ensureDividers() both append subviews above it.
-        dimOverlay.frame = bounds
-        if subviews.last !== dimOverlay { addSubview(dimOverlay, positioned: .above, relativeTo: nil) }
+        // Keep the veils covering everything, and last in z-order — attach() and
+        // ensureDividers() both append subviews above them. White point first,
+        // black point on top: scale the page down, then shift it.
+        for overlay in [whiteOverlay, blackOverlay] {
+            overlay.frame = bounds
+            if subviews.last !== overlay { addSubview(overlay, positioned: .above, relativeTo: nil) }
+        }
 
         guard let webViewManager = webViewManager, !displayedTabIds.isEmpty else { return }
         let views = displayedTabIds.map { webViewManager.getWebView(for: $0) }
@@ -1351,15 +1390,21 @@ class WebViewContainer: NSView {
 
 // The white-point veil. Transparent to the mouse so the page underneath still
 // gets every click.
-final class DimOverlay: NSView {
+/// A pass-through veil over the web views: a flat colour composited onto whatever
+/// is underneath, optionally through a Core Image blend filter.
+final class ToneOverlay: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.backgroundColor = NSColor.black.cgColor
-        alphaValue = 0
+        layer?.backgroundColor = NSColor.clear.cgColor
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func set(_ color: NSColor, filter: CIFilter?) {
+        layer?.compositingFilter = filter
+        layer?.backgroundColor = color.cgColor
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
