@@ -128,6 +128,7 @@ struct OmnibarTextField: NSViewRepresentable {
     var onArrowDown: (() -> Void)?
     var onCommit: ((OmnibarCommit) -> Void)?
     var onCancel: (() -> Void)?
+    var onTab: (() -> Void)?
     // Given what the user just typed, returns the full text to inline-complete to
     // (or nil for no completion). The added suffix is auto-selected.
     var completion: ((String) -> String?)?
@@ -285,6 +286,12 @@ struct OmnibarTextField: NSViewRepresentable {
                 let shift = NSApp.currentEvent?.modifierFlags.contains(.shift) == true
                 parent.onCommit?(shift ? .newTab : .navigate)
                 return true
+            case #selector(NSResponder.insertTab(_:)),
+                 #selector(NSResponder.insertBacktab(_:)):
+                // Consumed so Tab toggles history search instead of walking the
+                // key-view loop out of the omnibar.
+                parent.onTab?()
+                return true
             case #selector(NSResponder.cancelOperation(_:)):
                 parent.onCancel?()
                 return true
@@ -313,8 +320,14 @@ struct OmnibarView: View {
 
     @State private var inputText: String = ""
     @State private var selectedSuggestionIndex: Int = -1
-    @State private var showSuggestions: Bool = false
     @State private var shouldFocusTextField: Bool = false
+    // Tab flips the omnibar into searching everywhere you've been instead of
+    // guessing where you're going.
+    @State private var historyMode: Bool = false
+
+    private var showSuggestions: Bool {
+        (historyMode || !inputText.isEmpty) && !filteredSuggestions.isEmpty
+    }
 
     // All unique history URLs, computed once when the omnibar opens - not per
     // keystroke, which scanned every tab's full history on each character
@@ -361,6 +374,11 @@ struct OmnibarView: View {
 
     // Filter suggestions based on input text
     private var filteredSuggestions: [Suggestion] {
+        if historyMode {
+            return BrowsingHistoryStore.shared.search(inputText).map {
+                Suggestion(url: $0.url, title: $0.title, type: .history)
+            }
+        }
         guard !inputText.isEmpty else { return [] }
 
         let lowercasedInput = inputText.lowercased()
@@ -450,11 +468,17 @@ struct OmnibarView: View {
         return nil
     }
 
+    // History search always has a row armed, so Return takes the top hit without
+    // arrowing to it first.
+    private var effectiveSelectionIndex: Int {
+        if selectedSuggestionIndex >= 0 { return selectedSuggestionIndex }
+        return historyMode && !filteredSuggestions.isEmpty ? 0 : -1
+    }
+
     private var selectedSuggestion: Suggestion? {
-        guard selectedSuggestionIndex >= 0 && selectedSuggestionIndex < filteredSuggestions.count else {
-            return nil
-        }
-        return filteredSuggestions[selectedSuggestionIndex]
+        let index = effectiveSelectionIndex
+        guard index >= 0 && index < filteredSuggestions.count else { return nil }
+        return filteredSuggestions[index]
     }
 
     var body: some View {
@@ -466,13 +490,24 @@ struct OmnibarView: View {
                         .padding(.leading, 12)
                 }
 
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.gray)
+                Image(systemName: historyMode ? "clock.arrow.circlepath" : "magnifyingglass")
+                    .foregroundColor(historyMode ? .blue : .gray)
                     .padding(.leading, pageProtection == nil ? 12 : 0)
+
+                if historyMode {
+                    Text("History")
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.15), in: Capsule())
+                        .foregroundColor(.blue)
+                }
 
                 OmnibarTextField(
                     text: $inputText,
-                    placeholder: String(localized: "Search or enter address"),
+                    placeholder: historyMode
+                        ? String(localized: "Search your history")
+                        : String(localized: "Search or enter address"),
                     autoSelectAll: true,
                     shouldFocus: shouldFocusTextField,
                     onArrowUp: {
@@ -502,13 +537,19 @@ struct OmnibarView: View {
                     onCancel: {
                         isPresented = false
                     },
-                    completion: { bestCompletion(for: $0) }
+                    onTab: {
+                        // The omnibar opens pre-filled with the current URL; that's a
+                        // terrible history query, so drop it if it's untouched.
+                        if !historyMode && inputText == urlString { inputText = "" }
+                        historyMode.toggle()
+                    },
+                    // Inline completion fights fuzzy matching — off in history mode.
+                    completion: { historyMode ? nil : bestCompletion(for: $0) }
                 )
                 .padding(.vertical, 12)
                 .padding(.horizontal, 8)
-                .onChange(of: inputText) { oldValue, newValue in
+                .onChange(of: inputText) { _, _ in
                     selectedSuggestionIndex = -1
-                    showSuggestions = !newValue.isEmpty && !filteredSuggestions.isEmpty
                 }
 
                 Button(action: { navigate() }) {
@@ -586,7 +627,7 @@ struct OmnibarView: View {
                     ForEach(Array(filteredSuggestions.enumerated()), id: \.element.id) { index, suggestion in
                         OmnibarSuggestionButton(
                             suggestion: suggestion,
-                            isSelected: selectedSuggestionIndex == index
+                            isSelected: effectiveSelectionIndex == index
                         ) {
                             if let tabId = suggestion.tabId {
                                 onSwitchToTab?(tabId)
@@ -619,6 +660,9 @@ struct OmnibarView: View {
             }
         }
         .frame(width: 600, alignment: .top) // Sized to content so the dimmer owns clicks below the bar
+        .onChange(of: historyMode) { _, _ in
+            selectedSuggestionIndex = -1
+        }
         .onAppear {
             inputText = urlString
             shouldFocusTextField = true

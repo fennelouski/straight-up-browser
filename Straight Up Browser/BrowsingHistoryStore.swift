@@ -57,6 +57,56 @@ final class BrowsingHistoryStore: ObservableObject {
         return visits.filter { seen.insert($0.url.absoluteString).inserted }
     }
 
+    /// Fuzzy history search for the omnibar: the typed characters have to appear
+    /// in order somewhere in the page's title or URL, and results are ranked by
+    /// how cleanly they matched, how often you go there, and how recently.
+    /// Empty query = your most recent pages.
+    func search(_ query: String, limit: Int = 10) -> [HistoryVisit] {
+        let recents = recentVisits
+        let needle = Array(query.lowercased().filter { !$0.isWhitespace })
+        guard !needle.isEmpty else { return Array(recents.prefix(limit)) }
+
+        var counts: [String: Int] = [:]
+        for visit in visits { counts[visit.url.absoluteString, default: 0] += 1 }
+
+        let now = Date()
+        let scored = recents.compactMap { visit -> (HistoryVisit, Double)? in
+            guard let match = Self.fuzzyScore(needle, in: visit.title + " " + visit.url.absoluteString)
+            else { return nil }
+            let count = Double(counts[visit.url.absoluteString] ?? 1)
+            let days = max(0, now.timeIntervalSince(visit.visitedAt)) / 86_400
+            return (visit, match + 2 * log2(count + 1) + 8 / (1 + days))
+        }
+        return scored.sorted { $0.1 > $1.1 }.prefix(limit).map(\.0)
+    }
+
+    // Greedy left-to-right subsequence match. Characters that continue a run, or
+    // that start a word ("g" of "/gist"), are worth more than ones buried
+    // mid-word — so "ghpr" ranks github.com/…/pulls above a stray letter soup.
+    // ponytail: greedy, not optimal alignment; swap in a real fuzzy lib only if
+    // rankings actually feel wrong.
+    static func fuzzyScore(_ needle: [Character], in haystack: String) -> Double? {
+        let hay = Array(haystack.lowercased())
+        var score = 0.0
+        var matched = 0
+        var lastMatch = -2
+        for (i, character) in hay.enumerated() {
+            guard matched < needle.count else { break }
+            guard character == needle[matched] else { continue }
+            let previous = i > 0 ? hay[i - 1] : " "
+            if i == lastMatch + 1 {
+                score += 3                                  // consecutive
+            } else if !previous.isLetter && !previous.isNumber {
+                score += 2                                  // start of a word
+            } else {
+                score += 1
+            }
+            lastMatch = i
+            matched += 1
+        }
+        return matched == needle.count ? score : nil
+    }
+
     func record(
         url: URL,
         title: String?,
