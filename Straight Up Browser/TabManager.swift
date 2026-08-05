@@ -150,6 +150,7 @@ class TabManager: NSObject, ObservableObject {
         if DefaultBrowser.shouldOffer { offerDefaultBrowser = true }
         #endif
         let newTab = Tab(title: String(localized: "New Tab"), url: url, isActive: false)
+        newTab.openerId = selectedTabId
         newTab.memoryPolicy = MemoryPolicy(rawValue:
             UserDefaults.standard.string(forKey: "memorySaverDefaultPolicy") ?? "") ?? .whenNeeded
         if url != nil {
@@ -161,12 +162,18 @@ class TabManager: NSObject, ObservableObject {
             // symptom — one would appear at the top of the list, nowhere near the
             // tab that opened it. Matches what createIncognitoTab already does.
             let existing = (try? modelContext.fetch(FetchDescriptor<Tab>())) ?? []
-            if let currentIndex = existing.first(where: { $0.id == selectedTabId })?.orderIndex {
-                // Land right after the tab you're on, not at the end of the list.
-                for tab in existing where tab.orderIndex > currentIndex {
+            if let current = existing.first(where: { $0.id == selectedTabId }) {
+                // Land right after the tab you're on — and after any tabs already
+                // opened from it, so ⌘-clicking several links queues them in click
+                // order instead of reversing them.
+                let anchor = existing
+                    .filter { $0.openerId == current.id && $0.orderIndex > current.orderIndex }
+                    .map(\.orderIndex)
+                    .max() ?? current.orderIndex
+                for tab in existing where tab.orderIndex > anchor {
                     tab.orderIndex += 1
                 }
-                newTab.orderIndex = currentIndex + 1
+                newTab.orderIndex = anchor + 1
             } else {
                 newTab.orderIndex = (existing.map(\.orderIndex).max() ?? -1) + 1
             }
@@ -185,6 +192,7 @@ class TabManager: NSObject, ObservableObject {
         let tab = Tab(title: String(localized: "New Tab"), url: nil, isActive: false)
         tab.sessionKind = .incognito
         tab.sessionId = sessionId ?? UUID()
+        tab.openerId = selectedTabId
         // In-memory only: never unload (there's no SwiftData row to restore from).
         tab.memoryPolicy = .never
         tab.orderIndex = (incognitoTabs.map(\.orderIndex).max() ?? 1_000_000) + 1
@@ -349,9 +357,19 @@ class TabManager: NSObject, ObservableObject {
         }
     }
 
-    /// Which tab takes focus when `tab` is closed: the one before it in the list,
-    /// or the one after when closing the first tab.
+    /// Which tab takes focus when `tab` is closed. Tabs opened from this one are a
+    /// reading queue: focus its first child, then its next sibling as each is closed,
+    /// so ⌘-clicking a pile of links and closing them walks the pile in click order.
+    /// Otherwise: the tab before it, or the one after when closing the first tab.
     private func neighbor(of tab: Tab, in tabs: [Tab]) -> UUID? {
+        if let child = tabs.first(where: { $0.openerId == tab.id && $0.id != tab.id }) {
+            return child.id
+        }
+        if let opener = tab.openerId,
+           let index = tabs.firstIndex(where: { $0.id == tab.id }),
+           let sibling = tabs[tabs.index(after: index)...].first(where: { $0.openerId == opener }) {
+            return sibling.id
+        }
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return tabs.first?.id }
         if index > 0 { return tabs[index - 1].id }
         return tabs.count > 1 ? tabs[index + 1].id : nil

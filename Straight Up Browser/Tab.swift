@@ -122,6 +122,10 @@ final class Tab {
     var zoomLevel: Double = 1.0
     var orderIndex: Int = 0
     var groupId: UUID? = nil
+    // The tab this one was opened from (⌘-click, popup, ⌘T). Makes tabs opened
+    // from a page a reading queue: closing the opener focuses its first child,
+    // closing that child focuses the next one (see TabManager.neighbor).
+    var openerId: UUID? = nil
     // Session isolation. nil sessionKindRaw => normal (shared default store). For a
     // container tab, sessionId is its BrowserSession.id. For an incognito tab, sessionId
     // identifies which ephemeral store its tabs share (the tab itself lives in memory only).

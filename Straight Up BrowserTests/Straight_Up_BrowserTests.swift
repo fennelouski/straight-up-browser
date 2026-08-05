@@ -1031,6 +1031,32 @@ struct SplitViewTests {
         cleanup(manager)
     }
 
+    @Test func closingOpenerWalksItsOpenedTabsInClickOrder() {
+        let manager = TabManager()
+        let tabs = makeTabs(5)   // [other, opener, c1, c2, c3]
+        for child in tabs[2...] { child.openerId = tabs[1].id }
+
+        // Closing the opener goes to its first opened tab, not the tab before it
+        manager.selectedTabId = tabs[1].id
+        manager.closeTab(tabs[1], tabs: tabs)
+        #expect(manager.selectedTabId == tabs[2].id)
+
+        // Then each close walks forward through the rest, in click order
+        var remaining = [tabs[0], tabs[2], tabs[3], tabs[4]]
+        manager.closeTab(tabs[2], tabs: remaining)
+        #expect(manager.selectedTabId == tabs[3].id)
+
+        remaining = [tabs[0], tabs[3], tabs[4]]
+        manager.closeTab(tabs[3], tabs: remaining)
+        #expect(manager.selectedTabId == tabs[4].id)
+
+        // Last one has no siblings left: back to the plain previous-tab rule
+        remaining = [tabs[0], tabs[4]]
+        manager.closeTab(tabs[4], tabs: remaining)
+        #expect(manager.selectedTabId == tabs[0].id)
+        cleanup(manager)
+    }
+
     @Test func closingMemberCollapsesOnlyItsPane() {
         let manager = TabManager()
         let tabs = makeTabs(3)
