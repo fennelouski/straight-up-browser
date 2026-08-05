@@ -116,14 +116,28 @@ xcrun stapler staple "$STAGE/Browser.app"
 xcrun stapler validate "$STAGE/Browser.app"
 spctl -a -t exec -vv "$STAGE/Browser.app"
 
-# Build the filesystem image without mounting it. `hdiutil create -srcfolder`
-# mounts the volume to copy into it, and macOS App Management refuses the write
-# to /Volumes/Browser/Browser.app unless the calling terminal holds that
-# permission — which fails the release from some hosts and not others.
-# makehybrid never mounts, so the DMG builds identically everywhere.
-hdiutil makehybrid -hfs -hfs-volume-name "Browser" -ov -o "$BUILD/raw.dmg" "$STAGE"
-hdiutil convert "$BUILD/raw.dmg" -format UDZO -ov -o "$DMG"
-rm -f "$BUILD/raw.dmg"
+# `hdiutil create -volname Browser -srcfolder` mounts the volume to copy into
+# it, and macOS App Management refuses the write to the exact path
+# /Volumes/Browser/Browser.app unless the calling terminal holds that
+# permission — it fails from some hosts and not others. Stage the payload on a
+# differently-named volume, then rename the volume: a rename is not a write at
+# the protected path. (`hdiutil makehybrid` avoids mounting altogether but
+# stamps com.apple.FinderInfo on every file, which fails the strict signature
+# check below with "resource fork, Finder information, or similar detritus not
+# allowed".)
+RW_DMG="$BUILD/rw.dmg"
+STAGE_VOLUME="BrowserStage"
+DMG_SIZE_MB=$(( $(du -sm "$STAGE" | awk '{ print $1 }') + 60 ))
+hdiutil detach "/Volumes/$STAGE_VOLUME" >/dev/null 2>&1 || true
+rm -f "$RW_DMG"
+hdiutil create -size "${DMG_SIZE_MB}m" -volname "$STAGE_VOLUME" -fs HFS+ -ov "$RW_DMG"
+hdiutil attach "$RW_DMG" -nobrowse >/dev/null
+ditto "$STAGE/Browser.app" "/Volumes/$STAGE_VOLUME/Browser.app"
+ln -s /Applications "/Volumes/$STAGE_VOLUME/Applications"
+diskutil rename "/Volumes/$STAGE_VOLUME" Browser >/dev/null
+hdiutil detach "/Volumes/Browser" >/dev/null
+hdiutil convert "$RW_DMG" -format UDZO -ov -o "$DMG" >/dev/null
+rm -f "$RW_DMG"
 
 codesign --force --sign "$SIGNING_IDENTITY" "$DMG"
 xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
