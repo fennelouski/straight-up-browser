@@ -43,6 +43,8 @@ struct Suggestion: Identifiable {
 
 private struct OmnibarSuggestionLabel: View {
     let suggestion: Suggestion
+    /// This page finished loading before you pressed Return.
+    var isReady: Bool = false
 
     var body: some View {
         HStack {
@@ -52,7 +54,9 @@ private struct OmnibarSuggestionLabel: View {
                         .font(.system(size: 14))
                         .foregroundColor(.primary)
                     badge
+                    if isReady { readyBadge }
                 }
+                .animation(.spring(response: 0.32, dampingFraction: 0.7), value: isReady)
                 Text(suggestion.url.absoluteString)
                     .font(.system(size: 12))
                     .foregroundColor(.gray)
@@ -60,6 +64,21 @@ private struct OmnibarSuggestionLabel: View {
             }
             Spacer()
         }
+    }
+
+    // Deliberately quiet: it only ever appears when the page really did finish
+    // loading ahead of you, so it doubles as proof the head start happened.
+    private var readyBadge: some View {
+        HStack(spacing: 2) {
+            Image(systemName: "bolt.fill")
+            Text("Ready")
+        }
+        .font(.system(size: 10, weight: .medium))
+        .padding(.horizontal, 5)
+        .padding(.vertical, 1)
+        .background(Color.green.opacity(0.15), in: Capsule())
+        .foregroundColor(.green)
+        .transition(.scale(scale: 0.6).combined(with: .opacity))
     }
 
     @ViewBuilder
@@ -89,11 +108,12 @@ private struct OmnibarSuggestionLabel: View {
 private struct OmnibarSuggestionButton: View {
     let suggestion: Suggestion
     let isSelected: Bool
+    var isReady: Bool = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            OmnibarSuggestionLabel(suggestion: suggestion)
+            OmnibarSuggestionLabel(suggestion: suggestion, isReady: isReady)
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 12)
@@ -101,7 +121,9 @@ private struct OmnibarSuggestionButton: View {
         .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
         .contentShape(Rectangle())
         .accessibilityLabel(accessibilityTitle)
-        .accessibilityValue(suggestion.url.absoluteString)
+        .accessibilityValue(isReady
+            ? String(localized: "Ready. \(suggestion.url.absoluteString)")
+            : suggestion.url.absoluteString)
         .accessibilityHint(suggestion.tabId == nil ? "Open suggestion" : "Switch to open tab")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -324,6 +346,8 @@ struct OmnibarView: View {
     // Tab flips the omnibar into searching everywhere you've been instead of
     // guessing where you're going.
     @State private var historyMode: Bool = false
+
+    @ObservedObject private var prefetcher = Prefetcher.shared
 
     private var showSuggestions: Bool {
         (historyMode || !inputText.isEmpty) && !filteredSuggestions.isEmpty
@@ -644,7 +668,8 @@ struct OmnibarView: View {
                     ForEach(Array(filteredSuggestions.enumerated()), id: \.element.id) { index, suggestion in
                         OmnibarSuggestionButton(
                             suggestion: suggestion,
-                            isSelected: effectiveSelectionIndex == index
+                            isSelected: effectiveSelectionIndex == index,
+                            isReady: suggestion.url == prefetcher.readyURL
                         ) {
                             if let tabId = suggestion.tabId {
                                 onSwitchToTab?(tabId)

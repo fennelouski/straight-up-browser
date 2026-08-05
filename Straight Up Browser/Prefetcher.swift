@@ -12,12 +12,17 @@
 //  shared — so prefetch never runs from an incognito or container tab.
 //
 
+import Combine
 import Foundation
 import WebKit
 
 @MainActor
-final class Prefetcher: NSObject {
+final class Prefetcher: NSObject, ObservableObject, WKNavigationDelegate {
     static let shared = Prefetcher()
+
+    /// The page that finished loading ahead of you — the omnibar marks it "Ready"
+    /// so the head start is visible rather than something you have to take on faith.
+    @Published private(set) var readyURL: URL?
 
     static let enabledKey = "prefetchEnabled"
 
@@ -47,6 +52,7 @@ final class Prefetcher: NSObject {
         configuration.applicationNameForUserAgent = WebViewManager.userAgentAppName
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
+        webView.navigationDelegate = self
 
         observer = NotificationCenter.default.addMainActorObserver(
             forName: .memoryPressure,
@@ -102,11 +108,17 @@ final class Prefetcher: NSObject {
         guard target != inFlight else { return }
         webView.stopLoading()
         inFlight = target
+        readyURL = nil
         webView.load(URLRequest(url: target))
+    }
+
+    nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        MainActor.assumeIsolated { readyURL = inFlight }
     }
 
     /// The omnibar closed without going anywhere — drop the guess.
     func cancel() {
+        readyURL = nil
         guard inFlight != nil else { return }
         webView.stopLoading()
         inFlight = nil
