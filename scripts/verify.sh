@@ -29,6 +29,11 @@ UI_TEST_SETTINGS=(
     SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
 )
 RUN_UI_TESTS="${RUN_UI_TESTS:-0}"
+# The iPadOS UI suite gates the iOS app, which ships on its own schedule. Set
+# this to 0 to release the Mac app without it. The iOS Release build below is
+# unconditional either way, so a macOS release still cannot land iOS code that
+# fails to compile.
+RUN_IOS_UI_TESTS="${RUN_IOS_UI_TESTS:-1}"
 RUN_TSAN="${RUN_TSAN:-1}"
 MIN_APP_COVERAGE_PERCENT="${MIN_APP_COVERAGE_PERCENT:-25}"
 
@@ -134,29 +139,38 @@ if [ "$RUN_UI_TESTS" = "1" ]; then
         -parallel-testing-enabled NO \
         "${UI_TEST_SETTINGS[@]}"
 
-    echo "Running iPadOS UI tests..."
-    IOS_SIMULATOR_ID="$(
-        xcrun simctl create \
-            "Straight Up Browser Verify" \
-            "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M4-8GB" \
-            "com.apple.CoreSimulator.SimRuntime.iOS-18-5"
-    )"
-    cleanup_simulator() {
-        xcrun simctl shutdown "$IOS_SIMULATOR_ID" >/dev/null 2>&1 || true
-        xcrun simctl delete "$IOS_SIMULATOR_ID" >/dev/null 2>&1 || true
-    }
-    trap cleanup_simulator EXIT
-    xcodebuild test -quiet \
-        -onlyUsePackageVersionsFromResolvedFile \
-        -project "$PROJECT" \
-        -scheme "Browser iOS" \
-        -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_ID" \
-        -derivedDataPath "$DERIVED_DATA_ROOT/ios-ui-tests" \
-        -resultBundlePath "$DERIVED_DATA_ROOT/ios-ui-tests.xcresult" \
-        -parallel-testing-enabled NO \
-        "${UI_TEST_SETTINGS[@]}"
-    cleanup_simulator
-    trap - EXIT
+    if [ "$RUN_IOS_UI_TESTS" = "1" ]; then
+        echo "Running iPadOS UI tests..."
+        IOS_SIMULATOR_ID="$(
+            xcrun simctl create \
+                "Straight Up Browser Verify" \
+                "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M4-8GB" \
+                "com.apple.CoreSimulator.SimRuntime.iOS-18-5"
+        )"
+        cleanup_simulator() {
+            xcrun simctl shutdown "$IOS_SIMULATOR_ID" >/dev/null 2>&1 || true
+            xcrun simctl delete "$IOS_SIMULATOR_ID" >/dev/null 2>&1 || true
+        }
+        trap cleanup_simulator EXIT
+        # xcodebuild boots the device itself, but starts the test before the
+        # simulator finishes coming up, which surfaces as "Failed to get
+        # background assertion for target app with pid 0" — the app never
+        # launched. Wait for the boot to complete first.
+        xcrun simctl bootstatus "$IOS_SIMULATOR_ID" -b >/dev/null 2>&1 || true
+        xcodebuild test -quiet \
+            -onlyUsePackageVersionsFromResolvedFile \
+            -project "$PROJECT" \
+            -scheme "Browser iOS" \
+            -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_ID" \
+            -derivedDataPath "$DERIVED_DATA_ROOT/ios-ui-tests" \
+            -resultBundlePath "$DERIVED_DATA_ROOT/ios-ui-tests.xcresult" \
+            -parallel-testing-enabled NO \
+            "${UI_TEST_SETTINGS[@]}"
+        cleanup_simulator
+        trap - EXIT
+    else
+        echo "iPadOS UI test execution skipped (RUN_IOS_UI_TESTS=0)."
+    fi
 else
     echo "UI test execution skipped (set RUN_UI_TESTS=1 on a UI-automation-enabled host)."
     echo "Building macOS UI tests..."
