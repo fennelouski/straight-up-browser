@@ -860,10 +860,15 @@ struct ContentView: View {
                             }
                         }
                         .padding(.vertical, 4)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
                     }
                 }
             }
             .padding(.vertical, 4)
+            // A tab opened in the background (Cmd+click) slides its row in from the
+            // leading edge, so you see it land instead of guessing whether it opened.
+            .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.8),
+                       value: allTabs.count)
         }
     }
 
