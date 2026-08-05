@@ -93,7 +93,9 @@ final class SiteHistory {
         }
     }
 
-    static func normalizedHost(_ url: URL) -> String? {
+    // Pure string work — callable off the main actor (Prefetcher tallies hosts
+    // in the background).
+    nonisolated static func normalizedHost(_ url: URL) -> String? {
         guard var host = url.host?.lowercased(), !host.isEmpty else { return nil }
         if host.hasPrefix("www.") { host = String(host.dropFirst(4)) }
         return host

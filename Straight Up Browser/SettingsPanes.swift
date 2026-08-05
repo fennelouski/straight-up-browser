@@ -35,6 +35,7 @@ struct GeneralSettingsView: View {
     @AppStorage(TabSync.Key.cacheState) private var tabSyncCacheState = false
     @AppStorage(FastForward.Key.enabled) private var fastForwardEnabled = true
     @AppStorage(SiteHistory.useAppleIntelligenceKey) private var siteNicknamesUseAI = true
+    @AppStorage(Prefetcher.enabledKey) private var prefetchEnabled = true
     @State private var iCloudAvailable: Bool?
 
     private let searchEngines = ["Google", "DuckDuckGo", "Bing", "Yahoo"]
@@ -99,6 +100,15 @@ struct GeneralSettingsView: View {
                 SettingsLabel("Fast Forward", systemImage: "forward.fill", tint: SettingsTint.general)
             } footer: {
                 Text("Runs on your Mac. The left pane always holds your actual search results, so Fast Forward only ever adds a head start — it never replaces what you asked for.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Start loading before you press Return", isOn: $prefetchEnabled)
+            } header: {
+                SettingsLabel("Head Start", systemImage: "bolt.horizontal", tint: SettingsTint.general)
+            } footer: {
+                Text("When what you've typed can only mean one site you already go to often, that page starts loading while you're still typing. It never runs for a page you already have open, in a private or container tab, or when your Mac is short on memory.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

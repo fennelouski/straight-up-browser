@@ -341,6 +341,17 @@ struct OmnibarView: View {
         allHistoryURLs = Array(urls)
     }
 
+    // What prefetch needs to know about the current window: never guess a page
+    // that's already open, and never prefetch out of a private session (the hidden
+    // prefetch view browses the shared store).
+    private var openURLs: Set<URL> {
+        Set(tabs.compactMap { Tab.normalizeURLForComparison($0.url) })
+    }
+
+    private var activeSession: SessionKind {
+        tabs.first { $0.id == currentTabId }?.sessionKind ?? .normal
+    }
+
     // Get bookmark URLs
     private var bookmarkURLs: [URL] {
         return bookmarkSuggestions.map { $0.url }
@@ -548,8 +559,14 @@ struct OmnibarView: View {
                 )
                 .padding(.vertical, 12)
                 .padding(.horizontal, 8)
-                .onChange(of: inputText) { _, _ in
+                .onChange(of: inputText) { _, typed in
                     selectedSuggestionIndex = -1
+                    Prefetcher.shared.consider(
+                        filteredSuggestions,
+                        typed: typed,
+                        openURLs: openURLs,
+                        session: activeSession
+                    )
                 }
 
                 Button(action: { navigate() }) {
@@ -667,6 +684,10 @@ struct OmnibarView: View {
             inputText = urlString
             shouldFocusTextField = true
             loadHistoryURLs()
+            Prefetcher.shared.prime()
+        }
+        .onDisappear {
+            Prefetcher.shared.cancel()
         }
     }
 
@@ -691,6 +712,9 @@ struct OmnibarView: View {
             }
         }
 
+        // A prefetch of this very page should finish — stopping it mid-flight would
+        // throw away the head start. A guess at anywhere else gets dropped.
+        Prefetcher.shared.committed(to: urlString)
         onNavigate(urlString, commit)
         isPresented = false
     }
