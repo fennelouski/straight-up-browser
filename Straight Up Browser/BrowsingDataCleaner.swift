@@ -43,13 +43,32 @@ enum BrowsingDataCleaner {
         return [.defaultStore] + containers
     }
 
+    static func store(for scope: WebsiteDataStoreScope) -> WKWebsiteDataStore {
+        switch scope {
+        case .defaultStore:
+            return .default()
+        case .container(let identifier):
+            return WKWebsiteDataStore(forIdentifier: identifier)
+        }
+    }
+
     private static func stores(for scopes: [WebsiteDataStoreScope]) -> [WKWebsiteDataStore] {
-        scopes.map { scope in
-            switch scope {
-            case .defaultStore:
-                return .default()
-            case .container(let identifier):
-                return WKWebsiteDataStore(forIdentifier: identifier)
+        scopes.map(store(for:))
+    }
+
+    // Which sites you're signed into, per store scope, in `allStoreScopes` order.
+    static func signedInHosts(
+        containerIdentifiers: [UUID],
+        then: @escaping @MainActor @Sendable ([[String]]) -> Void
+    ) {
+        let jars = stores(for: allStoreScopes(containerIdentifiers: containerIdentifiers))
+        var results = [[String]](repeating: [], count: jars.count)
+        var remaining = jars.count
+        for (index, jar) in jars.enumerated() {
+            jar.httpCookieStore.getAllCookies { cookies in
+                results[index] = SignedInSites.hosts(in: cookies)
+                remaining -= 1
+                if remaining == 0 { then(results) }
             }
         }
     }
@@ -163,5 +182,30 @@ enum BrowsingDataCleaner {
             from: stores(for: allStoreScopes(containerIdentifiers: containerIdentifiers)),
             then: then
         )
+    }
+}
+
+// WebKit has no "am I logged in" API, so infer it from cookies: a server-set
+// (httpOnly) cookie whose name reads like a session or auth token. Misses sites
+// that keep their session in local storage, and can over-report the odd
+// server-set tracking cookie.
+// ponytail: name matching. Only worth more if it visibly misfires.
+enum SignedInSites {
+    static let authNames = [
+        "session", "sess", "auth", "token", "login", "logged",
+        "sid", "remember", "account", "credential", "identity"
+    ]
+
+    static func looksLikeLogin(_ cookie: HTTPCookie) -> Bool {
+        guard cookie.isHTTPOnly else { return false }
+        let name = cookie.name.lowercased()
+        return authNames.contains { name.contains($0) }
+    }
+
+    static func hosts(in cookies: [HTTPCookie]) -> [String] {
+        let matched = cookies.filter(looksLikeLogin).map { cookie in
+            cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain
+        }
+        return Set(matched).sorted()
     }
 }

@@ -1289,7 +1289,23 @@ struct MemorySettingsView: View {
 
 // MARK: - Privacy
 
+struct SignedInGroup: Identifiable {
+    let scope: WebsiteDataStoreScope
+    let name: String
+    let hosts: [String]
+
+    // Two sessions can share a name; the scope can't.
+    var id: String {
+        switch scope {
+        case .defaultStore: return "default"
+        case .container(let identifier): return identifier.uuidString
+        }
+    }
+}
+
 struct PrivacySettingsView: View {
+    @Query private var browserSessions: [BrowserSession]
+    @State private var signedInGroups: [SignedInGroup] = []
     @ObservedObject private var permissionStore = SitePermissionStore.shared
     @AppStorage("convertToIncognitoEnabled") private var convertToIncognitoEnabled = false
     @State private var showClearDataDialog = false
@@ -1308,6 +1324,50 @@ struct PrivacySettingsView: View {
                 SettingsLabel("Incognito", systemImage: "eyeglasses", tint: SettingsTint.privacy)
             } footer: {
                 Text("Adds “Switch Tab to Incognito” to the Privacy menu. It moves the current tab into a private session: your logins come along (cookies are copied over), but everything after the switch is kept only in memory and vanishes when the tab closes. What happened before the switch is already in your history, and sites that keep you signed in with local storage may ask you to sign in again.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                if signedInGroups.isEmpty {
+                    Text("No sites appear to be signed in.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(signedInGroups) { group in
+                        ForEach(group.hosts, id: \.self) { host in
+                            HStack(spacing: 10) {
+                                Image(systemName: "person.crop.circle.badge.checkmark")
+                                    .frame(width: 18)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(host)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                    if signedInGroups.count > 1 {
+                                        Text(group.name)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                Button("Sign Out") {
+                                    BrowsingDataCleaner.clearSite(
+                                        host: host,
+                                        in: BrowsingDataCleaner.store(for: group.scope)
+                                    ) { refreshSignedIn() }
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                    }
+                }
+            } header: {
+                SettingsLabel(
+                    "Signed In",
+                    systemImage: "person.crop.circle.badge.checkmark",
+                    tint: SettingsTint.privacy
+                )
+            } footer: {
+                Text("Sites that left a sign-in cookie behind. Signing out here deletes that site's cookies, caches, and storage in that session — the site itself still has your account. Sites that keep you signed in with local storage instead of cookies won't be listed.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1380,6 +1440,27 @@ struct PrivacySettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { refreshSignedIn() }
+    }
+
+    private func refreshSignedIn() {
+        let sessions = browserSessions
+        let identifiers = sessions.map(\.id)
+        // signedInHosts returns one entry per scope, in allStoreScopes order.
+        let scopes = BrowsingDataCleaner.allStoreScopes(containerIdentifiers: identifiers)
+        BrowsingDataCleaner.signedInHosts(containerIdentifiers: identifiers) { hostsPerScope in
+            signedInGroups = zip(scopes, hostsPerScope).compactMap { scope, hosts in
+                guard !hosts.isEmpty else { return nil }
+                let name: String
+                switch scope {
+                case .defaultStore:
+                    name = "Main"
+                case .container(let identifier):
+                    name = sessions.first { $0.id == identifier }?.name ?? "Session"
+                }
+                return SignedInGroup(scope: scope, name: name, hosts: hosts)
+            }
+        }
     }
 }
 
