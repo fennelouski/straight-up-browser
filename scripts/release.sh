@@ -66,8 +66,11 @@ xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null || {
     exit 1
 }
 
-# Never archive a release that has not passed the same gates as CI.
-RUN_UI_TESTS="${RUN_UI_TESTS:-1}" ./scripts/verify.sh
+# Never archive a release that has not passed the same gates as CI. This ships
+# the Mac app only, so the iPadOS UI suite doesn't gate it (the iOS Release
+# build still runs, so iOS code that fails to compile still can't land).
+# RUN_IOS_UI_TESTS=1 puts it back.
+RUN_UI_TESTS="${RUN_UI_TESTS:-1}" RUN_IOS_UI_TESTS="${RUN_IOS_UI_TESTS:-0}" ./scripts/verify.sh
 
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
