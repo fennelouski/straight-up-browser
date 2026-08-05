@@ -19,6 +19,17 @@
 	<true/>
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
+	<!-- Sparkle auto-update from inside the App Sandbox. Checking the appcast only
+	     needs network.client, so without these the app finds an update, says so,
+	     and then silently fails to install it — the sandbox blocks the lookup of
+	     Sparkle's installer XPC services. -spks is the installer launcher, -spki
+	     the installer connection/status service; both are required.
+	     Paired with SUEnableInstallerLauncherService in Browser-Info.plist. -->
+	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spki</string>
+	</array>
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>
 		<string>iCloud.com.nathanfennel.Straight-Up-Browser</string>

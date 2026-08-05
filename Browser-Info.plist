@@ -64,5 +64,14 @@
 	<true/>
 	<key>SUAutomaticallyUpdate</key>
 	<true/>
+	<!-- Required because this app is sandboxed: Sparkle installs through an XPC
+	     service instead of doing it in-process. Must stay paired with the
+	     mach-lookup temporary exception in Browser.entitlements — either one
+	     alone leaves updates silently failing after the "a new version is
+	     available" dialog. The downloader service is deliberately NOT enabled:
+	     Sparkle's docs say to leave it off when the app already holds
+	     com.apple.security.network.client, which this one does. -->
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
 </dict>
 </plist>
