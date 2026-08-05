@@ -61,6 +61,7 @@
 				LinkPreview.swift,
 				NotificationManager.swift,
 				OmnibarView.swift,
+				Prefetcher.swift,
 				ScreenshotManager.swift,
 				SettingsDemos.swift,
 				SettingsPanes.swift,
