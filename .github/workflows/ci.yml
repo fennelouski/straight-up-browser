@@ -27,6 +27,10 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Run build and test gates
+        # The runner has no protected-folder consent to trip, so keep the
+        # derived data in-tree where the upload step below can find it.
+        env:
+          DERIVED_DATA_ROOT: build/verification
         run: ./scripts/verify.sh
 
       - name: Upload result bundles on failure

@@ -9,7 +9,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 PROJECT="Straight Up Browser.xcodeproj"
-DERIVED_DATA_ROOT="${DERIVED_DATA_ROOT:-build/verification}"
+# Build and run the tests outside the repository. When the derived data lives
+# under ~/Documents, launching the test host trips macOS file-access consent:
+# the app comes up but blocks before it connects, and xcodebuild reports "The
+# test runner hung before establishing connection" after ~350s of nothing. The
+# identical invocation passes in seconds from an unprotected directory —
+# bisected 2026-08-05, in-repo hangs, ~/Library/Caches and /tmp both pass.
+# The .xcresult diagnostics move here too.
+DERIVED_DATA_ROOT="${DERIVED_DATA_ROOT:-$HOME/Library/Caches/straight-up-browser/verification}"
 COMMON_SETTINGS=(
     CODE_SIGNING_ALLOWED=NO
     ENABLE_DEBUG_DYLIB=NO
