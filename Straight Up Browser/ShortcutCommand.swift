@@ -39,6 +39,26 @@ struct Shortcut: Codable, Equatable, Hashable {
 
     var hasModifier: Bool { command || shift || option || control }
 
+    // The ⌃ twin of a ⌘ chord (⌘R → ⌃R). Websites can bind ⌘R and swallow it
+    // before we see it; the twin is a second way in that pages don't take.
+    // nil when the chord isn't ⌘-based, or when the twin would land on an
+    // AppKit text-editing binding (⌃A/⌃E/⌃K…) — only bare ⌃+key is at risk,
+    // ⌃⇧K and friends are free.
+    var controlTwin: Shortcut? {
+        guard command, !control else { return nil }
+        var twin = self
+        twin.command = false
+        twin.control = true
+        if !shift && !option && Self.textEditingControlKeys.contains(key) { return nil }
+        return twin
+    }
+
+    // ponytail: curated; AppKit's emacs-style bindings have no public listing.
+    private static let textEditingControlKeys: Set<String> = [
+        "a", "b", "d", "e", "f", "h", "k", "n", "o", "p", "t", "v", "y",
+        "[", "]", "\\", " ", "\t",
+    ]
+
     // SwiftUI menus (macOS + iOS)
     var keyEquivalent: KeyEquivalent {
         switch key {
@@ -421,11 +441,34 @@ final class ShortcutStore {
     static let revisionKey = "shortcutsRevision"
 
     private(set) var custom: [String: Shortcut] = [:]
+    // Every chord currently in use, so a ⌃ twin never steals a real binding.
+    private var boundShortcuts: Set<Shortcut> = []
 
-    private init() { load() }
+    private init() { load(); rebuildBound() }
 
     func shortcut(for command: ShortcutCommand) -> Shortcut {
         custom[command.id] ?? command.defaultShortcut
+    }
+
+    /// Automatic backup chord: ⌘R also answers to ⌃R, unless that chord is
+    /// already spoken for. Lets a page that hijacks the ⌘ combo be worked around
+    /// without rebinding anything.
+    func alternate(for command: ShortcutCommand) -> Shortcut? {
+        guard Self.twinEligible.contains(command.id),
+              let twin = shortcut(for: command).controlTwin,
+              !boundShortcuts.contains(twin),
+              systemConflict(twin) == nil else { return nil }
+        return twin
+    }
+
+    // Only commands the local event monitor dispatches can honor a twin — a
+    // menu item carries exactly one key equivalent.
+    private static var twinEligible: Set<String> {
+        Set(ShortcutPriorityStore.contestable.map(\.id) + [ShortcutCommand.omnibar.id])
+    }
+
+    private func rebuildBound() {
+        boundShortcuts = Set(ShortcutCommand.availableOnCurrentPlatform.map { shortcut(for: $0) })
     }
 
     func isCustomized(_ command: ShortcutCommand) -> Bool { custom[command.id] != nil }
@@ -486,6 +529,124 @@ final class ShortcutStore {
         }
         let rev = UserDefaults.standard.integer(forKey: Self.revisionKey) + 1
         UserDefaults.standard.set(rev, forKey: Self.revisionKey)
+        rebuildBound()
+    }
+}
+
+#if canImport(AppKit)
+extension ShortcutStore {
+    // Does this event fire the command — via its chord or its ⌃ backup?
+    func matches(_ event: NSEvent, _ command: ShortcutCommand) -> Bool {
+        shortcut(for: command).matches(event) || alternate(for: command)?.matches(event) == true
+    }
+}
+#endif
+
+// MARK: - Website shortcut priority
+
+// Who wins a chord that both we and the page want.
+//
+// AppKit gives the key window's view tree performKeyEquivalent: before the main
+// menu, and WKWebView answers it by handing the key to the web process — so a
+// page that preventDefault()s ⌘T takes New Tab away and the menu item never
+// fires. The local event monitor runs earlier than any of that, so it's the one
+// place we can win. This store says which commands it should claim there:
+// per host if there's an entry, else globally, else the default below.
+@Observable
+final class ShortcutPriorityStore {
+    static let shared = ShortcutPriorityStore()
+
+    // Commands the monitor can claim. Everything else stays menu-only — a menu
+    // item is enough when no page competes for the chord.
+    static let contestable: [ShortcutCommand] = [
+        .newTab, .closeTab, .closeTabSet, .reopenTab, .nextTab, .previousTab,
+        .reload, .hardReload, .reloadAll, .back, .forward,
+        .openLocation, .findInPage, .addBookmark, .printPage, .quickOpen,
+    ]
+
+    // Browser chrome you'd never want a page to eat. The rest (find, print,
+    // Quick Open, address bar) start off, because plenty of web apps have a
+    // legitimate claim on ⌘F/⌘P/⌘K — turn them on per site when one doesn't.
+    static let defaultWins: Set<String> = [
+        ShortcutCommand.newTab.id, ShortcutCommand.closeTab.id, ShortcutCommand.closeTabSet.id,
+        ShortcutCommand.reopenTab.id, ShortcutCommand.nextTab.id, ShortcutCommand.previousTab.id,
+        ShortcutCommand.reload.id, ShortcutCommand.hardReload.id, ShortcutCommand.reloadAll.id,
+        ShortcutCommand.back.id, ShortcutCommand.forward.id,
+    ]
+
+    private static let globalKey = "shortcutPriorityGlobal"
+    private static let hostKey = "shortcutPriorityByHost"
+
+    private(set) var global: [String: Bool] = [:]
+    private(set) var byHost: [String: [String: Bool]] = [:]
+
+    // The host of the page that last saw a keystroke, so Settings can offer
+    // "this site" without plumbing the active tab across windows.
+    // ponytail: the monitor already looks the host up on every key event.
+    var currentHost: String?
+
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        global = (defaults.dictionary(forKey: Self.globalKey) as? [String: Bool]) ?? [:]
+        byHost = (defaults.dictionary(forKey: Self.hostKey) as? [String: [String: Bool]]) ?? [:]
+    }
+
+    // "www.example.com" and "Example.com" are the same site to a person.
+    static func normalize(_ host: String?) -> String? {
+        guard var host = host?.lowercased(), !host.isEmpty else { return nil }
+        if host.hasPrefix("www.") { host.removeFirst(4) }
+        return host
+    }
+
+    /// Should the monitor claim this chord before the page sees it?
+    func browserWins(_ command: ShortcutCommand, host: String? = nil) -> Bool {
+        if let host = Self.normalize(host), let perSite = byHost[host]?[command.id] { return perSite }
+        if let value = global[command.id] { return value }
+        #if os(macOS)
+        // Quick Open shipped with its own toggle before this store existed.
+        if command.id == ShortcutCommand.quickOpen.id {
+            return SettingsManager.shared.overrideWebsiteQuickOpen
+        }
+        #endif
+        return Self.defaultWins.contains(command.id)
+    }
+
+    /// The explicit setting at this level, or nil when it inherits.
+    func override(for command: ShortcutCommand, host: String? = nil) -> Bool? {
+        guard let host = Self.normalize(host) else { return global[command.id] }
+        return byHost[host]?[command.id]
+    }
+
+    /// Pass nil to clear the override and inherit the level above.
+    func set(_ value: Bool?, for command: ShortcutCommand, host: String? = nil) {
+        if let host = Self.normalize(host) {
+            byHost[host, default: [:]][command.id] = value
+            if byHost[host]?.isEmpty ?? false { byHost.removeValue(forKey: host) }
+        } else {
+            global[command.id] = value
+        }
+        persist()
+    }
+
+    var customizedHosts: [String] { byHost.keys.sorted() }
+
+    func clear(host: String) {
+        guard let host = Self.normalize(host) else { return }
+        byHost.removeValue(forKey: host)
+        persist()
+    }
+
+    func resetAll() {
+        global.removeAll()
+        byHost.removeAll()
+        persist()
+    }
+
+    private func persist() {
+        defaults.set(global, forKey: Self.globalKey)
+        defaults.set(byHost, forKey: Self.hostKey)
     }
 }
 
@@ -517,7 +678,9 @@ extension ShortcutStore {
                 continue
             }
             let s = shortcut(for: command)
-            rows.append(CheatRow(id: command.id, title: command.title, keys: s.displayString, shortcut: s))
+            var keys = s.displayString
+            if let alt = alternate(for: command) { keys += " / \(alt.displayString)" }
+            rows.append(CheatRow(id: command.id, title: command.title, keys: keys, shortcut: s))
         }
         if section == .tabs {
             // Not a rebindable command — a mouse gesture, documented here so it's discoverable
@@ -690,6 +853,13 @@ extension ShortcutStore {
         assert(t.eventModifiers.contains(.command))
         let ctrlTab = ShortcutCommand.nextTab.defaultShortcut
         assert(ctrlTab.displayTokens == ["⌃", "⇥"], "\(ctrlTab.displayTokens)")
+        // ⌘R gets a ⌃R backup; ⌘[ doesn't (⌃[ is Escape / text editing), but
+        // ⇧⌘[ does. Menu-owned commands are never eligible.
+        assert(Shortcut(key: "r", command: true).controlTwin?.displayString == "⌃R")
+        assert(Shortcut(key: "[", command: true).controlTwin == nil)
+        assert(Shortcut(key: "[", command: true, shift: true).controlTwin?.displayString == "⌃⇧[")
+        assert(Shortcut(key: "r", control: true).controlTwin == nil, "no twin of a twin")
+        assert(!twinEligible.contains(ShortcutCommand.showBookmarks.id), "menu-only commands get no twin")
         // No two defaults collide.
         var seen = Set<Shortcut>()
         for c in ShortcutCommand.all {

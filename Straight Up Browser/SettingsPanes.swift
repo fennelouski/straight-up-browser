@@ -287,6 +287,8 @@ struct ShortcutsSettingsView: View {
                 SettingsLabel("Keyboard Shortcuts", systemImage: "keyboard", tint: SettingsTint.shortcuts)
             }
 
+            WebsiteShortcutPriorityView()
+
             ForEach(ShortcutSection.allCases, id: \.self) { section in
                 Section {
                     ForEach(ShortcutCommand.all.filter { $0.section == section }) { command in
@@ -322,6 +324,99 @@ struct ShortcutsSettingsView: View {
             }
             ShortcutRecorder(command: command)
         }
+    }
+}
+
+// Which chords the browser takes back from websites — globally, or for one
+// site. Only the commands the event monitor can actually claim are listed;
+// see ShortcutPriorityStore for why the menu bar alone isn't enough.
+struct WebsiteShortcutPriorityView: View {
+    private var store: ShortcutStore { .shared }
+    private var priority: ShortcutPriorityStore { .shared }
+
+    // nil = every site. Otherwise the host these rows apply to.
+    @State private var host: String?
+    @State private var newHost = ""
+    @State private var pendingHost: String?
+
+    var body: some View {
+        Section {
+            Picker("These settings apply to", selection: $host) {
+                Text("All sites").tag(String?.none)
+                ForEach(hosts, id: \.self) { host in
+                    Text(host).tag(String?.some(host))
+                }
+            }
+
+            HStack {
+                TextField("Add a site (example.com)", text: $newHost)
+                    .onSubmit(addHost)
+                Button("Add", action: addHost)
+                    .disabled(ShortcutPriorityStore.normalize(newHost) == nil)
+            }
+
+            ForEach(ShortcutPriorityStore.contestable) { command in
+                Picker(selection: binding(for: command)) {
+                    if host != nil { Text("Use setting for all sites").tag(Bool?.none) }
+                    Text("Browser").tag(Bool?.some(true))
+                    Text("Website").tag(Bool?.some(false))
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(command.title)
+                        Text(store.shortcut(for: command).displayString)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            HStack {
+                if let host {
+                    Button("Clear Settings for \(host)") {
+                        priority.clear(host: host)
+                        self.host = nil
+                    }
+                }
+                Spacer()
+                Button("Reset All Sites") { priority.resetAll() }
+                    .disabled(priority.global.isEmpty && priority.byHost.isEmpty)
+            }
+        } header: {
+            Text("When a Website Uses the Same Shortcut")
+        } footer: {
+            Text("Websites see a keypress before the menu bar does, so a page can take ⌘R or ⌘T for itself. Anything set to Browser is claimed before the page ever sees it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // Whatever the user has customized, plus the site they're on, plus one just
+    // typed in — a site only reaches the store once a row is actually set.
+    private var hosts: [String] {
+        var hosts = priority.customizedHosts
+        for host in [priority.currentHost, pendingHost].compactMap({ $0 }) where !hosts.contains(host) {
+            hosts.insert(host, at: 0)
+        }
+        return hosts
+    }
+
+    private func addHost() {
+        guard let normalized = ShortcutPriorityStore.normalize(newHost) else { return }
+        pendingHost = normalized
+        host = normalized
+        newHost = ""
+    }
+
+    // Global rows always show a concrete choice; per-site rows can inherit.
+    private func binding(for command: ShortcutCommand) -> Binding<Bool?> {
+        Binding(
+            get: {
+                host == nil
+                    ? (priority.override(for: command) ?? priority.browserWins(command))
+                    : priority.override(for: command, host: host)
+            },
+            set: { priority.set($0, for: command, host: host) }
+        )
     }
 }
 

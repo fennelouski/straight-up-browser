@@ -30,6 +30,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         #if DEBUG
         ShortcutStore.selfCheck()
+        KeyboardShortcutsManager.selfCheck()
         ScreenshotSettings.selfCheck()
         #endif
 

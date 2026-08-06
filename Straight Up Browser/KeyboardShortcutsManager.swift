@@ -109,7 +109,7 @@ class KeyboardShortcutsManager {
             }
 
             // Omnibar toggle (rebindable)
-            if store.shortcut(for: .omnibar).matches(event) {
+            if store.matches(event, .omnibar) {
                 self.showOmnibar.wrappedValue.toggle()
                 return nil
             }
@@ -127,36 +127,10 @@ class KeyboardShortcutsManager {
                 return event
             }
 
-            // The shortcuts the menu bar can't own reliably, each read live from
-            // the store so a rebinding in Settings takes effect immediately.
-            if self.hasNoConflict(for: .closeTabSet) && store.shortcut(for: .closeTabSet).matches(event) {
-                NotificationCenter.default.post(name: .browserCloseTabSet, object: nil)
-                return nil
-            }
-            if store.shortcut(for: .nextTab).matches(event) {
-                NotificationCenter.default.post(name: .browserNextTab, object: nil)
-                return nil
-            }
-            if store.shortcut(for: .previousTab).matches(event) {
-                NotificationCenter.default.post(name: .browserPreviousTab, object: nil)
-                return nil
-            }
             // ponytail: ⌘N stays a fixed second New Tab alias; only the primary
             // (⌘T) is rebindable, via the menu item.
             if mods == .command && event.charactersIgnoringModifiers == "n" {
                 NotificationCenter.default.post(name: .browserNewTab, object: nil)
-                return nil
-            }
-            if store.shortcut(for: .reload).matches(event) {
-                self.reloadAction()
-                return nil
-            }
-            if store.shortcut(for: .back).matches(event) {
-                self.goBackAction()
-                return nil
-            }
-            if store.shortcut(for: .forward).matches(event) {
-                self.goForwardAction()
                 return nil
             }
             // Settings > General > "⌘P and ⌘\ navigate": frees the everyday
@@ -172,23 +146,18 @@ class KeyboardShortcutsManager {
                     return nil
                 }
             }
-            if store.shortcut(for: .hardReload).matches(event) {
-                self.hardReloadAction()
-                return nil
-            }
-            if store.shortcut(for: .reloadAll).matches(event) {
-                self.reloadAllTabsAction()
-                return nil
-            }
+
+            if self.claimContestedShortcut(event) { return nil }
 
             return event
         }
     }
 
     /// Returns true when the browser owns this Quick Open event and the caller
-    /// should stop it from reaching the focused website.
+    /// should stop it from reaching the focused website. Kept ahead of the
+    /// contested loop below so ⌘K still closes an open omnibar.
     func captureQuickOpenIfNeeded(_ event: NSEvent) -> Bool {
-        guard SettingsManager.shared.overrideWebsiteQuickOpen,
+        guard ShortcutPriorityStore.shared.browserWins(.quickOpen, host: currentHost),
               ShortcutStore.shared.shortcut(for: .quickOpen).matches(event) else {
             return false
         }
@@ -196,10 +165,82 @@ class KeyboardShortcutsManager {
         return true
     }
 
-    private func hasNoConflict(for command: ShortcutCommand) -> Bool {
-        let shortcut = ShortcutStore.shared.shortcut(for: command)
-        return ShortcutStore.shared.commandsSharing(shortcut, excluding: command).isEmpty
+    private var currentHost: String? { webViewManager?.url?.host() }
+
+    /// Claim a chord the focused page would otherwise swallow. Returns true when
+    /// the browser handled it and the event must not travel any further.
+    private func claimContestedShortcut(_ event: NSEvent) -> Bool {
+        // Nothing here applies over Settings/Downloads/Help — no web page is
+        // competing, and ⌘W must still close the window itself.
+        guard !Self.auxiliaryWindowIsKey else { return false }
+
+        let store = ShortcutStore.shared
+        let priority = ShortcutPriorityStore.shared
+        let host = currentHost
+        let normalized = ShortcutPriorityStore.normalize(host)
+        if priority.currentHost != normalized { priority.currentHost = normalized }
+
+        for command in ShortcutPriorityStore.contestable {
+            let chord = store.shortcut(for: command)
+            // The ⌃ twin is ours by construction — no page binds it — so it
+            // works even where the page is allowed to win the ⌘ chord.
+            let viaTwin = store.alternate(for: command)?.matches(event) == true
+            guard viaTwin || (chord.matches(event) && priority.browserWins(command, host: host)) else { continue }
+            // Two commands on one chord: ambiguous, so leave it to the menu.
+            guard store.commandsSharing(chord, excluding: command).isEmpty else { continue }
+            guard let action = Self.action(for: command) else { continue }
+            action(self)
+            return true
+        }
+        return false
     }
+
+    private static var auxiliaryWindowIsKey: Bool {
+        guard let id = NSApp.keyWindow?.identifier?.rawValue else { return false }
+        return ["settings", "downloads", "help"].contains { id.contains($0) }
+    }
+
+    // What each contested command does when we claim it — the same work the
+    // menu item would have done. Quick Open is absent on purpose: it's handled
+    // above, before the omnibar pass-through gate.
+    static func action(for command: ShortcutCommand) -> ((KeyboardShortcutsManager) -> Void)? {
+        switch command {
+        case .reload: return { $0.reloadAction() }
+        case .hardReload: return { $0.hardReloadAction() }
+        case .reloadAll: return { $0.reloadAllTabsAction() }
+        case .back: return { $0.goBackAction() }
+        case .forward: return { $0.goForwardAction() }
+        case .newTab: return post(.browserNewTab)
+        case .closeTab: return post(.browserCloseTab)
+        case .closeTabSet: return post(.browserCloseTabSet)
+        case .reopenTab: return post(.reopenLastClosedTab)
+        case .nextTab: return post(.browserNextTab)
+        case .previousTab: return post(.browserPreviousTab)
+        case .openLocation: return post(.showOmnibar)
+        case .findInPage: return post(.browserFindInPage)
+        case .addBookmark: return post(.browserAddBookmark)
+        case .printPage: return post(.browserPrint)
+        default: return nil
+        }
+    }
+
+    private static func post(_ name: Notification.Name) -> (KeyboardShortcutsManager) -> Void {
+        { _ in NotificationCenter.default.post(name: name, object: nil) }
+    }
+
+    #if DEBUG
+    // ponytail: the one thing that can silently rot — a command offered in
+    // Settings that the monitor has no way to dispatch.
+    static func selfCheck() {
+        for command in ShortcutPriorityStore.contestable where command != .quickOpen {
+            assert(action(for: command) != nil, "no dispatch for contested command \(command.id)")
+        }
+        // Defaults, not live settings — the user is allowed to flip either way.
+        assert(ShortcutPriorityStore.defaultWins.contains(ShortcutCommand.reload.id))
+        assert(!ShortcutPriorityStore.defaultWins.contains(ShortcutCommand.findInPage.id))
+        assert(ShortcutPriorityStore.normalize("WWW.Example.com") == "example.com")
+    }
+    #endif
 
     private func startQuitHold() {
         guard quitHoldState == .inactive else { return }

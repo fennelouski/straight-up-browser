@@ -781,6 +781,36 @@ struct ShortcutTests {
         #expect(isOmnibarShowing)
     }
 
+    @Test func websitePriorityFallsBackFromSiteToGlobalToDefault() throws {
+        let defaults = try #require(UserDefaults(suiteName: "shortcutPriorityTests"))
+        defaults.removePersistentDomain(forName: "shortcutPriorityTests")
+        let priority = ShortcutPriorityStore(defaults: defaults)
+
+        // Out of the box: reload is ours, find belongs to the page.
+        #expect(priority.browserWins(.reload, host: "example.com"))
+        #expect(!priority.browserWins(.findInPage, host: "example.com"))
+
+        // Global setting applies everywhere…
+        priority.set(true, for: .findInPage)
+        #expect(priority.browserWins(.findInPage, host: "example.com"))
+
+        // …until one site says otherwise. www and case don't make a new site.
+        priority.set(false, for: .findInPage, host: "docs.google.com")
+        #expect(!priority.browserWins(.findInPage, host: "WWW.docs.google.com"))
+        #expect(priority.browserWins(.findInPage, host: "example.com"))
+
+        // Clearing the site override falls back to the global setting.
+        priority.set(nil, for: .findInPage, host: "docs.google.com")
+        #expect(priority.browserWins(.findInPage, host: "docs.google.com"))
+        #expect(priority.customizedHosts.isEmpty)
+
+        // Settings survive a relaunch.
+        priority.set(false, for: .reload, host: "figma.com")
+        #expect(!ShortcutPriorityStore(defaults: defaults).browserWins(.reload, host: "figma.com"))
+
+        defaults.removePersistentDomain(forName: "shortcutPriorityTests")
+    }
+
     @Test func shortcutValueConversions() {
         let cmdShiftT = Shortcut(key: "t", command: true, shift: true)
         #expect(cmdShiftT.displayString == "⇧⌘T")
