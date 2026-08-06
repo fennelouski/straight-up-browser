@@ -91,7 +91,7 @@ final class PageTranslator: ObservableObject {
         let newTab = tabManager.duplicateTab(tab)
         let webView = webViewManager.getWebView(for: newTab.id)
         forcedTargets[ObjectIdentifier(webView)] = defaultTargetCode
-        if let url = newTab.url { webView.load(URLRequest(url: url)) }
+        if let url = newTab.url { webView.loadURL(url) }
         tabManager.toggleSplitMembership(newTab, tabs: tabs + [newTab])
     }
 

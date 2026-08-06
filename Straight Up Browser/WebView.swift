@@ -114,7 +114,7 @@ struct WebView: NSViewRepresentable {
             if TabSync.restoreInteractionState(tab, into: paneWebView) { continue }
             if let paneURL = tab.url {
                 webViewManager?.beginFadeIn(paneWebView)
-                paneWebView.load(URLRequest(url: paneURL))
+                paneWebView.loadURL(paneURL)
             }
         }
 
@@ -177,7 +177,7 @@ struct WebView: NSViewRepresentable {
             // layer, so the old/blank frame flickers through for a frame or two
             // before the fade catches up.
             webViewManager?.beginFadeIn(activeWebView)
-            activeWebView.load(URLRequest(url: url))
+            activeWebView.loadURL(url)
         } else if let url = url, normalizedURL == normalizedWebViewURL {
             // Ensure lastRequestedURL is set correctly
             context.coordinator.lastRequestedURL = url

@@ -507,7 +507,7 @@ final class FastForward: ObservableObject {
         let pane = tabManager.createTab(
             inheriting: (searchTab.sessionKind, searchTab.sessionId),
             url: destination, select: false)
-        webViewManager.getWebView(for: pane.id).load(URLRequest(url: destination))
+        webViewManager.getWebView(for: pane.id).loadURL(destination)
 
         awaitingPulse[pane.id] = match
         panes[pane.id] = PaneRecord(signature: match.signature,

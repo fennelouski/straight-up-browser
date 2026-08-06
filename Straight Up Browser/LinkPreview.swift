@@ -64,7 +64,7 @@ final class LinkPreviewManager: NSObject, ObservableObject, WKNavigationDelegate
         guard !isShowing else { return }
         wantPreview = false
         contentReady = false
-        webView.load(URLRequest(url: url))
+        webView.loadURL(url)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

@@ -767,7 +767,7 @@ class NotificationManager {
             return
         }
 
-        webView.load(URLRequest(url: url))
+        webView.loadURL(url)
         // Extract whatever we have on timeout, matching the old fixed-delay behavior
         waitForLoad(webView, timeout: 12) { [weak self] _ in
             self?.extractDataFromLoadedPage(urlString: urlString, webView: webView, responseFilePath: responseFilePath)

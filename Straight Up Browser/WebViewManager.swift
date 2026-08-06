@@ -14,6 +14,19 @@ import AppKit
 import UIKit
 #endif
 
+// WKWebView silently refuses file:// through load(URLRequest:) - it needs the
+// read-access variant. Every URL load goes through here so local files (Finder's
+// "Open With", drag-and-drop) actually render.
+extension WKWebView {
+    func loadURL(_ url: URL) {
+        if url.isFileURL {
+            loadFileURL(url, allowingReadAccessTo: url)
+        } else {
+            load(URLRequest(url: url))
+        }
+    }
+}
+
 #if canImport(AppKit)
 typealias WebViewThumbnail = NSImage
 #else

@@ -2256,7 +2256,7 @@ struct ContentView: View {
             )
             let webView = webViewManager.getWebView(for: tab.id)
             if let url {
-                webView.load(URLRequest(url: url))
+                webView.loadURL(url)
             }
             return tab.id
         }

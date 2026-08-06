@@ -109,7 +109,7 @@ final class Prefetcher: NSObject, ObservableObject, WKNavigationDelegate {
         webView.stopLoading()
         inFlight = target
         readyURL = nil
-        webView.load(URLRequest(url: target))
+        webView.loadURL(target)
     }
 
     nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

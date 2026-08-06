@@ -54,6 +54,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             UserDefaults.standard.set(eulaVersion, forKey: "acceptedEULAVersion")
         }
         registerGlobalHotkey()
+        // Belt and braces: this app is single-window, and a stray open event that
+        // SwiftUI answers itself leaves a second browser window the user has no way
+        // to close (no title bar, ⌘W closes a tab). Sweep once after launch settles.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { Self.closeExtraBrowserWindows() }
+    }
+
+    // Identified positively - .windowStyle(.hiddenTitleBar) is what marks a browser
+    // window - so Settings/Downloads/Help, the omnibar panel, and Sparkle's update
+    // windows are never candidates.
+    static func closeExtraBrowserWindows() {
+        let browserWindows = NSApp.windows.filter {
+            $0.isVisible && !($0 is NSPanel)
+                && $0.titlebarAppearsTransparent
+                && $0.styleMask.contains(.fullSizeContentView)
+        }
+        // Keep the one the user is actually looking at.
+        let keep = NSApp.mainWindow.flatMap { browserWindows.contains($0) ? $0 : nil } ?? browserWindows.first
+        for extra in browserWindows where extra != keep {
+            Logger.log("Closing extra browser window: \(extra.identifier?.rawValue ?? "nil")", type: "App")
+            extra.close()
+        }
     }
 
     // A link clicked in another app arrives as a GURL Apple Event. SwiftUI's own
@@ -68,11 +89,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             forEventClass: AEEventClass(kInternetEventClass),
             andEventID: AEEventID(kAEGetURL)
         )
+        // Finder's "Open With" sends odoc instead, and SwiftUI answers it by
+        // spawning a second WindowGroup window - this app is single-window.
+        // Claim it back the same way and open the file as a tab.
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleOpenDocumentsEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kCoreEventClass),
+            andEventID: AEEventID(kAEOpenDocuments)
+        )
+    }
+
+    @objc private func handleOpenDocumentsEvent(_ event: NSAppleEventDescriptor, withReplyEvent: NSAppleEventDescriptor) {
+        guard let list = event.paramDescriptor(forKeyword: keyDirectObject) else { return }
+        // A single file arrives as a bare descriptor (numberOfItems == 0).
+        let items = list.numberOfItems == 0
+            ? [list]
+            : (1...list.numberOfItems).compactMap { list.atIndex($0) }
+        for url in items.compactMap({ $0.fileURLValue }) {
+            openInNewTab(url)
+        }
     }
 
     @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent: NSAppleEventDescriptor) {
         guard let string = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
               let url = URL(string: string) else { return }
+        openInNewTab(url)
+    }
+
+    private func openInNewTab(_ url: URL) {
         Task { @MainActor in
             // Cold launch: observers attach in ContentView.onAppear, after this.
             try? await waitForObservers()
