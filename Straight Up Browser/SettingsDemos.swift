@@ -1539,3 +1539,39 @@ struct ScreenshotSplitDemo: View {
         Capsule().fill(Color.primary.opacity(0.12)).frame(height: 5)
     }
 }
+
+// MARK: - Window placement
+
+/// A scale model of the screen with the window drawn where it would land.
+struct WindowLayoutDemo: View {
+    @Binding var position: String
+    let width: String
+    let square: Bool
+
+    var body: some View {
+        VStack(spacing: 16) {
+            GeometryReader { geo in
+                let screen = NSRect(x: 0, y: 0, width: geo.size.width, height: geo.size.height)
+                let window = WindowLayout.frame(in: screen, width: width, position: position)
+                RoundedRectangle(cornerRadius: square ? 0 : 6)
+                    .fill(SettingsTint.appearance.opacity(0.35))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: square ? 0 : 6)
+                            .strokeBorder(SettingsTint.appearance, lineWidth: 1.5)
+                    )
+                    .frame(width: window.width, height: window.height)
+                    .offset(x: window.minX)
+            }
+            .aspectRatio(16.0 / 10, contentMode: .fit)  // stand-in screen, so the ratios read true
+            .frame(height: 150)
+            .padding(6)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
+
+            Picker("", selection: $position) {
+                ForEach(WindowLayout.positions, id: \.id) { Text($0.label).tag($0.id) }
+            }
+            .labelsHidden()
+            .frame(maxWidth: 220)
+        }
+    }
+}

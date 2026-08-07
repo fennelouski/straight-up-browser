@@ -42,6 +42,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Has to land before the window's first layout pass — see the note on
+        // applyCornersAtLaunch for what happens if it doesn't.
+        if let window = NSApp.windows.first(where: { !($0 is NSPanel) && $0.contentView != nil }) {
+            WindowLayout.applyCornersAtLaunch(to: window)
+        }
         installURLHandler()
         // Test hosts cannot interact with this modal before the app finishes
         // bootstrapping. UI tests pass the accepted version explicitly; unit
@@ -66,7 +71,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     static func closeExtraBrowserWindows() {
         let browserWindows = NSApp.windows.filter {
             $0.isVisible && !($0 is NSPanel)
-                && $0.titlebarAppearsTransparent
+                // Square corners drop .titled, and with it the transparent-titlebar flag.
+                && ($0.titlebarAppearsTransparent || !$0.styleMask.contains(.titled))
                 && $0.styleMask.contains(.fullSizeContentView)
         }
         // Keep the one the user is actually looking at.
@@ -446,6 +452,13 @@ struct Straight_Up_BrowserApp: App {
                     NotificationCenter.default.post(name: .reopenLastClosedTab, object: nil)
                 }
                 .keyboardShortcut(sc(.reopenTab))
+
+                Button("Snap Window to Size") {
+                    if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+                        WindowLayout.toggle(window)
+                    }
+                }
+                .keyboardShortcut(sc(.windowLayout))
 
                 Button("Toggle Full Screen") {
                     (NSApp.keyWindow ?? NSApp.mainWindow)?.toggleFullScreen(nil)

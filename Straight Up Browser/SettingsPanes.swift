@@ -1082,10 +1082,38 @@ struct AppearanceSettingsView: View {
     private var whitePointRange: ClosedRange<Double> { toneExtendedRange ? 10...200 : 25...100 }
     private var blackPointRange: ClosedRange<Double> { toneExtendedRange ? -50...50 : -15...15 }
 
+    // Window shape and where it lands on launch.
+    @AppStorage(WindowLayout.Key.launchEnabled) private var launchLayoutEnabled = false
+    @AppStorage(WindowLayout.Key.width) private var launchLayoutWidth = "full"
+    @AppStorage(WindowLayout.Key.position) private var launchLayoutPosition = "center"
+    @AppStorage(WindowLayout.Key.squareCorners) private var squareWindowCorners = false
+
     private let themes = ["Light", "Dark", "System"]
 
     var body: some View {
         Form {
+            Section {
+                Toggle("Place the window on launch", isOn: $launchLayoutEnabled)
+                Picker("Width", selection: $launchLayoutWidth) {
+                    ForEach(WindowLayout.widths, id: \.id) { Text($0.label).tag($0.id) }
+                }
+                Picker("Position", selection: $launchLayoutPosition) {
+                    ForEach(WindowLayout.positions, id: \.id) { Text($0.label).tag($0.id) }
+                }
+                Toggle("Square corners (takes effect on the next launch)", isOn: $squareWindowCorners)
+                SettingCaptionRow(
+                    caption: "Full screen height, and as wide and as far across as you like.",
+                    title: "Window",
+                    explanation: "The window always fills the screen's height; the width is either the whole screen or a multiple of that height, which keeps the same shape on any display. Position slides it anywhere between flush left and flush right. ⇧⌘F snaps the window to these settings and back again, whether or not it launches there. Square corners work by dropping the window's title bar — the chrome looks the same, but macOS only rounds corners for windows that have one. It can only be swapped as the window is built, so it waits for the next launch, and while it's on there's no title bar for full screen to use, so ⌃⌘F does nothing.",
+                    value: $launchLayoutPosition
+                ) { WindowLayoutDemo(position: $0, width: launchLayoutWidth, square: squareWindowCorners) }
+            } header: {
+                SettingsLabel("Window", systemImage: "macwindow", tint: SettingsTint.appearance)
+            } footer: {
+                Text("With placement off, the window opens wherever you last left it.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             Section {
                 Picker("Theme", selection: $theme) {
                     ForEach(themes, id: \.self) { Text($0) }

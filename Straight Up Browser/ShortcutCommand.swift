@@ -219,7 +219,7 @@ extension ShortcutCommand {
     static let actualSize   = Self("actualSize", "Actual Size", .page, Shortcut(key: "0", command: true))
     static let printPage    = Self("printPage", "Print", .page, Shortcut(key: "p", command: true, shift: true))
     static let exportPDF    = Self("exportPDF", "Export as PDF", .page, Shortcut(key: "p", command: true))
-    static let fullScreen   = Self("fullScreen", "Toggle Full Screen", .page, Shortcut(key: "f", command: true, shift: true))
+    static let fullScreen   = Self("fullScreen", "Toggle Full Screen", .page, Shortcut(key: "f", command: true, control: true))
     static let toggleTranslation = Self("toggleTranslation", "Toggle Page Translation", .page, Shortcut(key: "t", command: true, option: true))
     static let translateInSplit  = Self("translateInSplit", "Open Translation in Split Pane", .page, Shortcut(key: "t", command: true, shift: true, option: true))
 
@@ -254,6 +254,9 @@ extension ShortcutCommand {
     static let help         = Self("help", "Help", .app, Shortcut(key: "?", command: true))
     static let extensionPopup = Self("extensionPopup", "Open Extension Popup", .app, Shortcut(key: "e", command: true, option: true))
     #if os(macOS)
+    static let windowLayout = Self("windowLayout", "Snap Window to Size", .app, Shortcut(key: "f", command: true, shift: true))
+    #endif
+    #if os(macOS)
     static let showDownloads = Self("showDownloads", "Show Downloads", .app, Shortcut(key: "j", command: true, shift: true))
     #endif
 
@@ -270,7 +273,7 @@ extension ShortcutCommand {
     #endif
 
     #if os(macOS)
-    private static let platformCommands: [ShortcutCommand] = [showDownloads]
+    private static let platformCommands: [ShortcutCommand] = [showDownloads, windowLayout]
     #else
     private static let platformCommands: [ShortcutCommand] = []
     #endif
