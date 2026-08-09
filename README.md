@@ -140,7 +140,9 @@ Open the sparkle button or press `⇧⌘A` for the built-in agent. Its model
 settings also provide the user-approved Cowork folder and external MCP app
 connections; the clock and replay buttons open scheduled tasks and the local
 action timeline. See [BrowserOS parity](docs/browseros-parity.md) for the
-feature-by-feature implementation map.
+feature-by-feature implementation map and the
+[AI tooling development guide](docs/ai/README.md) for the next implementation
+roadmap.
 
 ## Build and verify
 

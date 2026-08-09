@@ -64,3 +64,6 @@ rather than the agent feature surface:
 
 These boundaries do not change the agent's ability to observe, interact with,
 export from, parallelize, schedule, or replay work in the live browser.
+
+Future work beyond parity is specified in the
+[AI tooling development guide](ai/README.md).
