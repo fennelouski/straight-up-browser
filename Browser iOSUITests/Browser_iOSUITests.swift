@@ -54,5 +54,14 @@ final class Browser_iOSUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Tabs, Groups & Workspaces…"].exists)
         XCTAssertTrue(app.buttons["Privacy & Sessions"].exists)
         XCTAssertTrue(app.buttons["Rotation Lock"].exists)
+
+        app.buttons["Share & Export"].tap()
+        XCTAssertTrue(app.buttons["Share URL…"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Share Screenshot…"].exists)
+        XCTAssertTrue(app.buttons["Share Image from Page…"].exists)
+        XCTAssertTrue(app.buttons["Share Page Text…"].exists)
+        XCTAssertTrue(app.buttons["Share Whole Page as PDF…"].exists)
+        XCTAssertTrue(app.buttons["Share Whole Page as PNG…"].exists)
+        XCTAssertTrue(app.buttons["Share Whole Page as JPEG…"].exists)
     }
 }

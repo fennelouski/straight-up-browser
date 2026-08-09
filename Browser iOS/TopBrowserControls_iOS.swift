@@ -38,10 +38,14 @@ struct BrowserControlActions_iOS {
     let toggleTranslation: () -> Void
     let translateInSplit: () -> Void
     let toggleBookmark: () -> Void
+    let shareURL: () -> Void
+    let sharePageImage: () -> Void
+    let sharePageText: () -> Void
     let printPage: () -> Void
     let exportPDF: () -> Void
     let screenshotVisible: () -> Void
     let screenshotFullPage: () -> Void
+    let screenshotFullPageJPEG: () -> Void
     let showBookmarks: () -> Void
     let showHistory: () -> Void
     let showDownloads: () -> Void
@@ -219,15 +223,16 @@ struct TopBrowserControls_iOS: View {
                 )
             }
             Menu("Share & Export", systemImage: "square.and.arrow.up") {
-                if let url = activeTab?.url {
-                    ShareLink(item: url) {
-                        Label("Share Page URL…", systemImage: "link")
-                    }
-                }
+                Button("Share URL…", systemImage: "link", action: actions.shareURL)
+                Button("Share Screenshot…", systemImage: "viewfinder", action: actions.screenshotVisible)
+                Button("Share Image from Page…", systemImage: "photo", action: actions.sharePageImage)
+                Button("Share Page Text…", systemImage: "text.alignleft", action: actions.sharePageText)
+                Divider()
+                Button("Share Whole Page as PDF…", systemImage: "doc.richtext", action: actions.exportPDF)
+                Button("Share Whole Page as PNG…", systemImage: "photo", action: actions.screenshotFullPage)
+                Button("Share Whole Page as JPEG…", systemImage: "photo.fill", action: actions.screenshotFullPageJPEG)
+                Divider()
                 Button("Print…", systemImage: "printer", action: actions.printPage)
-                Button("Export as PDF…", systemImage: "doc.richtext", action: actions.exportPDF)
-                Button("Screenshot Visible Area…", systemImage: "viewfinder", action: actions.screenshotVisible)
-                Button("Screenshot Full Page…", systemImage: "rectangle.inset.filled", action: actions.screenshotFullPage)
             }
             Menu("Library", systemImage: "books.vertical") {
                 Button("Bookmarks", systemImage: "star", action: actions.showBookmarks)

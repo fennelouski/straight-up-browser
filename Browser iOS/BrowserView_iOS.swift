@@ -574,10 +574,16 @@ struct BrowserView_iOS: View {
             toggleTranslation: { pageTranslator.toggle(webView: webViewManager?.activeWebView) },
             translateInSplit: translateActiveInSplit,
             toggleBookmark: toggleBookmark,
+            shareURL: shareActiveURL,
+            sharePageImage: sharePrimaryPageImage,
+            sharePageText: sharePageText,
             printPage: printActivePage,
             exportPDF: exportActivePagePDF,
             screenshotVisible: { exportSnapshot(fullPage: false) },
             screenshotFullPage: { exportSnapshot(fullPage: true) },
+            screenshotFullPageJPEG: {
+                exportSnapshot(fullPage: true, format: .jpeg)
+            },
             showBookmarks: { presentLibrary(.bookmarks) },
             showHistory: { presentLibrary(.history) },
             showDownloads: { showDownloads = true },
@@ -1004,6 +1010,25 @@ struct BrowserView_iOS: View {
         MobilePageActions_iOS.printPage(webView)
     }
 
+    private func shareActiveURL() {
+        guard let url = webViewManager?.activeWebView?.url ?? activeTab?.url else { return }
+        presentExportResult(.success([url]))
+    }
+
+    private func sharePrimaryPageImage() {
+        guard let webView = webViewManager?.activeWebView else { return }
+        MobilePageActions_iOS.exportPrimaryPageImage(webView) { result in
+            presentExportResult(result.map { [$0] })
+        }
+    }
+
+    private func sharePageText() {
+        guard let webView = webViewManager?.activeWebView else { return }
+        MobilePageActions_iOS.extractPageText(webView) { result in
+            presentExportResult(result.map { [$0] })
+        }
+    }
+
     private func exportActivePagePDF() {
         guard let webView = webViewManager?.activeWebView else { return }
         MobilePageActions_iOS.exportPDF(webView) { result in
@@ -1011,9 +1036,16 @@ struct BrowserView_iOS: View {
         }
     }
 
-    private func exportSnapshot(fullPage: Bool) {
+    private func exportSnapshot(
+        fullPage: Bool,
+        format: MobilePageActions_iOS.ImageFormat = .png
+    ) {
         guard let webView = webViewManager?.activeWebView else { return }
-        MobilePageActions_iOS.snapshot(webView, fullPage: fullPage) { result in
+        MobilePageActions_iOS.exportSnapshot(
+            webView,
+            fullPage: fullPage,
+            format: format
+        ) { result in
             presentExportResult(result.map { [$0] })
         }
     }
