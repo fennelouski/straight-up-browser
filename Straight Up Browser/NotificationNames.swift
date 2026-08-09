@@ -30,6 +30,8 @@ extension Notification.Name {
     static let browserGoBack = Notification.Name("browserGoBack")
     static let browserGoForward = Notification.Name("browserGoForward")
     static let browserReload = Notification.Name("browserReload")
+    static let browserHardReload = Notification.Name("browserHardReload")
+    static let browserReloadAll = Notification.Name("browserReloadAll")
 
     // View menu
     static let browserZoomIn = Notification.Name("browserZoomIn")
@@ -77,6 +79,7 @@ extension Notification.Name {
     static let browserAddBookmark = Notification.Name("browserAddBookmark")
     static let browserImportBookmarks = Notification.Name("browserImportBookmarks")
     static let browserShowHistory = Notification.Name("browserShowHistory")
+    static let browserShowDownloads = Notification.Name("browserShowDownloads")
     static let browserToggleReader = Notification.Name("browserToggleReader")
 
     // Window menu

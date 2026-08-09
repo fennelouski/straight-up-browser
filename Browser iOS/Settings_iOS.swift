@@ -23,8 +23,11 @@ struct Settings_iOS: View {
     @AppStorage(TabSync.Key.cacheState) private var tabSyncCacheState = false
 
     @AppStorage("searchEngine") private var searchEngine = "Google"
+    @AppStorage(FastForward.Key.enabled) private var fastForwardEnabled = true
     @AppStorage("spaceScrollPercent") private var spaceScrollPercent = 90.0
     @AppStorage("javaScriptEnabled") private var javaScriptEnabled = true
+    @AppStorage("autoTranslateEnabled") private var autoTranslateEnabled = true
+    @AppStorage("translationPreferredLanguages") private var translationPreferredLanguages = ""
     @AppStorage("optionClickDownloadEnabled") private var optionClickDownloadEnabled = false
     @AppStorage("optionClickDownloadLinks") private var optionClickDownloadLinks = true
     @AppStorage("optionClickDownloadImages") private var optionClickDownloadImages = true
@@ -38,8 +41,12 @@ struct Settings_iOS: View {
     @AppStorage("adBlockEnabled") private var adBlockEnabled = false
     @AppStorage("memorySaverEnabled") private var memorySaverEnabled = false
     @AppStorage("memorySaverDefaultPolicy") private var memorySaverDefaultPolicy = MemoryPolicy.whenNeeded.rawValue
+    @AppStorage("iPadTabRailVisibility") private var tabRailVisibility = TabRailVisibility_iOS.off.rawValue
+    @AppStorage("iPadTabRailPortraitEdge") private var tabRailPortraitEdge = PortraitTabRailEdge_iOS.top.rawValue
+    @AppStorage("iPadTabRailLandscapeEdge") private var tabRailLandscapeEdge = LandscapeTabRailEdge_iOS.left.rawValue
 
     @State private var showClearConfirm = false
+    @State private var showCookieManager = false
     @State private var clearedNote = false
     @State private var iCloudAvailable: Bool?
 
@@ -98,6 +105,14 @@ struct Settings_iOS: View {
                 }
 
                 Section {
+                    Toggle("Fast Forward searches", isOn: $fastForwardEnabled)
+                } header: {
+                    Text("Fast Forward")
+                } footer: {
+                    Text("When a search clearly names a destination, keep the results visible and open that destination in a split pane.")
+                }
+
+                Section {
                     Menu {
                         ForEach(ShortcutPreset.allCases) { preset in
                             Button(preset.title) { ShortcutStore.shared.apply(preset: preset) }
@@ -118,6 +133,10 @@ struct Settings_iOS: View {
                         .onChange(of: javaScriptEnabled) { _, _ in
                             NotificationCenter.default.post(name: .javaScriptChanged, object: nil)
                         }
+                    Toggle("Automatically offer page translation", isOn: $autoTranslateEnabled)
+                    TextField("Languages you read (en, es, fr)", text: $translationPreferredLanguages)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                 }
 
                 Section {
@@ -143,6 +162,30 @@ struct Settings_iOS: View {
                     Toggle("Progress bar: left", isOn: $progressBarLeft)
                     Toggle("Progress bar: right", isOn: $progressBarRight)
                     Toggle("Ring around the favicon", isOn: $progressFaviconRing)
+                }
+
+                if UIDevice.current.userInterfaceIdiom == .pad {
+                    Section {
+                        Picker("Show tab rail", selection: $tabRailVisibility) {
+                            ForEach(TabRailVisibility_iOS.allCases) {
+                                Text($0.title).tag($0.rawValue)
+                            }
+                        }
+                        Picker("Portrait edge", selection: $tabRailPortraitEdge) {
+                            ForEach(PortraitTabRailEdge_iOS.allCases) {
+                                Text($0.title).tag($0.rawValue)
+                            }
+                        }
+                        Picker("Landscape edge", selection: $tabRailLandscapeEdge) {
+                            ForEach(LandscapeTabRailEdge_iOS.allCases) {
+                                Text($0.title).tag($0.rawValue)
+                            }
+                        }
+                    } header: {
+                        Text("iPad Tab Rail")
+                    } footer: {
+                        Text("The rail follows the short edge of the current app window. It overlays the page and retracts before moving to another edge.")
+                    }
                 }
 
                 Section("Security") {
@@ -206,6 +249,7 @@ struct Settings_iOS: View {
                     Button(role: .destructive) { showClearConfirm = true } label: {
                         Text("Clear browsing data…")
                     }
+                    Button("Manage cookies…") { showCookieManager = true }
                     if clearedNote {
                         Label("Browsing data cleared", systemImage: "checkmark.circle").foregroundStyle(.green)
                     }
@@ -216,6 +260,9 @@ struct Settings_iOS: View {
                 }
             }
             .task { iCloudAvailable = await TabSync.iCloudAvailable() }
+            .sheet(isPresented: $showCookieManager) {
+                CookieManager_iOS()
+            }
             .navigationTitle("Settings")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .confirmationDialog("Clear all browsing data?", isPresented: $showClearConfirm, titleVisibility: .visible) {
@@ -233,4 +280,88 @@ struct Settings_iOS: View {
             clearedNote = true
         }
     }
+}
+
+private struct CookieManager_iOS: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var cookies: [HTTPCookie] = []
+    @State private var searchText = ""
+
+    private var filteredCookies: [HTTPCookie] {
+        guard !searchText.isEmpty else { return cookies }
+        return cookies.filter {
+            $0.name.localizedCaseInsensitiveContains(searchText)
+                || $0.domain.localizedCaseInsensitiveContains(searchText)
+                || $0.path.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if filteredCookies.isEmpty {
+                    ContentUnavailableView(
+                        "No Cookies",
+                        systemImage: "shippingbox",
+                        description: Text(searchText.isEmpty ? "No cookies are stored in regular browsing." : "No cookies match your search.")
+                    )
+                } else {
+                    ForEach(filteredCookies, id: \.cookieIdentifier) { cookie in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(cookie.name).font(.headline)
+                            Text(cookie.domain + cookie.path)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Text(cookie.expiresDate?.formatted() ?? String(localized: "Session cookie"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .swipeActions {
+                            Button("Delete", role: .destructive) { delete(cookie) }
+                        }
+                    }
+                }
+            }
+            .searchable(text: $searchText, prompt: "Search cookies")
+            .navigationTitle("Cookie Manager")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button("Refresh", systemImage: "arrow.clockwise", action: load)
+                        Button("Delete All Cookies", systemImage: "trash", role: .destructive, action: deleteAll)
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+            }
+            .task { load() }
+        }
+    }
+
+    private func load() {
+        WKWebsiteDataStore.default().httpCookieStore.getAllCookies { values in
+            cookies = values.sorted {
+                ($0.domain, $0.path, $0.name) < ($1.domain, $1.path, $1.name)
+            }
+        }
+    }
+
+    private func delete(_ cookie: HTTPCookie) {
+        WKWebsiteDataStore.default().httpCookieStore.delete(cookie) { load() }
+    }
+
+    private func deleteAll() {
+        let store = WKWebsiteDataStore.default().httpCookieStore
+        let remaining = cookies.count
+        guard remaining > 0 else { return }
+        for cookie in cookies { store.delete(cookie) }
+        cookies.removeAll()
+    }
+}
+
+private extension HTTPCookie {
+    var cookieIdentifier: String { "\(domain)|\(path)|\(name)" }
 }

@@ -147,20 +147,14 @@ struct Shortcut: Codable, Equatable, Hashable {
 // MARK: - Sections
 
 enum ShortcutSection: String, CaseIterable {
-    #if os(macOS)
     case tabs, navigation, page, screenshots, tabBar, bookmarks, privacy, app
-    #else
-    case tabs, navigation, page, tabBar, bookmarks, privacy, app
-    #endif
 
     var title: LocalizedStringResource {
         switch self {
         case .tabs: return "Tabs"
         case .navigation: return "Navigation"
         case .page: return "Page"
-        #if os(macOS)
         case .screenshots: return "Screenshots"
-        #endif
         case .tabBar: return "Tab Bar"
         case .bookmarks: return "Bookmarks"
         case .privacy: return "Privacy"
@@ -222,12 +216,13 @@ extension ShortcutCommand {
     static let fullScreen   = Self("fullScreen", "Toggle Full Screen", .page, Shortcut(key: "f", command: true, control: true))
     static let toggleTranslation = Self("toggleTranslation", "Toggle Page Translation", .page, Shortcut(key: "t", command: true, option: true))
     static let translateInSplit  = Self("translateInSplit", "Open Translation in Split Pane", .page, Shortcut(key: "t", command: true, shift: true, option: true))
+    static let readerMode    = Self("readerMode", "Reader Mode", .page, Shortcut(key: "r", command: true, option: true))
 
-    #if os(macOS)
-    // Screenshots. macOS-only: every capture path is AppKit/WKWebView specific,
-    // so these must not reach the iPad cheat sheet as dead bindings.
+    // Element/window capture remains desktop-only, but visible and full-page
+    // capture use WKWebView snapshots on iOS.
     static let screenshotVisible  = Self("screenshotVisible", "Screenshot Visible Area", .screenshots, Shortcut(key: "s", command: true))
     static let screenshotFullPage = Self("screenshotFullPage", "Screenshot Full Page", .screenshots, Shortcut(key: "s", command: true, shift: true))
+    #if os(macOS)
     static let screenshotElement  = Self("screenshotElement", "Screenshot Element Under Cursor", .screenshots, Shortcut(key: "s", command: true, option: true))
     static let screenshotWindow   = Self("screenshotWindow", "Screenshot Window and Tab Bar", .screenshots, Shortcut(key: "s", command: true, shift: true, option: true))
     #endif
@@ -256,9 +251,7 @@ extension ShortcutCommand {
     #if os(macOS)
     static let windowLayout = Self("windowLayout", "Snap Window to Size", .app, Shortcut(key: "f", command: true, shift: true))
     #endif
-    #if os(macOS)
     static let showDownloads = Self("showDownloads", "Show Downloads", .app, Shortcut(key: "j", command: true, shift: true))
-    #endif
 
     // Jump to tab 1–9 (generated; ids "switchTab1"…"switchTab9").
     static let switchTabs: [ShortcutCommand] = (1...9).map { i in
@@ -269,13 +262,13 @@ extension ShortcutCommand {
     private static let screenshots: [ShortcutCommand] =
         [screenshotVisible, screenshotFullPage, screenshotElement, screenshotWindow]
     #else
-    private static let screenshots: [ShortcutCommand] = []
+    private static let screenshots: [ShortcutCommand] = [screenshotVisible, screenshotFullPage]
     #endif
 
     #if os(macOS)
     private static let platformCommands: [ShortcutCommand] = [showDownloads, windowLayout]
     #else
-    private static let platformCommands: [ShortcutCommand] = []
+    private static let platformCommands: [ShortcutCommand] = [showDownloads]
     #endif
 
     static let all: [ShortcutCommand] =
@@ -284,7 +277,7 @@ extension ShortcutCommand {
         + screenshots
         + [openLocation, back, forward, reload, hardReload, reloadAll,
            findInPage, findNext, findPrevious, zoomIn, zoomOut, actualSize, printPage, exportPDF, fullScreen,
-           toggleTranslation, translateInSplit,
+           toggleTranslation, translateInSplit, readerMode,
            toggleTabBar, hideTabBar, minimalTabBar, compactTabBar, wideTabBar,
            addBookmark, showBookmarks, showHistory, clearSiteData, convertToIncognito,
            omnibar, quickOpen, quickOpenNewTab, tabGrid, shortcutOverlay, settings, help, extensionPopup]
@@ -321,7 +314,18 @@ enum BrowserPlatformCommandAction: Hashable {
     case back
     case forward
     case reload
+    case hardReload
+    case reloadAll
     case findInPage
+    case findNext
+    case findPrevious
+    case printPage
+    case exportPDF
+    case toggleTranslation
+    case translateInSplit
+    case readerMode
+    case screenshotVisible
+    case screenshotFullPage
     case toggleSidebar
     case zoomIn
     case zoomOut
@@ -331,6 +335,10 @@ enum BrowserPlatformCommandAction: Hashable {
     case addBookmark
     case showBookmarks
     case showHistory
+    case showDownloads
+    case clearSiteData
+    case convertToIncognito
+    case showAllTabs
     case nextTab
     case previousTab
     case switchTab(Int)
@@ -353,7 +361,18 @@ struct BrowserPlatformCommandEntry: Identifiable {
         case .back: .browserGoBack
         case .forward: .browserGoForward
         case .reload: .browserReload
+        case .hardReload: .browserHardReload
+        case .reloadAll: .browserReloadAll
         case .findInPage: .browserFindInPage
+        case .findNext: .browserFindNext
+        case .findPrevious: .browserFindPrevious
+        case .printPage: .browserPrint
+        case .exportPDF: .browserExportPDF
+        case .toggleTranslation: .browserToggleTranslation
+        case .translateInSplit: .browserTranslateInSplit
+        case .readerMode: .browserToggleReader
+        case .screenshotVisible: .browserScreenshotVisible
+        case .screenshotFullPage: .browserScreenshotFullPage
         case .toggleSidebar: .browserToggleTabBar
         case .zoomIn: .browserZoomIn
         case .zoomOut: .browserZoomOut
@@ -363,6 +382,10 @@ struct BrowserPlatformCommandEntry: Identifiable {
         case .addBookmark: .browserAddBookmark
         case .showBookmarks: .browserShowBookmarks
         case .showHistory: .browserShowHistory
+        case .showDownloads: .browserShowDownloads
+        case .clearSiteData: .browserClearSiteData
+        case .convertToIncognito: .browserConvertTabToIncognito
+        case .showAllTabs: .browserShowTabGrid
         case .nextTab: .browserNextTab
         case .previousTab: .browserPreviousTab
         case .switchTab: .browserSwitchTab
@@ -376,31 +399,69 @@ struct BrowserPlatformCommandEntry: Identifiable {
 }
 
 enum BrowserPlatformCommandRegistry {
-    static let iPad: [BrowserPlatformCommandEntry] = [
+    private static let iPadFileCommands: [BrowserPlatformCommandEntry] = [
         .init(group: .file, command: .newTab, action: .newTab),
         .init(group: .file, command: .newIncognitoTab, action: .newIncognitoTab),
         .init(group: .file, command: .closeTab, action: .closeTab),
         .init(group: .file, command: .closeTabSet, action: .closeTabSet),
         .init(group: .file, command: .reopenTab, action: .reopenTab),
         .init(group: .file, command: .openLocation, action: .openLocation),
+        .init(group: .file, command: .printPage, action: .printPage),
+        .init(group: .file, command: .exportPDF, action: .exportPDF),
+        .init(group: .file, command: .screenshotVisible, action: .screenshotVisible),
+        .init(group: .file, command: .screenshotFullPage, action: .screenshotFullPage),
+        .init(group: .file, command: .showDownloads, action: .showDownloads),
+        .init(group: .file, command: .clearSiteData, action: .clearSiteData),
+        .init(group: .file, command: .convertToIncognito, action: .convertToIncognito),
+    ]
+
+    private static let iPadGoCommands: [BrowserPlatformCommandEntry] = [
         .init(group: .go, command: .back, action: .back),
         .init(group: .go, command: .forward, action: .forward),
         .init(group: .go, command: .reload, action: .reload),
+        .init(group: .go, command: .hardReload, action: .hardReload),
+        .init(group: .go, command: .reloadAll, action: .reloadAll),
         .init(group: .go, command: .findInPage, action: .findInPage),
+        .init(group: .go, command: .findNext, action: .findNext),
+        .init(group: .go, command: .findPrevious, action: .findPrevious),
+    ]
+
+    private static let iPadViewCommands: [BrowserPlatformCommandEntry] = [
         .init(group: .view, command: .toggleTabBar, action: .toggleSidebar),
         .init(group: .view, command: .zoomIn, action: .zoomIn),
         .init(group: .view, command: .zoomOut, action: .zoomOut),
         .init(group: .view, command: .actualSize, action: .actualSize),
         .init(group: .view, command: .settings, action: .settings),
         .init(group: .view, command: .shortcutOverlay, action: .shortcutOverlay),
+        .init(group: .view, command: .toggleTranslation, action: .toggleTranslation),
+        .init(group: .view, command: .translateInSplit, action: .translateInSplit),
+        .init(group: .view, command: .readerMode, action: .readerMode),
+    ]
+
+    private static let iPadBookmarkCommands: [BrowserPlatformCommandEntry] = [
         .init(group: .bookmarks, command: .addBookmark, action: .addBookmark),
         .init(group: .bookmarks, command: .showBookmarks, action: .showBookmarks),
         .init(group: .bookmarks, command: .showHistory, action: .showHistory),
+    ]
+
+    private static let iPadTabCommands: [BrowserPlatformCommandEntry] = [
+        .init(group: .tabs, command: .tabGrid, action: .showAllTabs),
         .init(group: .tabs, command: .nextTab, action: .nextTab),
         .init(group: .tabs, command: .previousTab, action: .previousTab),
-    ] + ShortcutCommand.switchTabs.enumerated().map { index, command in
+    ]
+
+    private static let iPadSwitchTabCommands: [BrowserPlatformCommandEntry] =
+        ShortcutCommand.switchTabs.enumerated().map { index, command in
         .init(group: .tabs, command: command, action: .switchTab(index + 1))
     }
+
+    static let iPad: [BrowserPlatformCommandEntry] =
+        iPadFileCommands
+        + iPadGoCommands
+        + iPadViewCommands
+        + iPadBookmarkCommands
+        + iPadTabCommands
+        + iPadSwitchTabCommands
 
     static func iPadEntries(in group: BrowserPlatformCommandGroup) -> [BrowserPlatformCommandEntry] {
         iPad.filter { $0.group == group }

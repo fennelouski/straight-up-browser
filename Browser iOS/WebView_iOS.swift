@@ -32,9 +32,12 @@ struct TabWebView: UIViewRepresentable {
 
     var webViewManager: WebViewManager?
     var tabManager: TabManager?
+    var fastForward: FastForward?
     var tabs: [Tab]?
     var activeTabId: UUID?
+    var splitTabIds: [UUID]
     var onURLChange: ((URL?) -> Void)?
+    var onPageFinished: ((WKWebView) -> Void)?
 
     init(url: Binding<URL?>,
          canGoBack: Binding<Bool>,
@@ -45,9 +48,12 @@ struct TabWebView: UIViewRepresentable {
          hasRenderedContent: Binding<Bool>,
          webViewManager: WebViewManager?,
          tabManager: TabManager?,
+         fastForward: FastForward? = nil,
          tabs: [Tab]?,
          activeTabId: UUID?,
-         onURLChange: ((URL?) -> Void)?) {
+         splitTabIds: [UUID] = [],
+         onURLChange: ((URL?) -> Void)?,
+         onPageFinished: ((WKWebView) -> Void)? = nil) {
         self._url = url
         self._canGoBack = canGoBack
         self._canGoForward = canGoForward
@@ -57,9 +63,12 @@ struct TabWebView: UIViewRepresentable {
         self._hasRenderedContent = hasRenderedContent
         self.webViewManager = webViewManager
         self.tabManager = tabManager
+        self.fastForward = fastForward
         self.tabs = tabs
         self.activeTabId = activeTabId
+        self.splitTabIds = splitTabIds
         self.onURLChange = onURLChange
+        self.onPageFinished = onPageFinished
     }
 
     func makeUIView(context: Context) -> WebViewContainer_iOS {
@@ -74,7 +83,21 @@ struct TabWebView: UIViewRepresentable {
         context.coordinator.tabs = tabs
         context.coordinator.tabManager = tabManager
 
-        uiView.setActiveTab(activeTabId)
+        uiView.setDisplayedTabs(activeTabId: activeTabId, splitTabIds: splitTabIds)
+
+        // Restored split members may not have been selected yet this launch.
+        // Prime each visible pane without making it the active command target.
+        let displayedIds = splitTabIds.count >= 2
+            ? splitTabIds
+            : [activeTabId].compactMap { $0 }
+        for id in displayedIds where id != activeTabId {
+            guard let tab = tabs?.first(where: { $0.id == id }),
+                  let pane = webViewManager?.getWebView(for: id) else { continue }
+            pane.pageZoom = tab.zoomLevel
+            if pane.url == nil, let paneURL = tab.url, !pane.isLoading {
+                pane.load(URLRequest(url: paneURL))
+            }
+        }
 
         guard let activeWebView = uiView.activeWebView else { return }
         if let tab = tabs?.first(where: { $0.id == activeTabId }) {
@@ -199,7 +222,10 @@ struct TabWebView: UIViewRepresentable {
             // user script reads it on each keypress.
             let pct = UserDefaults.standard.object(forKey: "spaceScrollPercent") as? Double ?? 90
             webView.evaluateJavaScript("window.__subSpacePct = \(pct)")
-            if let tab = tab(for: webView) { TabSync.restoreSessionStorage(tab, into: webView) }
+            if let tab = tab(for: webView) {
+                TabSync.restoreSessionStorage(tab, into: webView)
+                parent.fastForward?.pageCommitted(webView: webView, tab: tab)
+            }
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -247,7 +273,11 @@ struct TabWebView: UIViewRepresentable {
             }
 
             loadFavicon(for: webView)
-            if let tab = tab(for: webView) { TabSync.captureCacheState(from: webView, into: tab) }
+            parent.onPageFinished?(webView)
+            if let tab = tab(for: webView) {
+                parent.fastForward?.pageFinished(webView: webView, tab: tab)
+                TabSync.captureCacheState(from: webView, into: tab)
+            }
             webView.scrollView.refreshControl?.endRefreshing()
 
             DispatchQueue.main.async {
@@ -745,7 +775,7 @@ final class WebViewContainer_iOS: UIView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func setActiveTab(_ tabId: UUID?) {
+    func setDisplayedTabs(activeTabId tabId: UUID?, splitTabIds: [UUID]) {
         let tabChanged = activeTabId != tabId
         activeTabId = tabId
         webViewManager?.setActiveTab(tabId)
@@ -753,12 +783,31 @@ final class WebViewContainer_iOS: UIView {
         for webView in visibleWebViews { webView.isHidden = true }
         visibleWebViews.removeAll()
 
-        guard let newTabId = tabId, let webViewManager = webViewManager else { return }
-        let webView = webViewManager.getWebView(for: newTabId)
+        let desiredIds = splitTabIds.count >= 2
+            ? splitTabIds
+            : [tabId].compactMap { $0 }
+        guard !desiredIds.isEmpty, let webViewManager else { return }
+
+        for desiredId in desiredIds {
+            let webView = webViewManager.getWebView(for: desiredId)
+            configure(webView)
+            webView.isHidden = false
+            webView.layer.borderWidth = desiredId == tabId && desiredIds.count > 1 ? 2 : 0
+            webView.layer.borderColor = UIColor.tintColor.cgColor
+            visibleWebViews.insert(webView)
+        }
+
+        setNeedsLayout()
+
+        if tabChanged, let tabId,
+           let webView = visibleWebViews.first(where: { webViewManager.tabId(for: $0) == tabId }) {
+            webView.becomeFirstResponder()
+        }
+    }
+
+    private func configure(_ webView: WKWebView) {
 
         if webView.superview !== self {
-            webView.frame = bounds
-            webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             webView.clipsToBounds = true
             webView.navigationDelegate = coordinator
             webView.uiDelegate = coordinator
@@ -771,29 +820,59 @@ final class WebViewContainer_iOS: UIView {
                 webView.scrollView.refreshControl?.addAction(
                     UIAction { [weak webView] _ in webView?.reload() }, for: .valueChanged)
             }
+            let focusTap = UITapGestureRecognizer(target: self, action: #selector(paneTapped(_:)))
+            focusTap.cancelsTouchesInView = false
+            focusTap.name = "BrowserPaneFocus"
+            webView.addGestureRecognizer(focusTap)
             // Observe real load progress and page-driven URL rewrites (pushState/
             // replaceState/hash) — the only signal for the latter. Removed in
             // willRemoveSubview. The Obj-C keypath is "URL", not "url".
             webView.addObserver(self, forKeyPath: "estimatedProgress", options: .new, context: nil)
             webView.addObserver(self, forKeyPath: #keyPath(WKWebView.url), options: .new, context: nil)
             addSubview(webView)
-        } else {
-            webView.frame = bounds
         }
-
-        webView.isHidden = false
-        visibleWebViews.insert(webView)
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsLinkPreview = true
-
-        // Give the page key focus on a real tab change so a hardware keyboard's
-        // arrow keys / space scroll it.
-        if tabChanged { webView.becomeFirstResponder() }
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        for subview in subviews where subview is WKWebView { subview.frame = bounds }
+        let panes = subviews.compactMap { $0 as? WKWebView }.filter { !$0.isHidden }
+        guard panes.count > 1 else {
+            panes.first?.frame = bounds
+            return
+        }
+
+        if panes.count == 4 {
+            let halfWidth = bounds.width / 2
+            let halfHeight = bounds.height / 2
+            for (index, pane) in panes.enumerated() {
+                pane.frame = CGRect(
+                    x: index.isMultiple(of: 2) ? 0 : halfWidth,
+                    y: index < 2 ? 0 : halfHeight,
+                    width: halfWidth,
+                    height: halfHeight
+                ).insetBy(dx: 1, dy: 1)
+            }
+        } else if bounds.width >= bounds.height {
+            let width = bounds.width / CGFloat(panes.count)
+            for (index, pane) in panes.enumerated() {
+                pane.frame = CGRect(x: CGFloat(index) * width, y: 0, width: width, height: bounds.height)
+                    .insetBy(dx: 1, dy: 1)
+            }
+        } else {
+            let height = bounds.height / CGFloat(panes.count)
+            for (index, pane) in panes.enumerated() {
+                pane.frame = CGRect(x: 0, y: CGFloat(index) * height, width: bounds.width, height: height)
+                    .insetBy(dx: 1, dy: 1)
+            }
+        }
+    }
+
+    @objc private func paneTapped(_ recognizer: UITapGestureRecognizer) {
+        guard let webView = recognizer.view as? WKWebView,
+              let tabId = webViewManager?.tabId(for: webView) else { return }
+        coordinator?.tabManager?.selectedTabId = tabId
     }
 
     override func willRemoveSubview(_ subview: UIView) {

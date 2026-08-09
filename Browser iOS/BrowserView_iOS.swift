@@ -24,6 +24,39 @@ private enum BrowserAccessibilityFocus_iOS: Hashable {
     case omnibar
 }
 
+private enum MobileClearRequest_iOS: Identifiable {
+    case site(String)
+    case session
+    case all
+
+    var id: String {
+        switch self {
+        case .site(let host): "site-\(host)"
+        case .session: "session"
+        case .all: "all"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .site(let host): "Clear data for \(host)?"
+        case .session: "Clear this session’s data?"
+        case .all: "Clear all browsing data?"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .site:
+            "Removes cookies, cache, and storage for this site in the current session. This can’t be undone."
+        case .session:
+            "Wipes all cookies, cache, and storage in the current tab’s session. This can’t be undone."
+        case .all:
+            "Removes cookies, cache, and storage from normal browsing and every container. This can’t be undone."
+        }
+    }
+}
+
 struct BrowserView_iOS: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -36,6 +69,8 @@ struct BrowserView_iOS: View {
     @ObservedObject private var protectionStore = PageProtectionStore.shared
     @ObservedObject private var browsingHistory = BrowsingHistoryStore.shared
     @ObservedObject private var downloadManager = DownloadManager.shared
+    @StateObject private var pageTranslator = PageTranslator()
+    @StateObject private var fastForward = FastForward()
     @State private var webViewManager: WebViewManager?
     @State private var navigationManager: NavigationManager?
     @State private var bookmarkManager: BookmarkManager?
@@ -64,6 +99,11 @@ struct BrowserView_iOS: View {
     @State private var showDownloads = false
     @State private var librarySection = BrowserLibrarySection.bookmarks
     @State private var downloadFailureMessage: String?
+    @State private var pageActionError: String?
+    @State private var activityItems: [Any] = []
+    @State private var showActivitySheet = false
+    @State private var readerPresentation: ReaderPresentation_iOS?
+    @State private var clearRequest: MobileClearRequest_iOS?
     @AccessibilityFocusState private var accessibilityFocus:
         BrowserAccessibilityFocus_iOS?
 
@@ -86,6 +126,9 @@ struct BrowserView_iOS: View {
     @AppStorage("theme") private var theme = "System"
     @AppStorage("javaScriptEnabled") private var javaScriptEnabled = true
     @AppStorage("adBlockEnabled") private var adBlockEnabled = false
+    @AppStorage("iPadTabRailVisibility") private var tabRailVisibility = TabRailVisibility_iOS.off.rawValue
+    @AppStorage("iPadTabRailPortraitEdge") private var tabRailPortraitEdge = PortraitTabRailEdge_iOS.top.rawValue
+    @AppStorage("iPadTabRailLandscapeEdge") private var tabRailLandscapeEdge = LandscapeTabRailEdge_iOS.left.rawValue
 
     // MARK: Derived
 
@@ -199,9 +242,12 @@ struct BrowserView_iOS: View {
                            hasRenderedContent: $hasRenderedContent,
                            webViewManager: webViewManager,
                            tabManager: tabManager,
+                           fastForward: fastForward,
                            tabs: allTabs,
                            activeTabId: tabManager.selectedTabId,
-                           onURLChange: { _ in })
+                           splitTabIds: tabManager.splitTabIds,
+                           onURLChange: { _ in },
+                           onPageFinished: { pageTranslator.maybeAutoTranslate(webView: $0) })
                     .ignoresSafeArea()
                     .accessibilityHidden(
                         BrowserAccessibility.backgroundIsHidden(
@@ -219,6 +265,21 @@ struct BrowserView_iOS: View {
             EdgeProgressBar(progress: progressValue, show: showProgressBar,
                             top: progressBarTop, bottom: progressBarBottom,
                             left: progressBarLeft, right: progressBarRight)
+
+            // Keep the browser discoverable without giving up its full-screen
+            // character. These sit alongside the sensor housing on modern
+            // iPhones, and in the same slim top strip on every other device.
+            GeometryReader { geometry in
+                let railPlacement = desiredTabRailPlacement(for: geometry.size)
+                if managersInitialized && !showOmnibar && !showSidebar {
+                    topBrowserControls(showsTabsMenu: railPlacement == nil)
+                }
+                if managersInitialized {
+                    adaptiveTabRail(
+                        desiredPlacement: showOmnibar || showSidebar ? nil : railPlacement
+                    )
+                }
+            }
 
             // Touch's stand-in for the keyboard (iPhone has no ⌘L / ⌘T). Hidden
             // whenever the omnibar or sidebar is already up.
@@ -250,6 +311,9 @@ struct BrowserView_iOS: View {
         // indicator so the web fills every pixel.
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
+        .translationTask(pageTranslator.configuration) { session in
+            await pageTranslator.perform(session: session)
+        }
         .onAppear(perform: firstAppear)
         .onChange(of: tabManager.selectedTabId) { _, newValue in
             tabManager.updateActiveTab(in: allTabs)
@@ -313,6 +377,33 @@ struct BrowserView_iOS: View {
         } message: {
             Text(downloadFailureMessage ?? "")
         }
+        .alert(
+            "Page Action Failed",
+            isPresented: Binding(
+                get: { pageActionError != nil },
+                set: { if !$0 { pageActionError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(pageActionError ?? "")
+        }
+        .confirmationDialog(
+            clearRequest?.title ?? "Clear Browsing Data?",
+            isPresented: Binding(
+                get: { clearRequest != nil },
+                set: { if !$0 { clearRequest = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Clear Data", role: .destructive) {
+                if let request = clearRequest { performClear(request) }
+                clearRequest = nil
+            }
+            Button("Cancel", role: .cancel) { clearRequest = nil }
+        } message: {
+            Text(clearRequest?.message ?? "")
+        }
     }
 
     private var sheetContent: some View {
@@ -326,6 +417,14 @@ struct BrowserView_iOS: View {
             Downloads_iOS()
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showActivitySheet) {
+            ActivitySheet_iOS(items: activityItems)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $readerPresentation) { presentation in
+            ReaderMode_iOS(article: presentation.article, onOpen: openFromLibrary)
         }
         .sheet(isPresented: $showLibrary) {
             BrowserLibrary_iOS(
@@ -396,6 +495,18 @@ struct BrowserView_iOS: View {
         case .back: webViewManager?.goBack()
         case .forward: webViewManager?.goForward()
         case .reload: reloadOrStop()
+        case .hardReload: webViewManager?.activeWebView?.reloadFromOrigin()
+        case .reloadAll: webViewManager?.reloadAllTabs()
+        case .findNext: webViewManager?.activeWebView?.findInteraction?.findNext()
+        case .findPrevious: webViewManager?.activeWebView?.findInteraction?.findPrevious()
+        case .printPage: printActivePage()
+        case .exportPDF: exportActivePagePDF()
+        case .toggleTranslation:
+            pageTranslator.toggle(webView: webViewManager?.activeWebView)
+        case .translateInSplit: translateActiveInSplit()
+        case .readerMode: showReaderMode()
+        case .screenshotVisible: exportSnapshot(fullPage: false)
+        case .screenshotFullPage: exportSnapshot(fullPage: true)
         case .nextTab: tabManager.switchToNextTab(tabs: visibleTabOrder)
         case .previousTab: tabManager.switchToPreviousTab(tabs: visibleTabOrder)
         case .switchTab(let index):
@@ -403,6 +514,11 @@ struct BrowserView_iOS: View {
         case .addBookmark: toggleBookmark()
         case .showBookmarks: presentLibrary(.bookmarks)
         case .showHistory: presentLibrary(.history)
+        case .showDownloads: showDownloads = true
+        case .clearSiteData: requestClearSiteData()
+        case .convertToIncognito: convertActiveToIncognito()
+        case .showAllTabs:
+            if !showSidebar { showSidebar = true }
         case .zoomIn: zoom(by: 1.1)
         case .zoomOut: zoom(by: 1 / 1.1)
         case .actualSize: setZoom(1)
@@ -410,12 +526,107 @@ struct BrowserView_iOS: View {
         case .shortcutOverlay: showShortcutSheet.toggle()
         case .settings: showSettings = true
         case .findInPage:
-            if let wv = webViewManager?.activeWebView {
-                wv.isFindInteractionEnabled = true
-                wv.becomeFirstResponder()
-                wv.findInteraction?.presentFindNavigator(showingReplace: false)
-            }
+            presentFindOnPage()
         }
+    }
+
+    // MARK: Top browser controls
+
+    private func topBrowserControls(showsTabsMenu: Bool) -> some View {
+        TopBrowserControls_iOS(
+            activeTab: activeTab,
+            showsTabsMenu: showsTabsMenu,
+            canGoBack: canGoBack,
+            canGoForward: canGoForward,
+            isLoading: isLoading,
+            canReopenTab: !tabManager.closedTabs.isEmpty,
+            isCurrentBookmarked: isCurrentBookmarked,
+            actions: browserControlActions
+        )
+    }
+
+    private var browserControlActions: BrowserControlActions_iOS {
+        BrowserControlActions_iOS(
+            showTabs: toggleSidebar,
+            newTab: createNewTab,
+            newRegularTab: createNewRegularTab,
+            newIncognitoTab: createNewIncognitoTab,
+            reopenTab: { _ = tabManager.reopenLastClosedTab() },
+            nextTab: { tabManager.switchToNextTab(tabs: visibleTabOrder) },
+            previousTab: { tabManager.switchToPreviousTab(tabs: visibleTabOrder) },
+            duplicateTab: duplicateActiveTab,
+            toggleSplit: toggleActiveSplit,
+            togglePinned: { if let activeTab { togglePinned(activeTab) } },
+            toggleMuted: { if let activeTab { toggleMuted(activeTab) } },
+            closeTab: closeActiveTab,
+            closeTabSet: { tabManager.closeTabSet(tabs: visibleTabs) },
+            changeURL: focusOmnibar,
+            back: { webViewManager?.goBack() },
+            forward: { webViewManager?.goForward() },
+            reloadOrStop: reloadOrStop,
+            hardReload: { webViewManager?.activeWebView?.reloadFromOrigin() },
+            reloadAll: { webViewManager?.reloadAllTabs() },
+            find: presentFindOnPage,
+            zoomIn: { zoom(by: 1.1) },
+            zoomOut: { zoom(by: 1 / 1.1) },
+            actualSize: { setZoom(1) },
+            readerMode: showReaderMode,
+            toggleTranslation: { pageTranslator.toggle(webView: webViewManager?.activeWebView) },
+            translateInSplit: translateActiveInSplit,
+            toggleBookmark: toggleBookmark,
+            printPage: printActivePage,
+            exportPDF: exportActivePagePDF,
+            screenshotVisible: { exportSnapshot(fullPage: false) },
+            screenshotFullPage: { exportSnapshot(fullPage: true) },
+            showBookmarks: { presentLibrary(.bookmarks) },
+            showHistory: { presentLibrary(.history) },
+            showDownloads: { showDownloads = true },
+            newContainer: { newContainerName = ""; showNewContainer = true },
+            convertToIncognito: convertActiveToIncognito,
+            clearSiteData: requestClearSiteData,
+            clearSessionData: { clearRequest = .session },
+            clearAllData: { clearRequest = .all },
+            showSettings: { showSettings = true },
+            showShortcuts: { showShortcutSheet = true },
+            showGestures: { showGestureGuide = true }
+        )
+    }
+
+    private func adaptiveTabRail(
+        desiredPlacement: TabRailPlacement_iOS?
+    ) -> some View {
+        AdaptiveTabRail_iOS(
+            desiredPlacement: desiredPlacement,
+            tabs: visibleTabOrder,
+            selectedTabId: tabManager.selectedTabId,
+            progressValue: progressValue,
+            isLoading: isLoading,
+            showFaviconProgress: progressFaviconRing,
+            sessionColor: sessionColor,
+            onSelect: { tabManager.selectedTabId = $0.id },
+            onNewTab: createNewTab,
+            onClose: { tabManager.closeTab($0, tabs: visibleTabs) },
+            onDuplicate: { _ = tabManager.duplicateTab($0) },
+            onTogglePinned: togglePinned,
+            onToggleMuted: toggleMuted,
+            onToggleSplit: { tabManager.toggleSplitMembership($0, tabs: visibleTabs) },
+            onReorder: { source, target in
+                tabManager.reorderTabs(sourceTabId: source, targetTabId: target, tabs: visibleTabOrder)
+            }
+        )
+    }
+
+    private func desiredTabRailPlacement(for size: CGSize) -> TabRailPlacement_iOS? {
+        guard UIDevice.current.userInterfaceIdiom == .pad else { return nil }
+        let isLandscape = size.width > size.height
+        let visibility = TabRailVisibility_iOS(rawValue: tabRailVisibility) ?? .off
+        guard visibility.isVisible(isLandscape: isLandscape) else { return nil }
+        if isLandscape {
+            let edge = LandscapeTabRailEdge_iOS(rawValue: tabRailLandscapeEdge) ?? .left
+            return edge == .left ? .left : .right
+        }
+        let edge = PortraitTabRailEdge_iOS(rawValue: tabRailPortraitEdge) ?? .top
+        return edge == .top ? .top : .bottom
     }
 
     // MARK: Sidebar panel (summoned overlay)
@@ -433,15 +644,8 @@ struct BrowserView_iOS: View {
                 downloads: downloadManager.activeDownloads,
                 onNewTab: createNewTab,
                 onCloseTab: { tabManager.closeTab($0, tabs: visibleTabs) },
-                onTogglePinned: {
-                    $0.isPinned.toggle()
-                    try? modelContext.save()
-                },
-                onToggleMuted: {
-                    $0.isMuted.toggle()
-                    webViewManager?.setMuted($0.isMuted, for: $0.id)
-                    try? modelContext.save()
-                },
+                onTogglePinned: togglePinned,
+                onToggleMuted: toggleMuted,
                 onNewGroup: { newGroupName = ""; showNewGroup = true },
                 onDeleteGroup: deleteGroup,
                 onMoveTab: { $0.groupId = $1 },
@@ -662,6 +866,12 @@ struct BrowserView_iOS: View {
         bookmarkManager = BookmarkManager(modelContext: modelContext)
         tabManager.setModelContext(modelContext)
         tabManager.setWebViewManager(wvm)
+        tabManager.fastForward = fastForward
+        fastForward.configure(
+            tabManager: tabManager,
+            webViewManager: wvm,
+            tabs: { allTabs }
+        )
         // Register restored container tabs' sessions before their web views build,
         // so each resumes in its own data store (not the default one).
         wvm.syncSessions(from: tabs)
@@ -682,6 +892,7 @@ struct BrowserView_iOS: View {
             #endif
         } else {
             tabManager.selectedTabId = visibleTabs.first(where: { $0.isActive })?.id ?? visibleTabs.first?.id
+            tabManager.restoreSplit(from: visibleTabs)
             #if DEBUG
             if let url = debugLaunchURL(), let t = visibleTabs.first(where: { $0.id == tabManager.selectedTabId }) { t.navigateTo(url) }
             #endif
@@ -722,6 +933,41 @@ struct BrowserView_iOS: View {
         focusOmnibar()
     }
 
+    private func createNewRegularTab() {
+        _ = tabManager.createNewTab()
+        focusOmnibar()
+    }
+
+    private func createNewIncognitoTab() {
+        _ = tabManager.createIncognitoTab()
+        focusOmnibar()
+    }
+
+    private func duplicateActiveTab() {
+        guard let activeTab else { return }
+        _ = tabManager.duplicateTab(activeTab)
+    }
+
+    private func toggleActiveSplit() {
+        guard let activeTab else { return }
+        tabManager.toggleSplitMembership(activeTab, tabs: visibleTabs)
+    }
+
+    private func translateActiveInSplit() {
+        guard let activeTab, let webViewManager else { return }
+        pageTranslator.translateIntoSplitPane(
+            tab: activeTab,
+            tabManager: tabManager,
+            webViewManager: webViewManager,
+            tabs: visibleTabs
+        )
+    }
+
+    private func convertActiveToIncognito() {
+        guard let activeTab, activeTab.sessionKind != .incognito else { return }
+        tabManager.convertToIncognito(activeTab)
+    }
+
     // The active tab's session, so a new tab (⌘T / +) stays in the same container.
     private func activeSession() -> (kind: SessionKind, sessionId: UUID?) {
         guard let active = activeTab else { return (.normal, nil) }
@@ -732,6 +978,81 @@ struct BrowserView_iOS: View {
 
     private func reloadOrStop() {
         if isLoading { webViewManager?.stopLoading() } else { webViewManager?.reload() }
+    }
+
+    private func presentFindOnPage() {
+        guard let webView = webViewManager?.activeWebView else { return }
+        webView.isFindInteractionEnabled = true
+        webView.becomeFirstResponder()
+        webView.findInteraction?.presentFindNavigator(showingReplace: false)
+    }
+
+    private func showReaderMode() {
+        guard let webView = webViewManager?.activeWebView else { return }
+        webView.evaluateJavaScript(ReaderMode.extractionScript) { value, error in
+            if let article = ReaderMode.article(from: value) {
+                readerPresentation = ReaderPresentation_iOS(article: article)
+            } else {
+                pageActionError = error?.localizedDescription
+                    ?? String(localized: "This page does not contain readable text.")
+            }
+        }
+    }
+
+    private func printActivePage() {
+        guard let webView = webViewManager?.activeWebView else { return }
+        MobilePageActions_iOS.printPage(webView)
+    }
+
+    private func exportActivePagePDF() {
+        guard let webView = webViewManager?.activeWebView else { return }
+        MobilePageActions_iOS.exportPDF(webView) { result in
+            presentExportResult(result.map { [$0] })
+        }
+    }
+
+    private func exportSnapshot(fullPage: Bool) {
+        guard let webView = webViewManager?.activeWebView else { return }
+        MobilePageActions_iOS.snapshot(webView, fullPage: fullPage) { result in
+            presentExportResult(result.map { [$0] })
+        }
+    }
+
+    private func presentExportResult(_ result: Result<[Any], Error>) {
+        switch result {
+        case .success(let items):
+            activityItems = items
+            showActivitySheet = true
+        case .failure(let error):
+            pageActionError = error.localizedDescription
+        }
+    }
+
+    private func requestClearSiteData() {
+        guard let host = webViewManager?.activeWebView?.url?.host else { return }
+        clearRequest = .site(host)
+    }
+
+    private func performClear(_ request: MobileClearRequest_iOS) {
+        switch request {
+        case .site(let host):
+            guard let webView = webViewManager?.activeWebView else { return }
+            BrowsingDataCleaner.clearSite(
+                host: host,
+                in: webView.configuration.websiteDataStore
+            ) {
+                DispatchQueue.main.async { webView.reloadFromOrigin() }
+            }
+        case .session:
+            guard let webView = webViewManager?.activeWebView else { return }
+            BrowsingDataCleaner.clearStore(webView.configuration.websiteDataStore) {
+                DispatchQueue.main.async { webView.reloadFromOrigin() }
+            }
+        case .all:
+            BrowsingDataCleaner.clearEverything(
+                containerIdentifiers: browserSessions.map(\.id)
+            )
+        }
     }
 
     private func focusOmnibar() {
@@ -820,6 +1141,17 @@ struct BrowserView_iOS: View {
     private func setZoom(_ level: Double) {
         activeTab?.zoomLevel = level
         webViewManager?.activeWebView?.pageZoom = level
+    }
+
+    private func togglePinned(_ tab: Tab) {
+        tab.isPinned.toggle()
+        try? modelContext.save()
+    }
+
+    private func toggleMuted(_ tab: Tab) {
+        tab.isMuted.toggle()
+        webViewManager?.setMuted(tab.isMuted, for: tab.id)
+        try? modelContext.save()
     }
 
     private func toggleSidebar() {
@@ -939,6 +1271,8 @@ struct GestureGuide_iOS: View {
         let id = UUID(); let icon: String; let gesture: LocalizedStringKey; let action: LocalizedStringKey
     }
     private let moves: [Move] = [
+        .init(icon: "globe",                  gesture: "Tap the site icon",      action: "Show, open, or close tabs"),
+        .init(icon: "ellipsis",               gesture: "Tap the page menu",     action: "Navigate, share, find, edit the URL, or lock rotation"),
         .init(icon: "hand.tap",               gesture: "Tap the bar",            action: "Search or type a URL"),
         .init(icon: "square.stack",           gesture: "Swipe up on the bar",    action: "Show all tabs"),
         .init(icon: "arrow.left.arrow.right", gesture: "Swipe the bar sideways", action: "Switch tabs"),
@@ -951,7 +1285,7 @@ struct GestureGuide_iOS: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    Text("The web fills the whole screen. A few gestures on the handle at the bottom edge do everything a toolbar would.")
+                    Text("The web fills the whole screen. The two small menus at the top cover everyday browser actions; the handle at the bottom offers quick gestures.")
                         .font(.subheadline).foregroundStyle(.secondary)
                     ForEach(moves) { move in
                         HStack(spacing: 16) {

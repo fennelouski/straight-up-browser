@@ -40,11 +40,15 @@ launch it, and accept the license agreement on first run.
 
 ### Platform scope
 
-The macOS app has the full feature set above. The iPadOS target shares tabs,
-containers/incognito, sync, bookmarks, downloads, settings, keyboard commands,
-and touch navigation. macOS-only integrations—global hotkeys, the terminal CLI,
-AppKit screenshot/window tools, and the unpacked-extension loader—are not
-present in the iPadOS build.
+The iOS/iPadOS target exposes the browser feature set through two compact,
+rotation-aware controls and nested menus: tabs, groups, workspaces, split panes,
+containers/incognito, navigation and find, translation, Reader Mode, Fast
+Forward, bookmarks/history, downloads, print/PDF, page captures, cookie and
+browsing-data controls, sync, settings, keyboard commands, and touch navigation.
+On iPad an optional tab rail follows the short edge of the app window. macOS-only
+integrations—window management and window/element capture, global hotkeys, the
+terminal CLI, Sparkle updater UI, and the unpacked-extension loader—are not
+present in the mobile build.
 
 Browser does not currently expose passkey/WebAuthn sign-in. Apple gates
 third-party browser access behind the
