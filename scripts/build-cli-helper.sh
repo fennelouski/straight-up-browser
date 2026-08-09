@@ -20,6 +20,7 @@ xcrun swiftc \
     -warnings-as-errors \
     -sdk "$SDKROOT" \
     -target "arm64-apple-macos${MACOSX_DEPLOYMENT_TARGET}" \
+    "${SRCROOT}/Straight Up Browser/AgentToolCatalog.swift" \
     "${SRCROOT}/browser-cli/main.swift" \
     "${SRCROOT}/browser-cli/MCPServer.swift" \
     -o "$CLI_OUTPUT"

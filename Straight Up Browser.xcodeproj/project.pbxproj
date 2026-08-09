@@ -449,6 +449,7 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
+				"$(SRCROOT)/Straight Up Browser/AgentToolCatalog.swift",
 				"$(SRCROOT)/browser-cli/main.swift",
 				"$(SRCROOT)/browser-cli/MCPServer.swift",
 			);

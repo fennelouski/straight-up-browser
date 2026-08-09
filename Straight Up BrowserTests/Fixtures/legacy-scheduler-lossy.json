@@ -1,0 +1,57 @@
+[
+  {
+    "dailyHour": 9,
+    "dailyMinute": 30,
+    "enabled": true,
+    "id": "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE",
+    "interval": 1,
+    "name": "Daily research",
+    "nextRunAt": 725880600,
+    "prompt": "Summarize updates",
+    "runs": [
+      {
+        "finishedAt": 725760005,
+        "id": "11111111-AAAA-4111-8111-111111111111",
+        "output": "Daily summary",
+        "startedAt": 725760000,
+        "status": "succeeded"
+      },
+      {
+        "finishedAt": 725760006,
+        "id": "not-a-uuid",
+        "output": "bad run",
+        "startedAt": 725760000,
+        "status": "succeeded"
+      },
+      {
+        "finishedAt": 725760007,
+        "id": "22222222-AAAA-4222-8222-222222222222",
+        "output": "scheduler-secret-error",
+        "startedAt": 725760000,
+        "status": "failed"
+      }
+    ],
+    "scheduleKind": "Daily"
+  },
+  "malformed task",
+  {
+    "dailyHour": 0,
+    "dailyMinute": 0,
+    "enabled": false,
+    "id": "BBBBBBBB-CCCC-4DDD-8EEE-FFFFFFFFFFFF",
+    "interval": 2,
+    "name": "Periodic",
+    "nextRunAt": 725900000,
+    "prompt": "Check later",
+    "runs": [
+      {
+        "finishedAt": 725760009,
+        "id": "33333333-AAAA-4333-8333-333333333333",
+        "output": "Partial but useful",
+        "startedAt": 725760008,
+        "status": "cancelled"
+      }
+    ],
+    "scheduleKind": "Every N hours"
+  }
+]

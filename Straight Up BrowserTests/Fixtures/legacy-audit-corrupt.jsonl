@@ -1,0 +1,7 @@
+{"event":"session_started","sessionId":"66666666-6666-4666-8666-666666666666","timestamp":"2024-01-01T00:00:00Z"}
+{"client":{"name":"Fixture Client","version":"1.0","token":"audit-client-secret"},"event":"client_initialized","timestamp":"2024-01-01T00:00:01Z"}
+{"arguments":{"query":"cats","token":"audit-argument-secret"},"event":"tool_started","timestamp":"2024-01-01T00:00:02Z","tool":"search_dom"}
+__INVALID_UTF8__
+{"event":"broken"
+{"durationMs":12,"event":"tool_finished","result":{"error":"audit-result-secret"},"timestamp":"2024-01-01T00:00:03Z","tool":"search_dom"}
+{"arguments":{"query":"unfinished"

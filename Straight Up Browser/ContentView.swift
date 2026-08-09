@@ -555,6 +555,22 @@ struct ContentView: View {
 
     private var currentURL: URL? { activeTab?.url }
 
+    private var currentAgentPageTarget: AgentPageTarget? {
+        guard let tab = activeTab, let manager = notificationManager, let url = tab.url,
+              let scheme = url.scheme, let host = url.host else { return nil }
+        let port = url.port.map { ":\($0)" } ?? ""
+        let session: AgentBrowserSession = switch tab.sessionKind {
+        case .normal: .normal
+        case .incognito: .incognito
+        case .container: tab.sessionId.map(AgentBrowserSession.container) ?? .normal
+        }
+        return AgentPageTarget(
+            pageID: "\(manager.automationWindowId.uuidString):\(tab.id.uuidString)",
+            origin: "\(scheme.lowercased())://\(host.lowercased())\(port)",
+            session: session
+        )
+    }
+
     private var pageProtectionSummary: PageProtectionSummary? {
         guard let tab = activeTab, tab.url != nil else { return nil }
         return PageProtectionSummary(
@@ -1975,12 +1991,17 @@ struct ContentView: View {
                     agent: browserAgent,
                     pageTitle: currentTitle,
                     pageURL: currentURL?.absoluteString ?? "",
+                    pageTarget: currentAgentPageTarget,
                     onClose: { showAgentPanel = false },
-                    execute: { tool, arguments in
+                    execute: { tool, arguments, permit in
                         guard let manager = notificationManager else {
                             return "{\"error\":\"Browser automation is not ready.\"}"
                         }
-                        return await manager.automationJSONResult(tool: tool, arguments: arguments)
+                        return await manager.automationJSONResult(
+                            tool: tool,
+                            arguments: arguments,
+                            permit: permit
+                        )
                     }
                 )
                 .transition(.move(edge: .trailing).combined(with: .opacity))

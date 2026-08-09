@@ -318,7 +318,7 @@ struct Straight_Up_BrowserApp: App {
         .windowResizability(.contentMinSize)
         .defaultSize(width: 900, height: 600)
 
-        Window("Agent Audit & Replay", id: "agent-audit") {
+        Window("Agent Timeline & Replay", id: "agent-audit") {
             BrowserAgentAuditView()
         }
         .windowStyle(.automatic)

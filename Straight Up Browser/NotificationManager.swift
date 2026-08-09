@@ -879,10 +879,15 @@ class NotificationManager {
 
     private func tabId(from arguments: [String: Any]) -> UUID? {
         if let pageId = arguments["pageId"] as? String {
-            let raw = pageId.split(separator: ":", maxSplits: 1).last.map(String.init) ?? pageId
-            if let id = UUID(uuidString: raw) { return id }
+            let components = pageId.split(separator: ":", maxSplits: 1).map(String.init)
+            guard components.count == 2,
+                  UUID(uuidString: components[0]) == automationWindowId,
+                  let id = UUID(uuidString: components[1]) else { return nil }
+            return id
         }
-        if let raw = arguments["tabId"] as? String, let id = UUID(uuidString: raw) { return id }
+        if let raw = arguments["tabId"] as? String {
+            return UUID(uuidString: raw)
+        }
         return tabManager.selectedTabId
     }
 
@@ -1138,7 +1143,11 @@ class NotificationManager {
         }
     }
 
-    func automationJSONResult(tool: String, arguments: [String: Any]) async -> String {
+    func automationJSONResult(
+        tool: String,
+        arguments: [String: Any],
+        permit: AgentExecutionPermit? = nil
+    ) async -> String {
         let authorization = CLIAuthorization()
         let capability = CLIAuthorization.capability(forAgentTool: tool)
         guard authorization.allows(capability: capability) else {
@@ -1158,7 +1167,8 @@ class NotificationManager {
         let file = directory.appendingPathComponent("in-process-\(UUID().uuidString).json")
         BrowserAutomationRegistry.shared.execute(
             ["tool": expanded.tool, "arguments": expanded.arguments],
-            responseFilePath: file.path
+            responseFilePath: file.path,
+            permit: permit
         )
         for _ in 0..<1_200 {
             if let data = try? Data(contentsOf: file), !data.isEmpty {

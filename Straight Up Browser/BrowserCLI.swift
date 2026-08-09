@@ -44,19 +44,49 @@ final class BrowserAutomationRegistry {
 
     private func manager(windowId: String?, pageId: String?) -> NotificationManager? {
         let live = liveManagers()
-        if let windowId, let id = UUID(uuidString: windowId), let manager = managers[id]?.value {
+        if let windowId {
+            guard let id = UUID(uuidString: windowId), let manager = managers[id]?.value else {
+                return nil
+            }
             return manager
         }
-        if let pageId,
-           let prefix = pageId.split(separator: ":", maxSplits: 1).first,
-           let id = UUID(uuidString: String(prefix)),
-           let manager = managers[id]?.value {
+        if let pageId {
+            guard let prefix = pageId.split(separator: ":", maxSplits: 1).first,
+                  let id = UUID(uuidString: String(prefix)),
+                  let manager = managers[id]?.value else {
+                return nil
+            }
             return manager
         }
         return live.first(where: \.isAutomationKeyWindow) ?? live.first
     }
 
-    func execute(_ request: [String: Any], responseFilePath: String?) {
+    func execute(
+        _ request: [String: Any],
+        responseFilePath: String?,
+        permit: AgentExecutionPermit? = nil
+    ) {
+        guard let tool = request["tool"] as? String else {
+            BrowserCLI.writeResponse(["error": "agent request is missing tool"], to: responseFilePath)
+            return
+        }
+        if let permit {
+            guard permit.toolName == tool else {
+                BrowserCLI.writeResponse(
+                    ["error": "policy authorization does not match requested tool"],
+                    to: responseFilePath
+                )
+                return
+            }
+            performAuthorized(request, responseFilePath: responseFilePath)
+            return
+        }
+        Task { [weak self] in
+            await self?.authorizeExternalInvocation(request, responseFilePath: responseFilePath)
+        }
+    }
+
+    private func performAuthorized(_ request: [String: Any], responseFilePath: String?) {
         guard let tool = request["tool"] as? String else {
             BrowserCLI.writeResponse(["error": "agent request is missing tool"], to: responseFilePath)
             return
@@ -103,6 +133,179 @@ final class BrowserAutomationRegistry {
             }
             manager.performAutomationTool(tool, arguments: arguments, responseFilePath: responseFilePath)
         }
+    }
+
+    private func authorizeExternalInvocation(
+        _ request: [String: Any],
+        responseFilePath: String?
+    ) async {
+        guard let tool = request["tool"] as? String,
+              let descriptor = AgentToolCatalog.canonical.descriptor(named: tool) else {
+            BrowserCLI.writeResponse(["error": "unknown agent tool"], to: responseFilePath)
+            return
+        }
+        let arguments = request["arguments"] as? [String: Any] ?? [:]
+        guard let argumentValue = try? JSONValue(foundationValue: arguments) else {
+            BrowserCLI.writeResponse(["error": "tool arguments are not valid JSON"], to: responseFilePath)
+            return
+        }
+        do {
+            let store = try AgentRunStoreRegistry.store(baseDirectory: BrowserCLI.supportDirectory)
+            let run = try await store.createRun(
+                conversationID: nil,
+                entryPoint: .localMCP,
+                configuration: AgentConfigurationSnapshot(
+                    toolCatalogVersion: 1,
+                    enabledCapabilities: descriptor.requiredCapabilities,
+                    settings: ["transport": .string("local-mcp")]
+                )
+            )
+            _ = try await store.transitionRun(run.id, to: .running, reason: "Local MCP invocation received")
+            _ = try await store.appendStep(
+                runID: run.id,
+                kind: .toolInvocation,
+                summary: tool,
+                payload: .object(["tool": .string(tool)]),
+                redactionState: .redacted
+            )
+
+            let target = resolvedExternalTarget(arguments: arguments, descriptor: descriptor)
+            let scope = externalRunScope(descriptor: descriptor, target: target)
+            let context = AgentInvocationContext(
+                runID: run.id,
+                entryPoint: .localMCP,
+                humanPresent: false,
+                toolName: tool,
+                arguments: argumentValue,
+                target: target,
+                runScope: scope,
+                dataLeavesDevice: descriptor.risk == .observe,
+                effectSummary: descriptor.description
+            )
+            let decision = try AgentPolicyEngine().evaluate(descriptor: descriptor, context: context)
+            switch decision {
+            case .allow(let authorization):
+                let policyStep = try await store.appendStep(
+                    runID: run.id,
+                    kind: .policyDecision,
+                    summary: "Allowed local MCP invocation",
+                    payload: .object([
+                        "decision": .string("allow"),
+                        "tool": .string(tool),
+                        "invocationDigest": .string(authorization.invocationDigest),
+                    ]),
+                    redactionState: .metadataOnly
+                )
+                let permit = authorization.recording(decisionStepID: policyStep.id)
+                performAuthorized(request, responseFilePath: responseFilePath)
+                _ = permit // The authorized boundary above validates tool identity.
+                _ = try await store.appendStep(
+                    runID: run.id,
+                    kind: .toolResult,
+                    summary: "Invocation accepted by browser automation",
+                    payload: .object(["accepted": .boolean(true)]),
+                    redactionState: .metadataOnly
+                )
+                _ = try await store.transitionRun(run.id, to: .succeeded, reason: "Invocation accepted")
+
+            case .deny(let code, _):
+                _ = try await store.appendStep(
+                    runID: run.id,
+                    kind: .policyDecision,
+                    summary: "Denied local MCP invocation: \(code.rawValue)",
+                    payload: .object(["decision": .string("deny"), "code": .string(code.rawValue)]),
+                    redactionState: .metadataOnly
+                )
+                _ = try await store.transitionRun(run.id, to: .failed, reason: "Policy denied invocation")
+                BrowserCLI.writeResponse(
+                    ["error": "policy denied invocation", "code": code.rawValue, "runId": run.id.uuidString],
+                    to: responseFilePath
+                )
+
+            case .requiresApproval(let approval), .requiresHuman(let approval):
+                _ = try await store.appendStep(
+                    runID: run.id,
+                    kind: .approvalRequest,
+                    summary: approval.effectSummary,
+                    payload: .object([
+                        "requestID": .string(approval.id.uuidString),
+                        "tool": .string(tool),
+                        "invocationDigest": .string(approval.invocationDigest),
+                    ]),
+                    redactionState: .redacted
+                )
+                _ = try await store.transitionRun(
+                    run.id,
+                    to: .waitingForHuman,
+                    reason: "External invocation requires attended approval"
+                )
+                NotificationCenter.default.post(
+                    name: .agentRunNeedsApproval,
+                    object: nil,
+                    userInfo: ["runID": run.id.uuidString, "tool": tool]
+                )
+                BrowserCLI.writeResponse(
+                    [
+                        "error": "human approval required",
+                        "code": "approval_required",
+                        "runId": run.id.uuidString,
+                        "requestId": approval.id.uuidString,
+                    ],
+                    to: responseFilePath
+                )
+            }
+        } catch {
+            BrowserCLI.writeResponse(
+                ["error": "could not record or authorize invocation"],
+                to: responseFilePath
+            )
+        }
+    }
+
+    private func resolvedExternalTarget(
+        arguments: [String: Any],
+        descriptor: AgentToolDescriptor
+    ) -> AgentResolvedTarget {
+        let pageCapabilities: Set<AgentCapability> = [.pageRead, .pageScript, .screenshot, .download]
+        guard arguments["pageId"] != nil
+                || !descriptor.requiredCapabilities.isDisjoint(with: pageCapabilities),
+              let manager = manager(
+                windowId: arguments["windowId"] as? String,
+                pageId: arguments["pageId"] as? String
+              ) else { return .none }
+        let pages = manager.automationPageSummaries()
+        let requested = arguments["pageId"] as? String
+        guard let summary = requested.flatMap({ id in pages.first { ($0["pageId"] as? String) == id } })
+                ?? manager.automationActivePageSummary(),
+              let pageID = summary["pageId"] as? String,
+              let rawURL = summary["url"] as? String,
+              let url = URL(string: rawURL), let scheme = url.scheme, let host = url.host else {
+            return .none
+        }
+        let session: AgentBrowserSession = (summary["sessionKind"] as? String) == "incognito"
+            ? .incognito : .normal
+        let port = url.port.map { ":\($0)" } ?? ""
+        return .page(AgentPageTarget(
+            pageID: pageID,
+            origin: "\(scheme.lowercased())://\(host.lowercased())\(port)",
+            session: session,
+            elementIdentity: arguments["elementId"] as? String ?? arguments["selector"] as? String
+        ))
+    }
+
+    private func externalRunScope(
+        descriptor: AgentToolDescriptor,
+        target: AgentResolvedTarget
+    ) -> AgentRunScope {
+        if case .page(let page) = target {
+            return AgentRunScope(
+                capabilities: descriptor.requiredCapabilities,
+                pageIDs: [page.pageID],
+                origins: [page.origin],
+                session: page.session
+            )
+        }
+        return AgentRunScope(capabilities: descriptor.requiredCapabilities)
     }
 
     private func waitForNewWindow(
@@ -185,21 +388,20 @@ struct CLIAuthorization {
     }
 
     static func capability(forAgentTool tool: String) -> CLICapability {
-        switch tool {
-        case "take_screenshot", "save_pdf":
-            return .screenshot
-        case "evaluate_script", "handle_dialog", "click", "click_at", "hover", "focus",
-             "fill", "clear", "check", "uncheck", "select_option", "press_key", "drag",
-             "scroll", "upload_file", "download_file":
-            return .pageScript
-        case "get_active_page", "list_pages", "list_windows", "get_bookmarks",
-             "search_bookmarks", "search_history", "get_recent_history", "list_tab_groups",
-             "take_snapshot", "take_enhanced_snapshot", "get_page_content", "get_page_links",
-             "get_dom", "search_dom", "wait_for_page":
-            return .pageRead
-        default:
+        guard let descriptor = AgentToolCatalog.canonical.descriptor(named: tool) else {
             return .control
         }
+        let capabilities = descriptor.requiredCapabilities
+        if capabilities.contains(.screenshot) { return .screenshot }
+        if capabilities.contains(.pageScript) || capabilities.contains(.download) {
+            return .pageScript
+        }
+        if !capabilities.intersection([
+            .pageRead, .bookmarkRead, .historyRead, .tabGroups, .coworkRead,
+        ]).isEmpty {
+            return .pageRead
+        }
+        return .control
     }
 
     func allows(action: String) -> Bool {
@@ -348,7 +550,9 @@ class BrowserCLI {
     }
 
     private func handleCommand(_ command: String) {
-        Logger.log("BrowserCLI handleCommand: \(command)", type: "BrowserCLI")
+        // The command may contain a base64-encoded tool payload with form data,
+        // scripts, or tokens. Never copy it into durable diagnostic logs.
+        Logger.log("BrowserCLI received a command", type: "BrowserCLI")
 
         var commandParts = command.split(separator: " ")
         var responseFilePath: String? = nil

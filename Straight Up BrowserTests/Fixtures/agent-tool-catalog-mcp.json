@@ -1,0 +1,1896 @@
+[
+  {
+    "description" : "Get the focused browser page.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "windowId" : {
+          "description" : "Stable window ID from list_windows. Omit to use the focused window.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "get_active_page",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "List every open page with stable page, tab, and window IDs.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+
+      },
+      "type" : "object"
+    },
+    "name" : "list_pages",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Navigate a page to a URL or perform back, forward, reload, or stop.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "action" : {
+          "description" : "History action.",
+          "enum" : [
+            "back",
+            "forward",
+            "reload",
+            "stop"
+          ],
+          "type" : "string"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "url" : {
+          "description" : "Absolute URL to load.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "navigate_page",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Open a page. It may remain in the background without changing the focused tab.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "background" : {
+          "description" : "Keep the user's focused page unchanged.",
+          "type" : "boolean"
+        },
+        "incognito" : {
+          "description" : "Use a fresh in-memory private session.",
+          "type" : "boolean"
+        },
+        "url" : {
+          "description" : "Optional absolute URL.",
+          "type" : "string"
+        },
+        "windowId" : {
+          "description" : "Stable window ID from list_windows. Omit to use the focused window.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "new_page",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Open a background automation page without changing focus.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "incognito" : {
+          "description" : "Use a fresh in-memory private session.",
+          "type" : "boolean"
+        },
+        "url" : {
+          "description" : "Optional absolute URL.",
+          "type" : "string"
+        },
+        "windowId" : {
+          "description" : "Stable window ID from list_windows. Omit to use the focused window.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "new_hidden_page",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Focus and reveal a background page.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "pageId"
+      ],
+      "type" : "object"
+    },
+    "name" : "show_page",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Move a page to a zero-based sidebar position.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "index" : {
+          "description" : "Zero-based destination index.",
+          "minimum" : 0,
+          "type" : "integer"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "index",
+        "pageId"
+      ],
+      "type" : "object"
+    },
+    "name" : "move_page",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Close a page by stable ID.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "pageId"
+      ],
+      "type" : "object"
+    },
+    "name" : "close_page",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Return a compact accessibility-style outline with stable interactive element IDs.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "take_snapshot",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Return a detailed semantic outline including element state and geometry.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "take_enhanced_snapshot",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Extract the main page as readable Markdown-like text.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "get_page_content",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Extract and deduplicate links from a page.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "get_page_links",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Return raw HTML, optionally scoped to a CSS selector.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "selector" : {
+          "description" : "Optional CSS selector to scope the returned DOM.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "get_dom",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Search the DOM by text, CSS selector, or XPath.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "limit" : {
+          "description" : "Maximum matching nodes to return.",
+          "maximum" : 500,
+          "minimum" : 1,
+          "type" : "integer"
+        },
+        "mode" : {
+          "description" : "Search mode.",
+          "enum" : [
+            "text",
+            "css",
+            "xpath"
+          ],
+          "type" : "string"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "query" : {
+          "description" : "Text, selector, or XPath query.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "query"
+      ],
+      "type" : "object"
+    },
+    "name" : "search_dom",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Capture a page and return image content.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "format" : {
+          "description" : "Image encoding.",
+          "enum" : [
+            "png",
+            "jpeg"
+          ],
+          "type" : "string"
+        },
+        "fullPage" : {
+          "description" : "Capture the whole scrollable document.",
+          "type" : "boolean"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "take_screenshot",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Evaluate JavaScript in an isolated content world that shares the page DOM.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "script" : {
+          "description" : "JavaScript source; the last expression is returned.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "script"
+      ],
+      "type" : "object"
+    },
+    "name" : "evaluate_script",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Click an element by snapshot ID or CSS selector.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "elementId" : {
+          "description" : "Element ID (for example sub-12) returned by take_snapshot.",
+          "type" : "string"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "selector" : {
+          "description" : "CSS selector, or omit when elementId from a snapshot is supplied.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "click",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Click the topmost page element at viewport coordinates.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "x" : {
+          "description" : "Viewport X coordinate.",
+          "type" : "number"
+        },
+        "y" : {
+          "description" : "Viewport Y coordinate.",
+          "type" : "number"
+        }
+      },
+      "required" : [
+        "x",
+        "y"
+      ],
+      "type" : "object"
+    },
+    "name" : "click_at",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Dispatch pointer hover events over an element.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "elementId" : {
+          "description" : "Element ID (for example sub-12) returned by take_snapshot.",
+          "type" : "string"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "selector" : {
+          "description" : "CSS selector, or omit when elementId from a snapshot is supplied.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "hover",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Scroll an element into view and focus it.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "elementId" : {
+          "description" : "Element ID (for example sub-12) returned by take_snapshot.",
+          "type" : "string"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "selector" : {
+          "description" : "CSS selector, or omit when elementId from a snapshot is supplied.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "focus",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Set an input, textarea, or editable element value and fire input/change events.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "clear" : {
+          "description" : "Clear the current value first.",
+          "type" : "boolean"
+        },
+        "elementId" : {
+          "description" : "Element ID (for example sub-12) returned by take_snapshot.",
+          "type" : "string"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "selector" : {
+          "description" : "CSS selector, or omit when elementId from a snapshot is supplied.",
+          "type" : "string"
+        },
+        "value" : {
+          "description" : "Text to enter.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "value"
+      ],
+      "type" : "object"
+    },
+    "name" : "fill",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Clear an input or editable element.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "elementId" : {
+          "description" : "Element ID (for example sub-12) returned by take_snapshot.",
+          "type" : "string"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "selector" : {
+          "description" : "CSS selector, or omit when elementId from a snapshot is supplied.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "clear",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Check a checkbox or radio control.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "elementId" : {
+          "description" : "Element ID (for example sub-12) returned by take_snapshot.",
+          "type" : "string"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "selector" : {
+          "description" : "CSS selector, or omit when elementId from a snapshot is supplied.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "check",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Uncheck a checkbox.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "elementId" : {
+          "description" : "Element ID (for example sub-12) returned by take_snapshot.",
+          "type" : "string"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "selector" : {
+          "description" : "CSS selector, or omit when elementId from a snapshot is supplied.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "uncheck",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Select one or more options by value or visible text.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "elementId" : {
+          "description" : "Element ID (for example sub-12) returned by take_snapshot.",
+          "type" : "string"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "selector" : {
+          "description" : "CSS selector, or omit when elementId from a snapshot is supplied.",
+          "type" : "string"
+        },
+        "values" : {
+          "description" : "Option values or visible labels.",
+          "items" : {
+            "type" : "string"
+          },
+          "type" : "array"
+        }
+      },
+      "required" : [
+        "values"
+      ],
+      "type" : "object"
+    },
+    "name" : "select_option",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Dispatch a key or modifier combination such as Enter or Meta+A.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "key" : {
+          "description" : "Key or plus-separated modifier combination.",
+          "type" : "string"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "key"
+      ],
+      "type" : "object"
+    },
+    "name" : "press_key",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Drag from one element or point to another.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "elementId" : {
+          "description" : "Element ID (for example sub-12) returned by take_snapshot.",
+          "type" : "string"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "selector" : {
+          "description" : "CSS selector, or omit when elementId from a snapshot is supplied.",
+          "type" : "string"
+        },
+        "targetElementId" : {
+          "description" : "Destination snapshot element ID.",
+          "type" : "string"
+        },
+        "targetSelector" : {
+          "description" : "Destination CSS selector.",
+          "type" : "string"
+        },
+        "x" : {
+          "description" : "Destination viewport X.",
+          "type" : "number"
+        },
+        "y" : {
+          "description" : "Destination viewport Y.",
+          "type" : "number"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "drag",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Scroll the page or an element by pixels.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "amount" : {
+          "description" : "Distance in CSS pixels.",
+          "type" : "number"
+        },
+        "direction" : {
+          "description" : "Direction.",
+          "enum" : [
+            "up",
+            "down",
+            "left",
+            "right"
+          ],
+          "type" : "string"
+        },
+        "elementId" : {
+          "description" : "Element ID (for example sub-12) returned by take_snapshot.",
+          "type" : "string"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "selector" : {
+          "description" : "CSS selector, or omit when elementId from a snapshot is supplied.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "scroll",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Attach local files to a file input and fire its change event.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "elementId" : {
+          "description" : "Element ID (for example sub-12) returned by take_snapshot.",
+          "type" : "string"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "paths" : {
+          "description" : "Absolute local file paths.",
+          "items" : {
+            "type" : "string"
+          },
+          "type" : "array"
+        },
+        "selector" : {
+          "description" : "CSS selector, or omit when elementId from a snapshot is supplied.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "paths"
+      ],
+      "type" : "object"
+    },
+    "name" : "upload_file",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Accept or dismiss an open JavaScript dialog, optionally filling its prompt.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "accept" : {
+          "description" : "Accept when true; dismiss when false.",
+          "type" : "boolean"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "promptText" : {
+          "description" : "Text for a prompt dialog.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "handle_dialog",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Render the page to a PDF file.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "path" : {
+          "description" : "Destination file path.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "path"
+      ],
+      "type" : "object"
+    },
+    "name" : "save_pdf",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Capture and save a screenshot to disk.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "format" : {
+          "description" : "Image encoding.",
+          "enum" : [
+            "png",
+            "jpeg"
+          ],
+          "type" : "string"
+        },
+        "fullPage" : {
+          "description" : "Capture the whole document.",
+          "type" : "boolean"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "path" : {
+          "description" : "Destination file path.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "path"
+      ],
+      "type" : "object"
+    },
+    "name" : "save_screenshot",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Click a page element to begin its normal WebKit download.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "elementId" : {
+          "description" : "Element ID (for example sub-12) returned by take_snapshot.",
+          "type" : "string"
+        },
+        "pageId" : {
+          "description" : "Stable page ID from list_pages. Omit to use the focused page.",
+          "type" : "string"
+        },
+        "selector" : {
+          "description" : "CSS selector, or omit when elementId from a snapshot is supplied.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "download_file",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "List browser windows and their stable IDs.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+
+      },
+      "type" : "object"
+    },
+    "name" : "list_windows",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Create and activate a browser window.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "url" : {
+          "description" : "Optional URL for its focused page.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "create_window",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Create a browser window for background automation.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "url" : {
+          "description" : "Optional URL for its focused page.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "create_hidden_window",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Close a browser window.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "windowId" : {
+          "description" : "Stable window ID from list_windows. Omit to use the focused window.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "windowId"
+      ],
+      "type" : "object"
+    },
+    "name" : "close_window",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Bring a browser window to the front.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "windowId" : {
+          "description" : "Stable window ID from list_windows. Omit to use the focused window.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "windowId"
+      ],
+      "type" : "object"
+    },
+    "name" : "activate_window",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "List tab groups and their member pages.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "windowId" : {
+          "description" : "Stable window ID from list_windows. Omit to use the focused window.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "list_tab_groups",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Create or reuse a group and place pages in it.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "color" : {
+          "description" : "Hex color such as #007AFF.",
+          "type" : "string"
+        },
+        "groupId" : {
+          "description" : "Existing group ID, if any.",
+          "type" : "string"
+        },
+        "pageIds" : {
+          "description" : "Pages to group.",
+          "items" : {
+            "type" : "string"
+          },
+          "type" : "array"
+        },
+        "title" : {
+          "description" : "Group title.",
+          "type" : "string"
+        },
+        "windowId" : {
+          "description" : "Stable window ID from list_windows. Omit to use the focused window.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "pageIds"
+      ],
+      "type" : "object"
+    },
+    "name" : "group_tabs",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Update a tab group's title or color.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "color" : {
+          "description" : "New hex color.",
+          "type" : "string"
+        },
+        "groupId" : {
+          "description" : "Group ID.",
+          "type" : "string"
+        },
+        "title" : {
+          "description" : "New title.",
+          "type" : "string"
+        },
+        "windowId" : {
+          "description" : "Stable window ID from list_windows. Omit to use the focused window.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "groupId"
+      ],
+      "type" : "object"
+    },
+    "name" : "update_tab_group",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Remove pages from their groups.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "pageIds" : {
+          "description" : "Pages to ungroup.",
+          "items" : {
+            "type" : "string"
+          },
+          "type" : "array"
+        },
+        "windowId" : {
+          "description" : "Stable window ID from list_windows. Omit to use the focused window.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "pageIds"
+      ],
+      "type" : "object"
+    },
+    "name" : "ungroup_tabs",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Close every page in a group and remove the group.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "groupId" : {
+          "description" : "Group ID.",
+          "type" : "string"
+        },
+        "windowId" : {
+          "description" : "Stable window ID from list_windows. Omit to use the focused window.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "groupId"
+      ],
+      "type" : "object"
+    },
+    "name" : "close_tab_group",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "List bookmarks and bookmark folders.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+
+      },
+      "type" : "object"
+    },
+    "name" : "get_bookmarks",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Create a bookmark, or omit URL to create a folder.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "folder" : {
+          "description" : "Folder/category title.",
+          "type" : "string"
+        },
+        "title" : {
+          "description" : "Bookmark or folder title.",
+          "type" : "string"
+        },
+        "url" : {
+          "description" : "Bookmark URL.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "title"
+      ],
+      "type" : "object"
+    },
+    "name" : "create_bookmark",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Remove a bookmark or folder.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "id" : {
+          "description" : "Bookmark or folder ID.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "id"
+      ],
+      "type" : "object"
+    },
+    "name" : "remove_bookmark",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Update a bookmark title, URL, or folder.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "folder" : {
+          "description" : "New folder/category.",
+          "type" : "string"
+        },
+        "id" : {
+          "description" : "Bookmark ID.",
+          "type" : "string"
+        },
+        "title" : {
+          "description" : "New title.",
+          "type" : "string"
+        },
+        "url" : {
+          "description" : "New URL.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "id"
+      ],
+      "type" : "object"
+    },
+    "name" : "update_bookmark",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Move a bookmark to a folder/category.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "folder" : {
+          "description" : "Destination folder/category.",
+          "type" : "string"
+        },
+        "id" : {
+          "description" : "Bookmark ID.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "id"
+      ],
+      "type" : "object"
+    },
+    "name" : "move_bookmark",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Search bookmarks by title, URL, host, or folder.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "query" : {
+          "description" : "Search query.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "query"
+      ],
+      "type" : "object"
+    },
+    "name" : "search_bookmarks",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Fuzzy-search local browsing history.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "limit" : {
+          "description" : "Maximum results.",
+          "minimum" : 1,
+          "type" : "integer"
+        },
+        "query" : {
+          "description" : "Search query.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "query"
+      ],
+      "type" : "object"
+    },
+    "name" : "search_history",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Get recent unique history entries.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "limit" : {
+          "description" : "Maximum results.",
+          "minimum" : 1,
+          "type" : "integer"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "get_recent_history",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Delete all history visits for a URL.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "url" : {
+          "description" : "URL to remove.",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "url"
+      ],
+      "type" : "object"
+    },
+    "name" : "delete_history_url",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  },
+  {
+    "description" : "Delete history within an inclusive ISO-8601 date range.",
+    "inputSchema" : {
+      "additionalProperties" : false,
+      "properties" : {
+        "end" : {
+          "description" : "Optional ISO-8601 end.",
+          "type" : "string"
+        },
+        "start" : {
+          "description" : "Optional ISO-8601 start.",
+          "type" : "string"
+        }
+      },
+      "type" : "object"
+    },
+    "name" : "delete_history_range",
+    "outputSchema" : {
+      "additionalProperties" : true,
+      "properties" : {
+        "error" : {
+          "description" : "A structured failure message when the operation did not succeed.",
+          "type" : "string"
+        },
+        "ok" : {
+          "description" : "Whether the operation succeeded.",
+          "type" : "boolean"
+        }
+      },
+      "type" : "object"
+    }
+  }
+]
