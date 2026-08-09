@@ -7,13 +7,150 @@
 
 import Foundation
 
+// MARK: - Structured agent automation
+
+/// Routes structured agent requests to the browser window that owns the target
+/// page.  The original CLI predates multi-window automation and broadcasts
+/// NotificationCenter messages, which means two open browser windows can both
+/// react to one command.  MCP uses this registry instead: page IDs include the
+/// owning window ID, so parallel clients never have to steal the user's focus
+/// just to address a background page.
+final class BrowserAutomationRegistry {
+    static let shared = BrowserAutomationRegistry()
+
+    private final class WeakManager {
+        weak var value: NotificationManager?
+        init(_ value: NotificationManager) { self.value = value }
+    }
+
+    private var managers: [UUID: WeakManager] = [:]
+
+    private init() {}
+
+    func register(_ manager: NotificationManager) {
+        managers[manager.automationWindowId] = WeakManager(manager)
+    }
+
+    func unregister(_ manager: NotificationManager) {
+        managers.removeValue(forKey: manager.automationWindowId)
+    }
+
+    private func liveManagers() -> [NotificationManager] {
+        managers = managers.filter { $0.value.value != nil }
+        return managers.values.compactMap(\.value)
+    }
+
+    var hasLiveManagers: Bool { !liveManagers().isEmpty }
+
+    private func manager(windowId: String?, pageId: String?) -> NotificationManager? {
+        let live = liveManagers()
+        if let windowId, let id = UUID(uuidString: windowId), let manager = managers[id]?.value {
+            return manager
+        }
+        if let pageId,
+           let prefix = pageId.split(separator: ":", maxSplits: 1).first,
+           let id = UUID(uuidString: String(prefix)),
+           let manager = managers[id]?.value {
+            return manager
+        }
+        return live.first(where: \.isAutomationKeyWindow) ?? live.first
+    }
+
+    func execute(_ request: [String: Any], responseFilePath: String?) {
+        guard let tool = request["tool"] as? String else {
+            BrowserCLI.writeResponse(["error": "agent request is missing tool"], to: responseFilePath)
+            return
+        }
+        let arguments = request["arguments"] as? [String: Any] ?? [:]
+        let live = liveManagers()
+
+        switch tool {
+        case "list_pages":
+            let pages = live.flatMap { $0.automationPageSummaries() }
+            BrowserCLI.writeResponse(["ok": true, "pages": pages], to: responseFilePath)
+        case "list_windows":
+            let windows = live.map { $0.automationWindowSummary() }
+            BrowserCLI.writeResponse(["ok": true, "windows": windows], to: responseFilePath)
+        case "get_active_page":
+            guard let manager = manager(
+                windowId: arguments["windowId"] as? String,
+                pageId: arguments["pageId"] as? String
+            ), let page = manager.automationActivePageSummary() else {
+                BrowserCLI.writeResponse(["error": "no active browser page"], to: responseFilePath)
+                return
+            }
+            BrowserCLI.writeResponse(["ok": true, "page": page], to: responseFilePath)
+        case "create_window", "create_hidden_window":
+            guard let source = manager(windowId: nil, pageId: nil) else {
+                BrowserCLI.writeResponse(["error": "no browser window is ready"], to: responseFilePath)
+                return
+            }
+            let existing = Set(live.map(\.automationWindowId))
+            source.requestAutomationWindow()
+            waitForNewWindow(
+                excluding: existing,
+                hidden: tool == "create_hidden_window",
+                url: arguments["url"] as? String,
+                responseFilePath: responseFilePath
+            )
+        default:
+            guard let manager = manager(
+                windowId: arguments["windowId"] as? String,
+                pageId: arguments["pageId"] as? String
+            ) else {
+                BrowserCLI.writeResponse(["error": "no browser window is ready"], to: responseFilePath)
+                return
+            }
+            manager.performAutomationTool(tool, arguments: arguments, responseFilePath: responseFilePath)
+        }
+    }
+
+    private func waitForNewWindow(
+        excluding existing: Set<UUID>,
+        hidden: Bool,
+        url: String?,
+        responseFilePath: String?,
+        attemptsRemaining: Int = 40
+    ) {
+        if let created = liveManagers().first(where: { !existing.contains($0.automationWindowId) }) {
+            if hidden { created.setAutomationWindowHidden(true) }
+            if let url {
+                created.performAutomationTool(
+                    hidden ? "new_hidden_page" : "new_page",
+                    arguments: ["url": url],
+                    responseFilePath: responseFilePath
+                )
+            } else {
+                BrowserCLI.writeResponse(
+                    ["ok": true, "window": created.automationWindowSummary()],
+                    to: responseFilePath
+                )
+            }
+            return
+        }
+        guard attemptsRemaining > 0 else {
+            BrowserCLI.writeResponse(["error": "timed out creating browser window"], to: responseFilePath)
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.waitForNewWindow(
+                excluding: existing,
+                hidden: hidden,
+                url: url,
+                responseFilePath: responseFilePath,
+                attemptsRemaining: attemptsRemaining - 1
+            )
+        }
+    }
+}
+
 // File-based CLI IPC. The browser owns a named pipe (FIFO) in its own
 // Application Support directory with owner-only permissions. Those permissions
 // limit callers to the signed-in user; explicit in-app settings authorize what
 // their processes may ask the browser to do. The CLI tool writes one command
 // per line; data commands pass --response-file <path>, which must live inside
 // our response directory, and the app writes the JSON result there.
-enum CLICapability {
+enum CLICapability: Equatable {
     case control
     case pageRead
     case pageScript
@@ -47,6 +184,24 @@ struct CLIAuthorization {
         }
     }
 
+    static func capability(forAgentTool tool: String) -> CLICapability {
+        switch tool {
+        case "take_screenshot", "save_pdf":
+            return .screenshot
+        case "evaluate_script", "handle_dialog", "click", "click_at", "hover", "focus",
+             "fill", "clear", "check", "uncheck", "select_option", "press_key", "drag",
+             "scroll", "upload_file", "download_file":
+            return .pageScript
+        case "get_active_page", "list_pages", "list_windows", "get_bookmarks",
+             "search_bookmarks", "search_history", "get_recent_history", "list_tab_groups",
+             "take_snapshot", "take_enhanced_snapshot", "get_page_content", "get_page_links",
+             "get_dom", "search_dom", "wait_for_page":
+            return .pageRead
+        default:
+            return .control
+        }
+    }
+
     func allows(action: String) -> Bool {
         guard defaults.bool(forKey: Key.enabled) else { return false }
 
@@ -59,6 +214,16 @@ struct CLIAuthorization {
             return defaults.bool(forKey: Key.pageScript)
         case .screenshot:
             return defaults.bool(forKey: Key.screenshot)
+        }
+    }
+
+    func allows(capability: CLICapability) -> Bool {
+        guard defaults.bool(forKey: Key.enabled) else { return false }
+        switch capability {
+        case .control: return true
+        case .pageRead: return defaults.bool(forKey: Key.pageRead)
+        case .pageScript: return defaults.bool(forKey: Key.pageScript)
+        case .screenshot: return defaults.bool(forKey: Key.screenshot)
         }
     }
 
@@ -76,6 +241,18 @@ struct CLIAuthorization {
             return "CLI JavaScript and synthetic interaction are disabled. Enable them in Settings > Security > CLI Automation."
         case .screenshot:
             return "CLI screenshots are disabled. Enable them in Settings > Security > CLI Automation."
+        }
+    }
+
+    func denialMessage(for capability: CLICapability) -> String {
+        guard defaults.bool(forKey: Key.enabled) else {
+            return "Agent automation is disabled. Enable it in Settings > Security > Agent Automation."
+        }
+        switch capability {
+        case .control: return "Agent browser control is disabled."
+        case .pageRead: return "Agent page reading is disabled in Settings > Security > Agent Automation."
+        case .pageScript: return "Agent JavaScript and synthetic interaction are disabled in Settings > Security > Agent Automation."
+        case .screenshot: return "Agent screenshots are disabled in Settings > Security > Agent Automation."
         }
     }
 }
@@ -222,9 +399,28 @@ class BrowserCLI {
         }
         let parameter = commandParts.count > 1 ? commandParts[1..<commandParts.count].joined(separator: " ") : nil
 
+        let agentRequest: [String: Any]? = {
+            guard action == "agent", let parameter,
+                  let data = Data(base64Encoded: parameter),
+                  let object = try? JSONSerialization.jsonObject(with: data),
+                  let request = object as? [String: Any] else { return nil }
+            return request
+        }()
+
         let authorization = CLIAuthorization()
-        guard authorization.allows(action: action) else {
-            Self.writeResponse(["error": authorization.denialMessage(for: action)], to: responseFilePath)
+        let allowed: Bool
+        if action == "agent", let tool = agentRequest?["tool"] as? String {
+            allowed = authorization.allows(capability: CLIAuthorization.capability(forAgentTool: tool))
+        } else {
+            allowed = authorization.allows(action: action)
+        }
+        guard allowed else {
+            let agentCapability = (agentRequest?["tool"] as? String)
+                .map(CLIAuthorization.capability(forAgentTool:)) ?? .control
+            let message = action == "agent"
+                ? authorization.denialMessage(for: agentCapability)
+                : authorization.denialMessage(for: action)
+            Self.writeResponse(["error": message], to: responseFilePath)
             return
         }
 
@@ -246,6 +442,12 @@ class BrowserCLI {
         // navigation with `wait`. Commands that can fail respond from their
         // observer instead.
         switch action {
+        case "agent":
+            guard let agentRequest else {
+                Self.writeResponse(["error": "agent requires a base64-encoded JSON request"], to: responseFilePath)
+                return
+            }
+            BrowserAutomationRegistry.shared.execute(agentRequest, responseFilePath: responseFilePath)
         case "open":
             if let urlString = parameter {
                 var userInfo: [String: Any] = ["url": urlString]

@@ -461,6 +461,7 @@ private struct ReaderBlockRow: View {
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \BrowserTab.orderIndex) private var tabs: [BrowserTab]
     @Query(sort: \TabGroup.orderIndex) private var tabGroups: [TabGroup]
@@ -472,6 +473,7 @@ struct ContentView: View {
     @StateObject private var linkPreview = LinkPreviewManager()
     @StateObject private var pageTranslator = PageTranslator()
     @StateObject private var fastForward = FastForward()
+    @StateObject private var browserAgent: BrowserAgent
     @ObservedObject private var downloadManager = DownloadManager.shared
     @ObservedObject private var persistenceDiagnostics = PersistenceDiagnostics.shared
     @ObservedObject private var protectionStore = PageProtectionStore.shared
@@ -485,6 +487,7 @@ struct ContentView: View {
     // UI State
     @State private var showOmnibar = false
     @State private var showTabGrid = false
+    @State private var showAgentPanel = false
     @State private var showFindBar = false
     @State private var findText = ""
     @State private var findMatchIndex = 0 // 1-based position of the current match, 0 before the first hit
@@ -569,6 +572,7 @@ struct ContentView: View {
     init() {
         // CLI is now initialized lazily when first used
         _tabManager = StateObject(wrappedValue: TabManager())
+        _browserAgent = StateObject(wrappedValue: BrowserAgent())
     }
 
     // MARK: - Memory pressure
@@ -691,6 +695,16 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .help("New Tab")
             .accessibilityLabel("New Tab")
+
+            Button(action: { showAgentPanel.toggle() }) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 12))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("AI Agent")
+            .accessibilityLabel("AI Agent")
 
             Button(action: { showCreateGroupDialog = true }) {
                 Image(systemName: "folder.badge.plus")
@@ -1955,6 +1969,24 @@ struct ContentView: View {
         .background(Color(.windowBackgroundColor)) // Set explicit background
         .overlay(screenshotFlashOverlay)
         .overlay(alignment: .leading) { faviconPeekOverlay }
+        .overlay(alignment: .trailing) {
+            if showAgentPanel {
+                BrowserAgentPanel(
+                    agent: browserAgent,
+                    pageTitle: currentTitle,
+                    pageURL: currentURL?.absoluteString ?? "",
+                    onClose: { showAgentPanel = false },
+                    execute: { tool, arguments in
+                        guard let manager = notificationManager else {
+                            return "{\"error\":\"Browser automation is not ready.\"}"
+                        }
+                        return await manager.automationJSONResult(tool: tool, arguments: arguments)
+                    }
+                )
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .zIndex(20)
+            }
+        }
         // One session, serialized by pageTranslator's own queue: it advances
         // `configuration` to the next pending request as each one finishes.
         .translationTask(pageTranslator.configuration) { session in
@@ -2054,6 +2086,14 @@ struct ContentView: View {
                     queue: .main
                 ) { [self] _ in
                     showShortcutCheatSheet.toggle()
+                }
+
+                NotificationCenter.default.addMainActorObserver(
+                    forName: .browserToggleAgent,
+                    object: nil,
+                    queue: .main
+                ) { [self] _ in
+                    withAnimation(.easeInOut(duration: 0.2)) { showAgentPanel.toggle() }
                 }
 
                 // Toggle tab bar between hidden and last visible width (Cmd+Shift+L)
@@ -2272,6 +2312,7 @@ struct ContentView: View {
                 tabManager: tabManager,
                 navigationManager: navigationManager,
                 webViewManager: webViewManager,
+                modelContext: modelContext,
                 pageTranslator: pageTranslator,
                 showOmnibar: $showOmnibar,
                 tabs: { self.allTabs },
@@ -2303,7 +2344,8 @@ struct ContentView: View {
             switchToPreviousTabAction: { self.switchToPreviousTab() },
             addBookmarkAction: { self.toggleBookmark() },
             showBookmarksAction: { self.showBookmarks() },
-            importBookmarksAction: { self.presentImportBookmarksDialog() }
+            importBookmarksAction: { self.presentImportBookmarksDialog() },
+            createWindowAction: { self.openWindow(id: "browser") }
         )
 
         keyboardShortcutsManager = KeyboardShortcutsManager(

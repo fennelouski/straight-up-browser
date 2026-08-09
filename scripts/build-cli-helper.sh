@@ -21,6 +21,7 @@ xcrun swiftc \
     -sdk "$SDKROOT" \
     -target "arm64-apple-macos${MACOSX_DEPLOYMENT_TARGET}" \
     "${SRCROOT}/browser-cli/main.swift" \
+    "${SRCROOT}/browser-cli/MCPServer.swift" \
     -o "$CLI_OUTPUT"
 
 if [ "${EXPANDED_CODE_SIGN_IDENTITY:--}" != "-" ]; then

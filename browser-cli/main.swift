@@ -45,6 +45,59 @@ func jsonLiteral(_ s: String) -> String {
     String(data: try! JSONSerialization.data(withJSONObject: s, options: .fragmentsAllowed), encoding: .utf8)!
 }
 
+func resolvedExecutablePath() -> String {
+    let raw = Bundle.main.executableURL?.path ?? CommandLine.arguments[0]
+    return URL(fileURLWithPath: raw).standardizedFileURL.resolvingSymlinksInPath().path
+}
+
+@discardableResult
+func runProcess(_ executable: String, _ arguments: [String]) -> (status: Int32, output: String) {
+    let process = Process()
+    let pipe = Pipe()
+    process.executableURL = URL(fileURLWithPath: executable)
+    process.arguments = arguments
+    process.standardOutput = pipe
+    process.standardError = pipe
+    do {
+        try process.run()
+        process.waitUntilExit()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return (process.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+    } catch {
+        return (127, error.localizedDescription)
+    }
+}
+
+func executableExists(_ name: String) -> Bool {
+    runProcess("/usr/bin/which", [name]).status == 0
+}
+
+func installMCP(for client: String) -> [String: Any] {
+    let helper = resolvedExecutablePath()
+    let name = "straight-up-browser"
+    let executable = "/usr/bin/env"
+    let existing: (Int32, String)
+    let install: (Int32, String)
+    switch client {
+    case "codex":
+        guard executableExists("codex") else { return ["client": client, "error": "codex is not installed"] }
+        existing = runProcess(executable, ["codex", "mcp", "get", name])
+        if existing.0 == 0 { return ["client": client, "ok": true, "status": "already configured"] }
+        install = runProcess(executable, ["codex", "mcp", "add", name, "--", helper, "mcp"])
+    case "claude":
+        guard executableExists("claude") else { return ["client": client, "error": "claude is not installed"] }
+        existing = runProcess(executable, ["claude", "mcp", "get", name])
+        if existing.0 == 0 { return ["client": client, "ok": true, "status": "already configured"] }
+        install = runProcess(executable, ["claude", "mcp", "add", "--scope", "user", name, "--", helper, "mcp"])
+    default:
+        return ["client": client, "error": "supported clients: codex, claude, all"]
+    }
+    if install.0 == 0 {
+        return ["client": client, "ok": true, "status": "installed"]
+    }
+    return ["client": client, "error": install.1.trimmingCharacters(in: .whitespacesAndNewlines)]
+}
+
 // MARK: - Transport
 
 func openPipe() -> FileHandle? {
@@ -72,7 +125,18 @@ func launchApp() {
     process.waitUntilExit()
 }
 
-func sendCommand(_ command: String) {
+enum BrowserTransportError: LocalizedError {
+    case unavailable
+    case timeout
+    var errorDescription: String? {
+        switch self {
+        case .unavailable: "Could not reach the browser. Open Browser manually and accept the EULA if prompted."
+        case .timeout: "Timed out waiting for the browser response."
+        }
+    }
+}
+
+func sendCommandThrowing(_ command: String) throws {
     var handle = openPipe()
     if handle == nil {
         // App not running (or pipe missing): launch it and wait for the pipe.
@@ -85,9 +149,7 @@ func sendCommand(_ command: String) {
             handle = openPipe()
         }
     }
-    guard let handle = handle else {
-        fail("Error: Could not reach the browser. Open the Browser app manually and retry (first launch may be waiting on the EULA).")
-    }
+    guard let handle = handle else { throw BrowserTransportError.unavailable }
     // One command per line; strip any stray newlines (structured payloads are base64)
     let line = command
         .replacingOccurrences(of: "\n", with: " ")
@@ -96,15 +158,20 @@ func sendCommand(_ command: String) {
     try? handle.close()
 }
 
+func sendCommand(_ command: String) {
+    do { try sendCommandThrowing(command) }
+    catch { fail("Error: \(error.localizedDescription)") }
+}
+
 // Send a command and return the raw response bytes (JSON, or PNG for screenshot).
 // Only the response FILENAME goes over the pipe (the full path contains
 // spaces, and the app only writes inside its own response directory).
-func requestResponse(_ command: String, timeout: TimeInterval = 15) -> Data {
+func requestResponseThrowing(_ command: String, timeout: TimeInterval = 15) throws -> Data {
     try? FileManager.default.createDirectory(at: responseDirectory, withIntermediateDirectories: true)
     let responseName = "response_\(UUID().uuidString).json"
     let responseFile = responseDirectory.appendingPathComponent(responseName)
 
-    sendCommand("\(command) --response-file \(responseName)")
+    try sendCommandThrowing("\(command) --response-file \(responseName)")
 
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
@@ -116,7 +183,12 @@ func requestResponse(_ command: String, timeout: TimeInterval = 15) -> Data {
     }
 
     try? FileManager.default.removeItem(at: responseFile)
-    fail("Error: Timeout waiting for response from browser.")
+    throw BrowserTransportError.timeout
+}
+
+func requestResponse(_ command: String, timeout: TimeInterval = 15) -> Data {
+    do { return try requestResponseThrowing(command, timeout: timeout) }
+    catch { fail("Error: \(error.localizedDescription)") }
 }
 
 // Print a JSON response; a top-level "error" key goes to stderr with exit 1
@@ -284,6 +356,9 @@ func printUsage() {
     Docs:
       help                     This overview
       docs                     Full guide for AI agents (schemas, patterns)
+      mcp                      Run the bundled MCP server over stdio
+      install-mcp <client>     Connect Codex, Claude Code, or all installed clients
+      mcp-config               Print a generic stdio MCP configuration snippet
       install-skill            Install a Claude Code skill so Claude discovers
                                this browser on its own (~/.claude/skills/browser)
 
@@ -488,6 +563,35 @@ case "help", "--help", "-h":
 
 case "docs":
     print(agentDocs)
+
+case "mcp":
+    runMCPServer()
+
+case "mcp-config":
+    let config: [String: Any] = [
+        "mcpServers": [
+            "straight-up-browser": [
+                "command": resolvedExecutablePath(),
+                "args": ["mcp"],
+            ],
+        ],
+    ]
+    printResponse(try! JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys]))
+
+case "install-mcp":
+    let client = arguments.count > 2 ? arguments[2].lowercased() : "all"
+    let clients = client == "all" ? ["codex", "claude"] : [client]
+    let results = clients.map(installMCP)
+    let ok = results.contains { $0["ok"] as? Bool == true }
+    let response: [String: Any] = ["ok": ok, "results": results]
+    let data = try! JSONSerialization.data(withJSONObject: response, options: [.prettyPrinted, .sortedKeys])
+    if ok {
+        print(String(data: data, encoding: .utf8)!)
+    } else {
+        FileHandle.standardError.write(data)
+        FileHandle.standardError.write(Data([UInt8(ascii: "\n")]))
+        exit(1)
+    }
 
 case "install-skill":
     // Default to the personal skills dir; accept a directory argument for a

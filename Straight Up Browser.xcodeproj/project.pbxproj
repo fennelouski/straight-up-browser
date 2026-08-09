@@ -49,6 +49,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Assets.xcassets,
+				BrowserAgent.swift,
 				BookmarkImporter.swift,
 				BrowserCLI.swift,
 				BrowserIntents.swift,
@@ -449,6 +450,7 @@
 			);
 			inputPaths = (
 				"$(SRCROOT)/browser-cli/main.swift",
+				"$(SRCROOT)/browser-cli/MCPServer.swift",
 			);
 			name = "Build browser-cli helper";
 			outputFileListPaths = (

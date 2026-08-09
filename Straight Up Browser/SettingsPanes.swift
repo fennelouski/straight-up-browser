@@ -1283,6 +1283,7 @@ struct SecuritySettingsView: View {
     @AppStorage(CLIAuthorization.Key.pageScript) private var cliPageScriptEnabled = false
     @AppStorage(CLIAuthorization.Key.screenshot) private var cliScreenshotEnabled = false
     @AppStorage("cliRealEventsEnabled") private var cliRealEventsEnabled = false
+    @State private var copiedMCPConfiguration = false
 
     private var authorizedRealEvents: Binding<Bool> {
         Binding(
@@ -1321,7 +1322,7 @@ struct SecuritySettingsView: View {
             }
 
             Section {
-                Toggle("Enable CLI automation", isOn: $cliAutomationEnabled)
+                Toggle("Enable agent automation (CLI & MCP)", isOn: $cliAutomationEnabled)
                 Toggle("Allow tab and page reading", isOn: $cliPageReadEnabled)
                     .disabled(!cliAutomationEnabled)
                 Toggle("Allow JavaScript and synthetic interaction", isOn: $cliPageScriptEnabled)
@@ -1332,15 +1333,55 @@ struct SecuritySettingsView: View {
                     .disabled(!cliAutomationEnabled || !cliPageScriptEnabled)
                 SettingCaptionRow(
                     caption: "Automation is off by default. Grant sensitive capabilities separately.",
-                    title: "CLI Authorization",
-                    explanation: "The master switch permits navigation and tab control from browser-cli. Reading page content, running JavaScript or synthetic interaction, taking screenshots, and posting genuine mouse events each require the corresponding permission. File permissions limit access to processes running as you, while these switches decide what those processes may do.",
+                    title: "Agent Authorization",
+                    explanation: "The master switch permits navigation and tab control from browser-cli and its bundled MCP server. Reading page content, running JavaScript or synthetic interaction, taking screenshots, and posting genuine mouse events each require the corresponding permission. File permissions limit access to processes running as you, while these switches decide what those processes may do.",
                     value: authorizedRealEvents
                 ) { CLIRealClicksDemo(enabled: $0) }
             } header: {
-                SettingsLabel("CLI Automation", systemImage: "terminal", tint: SettingsTint.security)
+                SettingsLabel("Agent Automation", systemImage: "cpu", tint: SettingsTint.security)
+            }
+
+            Section {
+                HStack {
+                    Button(copiedMCPConfiguration ? "Copied" : "Copy MCP Configuration") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(mcpConfiguration, forType: .string)
+                        copiedMCPConfiguration = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            copiedMCPConfiguration = false
+                        }
+                    }
+                    Button("Show Agent Audit Logs") {
+                        let directory = BrowserCLI.supportDirectory
+                            .appendingPathComponent("agent-audit", isDirectory: true)
+                        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                        NSWorkspace.shared.activateFileViewerSelecting([directory])
+                    }
+                }
+                Text("Run `browser-cli install-mcp all` once to connect installed Codex and Claude Code clients. Other clients can use the copied stdio configuration. The server exposes 53 browser tools and each client session gets a local audit timeline.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            } header: {
+                SettingsLabel("Model Context Protocol", systemImage: "point.3.connected.trianglepath.dotted", tint: SettingsTint.security)
             }
         }
         .formStyle(.grouped)
+    }
+
+    private var mcpConfiguration: String {
+        let helper = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Helpers/browser-cli")
+            .path
+        let object: [String: Any] = [
+            "mcpServers": [
+                "straight-up-browser": ["command": helper, "args": ["mcp"]],
+            ],
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]) else {
+            return ""
+        }
+        return String(data: data, encoding: .utf8) ?? ""
     }
 }
 

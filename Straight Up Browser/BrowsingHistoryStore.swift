@@ -136,6 +136,15 @@ final class BrowsingHistoryStore: ObservableObject {
         save()
     }
 
+    func remove(from start: Date?, through end: Date?) {
+        visits.removeAll { visit in
+            let afterStart = start.map { visit.visitedAt >= $0 } ?? true
+            let beforeEnd = end.map { visit.visitedAt <= $0 } ?? true
+            return afterStart && beforeEnd
+        }
+        save()
+    }
+
     func clear() {
         visits.removeAll()
         guard FileManager.default.fileExists(atPath: storeURL.path) else { return }

@@ -20,6 +20,7 @@ extension Notification.Name {
     static let showOmnibar = Notification.Name("showOmnibar")
     static let browserListTabs = Notification.Name("browserListTabs")
     static let browserShowTabGrid = Notification.Name("browserShowTabGrid")
+    static let browserToggleAgent = Notification.Name("browserToggleAgent")
 
     // Edit menu
     static let browserFindInPage = Notification.Name("browserFindInPage")

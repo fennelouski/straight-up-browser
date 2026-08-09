@@ -1672,6 +1672,14 @@ struct CLIAuthorizationTests {
         #expect(authorization.allows(action: "js"))
         #expect(authorization.allows(action: "screenshot"))
     }
+
+    @Test func agentToolsReuseTheSameLeastPrivilegeCapabilities() {
+        #expect(CLIAuthorization.capability(forAgentTool: "list_pages") == .pageRead)
+        #expect(CLIAuthorization.capability(forAgentTool: "wait_for_page") == .pageRead)
+        #expect(CLIAuthorization.capability(forAgentTool: "evaluate_script") == .pageScript)
+        #expect(CLIAuthorization.capability(forAgentTool: "take_screenshot") == .screenshot)
+        #expect(CLIAuthorization.capability(forAgentTool: "navigate_page") == .control)
+    }
 }
 
 @MainActor

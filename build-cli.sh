@@ -13,7 +13,7 @@ xcrun swiftc \
     -warnings-as-errors \
     -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
     -target arm64-apple-macos15.6 \
-    browser-cli/main.swift \
+    browser-cli/main.swift browser-cli/MCPServer.swift \
     -o browser-cli-tool
 
 ./scripts/validate-macos-architectures.sh browser-cli-tool

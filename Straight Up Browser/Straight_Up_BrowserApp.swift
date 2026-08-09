@@ -253,7 +253,7 @@ struct Straight_Up_BrowserApp: App {
     private let modelStartup = ModelContainerStartup.makeDefault()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "browser") {
             if let container = modelStartup.container {
                 ContentView()
                     .modelContainer(container)
@@ -304,6 +304,27 @@ struct Straight_Up_BrowserApp: App {
         .windowResizability(.contentMinSize)
         .defaultSize(width: 700, height: 540)
 
+        Window("Scheduled Agent Tasks", id: "agent-tasks") {
+            BrowserAgentTasksView()
+        }
+        .windowStyle(.automatic)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 860, height: 600)
+
+        Window("Agent App Integrations", id: "agent-integrations") {
+            BrowserAgentMCPConnectionsView()
+        }
+        .windowStyle(.automatic)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 900, height: 600)
+
+        Window("Agent Audit & Replay", id: "agent-audit") {
+            BrowserAgentAuditView()
+        }
+        .windowStyle(.automatic)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 1000, height: 700)
+
         Window("Help", id: "help") {
             HelpWindow()
         }
@@ -339,7 +360,7 @@ struct Straight_Up_BrowserApp: App {
                     // those, close that window instead of a browser tab underneath it.
                     let key = NSApp.keyWindow
                     if let id = key?.identifier?.rawValue,
-                       ["settings", "downloads", "help"].contains(where: id.contains) {
+                       ["settings", "downloads", "agent-tasks", "agent-integrations", "agent-audit", "help"].contains(where: id.contains) {
                         key?.performClose(nil)
                     } else {
                         NotificationCenter.default.post(name: .browserCloseTab, object: nil)
@@ -452,6 +473,11 @@ struct Straight_Up_BrowserApp: App {
                     NotificationCenter.default.post(name: .reopenLastClosedTab, object: nil)
                 }
                 .keyboardShortcut(sc(.reopenTab))
+
+                Button("AI Agent") {
+                    NotificationCenter.default.post(name: .browserToggleAgent, object: nil)
+                }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
 
                 Button("Snap Window to Size") {
                     if let window = NSApp.keyWindow ?? NSApp.mainWindow {

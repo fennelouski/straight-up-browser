@@ -41,9 +41,46 @@ file it reads (`AGENTS.md`, `GEMINI.md`, `.cursorrules`, and so on):
 
 ## MCP
 
-Not built. Shell already covers the tools above, so an MCP server only earns its
-keep for something that speaks MCP and cannot run a shell command. The server
-would wrap the same commands `browser-cli` already exposes.
+The app ships a dependency-free MCP server inside `browser-cli`. It exposes 53
+browser tools covering pages, semantic snapshots, DOM extraction, interaction,
+screenshots/PDFs, windows, tab groups, bookmarks, and history. It controls the
+real signed-in WebKit sessions through the same capability switches as the CLI.
+
+Connect every supported client found on the Mac:
+
+```sh
+browser-cli install-mcp all
+```
+
+Or install one explicitly:
+
+```sh
+browser-cli install-mcp codex
+browser-cli install-mcp claude
+```
+
+For another MCP client, `browser-cli mcp-config` prints the stdio configuration;
+the underlying command is simply `browser-cli mcp`. Each MCP process receives
+its own session ID and local audit timeline under the app's Application Support
+folder. Multiple agents can work at once because commands use stable composite
+window/page IDs rather than whichever tab happens to be focused.
+
+## Built-in agent and app integrations
+
+Press `⇧⌘A` or use the sparkle button to open the native agent. It can use
+OpenAI, OpenRouter, Ollama, LM Studio, or any OpenAI-compatible Chat Completions
+endpoint. API keys and MCP bearer tokens are stored in macOS Keychain.
+
+From the agent's model settings, **App Integrations…** connects any Streamable
+HTTP MCP server. Enabled app tools are discovered at the start of a run and
+become ordinary tools in the same agent loop. OAuth-only MCPs can be connected
+through their local `mcp-remote`/HTTP bridge. A separate Cowork folder picker
+grants read/write access to one user-approved directory; paths cannot escape it
+and deletes go to the macOS Trash.
+
+Scheduled tasks run in hidden pages while Browser is open. Every external MCP
+browser session gets an owner-local JSONL timeline plus page-only post-action
+frames, viewable in the Agent Audit & Replay window.
 
 ## Why a real window
 

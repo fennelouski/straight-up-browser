@@ -57,4 +57,20 @@ struct HistorySearchTests {
         ])
         #expect(store.search("").first?.url.host == "new.example.com")
     }
+
+    @Test func deletingRangeKeepsVisitsOutsideInclusiveBounds() {
+        let now = Date()
+        let history = store([
+            ("https://before.example.com/", "Before", now.addingTimeInterval(-300)),
+            ("https://inside.example.com/", "Inside", now.addingTimeInterval(-200)),
+            ("https://after.example.com/", "After", now.addingTimeInterval(-100)),
+        ])
+
+        history.remove(
+            from: now.addingTimeInterval(-250),
+            through: now.addingTimeInterval(-150)
+        )
+
+        #expect(history.visits.map(\.url.host) == ["after.example.com", "before.example.com"])
+    }
 }

@@ -36,7 +36,16 @@ launch it, and accept the license agreement on first run.
   scopes, open extension popups, control private-tab access, and remove loaded
   extensions.
 - **Automation**: an App Intents/Shortcuts surface and an optional CLI for
-  navigation, page inspection, JavaScript, interaction, and screenshots.
+  navigation, page inspection, JavaScript, interaction, and screenshots, plus
+  a bundled MCP server with 53 BrowserOS-compatible browser tools, stable
+  per-window page IDs, parallel background pages, and local agent audit/replay.
+- **Built-in AI agent**: a permission-gated side panel with OpenAI, OpenRouter,
+  Ollama, LM Studio, and arbitrary OpenAI-compatible providers. Keys live in
+  Keychain. The agent can use the browser, a user-approved cowork folder, and
+  any enabled Streamable HTTP MCP app integration.
+- **Scheduled agents**: daily, hourly, or minute-based background tasks use
+  hidden pages, retain their run history locally, and can be run or stopped on
+  demand while Browser is open.
 
 ### Platform scope
 
@@ -114,6 +123,24 @@ Commands use an owner-only named pipe at
 transport to the current user; the in-app capability switches authorize what
 those processes may do. See [CLI_USAGE.md](CLI_USAGE.md), or run
 `browser-cli docs`.
+
+AI tools that speak MCP can connect without another download or daemon:
+
+```bash
+browser-cli install-mcp all       # Codex and/or Claude Code when installed
+browser-cli mcp-config            # generic stdio configuration
+```
+
+MCP uses the same in-app authorization switches as CLI automation. Each MCP
+client session writes an append-only local timeline under `agent-audit/` in the
+browser's Application Support directory and captures page-only replay frames
+after actions. Page content and screenshots are not uploaded by Browser itself.
+
+Open the sparkle button or press `⇧⌘A` for the built-in agent. Its model
+settings also provide the user-approved Cowork folder and external MCP app
+connections; the clock and replay buttons open scheduled tasks and the local
+action timeline. See [BrowserOS parity](docs/browseros-parity.md) for the
+feature-by-feature implementation map.
 
 ## Build and verify
 
