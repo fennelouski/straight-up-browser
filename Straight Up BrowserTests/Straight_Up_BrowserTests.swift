@@ -885,16 +885,17 @@ struct ShortcutTests {
         #expect(commandIDs.contains(ShortcutCommand.showBookmarks.id))
         #expect(commandIDs.contains(ShortcutCommand.showHistory.id))
         #expect(commandIDs.contains(ShortcutCommand.switchTabs.last!.id))
+        #expect(commandIDs.contains(ShortcutCommand.hardReload.id))
+        #expect(commandIDs.contains(ShortcutCommand.reloadAll.id))
+        #expect(commandIDs.contains(ShortcutCommand.printPage.id))
+        #expect(commandIDs.contains(ShortcutCommand.exportPDF.id))
+        #expect(commandIDs.contains(ShortcutCommand.toggleTranslation.id))
+        #expect(commandIDs.contains(ShortcutCommand.clearSiteData.id))
+        #expect(commandIDs.contains(ShortcutCommand.readerMode.id))
+        #expect(commandIDs.contains(ShortcutCommand.findNext.id))
+        #expect(commandIDs.contains(ShortcutCommand.findPrevious.id))
 
-        for unsupported in [
-            ShortcutCommand.hardReload,
-            .reloadAll,
-            .printPage,
-            .exportPDF,
-            .toggleTranslation,
-            .clearSiteData,
-            .extensionPopup,
-        ] {
+        for unsupported in [ShortcutCommand.extensionPopup] {
             #expect(!commandIDs.contains(unsupported.id))
         }
 

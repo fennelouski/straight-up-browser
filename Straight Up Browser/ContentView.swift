@@ -1612,8 +1612,17 @@ struct ContentView: View {
                 .padding(24)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                 .shadow(radius: 10)
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
         }
+        // The quit HUD is deliberately a fast, tactile affordance. Keep its
+        // entry/exit animation independent of the app-wide reduced-motion
+        // transaction; the hold-length setting still controls only the bar.
+        .transaction {
+            $0.disablesAnimations = false
+            $0.animation = .easeInOut(duration: 0.08)
+        }
+        .animation(.easeInOut(duration: 0.08), value: quitHoldActive)
     }
 
     // Screenshot shutter flash, sized to exactly what was captured. The rect

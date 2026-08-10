@@ -12,6 +12,8 @@ import SwiftData
 
 @main
 struct BrowserApp: App {
+    @UIApplicationDelegateAdaptor(BrowserAppDelegate_iOS.self) private var appDelegate
+
     // Same SwiftData schema as the Mac app (Straight_Up_BrowserApp.swift). `Tab`
     // is the @Model class; the `BrowserTab` typealias lives in the Mac-only
     // ContentView, so iOS code refers to `Tab` directly.

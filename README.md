@@ -67,15 +67,20 @@ launch it, and accept the license agreement on first run.
 
 Browser 2.0.0 is a macOS release. The macOS app has the full agent execution and
 automation surface above. The companion iPadOS source shares tabs,
-containers/incognito, sync, bookmarks, downloads, settings, keyboard commands,
-touch navigation, and the agent-definition sync choices. It can retain
-definitions it cannot execute and marks them unavailable until their local
-provider, integration, Cowork, policy, and platform dependencies are satisfied.
-Its executable UI, accessibility, real-device/CloudKit, and App Store release
-acceptance are deferred to a separate iPad release; see the
+groups, workspaces, split panes, containers/incognito, navigation and find,
+translation, Reader Mode, Fast Forward, bookmarks/history, downloads,
+print/PDF, page captures, cookie and browsing-data controls, sync, settings,
+keyboard commands, touch navigation, and the agent-definition sync choices.
+Its compact controls are rotation-aware, and an optional iPad tab rail follows
+the short edge of the app window. It can retain agent definitions it cannot
+execute and marks them unavailable until their local provider, integration,
+Cowork, policy, and platform dependencies are satisfied.
+
+The iPad executable UI, accessibility, real-device/CloudKit, and App Store
+release acceptance are deferred to a separate iPad release; see the
 [iPadOS follow-up](docs/ai/roadmap.md#ipados-follow-up). Global hotkeys, the
-terminal CLI, full scheduled automation, AppKit screenshot/window tools, and
-the unpacked-extension loader remain macOS-only.
+terminal CLI, full scheduled automation, AppKit screenshot/window tools,
+Sparkle updater UI, and the unpacked-extension loader remain macOS-only.
 
 Browser does not currently expose passkey/WebAuthn sign-in. Apple gates
 third-party browser access behind the
