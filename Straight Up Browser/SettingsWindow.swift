@@ -20,6 +20,7 @@ import SwiftUI
 /// recognisable by its colour. Same idiom as System Settings.
 enum SettingsTint {
     static let general = Color.blue
+    static let agent = Color.purple
     static let content = Color.purple
     static let downloads = Color.teal
     static let appearance = Color.pink
@@ -233,6 +234,7 @@ struct TokenField: NSViewRepresentable {
 
 enum SettingsPane: String, CaseIterable, Identifiable {
     case general
+    case agent
     case shortcuts
     case content
     case downloads
@@ -247,6 +249,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: return String(localized: "General")
+        case .agent: return String(localized: "Agent")
         case .shortcuts: return String(localized: "Shortcuts")
         case .content: return String(localized: "Content")
         case .downloads: return String(localized: "Downloads")
@@ -263,6 +266,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .general: return String(localized: "Search, omnibar, hotkey")
+        case .agent: return String(localized: "Models, automation, memory, privacy")
         case .shortcuts: return String(localized: "Customize keyboard shortcuts")
         case .content: return String(localized: "JavaScript and page content")
         case .downloads: return String(localized: "Option-click downloads, folder")
@@ -277,6 +281,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .general: return "gearshape"
+        case .agent: return "sparkles"
         case .shortcuts: return "keyboard"
         case .content: return "curlybraces"
         case .downloads: return "arrow.down.circle"
@@ -291,6 +296,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var tint: Color {
         switch self {
         case .general: return SettingsTint.general
+        case .agent: return SettingsTint.agent
         case .shortcuts: return SettingsTint.shortcuts
         case .content: return SettingsTint.content
         case .downloads: return SettingsTint.downloads
@@ -388,6 +394,7 @@ struct SettingsWindow: View {
     private var detail: some View {
         switch pane {
         case .general: GeneralSettingsView()
+        case .agent: AgentSettingsView()
         case .shortcuts: ShortcutsSettingsView()
         case .content: ContentSettingsView()
         case .downloads: DownloadsSettingsView()

@@ -261,12 +261,10 @@ nonisolated struct AgentReplayCapturePolicy: Sendable {
     func positions(
         for run: AgentRun,
         descriptor: AgentToolDescriptor,
-        context: AgentInvocationContext,
+        page: AgentPageTarget,
         incognitoOptIn: Bool = false
     ) -> Set<AgentReplayCapturePosition> {
-        guard run.id == context.runID,
-              case .page(let page) = context.target,
-              !run.incognito || incognitoOptIn,
+        guard !run.incognito || incognitoOptIn,
               page.session != .incognito || incognitoOptIn else {
             return []
         }
@@ -278,6 +276,24 @@ nonisolated struct AgentReplayCapturePolicy: Sendable {
         case .mutateLocal, .externalEffect, .destructive:
             return [.beforeMutation, .afterMutation]
         }
+    }
+
+    func positions(
+        for run: AgentRun,
+        descriptor: AgentToolDescriptor,
+        context: AgentInvocationContext,
+        incognitoOptIn: Bool = false
+    ) -> Set<AgentReplayCapturePosition> {
+        guard run.id == context.runID,
+              case .page(let page) = context.target else {
+            return []
+        }
+        return positions(
+            for: run,
+            descriptor: descriptor,
+            page: page,
+            incognitoOptIn: incognitoOptIn
+        )
     }
 }
 
@@ -562,7 +578,7 @@ nonisolated struct AgentTimelineValidator: Sendable {
                     artifactID: artifact.id,
                     detail: "Artifact must resolve to exactly one source step."
                 ))
-            } else if sources[0].artifactID != artifact.id {
+            } else if input.frame == nil, sources[0].artifactID != artifact.id {
                 issues.append(.init(
                     code: .artifactBacklinkMismatch,
                     runID: artifact.runID,
@@ -570,6 +586,21 @@ nonisolated struct AgentTimelineValidator: Sendable {
                     artifactID: artifact.id,
                     detail: "Source step does not link back to this artifact."
                 ))
+            } else if input.frame != nil {
+                let source = sources[0]
+                let productionBacklinkIsValid = source.kind == .toolInvocation
+                    && source.policyDecisionStepID != nil
+                let importedLegacyBacklinkIsValid = source.kind == .artifact
+                    && source.artifactID == artifact.id
+                if !productionBacklinkIsValid && !importedLegacyBacklinkIsValid {
+                    issues.append(.init(
+                        code: .artifactBacklinkMismatch,
+                        runID: artifact.runID,
+                        stepID: artifact.sourceStepID,
+                        artifactID: artifact.id,
+                        detail: "Replay frame source must be an authorized tool invocation."
+                    ))
+                }
             }
             if !AgentTimelineArtifactSummary.isSafeRelativePath(artifact.relativePath) {
                 issues.append(.init(
@@ -662,6 +693,20 @@ nonisolated enum AgentRetentionPolicy: String, Codable, CaseIterable, Equatable,
         case .days30: 30 * 24 * 60 * 60
         case .manual: nil
         }
+    }
+}
+
+nonisolated enum AgentHistoryRetentionSettings {
+    enum Key {
+        static let policy = "agent.history.retention"
+    }
+
+    static func policy(in defaults: UserDefaults = .standard) -> AgentRetentionPolicy {
+        guard let rawValue = defaults.string(forKey: Key.policy),
+              let policy = AgentRetentionPolicy(rawValue: rawValue) else {
+            return .days30
+        }
+        return policy
     }
 }
 
@@ -783,6 +828,132 @@ nonisolated struct AgentRetentionPlanner: Sendable {
             orphanTemporaryRelativePaths: temporaryPaths,
             rejectedUnsafeRelativePaths: rejectedPaths
         )
+    }
+}
+
+nonisolated struct AgentHistoryRetentionReport: Equatable, Sendable {
+    let policy: AgentRetentionPolicy
+    let deletedRunIDs: Set<UUID>
+    let deletedConversationIDs: Set<UUID>
+    let deletedTemporaryRelativePaths: Set<String>
+    let rejectedUnsafeRelativePaths: Set<String>
+}
+
+/// Applies the generic history policy to the production Run store. Scheduled
+/// policies may delete sooner; this global policy is the outer retention cap
+/// for attended, scheduled, local-MCP, command-line, and child Runs alike.
+/// Run deletion removes the complete directory (steps, frame/artifact
+/// manifests, retained bytes, and replay journals) and updates both indexes.
+nonisolated enum AgentHistoryRetentionController {
+    @MainActor
+    static func enforce(
+        store: AgentRunStore,
+        baseDirectory: URL,
+        defaults: UserDefaults = .standard,
+        now: Date = Date(),
+        cleanupPrivateState: (Set<UUID>) async throws -> Void = { _ in }
+    ) async throws -> AgentHistoryRetentionReport {
+        let policy = AgentHistoryRetentionSettings.policy(in: defaults)
+        let runs = await store.listRuns()
+        let runsDirectory = baseDirectory
+            .appendingPathComponent("agent/runs", isDirectory: true)
+        let inputs = try await AgentArtifactInventoryReader(
+            runsDirectory: runsDirectory
+        ).inventory(runIDs: Set(runs.map(\.id)))
+        let temporaryItems = try discoverTemporaryItems(
+            beneath: baseDirectory,
+            now: now
+        )
+        let plan = AgentRetentionPlanner().plan(
+            runs: runs,
+            artifacts: inputs.map(\.artifact),
+            temporaryItems: temporaryItems,
+            request: AgentRetentionRequest(defaultPolicy: policy),
+            now: now
+        )
+
+        if !plan.runIDs.isEmpty {
+            // Cowork staged/prior bytes must be gone before durable evidence is
+            // forgotten; a cleanup failure therefore leaves the Run indexed
+            // so Settings or startup enforcement can retry safely.
+            try await cleanupPrivateState(plan.runIDs)
+        }
+        var deletedRunIDs = Set<UUID>()
+        for runID in plan.runIDs.sorted(by: { $0.uuidString < $1.uuidString }) {
+            do {
+                try await store.deleteRun(id: runID)
+                deletedRunIDs.insert(runID)
+            } catch AgentRunStoreError.runNotFound(_) {
+                deletedRunIDs.insert(runID)
+            }
+        }
+        // A timed/zero-retention pass also repairs a prior interruption that
+        // stopped after Run deletion but before its prompt-derived title was
+        // removed. Manual retention deliberately leaves conversations alone.
+        let deletedConversationIDs = if policy == .manual {
+            Set<UUID>()
+        } else {
+            try await store.deleteUnreferencedEmptyConversations()
+        }
+
+        var deletedTemporaryPaths = Set<String>()
+        for relativePath in plan.orphanTemporaryRelativePaths.sorted() {
+            let target = baseDirectory.appendingPathComponent(relativePath)
+                .standardizedFileURL
+            guard target.path.hasPrefix(
+                baseDirectory.standardizedFileURL.path + "/"
+            ) else { continue }
+            if FileManager.default.fileExists(atPath: target.path) {
+                try FileManager.default.removeItem(at: target)
+            }
+            deletedTemporaryPaths.insert(relativePath)
+        }
+        return AgentHistoryRetentionReport(
+            policy: policy,
+            deletedRunIDs: deletedRunIDs,
+            deletedConversationIDs: deletedConversationIDs,
+            deletedTemporaryRelativePaths: deletedTemporaryPaths,
+            rejectedUnsafeRelativePaths: plan.rejectedUnsafeRelativePaths
+        )
+    }
+
+    /// Browser response files are the only generic agent temporaries outside
+    /// a Run directory. Run-local journals and staging bytes disappear with
+    /// their owning Run; live response files receive the planner's one-hour
+    /// grace period before being considered orphaned.
+    private static func discoverTemporaryItems(
+        beneath baseDirectory: URL,
+        now: Date
+    ) throws -> [AgentTemporaryArtifact] {
+        let responseDirectory = baseDirectory.appendingPathComponent(
+            "responses",
+            isDirectory: true
+        )
+        guard FileManager.default.fileExists(atPath: responseDirectory.path) else {
+            return []
+        }
+        return try FileManager.default.contentsOfDirectory(
+            at: responseDirectory,
+            includingPropertiesForKeys: [
+                .isRegularFileKey, .isSymbolicLinkKey, .creationDateKey,
+                .contentModificationDateKey,
+            ],
+            options: []
+        ).compactMap { url in
+            let values = try url.resourceValues(forKeys: [
+                .isRegularFileKey, .isSymbolicLinkKey, .creationDateKey,
+                .contentModificationDateKey,
+            ])
+            guard values.isRegularFile == true, values.isSymbolicLink != true else {
+                return nil
+            }
+            return AgentTemporaryArtifact(
+                relativePath: "responses/\(url.lastPathComponent)",
+                createdAt: values.contentModificationDate
+                    ?? values.creationDate
+                    ?? now
+            )
+        }
     }
 }
 

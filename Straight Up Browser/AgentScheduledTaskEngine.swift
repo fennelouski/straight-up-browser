@@ -74,7 +74,8 @@ nonisolated struct AgentTaskExecutionSnapshot: Codable, Equatable, Sendable {
 
     func runConfiguration(
         toolCatalogVersion: Int,
-        resolvedMCPServerIdentities: Set<String> = []
+        resolvedMCPServerIdentities: Set<String> = [],
+        resolvedCoworkRootIdentity: String? = nil
     ) -> (configuration: AgentConfigurationSnapshot, scope: AgentRunScope) {
         let connectionIDs: [JSONValue] = mcpConnectionIDs
             .map { $0.uuidString.lowercased() }
@@ -102,7 +103,9 @@ nonisolated struct AgentTaskExecutionSnapshot: Codable, Equatable, Sendable {
                 pageIDs: browserScope.pageIDs,
                 origins: browserScope.origins,
                 session: browserScope.session,
-                coworkRootIdentity: coworkRootID?.uuidString.lowercased(),
+                coworkRootIdentity: coworkRootID == nil
+                    ? nil
+                    : resolvedCoworkRootIdentity,
                 mcpServerIdentities: resolvedMCPServerIdentities
             )
         )
@@ -110,14 +113,25 @@ nonisolated struct AgentTaskExecutionSnapshot: Codable, Equatable, Sendable {
 }
 
 nonisolated struct AgentTaskBudgets: Codable, Equatable, Sendable {
+    /// Fixed migration values for schema-v1 definitions written before these
+    /// dimensions were serialized. They preserve the limits those runs
+    /// previously inherited from `AgentExecutionLimits.defaults`.
+    static let migratedMaximumDownloads = 32
+    static let migratedMaximumDownloadBytes: Int64 = 2 * 1_024 * 1_024 * 1_024
+    static let migratedMaximumArtifacts = 128
+
     var maximumModelTurns: Int
     var maximumToolCalls: Int
     var maximumOutputBytes: Int
     var maximumOpenBackgroundPages: Int
     var maximumArtifactBytes: Int
     /// Integer millionths of the configured currency, avoiding floating-point
-    /// persistence drift. Nil means cost is not available, never unbounded.
+    /// persistence drift. Nil means cost is unavailable, never zero cost.
     var maximumProviderCostMicrounits: Int?
+    var maximumProviderTokens: Int64?
+    var maximumDownloads: Int
+    var maximumDownloadBytes: Int64
+    var maximumArtifacts: Int
 
     init(
         maximumModelTurns: Int,
@@ -125,7 +139,11 @@ nonisolated struct AgentTaskBudgets: Codable, Equatable, Sendable {
         maximumOutputBytes: Int,
         maximumOpenBackgroundPages: Int,
         maximumArtifactBytes: Int,
-        maximumProviderCostMicrounits: Int? = nil
+        maximumProviderCostMicrounits: Int? = nil,
+        maximumProviderTokens: Int64? = nil,
+        maximumDownloads: Int = Self.migratedMaximumDownloads,
+        maximumDownloadBytes: Int64 = Self.migratedMaximumDownloadBytes,
+        maximumArtifacts: Int = Self.migratedMaximumArtifacts
     ) {
         self.maximumModelTurns = maximumModelTurns
         self.maximumToolCalls = maximumToolCalls
@@ -133,6 +151,58 @@ nonisolated struct AgentTaskBudgets: Codable, Equatable, Sendable {
         self.maximumOpenBackgroundPages = maximumOpenBackgroundPages
         self.maximumArtifactBytes = maximumArtifactBytes
         self.maximumProviderCostMicrounits = maximumProviderCostMicrounits
+        self.maximumProviderTokens = maximumProviderTokens
+        self.maximumDownloads = maximumDownloads
+        self.maximumDownloadBytes = maximumDownloadBytes
+        self.maximumArtifacts = maximumArtifacts
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case maximumModelTurns
+        case maximumToolCalls
+        case maximumOutputBytes
+        case maximumOpenBackgroundPages
+        case maximumArtifactBytes
+        case maximumProviderCostMicrounits
+        case maximumProviderTokens
+        case maximumDownloads
+        case maximumDownloadBytes
+        case maximumArtifacts
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        maximumModelTurns = try values.decode(Int.self, forKey: .maximumModelTurns)
+        maximumToolCalls = try values.decode(Int.self, forKey: .maximumToolCalls)
+        maximumOutputBytes = try values.decode(Int.self, forKey: .maximumOutputBytes)
+        maximumOpenBackgroundPages = try values.decode(
+            Int.self,
+            forKey: .maximumOpenBackgroundPages
+        )
+        maximumArtifactBytes = try values.decode(
+            Int.self,
+            forKey: .maximumArtifactBytes
+        )
+        maximumProviderCostMicrounits = try values.decodeIfPresent(
+            Int.self,
+            forKey: .maximumProviderCostMicrounits
+        )
+        maximumProviderTokens = try values.decodeIfPresent(
+            Int64.self,
+            forKey: .maximumProviderTokens
+        )
+        maximumDownloads = try values.decodeIfPresent(
+            Int.self,
+            forKey: .maximumDownloads
+        ) ?? Self.migratedMaximumDownloads
+        maximumDownloadBytes = try values.decodeIfPresent(
+            Int64.self,
+            forKey: .maximumDownloadBytes
+        ) ?? Self.migratedMaximumDownloadBytes
+        maximumArtifacts = try values.decodeIfPresent(
+            Int.self,
+            forKey: .maximumArtifacts
+        ) ?? Self.migratedMaximumArtifacts
     }
 }
 
@@ -335,8 +405,12 @@ nonisolated struct AgentTaskDefinition: Codable, Equatable, Identifiable, Sendab
             budgets.maximumOutputBytes,
             budgets.maximumOpenBackgroundPages,
             budgets.maximumArtifactBytes,
+            budgets.maximumDownloads,
+            budgets.maximumArtifacts,
         ]
         if numericBudgets.contains(where: { $0 <= 0 }) ||
+            budgets.maximumDownloadBytes <= 0 ||
+            budgets.maximumProviderTokens.map({ $0 <= 0 }) == true ||
             budgets.maximumProviderCostMicrounits.map({ $0 <= 0 }) == true {
             append(.invalidBudgets, "budgets", "Every configured hard budget must be positive.")
         }
@@ -663,6 +737,10 @@ nonisolated enum AgentTaskBudgetLimit: String, Codable, Equatable, Sendable {
     case outputBytes
     case openBackgroundPages
     case artifactBytes
+    case providerTokens
+    case downloads
+    case downloadBytes
+    case artifacts
     case providerCost
 }
 
@@ -865,11 +943,13 @@ nonisolated struct AgentTaskRunDirective: Codable, Equatable, Sendable {
     func makeRun(
         toolCatalogVersion: Int,
         conversationID: UUID? = nil,
-        resolvedMCPServerIdentities: Set<String> = []
+        resolvedMCPServerIdentities: Set<String> = [],
+        resolvedCoworkRootIdentity: String? = nil
     ) -> (run: AgentRun, scope: AgentRunScope) {
         let values = definitionSnapshot.execution.runConfiguration(
             toolCatalogVersion: toolCatalogVersion,
-            resolvedMCPServerIdentities: resolvedMCPServerIdentities
+            resolvedMCPServerIdentities: resolvedMCPServerIdentities,
+            resolvedCoworkRootIdentity: resolvedCoworkRootIdentity
         )
         let initialStatus: AgentRunStatus
         switch kind {
@@ -943,6 +1023,7 @@ nonisolated enum AgentTaskSchedulerError: Error, Equatable, Sendable {
     case occurrenceNotActive(AgentTaskOccurrenceID)
     case runIdentityMismatch
     case notificationNotFound(String)
+    case activeOccurrencesPreventHistoryDeletion([AgentTaskOccurrenceID])
     case corruptSnapshot(String)
 }
 
@@ -995,10 +1076,11 @@ actor AgentScheduledTaskEngine {
             tombstones[tombstone.taskDefinitionID] = tombstone
             definitions.removeValue(forKey: tombstone.taskDefinitionID)
         }
-        let recognizedTaskIDs = Set(definitions.keys).union(tombstones.keys)
-        guard Set(runtimeStates.keys).isSubset(of: recognizedTaskIDs) else {
-            throw AgentTaskSchedulerError.corruptSnapshot("Runtime state has no definition or tombstone.")
-        }
+        // A runtime state may intentionally outlive its definition. Synced
+        // definitions are locally uninstallable when authorization is revoked,
+        // while their occurrence and run history remains reviewable. Keeping
+        // that archived state also lets the same remote revision be reinstalled
+        // without manufacturing a user-deletion tombstone.
         for definition in definitions.values where runtimeStates[definition.id] == nil {
             runtimeStates[definition.id] = AgentTaskRuntimeState(
                 taskDefinitionID: definition.id,
@@ -1115,6 +1197,19 @@ actor AgentScheduledTaskEngine {
         )
     }
 
+    /// Removes an imported synced definition from executable scheduling while
+    /// preserving its occurrence records and without creating a user-deletion
+    /// tombstone. A later local authorization can therefore reinstall the same
+    /// remote revision, and the prior run history remains reviewable across
+    /// scheduler snapshot reloads.
+    func uninstallSyncedTaskRetainingHistory(
+        _ taskID: UUID,
+        at date: Date = Date()
+    ) {
+        guard definitions.removeValue(forKey: taskID) != nil else { return }
+        skipPending(taskID: taskID, reason: .taskDisabled, at: date)
+    }
+
     func definition(id: UUID) -> AgentTaskDefinition? { definitions[id] }
 
     func runtimeState(taskID: UUID) -> AgentTaskRuntimeState? { runtimeStates[taskID] }
@@ -1129,6 +1224,37 @@ actor AgentScheduledTaskEngine {
                 $0.taskDefinitionID.uuidString < $1.taskDefinitionID.uuidString
             }
         )
+    }
+
+    /// Clears occurrence and notification history without deleting task
+    /// definitions, definition tombstones, or changing their execution
+    /// authority. Active and queued occurrences fail closed so a Run can never
+    /// lose the scheduler state required to cancel, recover, or resume it.
+    @discardableResult
+    func clearHistoryPreservingDefinitions(at date: Date = Date()) throws -> Int {
+        let activeOccurrenceIDs = runtimeStates.values
+            .flatMap(\.occurrenceRecords)
+            .filter { $0.state.isActive || $0.state.isQueued }
+            .map(\.id)
+            .sorted { $0.rawValue < $1.rawValue }
+        guard activeOccurrenceIDs.isEmpty else {
+            throw AgentTaskSchedulerError.activeOccurrencesPreventHistoryDeletion(
+                activeOccurrenceIDs
+            )
+        }
+
+        var deletedRecordCount = 0
+        for taskID in runtimeStates.keys.sorted(by: {
+            $0.uuidString < $1.uuidString
+        }) {
+            guard let previous = runtimeStates[taskID] else { continue }
+            deletedRecordCount += previous.occurrenceRecords.count
+            runtimeStates[taskID] = AgentTaskRuntimeState(
+                taskDefinitionID: taskID,
+                lastEvaluatedAt: max(previous.lastEvaluatedAt, date)
+            )
+        }
+        return deletedRecordCount
     }
 
     func admit(

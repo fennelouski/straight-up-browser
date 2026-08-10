@@ -135,7 +135,7 @@ nonisolated struct AgentProviderHTTPAdapter: AgentProviderAdapter, CustomStringC
                 message: "The normalized provider request exceeds the 4 MiB limit."
             )
         }
-        let urlRequest = makeURLRequest(body: bodyData)
+        let urlRequest = makeURLRequest(body: bodyData, model: request.model)
         let transport = self.transport
         let providerID = self.providerID
         let dialect = self.dialect
@@ -219,8 +219,8 @@ nonisolated struct AgentProviderHTTPAdapter: AgentProviderAdapter, CustomStringC
         }
     }
 
-    private func makeURLRequest(body: Data) -> URLRequest {
-        var request = URLRequest(url: endpoint)
+    private func makeURLRequest(body: Data, model: String) -> URLRequest {
+        var request = URLRequest(url: requestURL(model: model))
         request.httpMethod = "POST"
         request.timeoutInterval = 120
         request.httpBody = body
@@ -237,6 +237,37 @@ nonisolated struct AgentProviderHTTPAdapter: AgentProviderAdapter, CustomStringC
             request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
         }
         return request
+    }
+
+    private func requestURL(model: String) -> URL {
+        guard dialect == .geminiGenerateContent,
+              var components = URLComponents(
+                  url: endpoint,
+                  resolvingAgainstBaseURL: false
+              ) else {
+            return endpoint
+        }
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let allowed = CharacterSet.alphanumerics.union(
+            CharacterSet(charactersIn: "-._~")
+        )
+        guard !trimmedModel.isEmpty,
+              let encodedModel = trimmedModel.addingPercentEncoding(
+                  withAllowedCharacters: allowed
+              ) else {
+            return endpoint
+        }
+
+        var basePath = components.percentEncodedPath
+        if let models = basePath.range(of: "/models/") {
+            basePath = String(basePath[..<models.lowerBound])
+        }
+        while basePath.hasSuffix("/") { basePath.removeLast() }
+        components.percentEncodedPath =
+            "\(basePath)/models/\(encodedModel):streamGenerateContent"
+        components.queryItems = [URLQueryItem(name: "alt", value: "sse")]
+        components.fragment = nil
+        return components.url ?? endpoint
     }
 
     private static func validateFrame(

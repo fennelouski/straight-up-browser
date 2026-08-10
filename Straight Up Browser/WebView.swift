@@ -205,6 +205,8 @@ struct WebView: NSViewRepresentable {
         var lastRequestedURL: URL?
         private var downloadNavigationHistory = DownloadNavigationHistory()
         private var certificateOverrideWebViews: Set<ObjectIdentifier> = []
+        private var agentNavigationObservationIDs: [ObjectIdentifier: UUID] = [:]
+        private var agentLastNavigationURLs: [ObjectIdentifier: URL] = [:]
 
         // One guard per WKWebView: background tabs and split panes must not
         // contribute to each other's redirect counts.
@@ -239,8 +241,80 @@ struct WebView: NSViewRepresentable {
             webView === parent.webViewManager?.activeWebView
         }
 
+        private func publishAgentSignal(_ draft: WebKitAgentSignalDraft, from webView: WKWebView) {
+            guard let tabID = parent.webViewManager?.tabId(for: webView) else { return }
+            Task {
+                await BrowserAgentWebKitSignalRuntime.shared.publish(draft, tabID: tabID)
+            }
+        }
+
+        private func agentObservationID(for webView: WKWebView) -> UUID {
+            let key = ObjectIdentifier(webView)
+            if let existing = agentNavigationObservationIDs[key] { return existing }
+            let created = UUID()
+            agentNavigationObservationIDs[key] = created
+            return created
+        }
+
+        private func agentTLSState(for webView: WKWebView, url: URL?) -> WebKitAgentTLSState {
+            switch url?.scheme?.lowercased() {
+            case "https":
+                if certificateOverrideWebViews.contains(ObjectIdentifier(webView)) { return .userOverridden }
+                return webView.hasOnlySecureContent ? .secure : .insecure
+            case "http":
+                return .insecure
+            case .some:
+                return .notApplicable
+            case nil:
+                return .unknown
+            }
+        }
+
+        private func publishAgentNavigationFailure(_ error: Error, from webView: WKWebView) {
+            let nsError = error as NSError
+            let includeText = UserDefaults.standard.bool(forKey: "agentWebKitDiagnosticContentEnabled")
+            publishAgentSignal(
+                .navigation(.init(
+                    observationID: agentObservationID(for: webView),
+                    phase: .failed,
+                    url: webView.url,
+                    tlsState: agentTLSState(for: webView, url: webView.url),
+                    isMainFrame: true
+                )),
+                from: webView
+            )
+            publishAgentSignal(
+                .resourceFailure(.init(
+                    observationID: UUID(),
+                    surface: .mainNavigationDelegate,
+                    url: webView.url,
+                    errorDomain: nsError.domain,
+                    errorCode: nsError.code,
+                    errorDescription: includeText ? nsError.localizedDescription : ""
+                )),
+                from: webView
+            )
+        }
+
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             certificateOverrideWebViews.remove(ObjectIdentifier(webView))
+            let key = ObjectIdentifier(webView)
+            agentNavigationObservationIDs[key] = UUID()
+            if let url = webView.url { agentLastNavigationURLs[key] = url }
+            publishAgentSignal(
+                .navigation(.init(
+                    observationID: agentObservationID(for: webView),
+                    phase: .provisionalStarted,
+                    url: webView.url,
+                    tlsState: agentTLSState(for: webView, url: webView.url),
+                    isMainFrame: true
+                )),
+                from: webView
+            )
+            publishAgentSignal(
+                .pageLifecycle(.init(phase: .loadStarted, url: webView.url)),
+                from: webView
+            )
             tab(for: webView)?.securityLevel = .none
             if isActiveWebView(webView) {
                 parent.isLoading = true
@@ -263,7 +337,41 @@ struct WebView: NSViewRepresentable {
             }
         }
 
+        func webView(
+            _ webView: WKWebView,
+            didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!
+        ) {
+            let key = ObjectIdentifier(webView)
+            let previousURL = agentLastNavigationURLs[key]
+            publishAgentSignal(
+                .navigation(.init(
+                    observationID: agentObservationID(for: webView),
+                    phase: .serverRedirectObserved,
+                    url: webView.url,
+                    redirectSourceURL: previousURL,
+                    tlsState: agentTLSState(for: webView, url: webView.url),
+                    isMainFrame: true
+                )),
+                from: webView
+            )
+            if let url = webView.url { agentLastNavigationURLs[key] = url }
+        }
+
         func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            publishAgentSignal(
+                .navigation(.init(
+                    observationID: agentObservationID(for: webView),
+                    phase: .committed,
+                    url: webView.url,
+                    tlsState: agentTLSState(for: webView, url: webView.url),
+                    isMainFrame: true
+                )),
+                from: webView
+            )
+            publishAgentSignal(
+                .pageLifecycle(.init(phase: .contentCommitted, url: webView.url)),
+                from: webView
+            )
             // Old document is gone and the new one hasn't painted: hold the view
             // invisible until it has, so the gap isn't a flash of white.
             parent.webViewManager?.beginFadeIn(webView)
@@ -280,6 +388,21 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            publishAgentSignal(
+                .navigation(.init(
+                    observationID: agentObservationID(for: webView),
+                    phase: .finished,
+                    url: webView.url,
+                    tlsState: agentTLSState(for: webView, url: webView.url),
+                    isMainFrame: true
+                )),
+                from: webView
+            )
+            publishAgentSignal(
+                .pageLifecycle(.init(phase: .loadCompleted, url: webView.url)),
+                from: webView
+            )
+            if let url = webView.url { agentLastNavigationURLs[ObjectIdentifier(webView)] = url }
             parent.webViewManager?.revealPage(webView)  // backstop: content that never pings
             if isActiveWebView(webView) {
                 parent.isLoading = false
@@ -476,6 +599,7 @@ struct WebView: NSViewRepresentable {
 
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            publishAgentNavigationFailure(error, from: webView)
             parent.webViewManager?.revealPage(webView)  // don't leave a failed load invisible
             parent.isLoading = false
             Logger.log("WebView navigation failed: \(error.localizedDescription)", type: "WebView")
@@ -489,6 +613,7 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            publishAgentNavigationFailure(error, from: webView)
             parent.isLoading = false
             Logger.log("WebView provisional navigation failed: \(error.localizedDescription)", type: "WebView")
             Logger.log("Error domain: \(error._domain), code: \((error as NSError).code)", type: "WebView")
@@ -501,6 +626,16 @@ struct WebView: NSViewRepresentable {
             if (error as NSError).code != NSURLErrorCancelled {
                 resetRedirectLoopGuard(for: webView)
             }
+        }
+
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            publishAgentSignal(
+                .pageLifecycle(.init(
+                    phase: .webContentProcessTerminated,
+                    url: webView.url
+                )),
+                from: webView
+            )
         }
 
         func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping @MainActor @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
@@ -563,6 +698,21 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
+            let response = navigationResponse.response
+            let httpResponse = response as? HTTPURLResponse
+            publishAgentSignal(
+                .navigation(.init(
+                    observationID: agentObservationID(for: webView),
+                    phase: .responseReceived,
+                    url: response.url ?? webView.url,
+                    statusCode: httpResponse?.statusCode,
+                    mimeType: response.mimeType,
+                    canShowMIMEType: navigationResponse.canShowMIMEType,
+                    tlsState: agentTLSState(for: webView, url: response.url ?? webView.url),
+                    isMainFrame: navigationResponse.isForMainFrame
+                )),
+                from: webView
+            )
             // Anything WebKit can't render inline (zip, dmg, attachments…) is a download
             if !navigationResponse.canShowMIMEType {
                 decisionHandler(.download)
@@ -595,13 +745,35 @@ struct WebView: NSViewRepresentable {
                 privacy: privacy
             )
             downloadTransferIds[download] = transferId
+            publishAgentSignal(
+                .download(.init(
+                    downloadID: transferId,
+                    phase: .started,
+                    sourceURL: download.originalRequest?.url
+                )),
+                from: webView
+            )
             downloadProgressObservers[download] = download.progress.observe(
                 \.fractionCompleted,
                 options: [.initial, .new]
-            ) { _, change in
+            ) { [weak self, weak download, weak webView] _, change in
                 guard let progress = change.newValue else { return }
                 Task { @MainActor in
                     DownloadManager.shared.update(transferId, progress: progress)
+                    guard let self, let download, let webView else { return }
+                    let completed = download.progress.completedUnitCount
+                    let expected = download.progress.totalUnitCount
+                    self.publishAgentSignal(
+                        .download(.init(
+                            downloadID: transferId,
+                            phase: .progress,
+                            sourceURL: download.originalRequest?.url,
+                            progress: progress,
+                            receivedBytes: completed >= 0 ? UInt64(completed) : nil,
+                            expectedBytes: expected >= 0 ? UInt64(expected) : nil
+                        )),
+                        from: webView
+                    )
                 }
             }
             DownloadManager.shared.setPauseHandler(transferId) { [weak self, weak download, weak webView] in
@@ -689,6 +861,19 @@ struct WebView: NSViewRepresentable {
             downloadDestinations[download] = destination
             if let transferId = downloadTransferIds[download] {
                 DownloadManager.shared.setDestination(transferId, url: destination, suggestedFilename: suggestedFilename)
+                if let webView = download.webView {
+                    publishAgentSignal(
+                        .download(.init(
+                            downloadID: transferId,
+                            phase: .destinationSelected,
+                            sourceURL: download.originalRequest?.url,
+                            suggestedFilename: UserDefaults.standard.bool(
+                                forKey: "agentWebKitDiagnosticContentEnabled"
+                            ) ? suggestedFilename : nil
+                        )),
+                        from: webView
+                    )
+                }
             }
             Logger.log("Download starting: \(destination.path)", type: "WebView")
             completionHandler(destination)
@@ -696,6 +881,17 @@ struct WebView: NSViewRepresentable {
 
         func downloadDidFinish(_ download: WKDownload) {
             let transferId = downloadTransferIds[download]
+            if let transferId, let webView = download.webView {
+                publishAgentSignal(
+                    .download(.init(
+                        downloadID: transferId,
+                        phase: .completed,
+                        sourceURL: download.originalRequest?.url,
+                        progress: 1
+                    )),
+                    from: webView
+                )
+            }
             if let url = downloadDestinations[download] {
                 Logger.log("Download finished: \(url.path)", type: "WebView")
                 if let transferId {
@@ -714,11 +910,37 @@ struct WebView: NSViewRepresentable {
                 return
             }
             if intentionallyPausedTransfers.contains(transferId) {
+                if let webView = download.webView {
+                    publishAgentSignal(
+                        .download(.init(
+                            downloadID: transferId,
+                            phase: .cancelled,
+                            sourceURL: download.originalRequest?.url
+                        )),
+                        from: webView
+                    )
+                }
                 Logger.log("Download paused: \(error.localizedDescription)", type: "WebView")
                 return
             }
             let request = download.originalRequest
             let webView = download.webView
+            if let webView {
+                let nsError = error as NSError
+                publishAgentSignal(
+                    .download(.init(
+                        downloadID: transferId,
+                        phase: .failed,
+                        sourceURL: request?.url,
+                        errorDomain: nsError.domain,
+                        errorCode: nsError.code,
+                        errorDescription: UserDefaults.standard.bool(
+                            forKey: "agentWebKitDiagnosticContentEnabled"
+                        ) ? nsError.localizedDescription : nil
+                    )),
+                    from: webView
+                )
+            }
             cleanup(download)
             if resumeData != nil || request != nil, let webView {
                 DownloadManager.shared.setRestartHandler(transferId) { [weak self, weak webView] in
@@ -917,19 +1139,69 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable () -> Void) {
+            let dialogID = UUID()
+            let includeText = UserDefaults.standard.bool(forKey: "agentWebKitDiagnosticContentEnabled")
+            publishAgentSignal(
+                .dialog(.init(
+                    dialogID: dialogID,
+                    phase: .presented,
+                    kind: .alert,
+                    message: includeText ? message : nil
+                )),
+                from: webView
+            )
             let alert = makeDialogAlert(message: message, frame: frame)
             alert.addButton(withTitle: String(localized: "OK"))
-            presentSheet(alert, over: webView) { _ in completionHandler() }
+            presentSheet(alert, over: webView) { [weak self, weak webView] _ in
+                if let self, let webView {
+                    self.publishAgentSignal(
+                        .dialog(.init(dialogID: dialogID, phase: .dismissed, kind: .alert)),
+                        from: webView
+                    )
+                }
+                completionHandler()
+            }
         }
 
         func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable (Bool) -> Void) {
+            let dialogID = UUID()
+            let includeText = UserDefaults.standard.bool(forKey: "agentWebKitDiagnosticContentEnabled")
+            publishAgentSignal(
+                .dialog(.init(
+                    dialogID: dialogID,
+                    phase: .presented,
+                    kind: .confirm,
+                    message: includeText ? message : nil
+                )),
+                from: webView
+            )
             let alert = makeDialogAlert(message: message, frame: frame)
             alert.addButton(withTitle: String(localized: "OK"))
             alert.addButton(withTitle: String(localized: "Cancel"))
-            presentSheet(alert, over: webView) { completionHandler($0 == .alertFirstButtonReturn) }
+            presentSheet(alert, over: webView) { [weak self, weak webView] response in
+                if let self, let webView {
+                    self.publishAgentSignal(
+                        .dialog(.init(dialogID: dialogID, phase: .dismissed, kind: .confirm)),
+                        from: webView
+                    )
+                }
+                completionHandler(response == .alertFirstButtonReturn)
+            }
         }
 
         func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable (String?) -> Void) {
+            let dialogID = UUID()
+            let includeText = UserDefaults.standard.bool(forKey: "agentWebKitDiagnosticContentEnabled")
+            publishAgentSignal(
+                .dialog(.init(
+                    dialogID: dialogID,
+                    phase: .presented,
+                    kind: .prompt,
+                    message: includeText ? prompt : nil,
+                    defaultText: includeText ? defaultText : nil
+                )),
+                from: webView
+            )
             let alert = makeDialogAlert(message: prompt, frame: frame)
             alert.addButton(withTitle: String(localized: "OK"))
             alert.addButton(withTitle: String(localized: "Cancel"))
@@ -937,7 +1209,15 @@ struct WebView: NSViewRepresentable {
             input.stringValue = defaultText ?? ""
             alert.accessoryView = input
             alert.window.initialFirstResponder = input
-            presentSheet(alert, over: webView) { completionHandler($0 == .alertFirstButtonReturn ? input.stringValue : nil) }
+            presentSheet(alert, over: webView) { [weak self, weak webView] response in
+                if let self, let webView {
+                    self.publishAgentSignal(
+                        .dialog(.init(dialogID: dialogID, phase: .dismissed, kind: .prompt)),
+                        from: webView
+                    )
+                }
+                completionHandler(response == .alertFirstButtonReturn ? input.stringValue : nil)
+            }
         }
 
         func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping @MainActor @Sendable (WKPermissionDecision) -> Void) {

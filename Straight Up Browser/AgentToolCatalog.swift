@@ -214,6 +214,9 @@ nonisolated enum AgentCapability: String, Codable, CaseIterable, Hashable, Senda
     case historyWrite
     case coworkRead
     case coworkWrite
+    case memoryRead
+    case memoryWrite
+    case runDelegation
     case externalMCP
 }
 
@@ -228,6 +231,8 @@ nonisolated enum AgentToolRoute: String, Codable, Equatable, Sendable {
     case browserScript
     case observableWait
     case cowork
+    case internalTool
+    case runGroup
     case dynamicMCP
 }
 
@@ -401,6 +406,24 @@ private extension AgentToolCatalog {
         let element = AgentJSONSchema.string(description: "Element ID (for example sub-12) returned by take_snapshot.")
         let path = AgentJSONSchema.string(description: "Path relative to the user-approved cowork folder.")
         let strings: (String) -> AgentJSONSchema = { .array(description: $0, items: .string()) }
+        let delegationBudget = AgentJSONSchema.object([
+            "maximumProviderCostMicrounits": .integer(description: "Child provider-cost ceiling in currency microunits.", minimum: 0),
+            "maximumElapsedMilliseconds": .integer(description: "Child wall-clock ceiling in milliseconds.", minimum: 1),
+            "maximumSteps": .integer(description: "Maximum child model turns.", minimum: 1),
+            "maximumToolCalls": .integer(description: "Maximum child tool invocations.", minimum: 0),
+            "maximumOutputBytes": .integer(description: "Maximum retained model and tool-result bytes.", minimum: 0),
+            "maximumChildCreatedPages": .integer(description: "Maximum hidden Pages this child may create.", minimum: 0),
+        ], required: [
+            "maximumProviderCostMicrounits", "maximumElapsedMilliseconds",
+            "maximumSteps", "maximumToolCalls", "maximumOutputBytes",
+            "maximumChildCreatedPages",
+        ])
+        let childReturnSchema = AgentJSONSchema.object(
+            description: "A supported JSON Schema object describing the child's required handoff.",
+            properties: [:],
+            required: [],
+            additionalProperties: true
+        )
         let result = AgentJSONSchema.object([
             "ok": .boolean(description: "Whether the operation succeeded."),
             "error": .string(description: "A structured failure message when the operation did not succeed."),
@@ -541,7 +564,7 @@ private extension AgentToolCatalog {
             descriptor("delete_history_url", "Delete all history visits for a URL.", properties: ["url": .string(description: "URL to remove.")], required: ["url"], capabilities: [.historyWrite], risk: .destructive, route: .browserNative),
             descriptor("delete_history_range", "Delete history within an inclusive ISO-8601 date range.", properties: ["start": .string(description: "Optional ISO-8601 start."), "end": .string(description: "Optional ISO-8601 end.")], capabilities: [.historyWrite], risk: .destructive, route: .browserNative),
 
-            // Built-in-only observable wait and Cowork tools.
+            // Built-in-only observable wait, delegation, Cowork, and memory tools.
             descriptor("wait_for", "Wait for an observable WebKit page condition without changing focus.", properties: [
                 "pageId": page,
                 "condition": .string(description: "Observable condition.", allowedValues: ["load", "url", "selector", "text", "elementState", "dialog", "downloadStarted", "downloadCompleted", "pageClosed"]),
@@ -551,12 +574,64 @@ private extension AgentToolCatalog {
                 "downloadId": .string(description: "Optional download identifier."),
                 "timeout": .number(description: "Required maximum timeout in seconds.", minimum: 0.1, maximum: 60),
             ], required: ["condition", "timeout"], capabilities: read, risk: .observe, route: .observableWait, builtIn: true, mcp: false),
+            descriptor("observe_webkit_signals", "Read a bounded, privacy-filtered snapshot of WebKit-native events for this run and page.", properties: [
+                "pageId": page,
+                "kinds": strings("Optional signal kinds: console, navigation, resourceFailure, download, dialog, or pageLifecycle."),
+                "afterSequence": .integer(description: "Return only events after this sequence number.", minimum: 0),
+                "limit": .integer(description: "Maximum events to return.", minimum: 1),
+                "unsupportedDetail": .string(description: "Ask whether a Chromium-style detail is available instead of returning events.", allowedValues: ["networkRequestIdentifier", "completeSubresourceRequestLog", "requestTimingWaterfall", "cacheInternals", "responseBody", "rawResponseHeaders", "remoteIPAddress", "serviceWorkerInternals"]),
+            ], capabilities: read, risk: .observe, route: .observableWait, builtIn: true, mcp: false),
+            descriptor("wait_for_webkit_signal", "Wait for one bounded WebKit-native event after a sequence boundary.", properties: [
+                "pageId": page,
+                "kind": .string(description: "Signal kind.", allowedValues: ["console", "navigation", "resourceFailure", "download", "dialog", "pageLifecycle"]),
+                "phase": .string(description: "Optional navigation, download, or page-lifecycle phase."),
+                "level": .string(description: "Optional console level.", allowedValues: ["debug", "log", "info", "warning", "error"]),
+                "downloadId": .string(description: "Optional download identifier."),
+                "afterSequence": .integer(description: "Ignore events at or before this sequence number.", minimum: 0),
+                "timeout": .number(description: "Required maximum timeout in seconds.", minimum: 0.1, maximum: 60),
+            ], required: ["kind", "timeout"], capabilities: read, risk: .observe, route: .observableWait, builtIn: true, mcp: false),
+            descriptor("delegate_child_run", "Start one bounded child Agent Run with explicitly reduced tools, Pages, origins, browser Session, return schema, and budget.", properties: [
+                "objective": .string(description: "A complete, independent child objective."),
+                "allowedTools": strings("Canonical built-in tools the child may call; delegation itself must be listed for nested work."),
+                "allowedPages": strings("Stable Page IDs the child may access."),
+                "allowedOrigins": strings("Canonical HTTP(S) origins corresponding to the allowed Pages."),
+                "browserSession": .string(description: "The one browser Session the child may use.", allowedValues: ["normal", "incognito", "container"]),
+                "containerID": .string(description: "Required UUID when browserSession is container."),
+                "returnSchema": childReturnSchema,
+                "budget": delegationBudget,
+            ], required: [
+                "objective", "allowedTools", "allowedPages", "allowedOrigins",
+                "browserSession", "returnSchema", "budget",
+            ], capabilities: [.runDelegation], risk: .externalEffect, route: .runGroup, builtIn: true, origin: .internalTool, mcp: false),
+            descriptor("inspect_run_group", "Inspect this Run's deterministic child tree, shared-budget state, handoffs, and failures. Optionally wait on child task completion without polling.", properties: [
+                "waitFor": .string(description: "Return immediately or suspend until this Run's direct children finish.", allowedValues: ["none", "directChildren"]),
+            ], capabilities: [.runDelegation], risk: .observe, route: .runGroup, builtIn: true, origin: .internalTool, mcp: false),
+            descriptor("cancel_child_run", "Cancel one owned child Run and all of its descendants, releasing their leases and bounded resources.", properties: [
+                "childRunID": .string(description: "Child Run UUID from delegate_child_run or inspect_run_group."),
+                "reason": .string(description: "Optional safe cancellation reason."),
+            ], required: ["childRunID"], capabilities: [.runDelegation], risk: .mutateLocal, route: .runGroup, builtIn: true, origin: .internalTool, mcp: false),
             descriptor("workspace_info", "Show whether a cowork folder is available without exposing its absolute path.", capabilities: [.coworkRead], risk: .observe, route: .cowork, builtIn: true, origin: .cowork, mcp: false),
             descriptor("list_files", "List files inside the cowork folder.", properties: ["path": path, "recursive": .boolean(description: "Include descendants, capped by file-count and depth limits.")], capabilities: [.coworkRead], risk: .observe, route: .cowork, builtIn: true, origin: .cowork, mcp: false),
             descriptor("read_file", "Read a bounded UTF-8 text file from the cowork folder.", properties: ["path": path], required: ["path"], capabilities: [.coworkRead], risk: .observe, route: .cowork, builtIn: true, origin: .cowork, mcp: false),
             descriptor("write_file", "Create or update a UTF-8 text file in the cowork folder.", properties: ["path": path, "content": .string(description: "Text to write."), "append": .boolean(description: "Append instead of replacing.")], required: ["path", "content"], capabilities: [.coworkWrite], risk: .mutateLocal, route: .cowork, builtIn: true, origin: .cowork, mcp: false),
             descriptor("move_file", "Move or rename a file within the cowork folder.", properties: ["path": path, "destination": path], required: ["path", "destination"], capabilities: [.coworkWrite], risk: .mutateLocal, route: .cowork, builtIn: true, origin: .cowork, mcp: false),
             descriptor("delete_file", "Move a file to the macOS Trash so it remains recoverable.", properties: ["path": path], required: ["path"], capabilities: [.coworkWrite], risk: .destructive, route: .cowork, builtIn: true, origin: .cowork, mcp: false),
+            descriptor("commit_cowork_transaction", "Commit a previously staged Cowork change after reviewing its exact preview.", properties: ["transactionId": .string(description: "Staged transaction identifier.")], required: ["transactionId"], capabilities: [.coworkWrite], risk: .externalEffect, route: .cowork, builtIn: true, origin: .cowork, mcp: false),
+            descriptor("cancel_cowork_transaction", "Discard a staged Cowork change without modifying its destination.", properties: ["transactionId": .string(description: "Staged transaction identifier.")], required: ["transactionId"], capabilities: [.coworkWrite], risk: .mutateLocal, route: .cowork, builtIn: true, origin: .cowork, mcp: false),
+            descriptor("rollback_cowork_transaction", "Restore the prior Cowork artifact version while its bounded rollback copy is available.", properties: ["transactionId": .string(description: "Committed transaction identifier.")], required: ["transactionId"], capabilities: [.coworkWrite], risk: .destructive, route: .cowork, builtIn: true, origin: .cowork, mcp: false),
+            descriptor("propose_agent_memory", "Propose one explicit, scoped fact or preference for durable Agent memory. Page and file content remains untrusted and sensitive proposals require approval.", properties: [
+                "text": .string(description: "The concise fact or preference to remember; never include credentials."),
+                "scope": .string(description: "Where the memory may be retrieved.", allowedValues: ["global", "origin", "task", "conversation"]),
+                "sensitivity": .string(description: "Content classification.", allowedValues: ["preference", "personal", "sensitive"]),
+                "expiresAt": .string(description: "Optional ISO-8601 expiry."),
+            ], required: ["text", "scope", "sensitivity"], capabilities: [.memoryWrite], risk: .mutateLocal, route: .internalTool, builtIn: true, origin: .internalTool, mcp: false),
+            descriptor("search_agent_memory", "Search the user's enabled, scoped Agent memory with bounded results.", properties: [
+                "query": .string(description: "Optional text query."),
+                "limit": .integer(description: "Maximum entries.", minimum: 1, maximum: 50),
+            ], capabilities: [.memoryRead], risk: .observe, route: .internalTool, builtIn: true, origin: .internalTool, mcp: false),
+            descriptor("forget_agent_memory", "Delete one Agent memory entry without deleting browsing history, bookmarks, conversations, or runs.", properties: [
+                "memoryId": .string(description: "Memory entry identifier."),
+            ], required: ["memoryId"], capabilities: [.memoryWrite], risk: .destructive, route: .internalTool, builtIn: true, origin: .internalTool, mcp: false),
         ]
     }
 }

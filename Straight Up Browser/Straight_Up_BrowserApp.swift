@@ -59,6 +59,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             UserDefaults.standard.set(eulaVersion, forKey: "acceptedEULAVersion")
         }
         registerGlobalHotkey()
+        if !isRunningUnderTests {
+            Task { @MainActor in
+                await AgentDefinitionSyncService.shared.start()
+            }
+        }
         // Belt and braces: this app is single-window, and a stray open event that
         // SwiftUI answers itself leaves a second browser window the user has no way
         // to close (no title bar, ⌘W closes a tab). Sweep once after launch settles.
@@ -227,6 +232,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     """
 }
 
+/// Bridges SwiftData's live persistent Session set into the local-only
+/// receiving-device activation gate. No Session content leaves the device.
+private struct AgentDefinitionBrowserSessionRegistrationView: View {
+    @Query private var browserSessions: [BrowserSession]
+
+    private var sessionIDs: [UUID] {
+        browserSessions.map(\.id).sorted { $0.uuidString < $1.uuidString }
+    }
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+            .onAppear { update(sessionIDs) }
+            .onChange(of: sessionIDs) { _, ids in update(ids) }
+    }
+
+    private func update(_ ids: [UUID]) {
+        AgentDefinitionLiveDependencyResolver.shared
+            .updateAvailableBrowserSessionIDs(Set(ids))
+    }
+}
+
 @main
 struct Straight_Up_BrowserApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -256,6 +284,7 @@ struct Straight_Up_BrowserApp: App {
         WindowGroup(id: "browser") {
             if let container = modelStartup.container {
                 ContentView()
+                    .background(AgentDefinitionBrowserSessionRegistrationView())
                     .modelContainer(container)
                     .onReceive(NotificationCenter.default.publisher(for: .browserShowSettings)) { _ in
                         openWindow(id: "settings")
@@ -331,7 +360,7 @@ struct Straight_Up_BrowserApp: App {
         .windowStyle(.automatic)
         .windowResizability(.contentSize)
         .commands {
-            // The stock About panel renders "Version 1.4.3 (13)" — the parenthetical is
+            // The stock About panel renders "Version X.Y.Z (N)" — the parenthetical is
             // CFBundleVersion. Blanking it leaves just the marketing version.
             // Check for Updates lives here too rather than its own CommandGroup:
             // @CommandsBuilder caps top-level children at 10 and we're there.

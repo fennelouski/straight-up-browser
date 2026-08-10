@@ -107,6 +107,26 @@ nonisolated struct AgentInvocationContext: Codable, Equatable, Sendable {
     }
 }
 
+extension AgentToolDescriptor {
+    /// Page IDs are authority-bearing object references. A tool that accepts
+    /// one cannot be authorized against `.none`; the caller must first resolve
+    /// every requested ID to a registered, live Page and then hold a lease
+    /// while executing it.
+    nonisolated var requiresLivePageTarget: Bool {
+        guard case .object(_, let properties, _, _) = inputSchema else {
+            return false
+        }
+        return properties["pageId"] != nil || properties["pageIds"] != nil
+    }
+
+    nonisolated var acceptsMultiplePageTargets: Bool {
+        guard case .object(_, let properties, _, _) = inputSchema else {
+            return false
+        }
+        return properties["pageIds"] != nil
+    }
+}
+
 nonisolated enum AgentInvocationDigest {
     private struct DigestInput: Encodable {
         let runID: UUID
@@ -226,6 +246,34 @@ nonisolated struct AgentExecutionPermit: Codable, Equatable, Sendable {
     let toolName: String
     let invocationDigest: String
     let decisionStepID: UUID
+    /// Attached only after the exact tool-invocation Step has been durably
+    /// appended. Executor-side evidence such as replay frames uses this ID,
+    /// never the earlier policy-decision Step, as its source backlink.
+    let invocationStepID: UUID?
+
+    init(
+        runID: UUID,
+        toolName: String,
+        invocationDigest: String,
+        decisionStepID: UUID,
+        invocationStepID: UUID? = nil
+    ) {
+        self.runID = runID
+        self.toolName = toolName
+        self.invocationDigest = invocationDigest
+        self.decisionStepID = decisionStepID
+        self.invocationStepID = invocationStepID
+    }
+
+    func recording(invocationStepID: UUID) -> Self {
+        Self(
+            runID: runID,
+            toolName: toolName,
+            invocationDigest: invocationDigest,
+            decisionStepID: decisionStepID,
+            invocationStepID: invocationStepID
+        )
+    }
 }
 
 nonisolated enum AgentPolicyDenialCode: String, Codable, Equatable, Sendable {
@@ -271,7 +319,17 @@ nonisolated struct AgentPolicyEngine: Sendable {
                 reason: "The invocation requires capabilities not granted to this run."
             )
         }
-        if let targetDenial = validateTarget(context.target, scope: context.runScope) {
+        if descriptor.requiresLivePageTarget, case .none = context.target {
+            return .deny(
+                code: .targetOutsideRunScope,
+                reason: "The Page operation has no resolved live target."
+            )
+        }
+        if let targetDenial = validateTarget(
+            context.target,
+            arguments: context.arguments,
+            scope: context.runScope
+        ) {
             return targetDenial
         }
         if context.dataLeavesDevice,
@@ -390,12 +448,29 @@ nonisolated struct AgentPolicyEngine: Sendable {
 
     private func validateTarget(
         _ target: AgentResolvedTarget,
+        arguments: JSONValue,
         scope: AgentRunScope
     ) -> AgentPolicyDecision? {
         switch target {
         case .none:
             return nil
         case .page(let page):
+            if case .object(let values) = arguments {
+                if case .string(let requestedPageID) = values["pageId"],
+                   requestedPageID != page.pageID {
+                    return .deny(
+                        code: .targetOutsideRunScope,
+                        reason: "Resolved Page identity does not match the requested Page."
+                    )
+                }
+                if case .array(let requestedPageIDs) = values["pageIds"],
+                   !requestedPageIDs.contains(.string(page.pageID)) {
+                    return .deny(
+                        code: .targetOutsideRunScope,
+                        reason: "Resolved Page identity is not among the requested Pages."
+                    )
+                }
+            }
             guard page.session == scope.session else {
                 return .deny(code: .sessionMismatch, reason: "Page and run browser Sessions differ.")
             }

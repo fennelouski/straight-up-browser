@@ -224,6 +224,67 @@ nonisolated protocol PageWaitEventSource: Sendable {
     func subscribe(to page: PageHandle) async throws -> PageWaitSubscription
 }
 
+/// In-memory production buffer used by WebKit-backed waits. The browser bridge
+/// publishes typed events into this actor; PageWaitCoordinator owns timeout,
+/// cancellation, identity validation, and deterministic subscription cleanup.
+actor WebKitPageWaitEventBuffer: PageWaitEventSource {
+    private let page: PageHandle
+    private var state: PageWaitState
+    private var continuations: [UUID: AsyncStream<PageWaitEvent>.Continuation] = [:]
+    private var ended = false
+
+    init(page: PageHandle, initialState: PageWaitState? = nil) {
+        self.page = page
+        state = initialState ?? PageWaitState(page: page)
+    }
+
+    func currentState(for requestedPage: PageHandle) throws -> PageWaitState {
+        guard requestedPage == page else {
+            throw PageWaitError.sourcePageMismatch(expected: requestedPage, actual: page)
+        }
+        return state
+    }
+
+    func subscribe(to requestedPage: PageHandle) throws -> PageWaitSubscription {
+        guard requestedPage == page else {
+            throw PageWaitError.sourcePageMismatch(expected: requestedPage, actual: page)
+        }
+        let subscriptionID = UUID()
+        let pair = AsyncStream<PageWaitEvent>.makeStream(bufferingPolicy: .bufferingNewest(16))
+        if ended {
+            pair.continuation.finish()
+        } else {
+            continuations[subscriptionID] = pair.continuation
+        }
+        return PageWaitSubscription(events: pair.stream) { [weak self] in
+            await self?.cancel(subscriptionID)
+        }
+    }
+
+    func emit(_ event: PageWaitEvent) {
+        guard !ended else { return }
+        state.apply(event)
+        for continuation in continuations.values {
+            continuation.yield(event)
+        }
+    }
+
+    func finish() {
+        guard !ended else { return }
+        ended = true
+        let active = continuations.values
+        continuations.removeAll()
+        for continuation in active { continuation.finish() }
+    }
+
+    private func cancel(_ subscriptionID: UUID) {
+        guard let continuation = continuations.removeValue(forKey: subscriptionID) else {
+            return
+        }
+        continuation.finish()
+    }
+}
+
 nonisolated struct PageWaitSubscription: Sendable {
     let events: AsyncStream<PageWaitEvent>
     private let cancellationGate: PageWaitCancellationGate
@@ -522,7 +583,6 @@ nonisolated struct WebKitAgentMutationObserverScripts: Equatable, Sendable {
           const maxFrameDepth = \(configuration.maximumFrameDepth);
           const reportInterval = \(configuration.minimumReportIntervalMilliseconds);
           const registryKey = '__straightUpAgentWaitObservers';
-          const localIDAttribute = 'data-straight-up-semantic-id';
           const registry = window[registryKey] instanceof Map
             ? window[registryKey]
             : (window[registryKey] = new Map());
@@ -533,7 +593,9 @@ nonisolated struct WebKitAgentMutationObserverScripts: Equatable, Sendable {
           let reportTimer = null;
           let disposed = false;
           let nextLocalID = 0;
-          const taggedElements = new Map();
+          let nextLegacyOrdinal = 0;
+          const localIDs = new WeakMap();
+          const legacyOrdinals = new WeakMap();
           const observedRoots = new Set();
 
           const cleanup = () => {
@@ -541,24 +603,25 @@ nonisolated struct WebKitAgentMutationObserverScripts: Equatable, Sendable {
             disposed = true;
             if (reportTimer !== null) clearTimeout(reportTimer);
             if (observer !== null) observer.disconnect();
-            for (const [element, localID] of taggedElements) {
-              if (element.getAttribute(localIDAttribute) === localID) {
-                element.removeAttribute(localIDAttribute);
-              }
-            }
-            taggedElements.clear();
             observedRoots.clear();
             if (registry.get(token) === cleanup) registry.delete(token);
           };
           registry.set(token, cleanup);
 
           const localIDFor = (element) => {
-            let localID = element.getAttribute(localIDAttribute);
+            let localID = localIDs.get(element);
             if (localID) return localID;
             localID = `semantic-${token}-${++nextLocalID}`;
-            element.setAttribute(localIDAttribute, localID);
-            taggedElements.set(element, localID);
+            localIDs.set(element, localID);
             return localID;
+          };
+
+          const legacyOrdinalFor = (element) => {
+            let ordinal = legacyOrdinals.get(element);
+            if (ordinal) return ordinal;
+            ordinal = ++nextLegacyOrdinal;
+            legacyOrdinals.set(element, ordinal);
+            return ordinal;
           };
 
           const boundedString = (value, limit = 512) =>
@@ -625,10 +688,7 @@ nonisolated struct WebKitAgentMutationObserverScripts: Equatable, Sendable {
               while (element && visitedNodes < maxNodes) {
                 visitedNodes += 1;
                 const localID = localIDFor(element);
-                const legacyValue = element.getAttribute('data-sub-agent-id') || '';
-                const legacyOrdinal = legacyValue.startsWith('sub-')
-                  ? Number.parseInt(legacyValue.slice(4), 10)
-                  : null;
+                const legacyOrdinal = legacyOrdinalFor(element);
                 const rectangle = element.getBoundingClientRect();
                 const states = [];
                 if (!element.hidden && rectangle.width > 0 && rectangle.height > 0) {
@@ -647,9 +707,7 @@ nonisolated struct WebKitAgentMutationObserverScripts: Equatable, Sendable {
 
                 nodes.push({
                   localID,
-                  legacySubID: Number.isInteger(legacyOrdinal) && legacyOrdinal > 0
-                    ? legacyOrdinal
-                    : null,
+                  legacySubID: legacyOrdinal,
                   role: boundedString(
                     element.getAttribute('role') || element.tagName.toLowerCase()
                   ),

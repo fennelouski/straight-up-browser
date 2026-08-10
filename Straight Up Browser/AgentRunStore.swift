@@ -25,6 +25,13 @@ nonisolated enum AgentRunStoreError: Error, Equatable, Sendable {
     case unsupportedSchema(path: String, found: Int, supported: Int)
     case corruptStore(path: String, reason: String)
     case fileOperationFailed(operation: String, path: String, reason: String)
+    case artifactRetentionProhibited(UUID)
+    case artifactSourceMismatch(artifactID: UUID, sourceStepID: UUID)
+    case artifactAlreadyExists(UUID)
+    case invalidArtifactMetadata(String)
+    case artifactTooLarge(maximumBytes: Int)
+    case artifactManifestFull(maximumEntries: Int)
+    case activeRunsPreventHistoryDeletion([UUID])
 }
 
 extension AgentRunStoreError: LocalizedError {
@@ -44,8 +51,28 @@ extension AgentRunStoreError: LocalizedError {
             "The agent store at \(path) is corrupt: \(reason)"
         case .fileOperationFailed(let operation, let path, let reason):
             "Could not \(operation) \(path): \(reason)"
+        case .artifactRetentionProhibited(let runID):
+            "Run \(runID) does not permit retained artifact bytes."
+        case .artifactSourceMismatch(let artifactID, let sourceStepID):
+            "Artifact \(artifactID) is not linked from source Step \(sourceStepID)."
+        case .artifactAlreadyExists(let id):
+            "Artifact \(id) already exists with different metadata or bytes."
+        case .invalidArtifactMetadata(let field):
+            "Artifact metadata is invalid: \(field)."
+        case .artifactTooLarge(let maximumBytes):
+            "Artifact exceeds the \(maximumBytes)-byte durable storage limit."
+        case .artifactManifestFull(let maximumEntries):
+            "Artifact manifest reached its \(maximumEntries)-entry limit."
+        case .activeRunsPreventHistoryDeletion(let runIDs):
+            "Cannot delete all agent history while \(runIDs.count) Run(s) are active."
         }
     }
+}
+
+nonisolated struct AgentHistoryDeletionResult: Equatable, Sendable {
+    let deletedRuns: Int
+    let deletedConversations: Int
+    let deletedOrphanEntries: Int
 }
 
 private nonisolated struct AgentConversationIndex: Codable, Sendable {
@@ -72,17 +99,48 @@ private nonisolated struct AgentRunIndex: Codable, Sendable {
     }
 }
 
+/// Narrow fault-injection seam used by persistence tests. Production stores
+/// leave the injector nil.
+nonisolated enum AgentRunStoreFailurePoint: Sendable {
+    case beforeReplayFrameManifestWrite
+}
+
+private nonisolated struct AgentReplayFrameTransaction: Codable, Sendable {
+    static let currentSchemaVersion = 1
+
+    let schemaVersion: Int
+    let artifact: AgentArtifact
+    let frame: AgentReplayFrameMetadata
+
+    init(artifact: AgentArtifact, frame: AgentReplayFrameMetadata) {
+        schemaVersion = Self.currentSchemaVersion
+        self.artifact = artifact
+        self.frame = frame
+    }
+}
+
 actor AgentRunStore {
+    private static let maximumArtifactBytes = 64 * 1_024 * 1_024
+    private static let maximumArtifactManifestEntries = 10_000
+    /// Shared by capture and persistence so an oversized frame is rejected
+    /// before artifact-budget admission rather than charged and then dropped.
+    nonisolated static let maximumReplayFrameBytes = 8 * 1_024 * 1_024
+    private static let maximumReplayFrameCount = 256
+    private static let maximumReplayFrameBytesPerRun = 128 * 1_024 * 1_024
     private let rootDirectory: URL
     private let conversationsDirectory: URL
     private let conversationIndexURL: URL
     private let runsDirectory: URL
     private let runIndexURL: URL
+    private let failureInjector: (@Sendable (AgentRunStoreFailurePoint) throws -> Void)?
 
     private var conversations: [UUID: AgentConversation]
     private var runs: [UUID: AgentRun]
 
-    init(baseDirectory: URL) throws {
+    init(
+        baseDirectory: URL,
+        failureInjector: (@Sendable (AgentRunStoreFailurePoint) throws -> Void)? = nil
+    ) throws {
         let rootDirectory = baseDirectory.appendingPathComponent("agent", isDirectory: true)
         let conversationsDirectory = rootDirectory.appendingPathComponent("conversations", isDirectory: true)
         let runsDirectory = rootDirectory.appendingPathComponent("runs", isDirectory: true)
@@ -153,11 +211,21 @@ actor AgentRunStore {
             }
         }
 
+        for runID in loadedRuns.keys {
+            try Self.recoverReplayFrameTransactions(
+                in: runsDirectory.appendingPathComponent(
+                    runID.uuidString,
+                    isDirectory: true
+                )
+            )
+        }
+
         self.rootDirectory = rootDirectory
         self.conversationsDirectory = conversationsDirectory
         self.conversationIndexURL = conversationIndexURL
         self.runsDirectory = runsDirectory
         self.runIndexURL = runIndexURL
+        self.failureInjector = failureInjector
         conversations = loadedConversations
         runs = loadedRuns
     }
@@ -358,11 +426,688 @@ actor AgentRunStore {
         return try Self.readSteps(from: stepsURL(for: runID), runID: runID)
     }
 
+    /// Persists an explicitly retained artifact beneath its Run and updates the
+    /// metadata-only inventory consumed by the unified timeline. The caller
+    /// must first append the exact `.artifact` Step carrying `id`; this keeps
+    /// every retained body cryptographically linked to one durable source Step.
+    @discardableResult
+    func persistArtifact(
+        id: UUID,
+        runID: UUID,
+        sourceStepID: UUID,
+        contentType: String,
+        data: Data,
+        at date: Date = Date()
+    ) throws -> AgentArtifact {
+        try persistArtifact(
+            id: id,
+            runID: runID,
+            sourceStepID: sourceStepID,
+            contentType: contentType,
+            data: data,
+            sourceRequirement: .artifactStepBacklink,
+            at: date
+        )
+    }
+
+    /// Persists one bounded replay image and its metadata. Unlike a general
+    /// artifact, a frame points directly at the exact authorized
+    /// `.toolInvocation` Step. Multiple before/after frames can therefore share
+    /// that one source Step without overloading its single legacy `artifactID`
+    /// field.
+    @discardableResult
+    func persistReplayFrame(
+        id: UUID,
+        runID: UUID,
+        sourceStepID: UUID,
+        contentType: String,
+        data: Data,
+        metadata: AgentReplayFrameMetadata,
+        at date: Date = Date()
+    ) throws -> AgentArtifact {
+        guard let run = runs[runID] else {
+            throw AgentRunStoreError.runNotFound(runID)
+        }
+        guard !run.incognito else {
+            throw AgentRunStoreError.artifactRetentionProhibited(runID)
+        }
+        guard metadata.artifactID == id else {
+            throw AgentRunStoreError.invalidArtifactMetadata("frame.artifactID")
+        }
+        guard contentType == "image/png" || contentType == "image/jpeg" else {
+            throw AgentRunStoreError.invalidArtifactMetadata("frame.contentType")
+        }
+        guard data.count <= Self.maximumReplayFrameBytes else {
+            throw AgentRunStoreError.artifactTooLarge(
+                maximumBytes: Self.maximumReplayFrameBytes
+            )
+        }
+        guard metadata.viewport.width > 0,
+              metadata.viewport.height > 0,
+              metadata.viewport.width <= 100_000,
+              metadata.viewport.height <= 100_000,
+              metadata.viewport.scale.isFinite,
+              metadata.viewport.scale > 0,
+              metadata.viewport.scale <= 16 else {
+            throw AgentRunStoreError.invalidArtifactMetadata("frame.viewport")
+        }
+        guard Self.isOriginOnly(metadata.urlOrigin) else {
+            throw AgentRunStoreError.invalidArtifactMetadata("frame.urlOrigin")
+        }
+
+        let runDirectory = runDirectory(for: runID)
+        // A process may have stopped after committing one side of the
+        // two-manifest transaction. Reconcile durable journals before making
+        // a new admission decision so retries are idempotent in either state.
+        try Self.recoverReplayFrameTransactions(in: runDirectory)
+
+        let framesDirectory = runDirectory
+            .appendingPathComponent("frames", isDirectory: true)
+        let frameManifestURL = framesDirectory.appendingPathComponent("index.json")
+        var frames: [AgentReplayFrameMetadata] = if FileManager.default.fileExists(
+            atPath: frameManifestURL.path
+        ) {
+            try Self.decode([AgentReplayFrameMetadata].self, from: frameManifestURL)
+        } else {
+            []
+        }
+        guard frames.count <= Self.maximumReplayFrameCount,
+              Set(frames.map(\.artifactID)).count == frames.count else {
+            throw AgentRunStoreError.corruptStore(
+                path: frameManifestURL.path,
+                reason: "replay frame manifest is oversized or contains duplicates"
+            )
+        }
+        if let existing = frames.first(where: { $0.artifactID == id }),
+           existing != metadata {
+            throw AgentRunStoreError.artifactAlreadyExists(id)
+        }
+        let existingFrame = frames.first(where: { $0.artifactID == id })
+        let artifactsDirectory = runDirectory
+            .appendingPathComponent("artifacts", isDirectory: true)
+        let artifactManifestURL = artifactsDirectory.appendingPathComponent("index.json")
+        let originalArtifacts: [AgentArtifact] = if FileManager.default.fileExists(
+            atPath: artifactManifestURL.path
+        ) {
+            try Self.decode([AgentArtifact].self, from: artifactManifestURL)
+        } else {
+            []
+        }
+        guard originalArtifacts.count <= Self.maximumArtifactManifestEntries,
+              Set(originalArtifacts.map(\.id)).count == originalArtifacts.count else {
+            throw AgentRunStoreError.corruptStore(
+                path: artifactManifestURL.path,
+                reason: "artifact manifest is oversized or contains duplicates"
+            )
+        }
+        let existingArtifact = originalArtifacts.first(where: { $0.id == id })
+
+        // Repairing either half of an interrupted transaction must still fit
+        // the retained-byte bound. Existing complete frames are not charged a
+        // second time on an idempotent retry.
+        if existingFrame == nil || existingArtifact == nil {
+            if existingFrame == nil {
+                guard frames.count < Self.maximumReplayFrameCount else {
+                    throw AgentRunStoreError.artifactManifestFull(
+                        maximumEntries: Self.maximumReplayFrameCount
+                    )
+                }
+            }
+            let retainedBytes = try Self.replayFrameByteCount(
+                artifacts: originalArtifacts,
+                frames: frames
+            )
+            let artifactAlreadyCounted = existingArtifact.map { artifact in
+                frames.contains { $0.artifactID == artifact.id }
+            } ?? false
+            let additionalBytes = artifactAlreadyCounted ? 0 : Int64(data.count)
+            let (projectedBytes, overflow) = retainedBytes.addingReportingOverflow(
+                additionalBytes
+            )
+            guard !overflow,
+                  projectedBytes <= Int64(Self.maximumReplayFrameBytesPerRun) else {
+                throw AgentRunStoreError.artifactTooLarge(
+                    maximumBytes: Self.maximumReplayFrameBytesPerRun
+                )
+            }
+        }
+
+        let artifact = existingArtifact ?? Self.makeArtifact(
+            id: id,
+            runID: runID,
+            sourceStepID: sourceStepID,
+            contentType: contentType,
+            data: data,
+            at: date
+        )
+
+        // If the frame half already exists, persistArtifact repairs a missing
+        // artifact half and otherwise verifies the retry byte-for-byte.
+        if existingFrame != nil {
+            return try persistArtifact(
+                id: id,
+                runID: runID,
+                sourceStepID: sourceStepID,
+                contentType: contentType,
+                data: data,
+                sourceRequirement: .authorizedToolInvocation,
+                at: date
+            )
+        }
+
+        try Self.ensureDirectory(framesDirectory)
+        let pendingDirectory = framesDirectory.appendingPathComponent(
+            "pending",
+            isDirectory: true
+        )
+        try Self.ensureDirectory(pendingDirectory)
+        let journalURL = pendingDirectory.appendingPathComponent(
+            "\(id.uuidString).json"
+        )
+        guard !FileManager.default.fileExists(atPath: journalURL.path) else {
+            throw AgentRunStoreError.corruptStore(
+                path: journalURL.path,
+                reason: "unrecovered replay transaction"
+            )
+        }
+        try Self.write(
+            AgentReplayFrameTransaction(artifact: artifact, frame: metadata),
+            to: journalURL
+        )
+
+        let artifactExistedBefore = existingArtifact != nil
+        do {
+            let persisted = try persistArtifact(
+                id: id,
+                runID: runID,
+                sourceStepID: sourceStepID,
+                contentType: contentType,
+                data: data,
+                sourceRequirement: .authorizedToolInvocation,
+                at: date
+            )
+            try failureInjector?(.beforeReplayFrameManifestWrite)
+            guard frames.count < Self.maximumReplayFrameCount else {
+                throw AgentRunStoreError.artifactManifestFull(
+                    maximumEntries: Self.maximumReplayFrameCount
+                )
+            }
+            frames.append(metadata)
+            frames.sort { $0.artifactID.uuidString < $1.artifactID.uuidString }
+            try Self.write(frames, to: frameManifestURL)
+            try FileManager.default.removeItem(at: journalURL)
+            return persisted
+        } catch {
+            // Ordinary write failures are rolled back immediately. If the
+            // process dies during rollback, the still-durable journal lets
+            // initialization or the next retry finish reconciliation.
+            do {
+                if !artifactExistedBefore {
+                    try Self.write(originalArtifacts, to: artifactManifestURL)
+                    let bodyURL = runDirectory.appendingPathComponent(
+                        artifact.relativePath
+                    )
+                    if FileManager.default.fileExists(atPath: bodyURL.path) {
+                        try FileManager.default.removeItem(at: bodyURL)
+                    }
+                }
+                try Self.write(frames, to: frameManifestURL)
+                if FileManager.default.fileExists(atPath: journalURL.path) {
+                    try FileManager.default.removeItem(at: journalURL)
+                }
+            } catch {
+                // Preserve the original error and the journal. Recovery will
+                // deterministically complete or remove the partial state.
+            }
+            throw error
+        }
+    }
+
+    private enum ArtifactSourceRequirement {
+        case artifactStepBacklink
+        case authorizedToolInvocation
+
+        func accepts(_ step: AgentStep, artifactID: UUID) -> Bool {
+            switch self {
+            case .artifactStepBacklink:
+                step.kind == .artifact && step.artifactID == artifactID
+            case .authorizedToolInvocation:
+                step.kind == .toolInvocation && step.policyDecisionStepID != nil
+            }
+        }
+    }
+
+    private func persistArtifact(
+        id: UUID,
+        runID: UUID,
+        sourceStepID: UUID,
+        contentType: String,
+        data: Data,
+        sourceRequirement: ArtifactSourceRequirement,
+        at date: Date
+    ) throws -> AgentArtifact {
+        guard let run = runs[runID] else { throw AgentRunStoreError.runNotFound(runID) }
+        guard !run.incognito else {
+            throw AgentRunStoreError.artifactRetentionProhibited(runID)
+        }
+        guard data.count <= Self.maximumArtifactBytes else {
+            throw AgentRunStoreError.artifactTooLarge(
+                maximumBytes: Self.maximumArtifactBytes
+            )
+        }
+        let normalizedContentType = contentType.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard !normalizedContentType.isEmpty,
+              normalizedContentType == contentType,
+              normalizedContentType.utf8.count <= 256,
+              !normalizedContentType.unicodeScalars.contains(where: {
+                  CharacterSet.controlCharacters.contains($0)
+              }) else {
+            throw AgentRunStoreError.invalidArtifactMetadata("contentType")
+        }
+
+        let runSteps = try Self.readSteps(
+            from: stepsURL(for: runID),
+            runID: runID
+        )
+        let matchingSteps = runSteps.filter { step in
+            step.id == sourceStepID
+                && sourceRequirement.accepts(step, artifactID: id)
+        }
+        guard matchingSteps.count == 1 else {
+            throw AgentRunStoreError.artifactSourceMismatch(
+                artifactID: id,
+                sourceStepID: sourceStepID
+            )
+        }
+
+        let artifactsDirectory = runDirectory(for: runID)
+            .appendingPathComponent("artifacts", isDirectory: true)
+        try Self.ensureDirectory(artifactsDirectory)
+        let manifestURL = artifactsDirectory.appendingPathComponent("index.json")
+        var manifest: [AgentArtifact] = if FileManager.default.fileExists(
+            atPath: manifestURL.path
+        ) {
+            try Self.decode([AgentArtifact].self, from: manifestURL)
+        } else {
+            []
+        }
+        guard manifest.count <= Self.maximumArtifactManifestEntries else {
+            throw AgentRunStoreError.corruptStore(
+                path: manifestURL.path,
+                reason: "artifact manifest exceeds the entry limit"
+            )
+        }
+
+        let relativePath = "artifacts/\(id.uuidString).data"
+        let digest = Self.sha256(data)
+        let artifact = AgentArtifact(
+            id: id,
+            runID: runID,
+            sourceStepID: sourceStepID,
+            contentType: normalizedContentType,
+            byteCount: data.count,
+            sha256: digest,
+            relativePath: relativePath,
+            redactionState: .retained,
+            createdAt: date
+        )
+        if let existing = manifest.first(where: { $0.id == id }) {
+            let destination = runDirectory(for: runID)
+                .appendingPathComponent(existing.relativePath)
+            let destinationValues = try? destination.resourceValues(forKeys: [
+                .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey,
+            ])
+            let retainedBacklinkIsValid = runSteps.contains { step in
+                step.id == existing.sourceStepID
+                    && sourceRequirement.accepts(step, artifactID: existing.id)
+            }
+            guard existing.runID == artifact.runID,
+                  existing.contentType == artifact.contentType,
+                  existing.byteCount == artifact.byteCount,
+                  existing.sha256 == artifact.sha256,
+                  existing.relativePath == artifact.relativePath,
+                  existing.redactionState == artifact.redactionState,
+                  retainedBacklinkIsValid,
+                  destinationValues?.isRegularFile == true,
+                  destinationValues?.isSymbolicLink != true,
+                  destinationValues?.fileSize == data.count,
+                  let existingData = try? Data(
+                      contentsOf: destination,
+                      options: .mappedIfSafe
+                  ),
+                  existingData.count == data.count,
+                  Self.sha256(existingData) == digest else {
+                throw AgentRunStoreError.artifactAlreadyExists(id)
+            }
+            return existing
+        }
+        guard manifest.count < Self.maximumArtifactManifestEntries else {
+            throw AgentRunStoreError.artifactManifestFull(
+                maximumEntries: Self.maximumArtifactManifestEntries
+            )
+        }
+
+        let destination = artifactsDirectory.appendingPathComponent(
+            "\(id.uuidString).data"
+        )
+        guard !FileManager.default.fileExists(atPath: destination.path) else {
+            throw AgentRunStoreError.artifactAlreadyExists(id)
+        }
+        try Self.writeData(data, to: destination)
+        manifest.append(artifact)
+        manifest.sort {
+            if $0.createdAt != $1.createdAt { return $0.createdAt < $1.createdAt }
+            return $0.id.uuidString < $1.id.uuidString
+        }
+        do {
+            try Self.write(manifest, to: manifestURL)
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            throw error
+        }
+        return artifact
+    }
+
+    private static func makeArtifact(
+        id: UUID,
+        runID: UUID,
+        sourceStepID: UUID,
+        contentType: String,
+        data: Data,
+        at date: Date
+    ) -> AgentArtifact {
+        AgentArtifact(
+            id: id,
+            runID: runID,
+            sourceStepID: sourceStepID,
+            contentType: contentType,
+            byteCount: data.count,
+            sha256: sha256(data),
+            relativePath: "artifacts/\(id.uuidString).data",
+            redactionState: .retained,
+            createdAt: date
+        )
+    }
+
+    private static func replayFrameByteCount(
+        artifacts: [AgentArtifact],
+        frames: [AgentReplayFrameMetadata]
+    ) throws -> Int64 {
+        let frameIDs = Set(frames.map(\.artifactID))
+        var total: Int64 = 0
+        for artifact in artifacts where frameIDs.contains(artifact.id) {
+            guard artifact.byteCount >= 0 else {
+                throw AgentRunStoreError.corruptStore(
+                    path: "artifacts/index.json",
+                    reason: "artifact byte count is negative"
+                )
+            }
+            let (next, overflow) = total.addingReportingOverflow(
+                Int64(artifact.byteCount)
+            )
+            guard !overflow else {
+                throw AgentRunStoreError.corruptStore(
+                    path: "artifacts/index.json",
+                    reason: "replay frame byte accounting overflowed"
+                )
+            }
+            total = next
+        }
+        return total
+    }
+
+    /// Reconciles durable replay journals left by a process exit. The artifact
+    /// manifest and body are written first; once both verify byte-for-byte, the
+    /// frame manifest can be completed safely. Earlier partial states are
+    /// rolled back. A conflicting ID is corruption and is never overwritten.
+    private static func recoverReplayFrameTransactions(in runDirectory: URL) throws {
+        let framesDirectory = runDirectory.appendingPathComponent(
+            "frames",
+            isDirectory: true
+        )
+        let pendingDirectory = framesDirectory.appendingPathComponent(
+            "pending",
+            isDirectory: true
+        )
+        guard FileManager.default.fileExists(atPath: pendingDirectory.path) else {
+            return
+        }
+        let journals = try FileManager.default.contentsOfDirectory(
+            at: pendingDirectory,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        ).filter { $0.pathExtension == "json" }.sorted { $0.path < $1.path }
+
+        let artifactManifestURL = runDirectory.appendingPathComponent(
+            "artifacts/index.json"
+        )
+        let frameManifestURL = framesDirectory.appendingPathComponent("index.json")
+        for journalURL in journals {
+            let values = try journalURL.resourceValues(forKeys: [
+                .isRegularFileKey, .isSymbolicLinkKey,
+            ])
+            guard values.isRegularFile == true, values.isSymbolicLink != true else {
+                throw AgentRunStoreError.corruptStore(
+                    path: journalURL.path,
+                    reason: "replay transaction journal is not a regular file"
+                )
+            }
+            let transaction = try decode(
+                AgentReplayFrameTransaction.self,
+                from: journalURL
+            )
+            guard transaction.schemaVersion
+                    == AgentReplayFrameTransaction.currentSchemaVersion,
+                  transaction.artifact.id == transaction.frame.artifactID,
+                  journalURL.deletingPathExtension().lastPathComponent
+                    == transaction.artifact.id.uuidString,
+                  runDirectory.lastPathComponent
+                    == transaction.artifact.runID.uuidString else {
+                throw AgentRunStoreError.corruptStore(
+                    path: journalURL.path,
+                    reason: "replay transaction identity mismatch"
+                )
+            }
+            guard transaction.artifact.contentType == "image/png"
+                    || transaction.artifact.contentType == "image/jpeg",
+                  transaction.artifact.byteCount >= 0,
+                  transaction.artifact.byteCount <= maximumReplayFrameBytes,
+                  transaction.artifact.relativePath
+                    == "artifacts/\(transaction.artifact.id.uuidString).data",
+                  transaction.artifact.redactionState == .retained,
+                  transaction.artifact.sha256.count == 64,
+                  transaction.artifact.sha256.allSatisfy({ $0.isHexDigit }),
+                  transaction.frame.viewport.width > 0,
+                  transaction.frame.viewport.height > 0,
+                  transaction.frame.viewport.width <= 100_000,
+                  transaction.frame.viewport.height <= 100_000,
+                  transaction.frame.viewport.scale.isFinite,
+                  transaction.frame.viewport.scale > 0,
+                  transaction.frame.viewport.scale <= 16,
+                  isOriginOnly(transaction.frame.urlOrigin) else {
+                throw AgentRunStoreError.corruptStore(
+                    path: journalURL.path,
+                    reason: "replay transaction metadata is invalid"
+                )
+            }
+            let sourceSteps = try readSteps(
+                from: runDirectory.appendingPathComponent("steps.jsonl"),
+                runID: transaction.artifact.runID
+            ).filter {
+                $0.id == transaction.artifact.sourceStepID
+                    && $0.kind == .toolInvocation
+                    && $0.policyDecisionStepID != nil
+            }
+            guard sourceSteps.count == 1 else {
+                throw AgentRunStoreError.corruptStore(
+                    path: journalURL.path,
+                    reason: "replay transaction source Step is not an authorized invocation"
+                )
+            }
+
+            var artifacts: [AgentArtifact] = if FileManager.default.fileExists(
+                atPath: artifactManifestURL.path
+            ) {
+                try decode([AgentArtifact].self, from: artifactManifestURL)
+            } else {
+                []
+            }
+            var frames: [AgentReplayFrameMetadata] = if FileManager.default.fileExists(
+                atPath: frameManifestURL.path
+            ) {
+                try decode([AgentReplayFrameMetadata].self, from: frameManifestURL)
+            } else {
+                []
+            }
+            guard artifacts.count <= maximumArtifactManifestEntries,
+                  Set(artifacts.map(\.id)).count == artifacts.count,
+                  frames.count <= maximumReplayFrameCount,
+                  Set(frames.map(\.artifactID)).count == frames.count else {
+                throw AgentRunStoreError.corruptStore(
+                    path: journalURL.path,
+                    reason: "manifest bounds or uniqueness check failed during replay recovery"
+                )
+            }
+
+            let artifactIndex = artifacts.firstIndex {
+                $0.id == transaction.artifact.id
+            }
+            let frameIndex = frames.firstIndex {
+                $0.artifactID == transaction.frame.artifactID
+            }
+            if let artifactIndex,
+               artifacts[artifactIndex] != transaction.artifact {
+                throw AgentRunStoreError.corruptStore(
+                    path: artifactManifestURL.path,
+                    reason: "replay transaction conflicts with retained artifact"
+                )
+            }
+            if let frameIndex, frames[frameIndex] != transaction.frame {
+                throw AgentRunStoreError.corruptStore(
+                    path: frameManifestURL.path,
+                    reason: "replay transaction conflicts with retained frame"
+                )
+            }
+
+            let bodyURL = runDirectory.appendingPathComponent(
+                transaction.artifact.relativePath
+            )
+            let bodyIsValid: Bool
+            let bodyValues = try? bodyURL.resourceValues(forKeys: [
+                .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey,
+            ])
+            if bodyValues?.isRegularFile == true,
+               bodyValues?.isSymbolicLink != true,
+               bodyValues?.fileSize == transaction.artifact.byteCount,
+               let body = try? Data(contentsOf: bodyURL, options: .mappedIfSafe) {
+                bodyIsValid = body.count == transaction.artifact.byteCount
+                    && sha256(body) == transaction.artifact.sha256
+            } else {
+                bodyIsValid = false
+            }
+
+            if artifactIndex != nil, bodyIsValid {
+                if frameIndex == nil {
+                    guard frames.count < maximumReplayFrameCount else {
+                        throw AgentRunStoreError.artifactManifestFull(
+                            maximumEntries: maximumReplayFrameCount
+                        )
+                    }
+                    let retained = try replayFrameByteCount(
+                        artifacts: artifacts,
+                        frames: frames
+                    )
+                    let (projected, overflow) = retained.addingReportingOverflow(
+                        Int64(transaction.artifact.byteCount)
+                    )
+                    guard !overflow,
+                          projected <= Int64(maximumReplayFrameBytesPerRun) else {
+                        throw AgentRunStoreError.artifactTooLarge(
+                            maximumBytes: maximumReplayFrameBytesPerRun
+                        )
+                    }
+                    frames.append(transaction.frame)
+                    frames.sort {
+                        $0.artifactID.uuidString < $1.artifactID.uuidString
+                    }
+                    try ensureDirectory(framesDirectory)
+                    try write(frames, to: frameManifestURL)
+                }
+            } else {
+                // There are not enough durable bytes to finish the transaction.
+                // Remove only entries with the journal's exact identity.
+                if let artifactIndex {
+                    artifacts.remove(at: artifactIndex)
+                    try write(artifacts, to: artifactManifestURL)
+                }
+                if let frameIndex {
+                    frames.remove(at: frameIndex)
+                    try write(frames, to: frameManifestURL)
+                }
+                if FileManager.default.fileExists(atPath: bodyURL.path) {
+                    try FileManager.default.removeItem(at: bodyURL)
+                }
+            }
+            try FileManager.default.removeItem(at: journalURL)
+        }
+    }
+
+    private static func isOriginOnly(_ value: String) -> Bool {
+        guard let components = URLComponents(string: value),
+              let scheme = components.scheme?.lowercased(),
+              components.user == nil,
+              components.password == nil,
+              components.query == nil,
+              components.fragment == nil,
+              components.path.isEmpty || components.path == "/" else {
+            return false
+        }
+        if scheme == "http" || scheme == "https" {
+            return components.host?.isEmpty == false
+        }
+        return false
+    }
+
     func listConversations() throws -> [AgentConversation] {
         conversations.values.sorted {
             if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
             return $0.id.uuidString < $1.id.uuidString
         }
+    }
+
+    /// Removes only conversation metadata that has no Run backlinks on either
+    /// side of the relationship. The second check protects a conversation if
+    /// its cached `runIDs` array is stale while an indexed Run still owns it.
+    /// This is intentionally separate from `deleteRun`: manual history policy
+    /// keeps empty conversation records until the user explicitly deletes them.
+    func deleteUnreferencedEmptyConversations() throws -> Set<UUID> {
+        let referencedConversationIDs = Set(runs.values.compactMap(\.conversationID))
+        let deletedIDs: Set<UUID> = Set(
+            conversations.values.compactMap { conversation -> UUID? in
+            guard conversation.runIDs.isEmpty,
+                  !referencedConversationIDs.contains(conversation.id) else {
+                return nil
+            }
+            return conversation.id
+            }
+        )
+        guard !deletedIDs.isEmpty else { return [] }
+
+        let removed = conversations.filter { deletedIDs.contains($0.key) }
+        for id in deletedIDs {
+            conversations.removeValue(forKey: id)
+        }
+        do {
+            try persistConversationIndex()
+        } catch {
+            for (id, conversation) in removed {
+                conversations[id] = conversation
+            }
+            throw error
+        }
+        return deletedIDs
     }
 
     func deleteRun(id: UUID, at date: Date = Date()) throws {
@@ -396,6 +1141,101 @@ actor AgentRunStore {
         conversations.removeValue(forKey: id)
         try persistRunIndex()
         try persistConversationIndex()
+    }
+
+    /// Removes every durable Run/conversation plus unindexed storage entries.
+    /// Active or recoverable Runs make the operation fail closed; callers must
+    /// first cancel or explicitly resolve them. Each indexed Run is removed
+    /// through the normal path so frame/artifact manifests, replay journals,
+    /// retained bodies, and both indexes stay in sync.
+    func deleteAllHistory() throws -> AgentHistoryDeletionResult {
+        let nonterminalRunIDs = runs.values.filter {
+            !$0.status.isTerminal
+        }.map(\.id).sorted { $0.uuidString < $1.uuidString }
+        guard nonterminalRunIDs.isEmpty else {
+            throw AgentRunStoreError.activeRunsPreventHistoryDeletion(
+                nonterminalRunIDs
+            )
+        }
+
+        let runIDs = runs.keys.sorted { $0.uuidString < $1.uuidString }
+        let conversationIDs = conversations.keys.sorted {
+            $0.uuidString < $1.uuidString
+        }
+        for runID in runIDs {
+            try deleteRun(id: runID)
+        }
+        for conversationID in conversationIDs {
+            try deleteConversation(id: conversationID)
+        }
+
+        var orphanCount = 0
+        for (directory, preservedName) in [
+            (runsDirectory, "index.json"),
+            (conversationsDirectory, "index.json"),
+        ] {
+            let entries = try FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [
+                    .isRegularFileKey, .isSymbolicLinkKey,
+                ],
+                options: []
+            )
+            for entry in entries {
+                if entry.lastPathComponent == preservedName {
+                    let values = try entry.resourceValues(forKeys: [
+                        .isRegularFileKey, .isSymbolicLinkKey,
+                    ])
+                    guard values.isRegularFile == true,
+                          values.isSymbolicLink != true else {
+                        throw AgentRunStoreError.corruptStore(
+                            path: entry.path,
+                            reason: "history index is not a regular file"
+                        )
+                    }
+                    continue
+                }
+                guard entry.deletingLastPathComponent().standardizedFileURL
+                        == directory.standardizedFileURL else {
+                    throw AgentRunStoreError.corruptStore(
+                        path: entry.path,
+                        reason: "history entry escaped its storage directory"
+                    )
+                }
+                try FileManager.default.removeItem(at: entry)
+                orphanCount += 1
+            }
+        }
+        let migrationsDirectory = rootDirectory.appendingPathComponent(
+            "migrations",
+            isDirectory: true
+        )
+        if FileManager.default.fileExists(atPath: migrationsDirectory.path) {
+            for entry in try FileManager.default.contentsOfDirectory(
+                at: migrationsDirectory,
+                includingPropertiesForKeys: nil,
+                options: []
+            ) {
+                guard entry.deletingLastPathComponent().standardizedFileURL
+                        == migrationsDirectory.standardizedFileURL else {
+                    throw AgentRunStoreError.corruptStore(
+                        path: entry.path,
+                        reason: "migration entry escaped its storage directory"
+                    )
+                }
+                try FileManager.default.removeItem(at: entry)
+                orphanCount += 1
+            }
+        }
+        try Self.ensureDirectory(runsDirectory)
+        try Self.ensureDirectory(conversationsDirectory)
+        try persistRunIndex()
+        try persistConversationIndex()
+        return AgentHistoryDeletionResult(
+            deletedRuns: runIDs.count,
+            deletedConversations: conversationIDs.count,
+            deletedOrphanEntries: orphanCount
+        )
     }
 
     /// Installs a fully validated legacy bundle and writes its receipt last.

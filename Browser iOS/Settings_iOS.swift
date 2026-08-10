@@ -22,6 +22,13 @@ struct Settings_iOS: View {
     @AppStorage(TabSync.Key.mode) private var tabSyncMode = TabSyncMode.openOnly.rawValue
     @AppStorage(TabSync.Key.cacheState) private var tabSyncCacheState = false
 
+    @AppStorage(AgentDefinitionSyncSettings.Key.schedules)
+    private var syncAgentSchedules = false
+    @AppStorage(AgentDefinitionSyncSettings.Key.providerPresets)
+    private var syncAgentProviderPresets = false
+    @AppStorage(AgentDefinitionSyncSettings.Key.userAuthoredMemory)
+    private var syncAgentUserAuthoredMemory = false
+
     @AppStorage("searchEngine") private var searchEngine = "Google"
     @AppStorage("spaceScrollPercent") private var spaceScrollPercent = 90.0
     @AppStorage("javaScriptEnabled") private var javaScriptEnabled = true
@@ -42,6 +49,8 @@ struct Settings_iOS: View {
     @State private var showClearConfirm = false
     @State private var clearedNote = false
     @State private var iCloudAvailable: Bool?
+    @State private var pendingAgentSyncDisableCategory: AgentDefinitionSyncCategory?
+    @State private var showingAgentSyncDisableChoices = false
 
     var body: some View {
         NavigationStack {
@@ -81,6 +90,25 @@ struct Settings_iOS: View {
                     Text("Sync")
                 } footer: {
                     Text("Sync uses your private iCloud database. Incognito tabs, cookies, cache, website storage, saved logins, and downloads stay on this device. Changes to the main sync switch take effect after you relaunch.")
+                }
+
+                Section {
+                    Toggle(
+                        "Sync scheduled task definitions",
+                        isOn: agentSyncBinding(for: .schedules)
+                    )
+                    Toggle(
+                        "Sync provider presets",
+                        isOn: agentSyncBinding(for: .providerPresets)
+                    )
+                    Toggle(
+                        "Sync user-authored memory",
+                        isOn: agentSyncBinding(for: .userAuthoredMemory)
+                    )
+                } header: {
+                    Text("Agent Definition Sync")
+                } footer: {
+                    Text("Each category is separately opt in and uses your private iCloud database. Credentials, page handles, runs, transcripts, approvals, and artifacts never sync.")
                 }
 
                 Section("Search") {
@@ -216,12 +244,103 @@ struct Settings_iOS: View {
                 }
             }
             .task { iCloudAvailable = await TabSync.iCloudAvailable() }
+            .confirmationDialog(
+                "Turn Off \(pendingAgentSyncDisableCategory.map(agentSyncCategoryLabel) ?? "Agent Definition") Sync?",
+                isPresented: $showingAgentSyncDisableChoices,
+                titleVisibility: .visible
+            ) {
+                Button("Keep Copies on This iPad") {
+                    confirmAgentSyncDisable(.keepLocalCopies)
+                }
+                Button("Delete Copies from iCloud", role: .destructive) {
+                    confirmAgentSyncDisable(.deleteCloudCopies)
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingAgentSyncDisableCategory = nil
+                }
+            } message: {
+                Text("Either choice stops new cloud writes. Unsupported Mac automation remains retained on this iPad but can never execute here.")
+            }
             .navigationTitle("Settings")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .confirmationDialog("Clear all browsing data?", isPresented: $showClearConfirm, titleVisibility: .visible) {
                 Button("Clear Browsing Data", role: .destructive, action: clearBrowsingData)
                 Button("Cancel", role: .cancel) {}
             }
+        }
+    }
+
+    private func agentSyncBinding(
+        for category: AgentDefinitionSyncCategory
+    ) -> Binding<Bool> {
+        Binding(
+            get: { agentSyncValue(for: category) },
+            set: { enabled in
+                if enabled {
+                    setAgentSyncValue(true, for: category)
+                    Task {
+                        do {
+                            _ = try await AgentDefinitionSyncRuntime.shared.setEnabled(
+                                true,
+                                category: category
+                            )
+                        } catch {
+                            setAgentSyncValue(false, for: category)
+                        }
+                    }
+                } else {
+                    pendingAgentSyncDisableCategory = category
+                    showingAgentSyncDisableChoices = true
+                }
+            }
+        )
+    }
+
+    private func confirmAgentSyncDisable(
+        _ disposition: AgentDefinitionSyncDisableDisposition
+    ) {
+        guard let category = pendingAgentSyncDisableCategory else { return }
+        pendingAgentSyncDisableCategory = nil
+        Task {
+            do {
+                _ = try await AgentDefinitionSyncRuntime.shared.disable(
+                    category,
+                    disposition: disposition
+                )
+                setAgentSyncValue(false, for: category)
+            } catch {
+                // Leave the visible toggle on when the requested cloud
+                // transition did not complete; the user can safely retry.
+            }
+        }
+    }
+
+    private func agentSyncValue(for category: AgentDefinitionSyncCategory) -> Bool {
+        switch category {
+        case .schedules: syncAgentSchedules
+        case .providerPresets: syncAgentProviderPresets
+        case .userAuthoredMemory: syncAgentUserAuthoredMemory
+        }
+    }
+
+    private func setAgentSyncValue(
+        _ value: Bool,
+        for category: AgentDefinitionSyncCategory
+    ) {
+        switch category {
+        case .schedules: syncAgentSchedules = value
+        case .providerPresets: syncAgentProviderPresets = value
+        case .userAuthoredMemory: syncAgentUserAuthoredMemory = value
+        }
+    }
+
+    private func agentSyncCategoryLabel(
+        _ category: AgentDefinitionSyncCategory
+    ) -> String {
+        switch category {
+        case .schedules: "Scheduled Task"
+        case .providerPresets: "Provider Preset"
+        case .userAuthoredMemory: "User Memory"
         }
     }
 

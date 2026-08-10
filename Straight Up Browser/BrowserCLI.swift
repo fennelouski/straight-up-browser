@@ -9,6 +9,104 @@ import Foundation
 
 // MARK: - Structured agent automation
 
+nonisolated enum BrowserAutomationCompletionKind: String, Equatable, Sendable {
+    case succeeded
+    case failed
+    case malformed
+    case timedOut
+}
+
+/// Classifies the transient browser response without retaining its body in the
+/// durable run record. The raw bytes exist only long enough to return them to
+/// the MCP caller, then both response files are removed.
+nonisolated struct BrowserAutomationInvocationResult: Equatable, Sendable {
+    let kind: BrowserAutomationCompletionKind
+    let responseData: Data
+
+    init(responseData: Data) {
+        self.responseData = responseData
+        guard let object = try? JSONSerialization.jsonObject(with: responseData),
+              let dictionary = object as? [String: Any] else {
+            kind = .malformed
+            return
+        }
+        if dictionary["error"] != nil || dictionary["ok"] as? Bool == false {
+            kind = .failed
+        } else {
+            kind = .succeeded
+        }
+    }
+
+    static func generated(
+        kind: BrowserAutomationCompletionKind,
+        message: String
+    ) -> Self {
+        let data = (try? JSONSerialization.data(withJSONObject: ["error": message]))
+            ?? Data(#"{"error":"Browser automation failed."}"#.utf8)
+        return Self(kind: kind, responseData: data)
+    }
+
+    private init(kind: BrowserAutomationCompletionKind, responseData: Data) {
+        self.kind = kind
+        self.responseData = responseData
+    }
+
+    var durableMetadata: JSONValue {
+        .object([
+            "completion": .string(kind.rawValue),
+            "responseBodyRetained": .boolean(false),
+        ])
+    }
+}
+
+nonisolated struct BrowserAutomationPageAuthoritySnapshot: Equatable, Sendable {
+    let target: AgentPageTarget
+    /// Unforgeable identity created in the browser's isolated semantic world.
+    /// A same-URL reload creates a different generation.
+    let document: PageDocumentGeneration
+}
+
+nonisolated enum BrowserAutomationPageBindingError: Error, Equatable, Sendable {
+    case missingOrStaleTarget
+    case pageMismatch
+    case incognitoDenied
+    case sessionMismatch
+    case originMismatch
+    case versionMismatch
+}
+
+/// Immutable authority evidence captured at policy time and revalidated against
+/// the host's live Page immediately before local-MCP dispatch.
+nonisolated struct BrowserAutomationPageDispatchBinding: Equatable, Sendable {
+    let target: AgentPageTarget
+    let version: AgentPageLeaseVersion
+
+    func validate(
+        live binding: BrowserAutomationPageDispatchBinding?,
+        allowIncognito: Bool = false
+    ) throws {
+        guard let binding else {
+            throw BrowserAutomationPageBindingError.missingOrStaleTarget
+        }
+        guard target.pageID == binding.target.pageID else {
+            throw BrowserAutomationPageBindingError.pageMismatch
+        }
+        guard allowIncognito
+                || (target.session != .incognito && binding.target.session != .incognito) else {
+            throw BrowserAutomationPageBindingError.incognitoDenied
+        }
+        guard target.session == binding.target.session else {
+            throw BrowserAutomationPageBindingError.sessionMismatch
+        }
+        guard target.origin == binding.target.origin else {
+            throw BrowserAutomationPageBindingError.originMismatch
+        }
+        guard version == binding.version else {
+            throw BrowserAutomationPageBindingError.versionMismatch
+        }
+    }
+}
+
 /// Routes structured agent requests to the browser window that owns the target
 /// page.  The original CLI predates multi-window automation and broadcasts
 /// NotificationCenter messages, which means two open browser windows can both
@@ -24,6 +122,12 @@ final class BrowserAutomationRegistry {
     }
 
     private var managers: [UUID: WeakManager] = [:]
+    private struct PageAuthorityState {
+        let document: PageDocumentGeneration
+        let target: AgentPageTarget
+        let version: AgentPageLeaseVersion
+    }
+    private var pageAuthorityStates: [PageHandle: PageAuthorityState] = [:]
 
     private init() {}
 
@@ -61,21 +165,73 @@ final class BrowserAutomationRegistry {
         return live.first(where: \.isAutomationKeyWindow) ?? live.first
     }
 
+    static func externallyVisiblePageSummaries(
+        _ pages: [[String: Any]]
+    ) -> [[String: Any]] {
+        pages.compactMap { page in
+            guard page["incognito"] as? Bool != true,
+                  (page["sessionKind"] as? String)?.lowercased() != "incognito" else {
+                return nil
+            }
+            var safe = page
+            // Do not expose a privacy-mode discriminator through local MCP,
+            // even with a false value. Private Pages are omitted altogether.
+            safe.removeValue(forKey: "incognito")
+            return safe
+        }
+    }
+
+    static func externallyVisibleWindowSummary(
+        _ summary: [String: Any],
+        pages: [[String: Any]]
+    ) -> [String: Any]? {
+        let visiblePages = externallyVisiblePageSummaries(pages)
+        guard !visiblePages.isEmpty else { return nil }
+        var safe = summary
+        safe["title"] = "Browser"
+        safe["pageCount"] = visiblePages.count
+        return safe
+    }
+
     func execute(
         _ request: [String: Any],
         responseFilePath: String?,
-        permit: AgentExecutionPermit? = nil
+        permit: AgentExecutionPermit? = nil,
+        authorizedPageBindings: [BrowserAutomationPageDispatchBinding] = [],
+        authorizedToolName: String? = nil
     ) {
         guard let tool = request["tool"] as? String else {
             BrowserCLI.writeResponse(["error": "agent request is missing tool"], to: responseFilePath)
             return
         }
         if let permit {
-            guard permit.toolName == tool else {
+            let policyToolName = authorizedToolName ?? tool
+            guard permit.toolName == policyToolName,
+                  let descriptor = AgentToolCatalog.canonical.descriptor(
+                      named: policyToolName
+                  ) else {
                 BrowserCLI.writeResponse(
                     ["error": "policy authorization does not match requested tool"],
                     to: responseFilePath
                 )
+                return
+            }
+            if descriptor.requiresLivePageTarget {
+                guard !authorizedPageBindings.isEmpty else {
+                    BrowserCLI.writeResponse(
+                        ["error": "authorized Page binding is required"],
+                        to: responseFilePath
+                    )
+                    return
+                }
+                Task { [weak self] in
+                    await self?.performAuthorizedAfterLivePageValidation(
+                        request,
+                        descriptor: descriptor,
+                        authorizedPageBindings: authorizedPageBindings,
+                        responseFilePath: responseFilePath
+                    )
+                }
                 return
             }
             performAuthorized(request, responseFilePath: responseFilePath)
@@ -84,6 +240,70 @@ final class BrowserAutomationRegistry {
         Task { [weak self] in
             await self?.authorizeExternalInvocation(request, responseFilePath: responseFilePath)
         }
+    }
+
+    private func performAuthorizedAfterLivePageValidation(
+        _ request: [String: Any],
+        descriptor: AgentToolDescriptor,
+        authorizedPageBindings: [BrowserAutomationPageDispatchBinding],
+        responseFilePath: String?
+    ) async {
+        let arguments = request["arguments"] as? [String: Any] ?? [:]
+        let requestedPageIDs: [String]
+        if descriptor.acceptsMultiplePageTargets {
+            requestedPageIDs = arguments["pageIds"] as? [String] ?? []
+        } else if let requested = arguments["pageId"] as? String {
+            requestedPageIDs = [requested]
+        } else if authorizedPageBindings.count == 1 {
+            requestedPageIDs = [authorizedPageBindings[0].target.pageID]
+        } else {
+            requestedPageIDs = []
+        }
+        guard !requestedPageIDs.isEmpty,
+              Set(requestedPageIDs)
+                == Set(authorizedPageBindings.map(\.target.pageID)) else {
+            BrowserCLI.writeResponse(
+                ["error": "authorized Page identity does not match the request"],
+                to: responseFilePath
+            )
+            return
+        }
+        do {
+            for authorized in authorizedPageBindings {
+                guard let targetManager = manager(
+                    windowId: arguments["windowId"] as? String,
+                    pageId: authorized.target.pageID
+                ), let snapshot = await targetManager.automationPageAuthoritySnapshot(
+                    pageID: authorized.target.pageID
+                ) else {
+                    throw BrowserAutomationPageBindingError.missingOrStaleTarget
+                }
+                try authorized.validate(
+                    live: BrowserAutomationPageDispatchBinding(
+                        target: snapshot.target,
+                        version: AgentPageLeaseVersion(
+                            navigation: authorized.version.navigation,
+                            document: snapshot.document
+                        )
+                    ),
+                    allowIncognito: true
+                )
+            }
+        } catch {
+            BrowserCLI.writeResponse(
+                ["error": "authorized Page changed before browser dispatch"],
+                to: responseFilePath
+            )
+            return
+        }
+        var boundArguments = arguments
+        if !descriptor.acceptsMultiplePageTargets,
+           boundArguments["pageId"] == nil {
+            boundArguments["pageId"] = requestedPageIDs[0]
+        }
+        var boundRequest = request
+        boundRequest["arguments"] = boundArguments
+        performAuthorized(boundRequest, responseFilePath: responseFilePath)
     }
 
     private func performAuthorized(_ request: [String: Any], responseFilePath: String?) {
@@ -96,10 +316,17 @@ final class BrowserAutomationRegistry {
 
         switch tool {
         case "list_pages":
-            let pages = live.flatMap { $0.automationPageSummaries() }
+            let pages = Self.externallyVisiblePageSummaries(
+                live.flatMap { $0.automationPageSummaries() }
+            )
             BrowserCLI.writeResponse(["ok": true, "pages": pages], to: responseFilePath)
         case "list_windows":
-            let windows = live.map { $0.automationWindowSummary() }
+            let windows = live.compactMap {
+                Self.externallyVisibleWindowSummary(
+                    $0.automationWindowSummary(),
+                    pages: $0.automationPageSummaries()
+                )
+            }
             BrowserCLI.writeResponse(["ok": true, "windows": windows], to: responseFilePath)
         case "get_active_page":
             guard let manager = manager(
@@ -107,6 +334,13 @@ final class BrowserAutomationRegistry {
                 pageId: arguments["pageId"] as? String
             ), let page = manager.automationActivePageSummary() else {
                 BrowserCLI.writeResponse(["error": "no active browser page"], to: responseFilePath)
+                return
+            }
+            guard Self.externallyVisiblePageSummaries([page]).count == 1 else {
+                BrowserCLI.writeResponse(
+                    ["error": "incognito pages are unavailable to local MCP"],
+                    to: responseFilePath
+                )
                 return
             }
             BrowserCLI.writeResponse(["ok": true, "page": page], to: responseFilePath)
@@ -135,6 +369,270 @@ final class BrowserAutomationRegistry {
         }
     }
 
+    private func performAuthorizedAndAwaitResult(
+        _ request: [String: Any],
+        permit: AgentExecutionPermit,
+        authorizedPageBindings: [BrowserAutomationPageDispatchBinding],
+        maximumElapsedMilliseconds: Int64
+    ) async -> BrowserAutomationInvocationResult {
+        guard let canonicalTool = request["tool"] as? String,
+              canonicalTool == permit.toolName,
+              let descriptor = AgentToolCatalog.canonical.descriptor(
+                  named: canonicalTool
+              ) else {
+            return .generated(
+                kind: .failed,
+                message: "Policy authorization does not match the requested tool."
+            )
+        }
+
+        let canonicalArguments = request["arguments"] as? [String: Any] ?? [:]
+        if descriptor.requiresLivePageTarget {
+            guard await externalPageBindingsRemainAuthorized(
+                arguments: canonicalArguments,
+                descriptor: descriptor,
+                authorizedPageBindings: authorizedPageBindings
+            ) else {
+                return .generated(
+                    kind: .failed,
+                    message: "The authorized Page target is missing, stale, or changed."
+                )
+            }
+        }
+
+        if NotificationManager.handlesSemanticAutomationTool(canonicalTool) {
+            let boundPageID = authorizedPageBindings.first?.target.pageID
+                ?? canonicalArguments["pageId"] as? String
+            guard let targetManager = manager(
+                windowId: canonicalArguments["windowId"] as? String,
+                pageId: boundPageID
+            ) else {
+                return .generated(
+                    kind: .failed,
+                    message: "The authorized Page target is no longer available."
+                )
+            }
+            var boundArguments = canonicalArguments
+            if boundArguments["pageId"] == nil, let boundPageID {
+                boundArguments["pageId"] = boundPageID
+            }
+            let operation: () async -> BrowserAutomationInvocationResult = { [self] in
+                guard await externalPageBindingsRemainAuthorized(
+                    arguments: boundArguments,
+                    descriptor: descriptor,
+                    authorizedPageBindings: authorizedPageBindings
+                ) else {
+                    return .generated(
+                        kind: .failed,
+                        message: "The authorized Page changed immediately before dispatch."
+                    )
+                }
+                let response = await targetManager.semanticAutomationJSONResult(
+                    tool: canonicalTool,
+                    arguments: boundArguments,
+                    permit: permit
+                )
+                await BrowserAgentWebKitSignalRuntime.shared.finishRun(permit.runID)
+                return BrowserAutomationInvocationResult(
+                    responseData: Data(response.utf8)
+                )
+            }
+            guard let authorizedBinding = authorizedPageBindings.first else {
+                return await operation()
+            }
+            return await AgentReplayCaptureCoordinator.around(
+                descriptor: descriptor,
+                authorizedBinding: authorizedBinding,
+                permit: permit,
+                capture: { expectedBinding in
+                    await targetManager.captureAgentReplayFrame(
+                        expectedBinding: expectedBinding
+                    )
+                },
+                operationSucceeded: { $0.kind == .succeeded },
+                resolvePostOperationBinding: { [self] in
+                    await resolvedExternalPageBindings(
+                        arguments: boundArguments,
+                        descriptor: descriptor
+                    )?.first {
+                        $0.target.pageID == authorizedBinding.target.pageID
+                    }
+                },
+                operation: operation
+            )
+        }
+
+        var dispatchArguments = canonicalArguments
+        if descriptor.requiresLivePageTarget,
+           dispatchArguments["pageId"] == nil,
+           !descriptor.acceptsMultiplePageTargets,
+           let boundPageID = authorizedPageBindings.first?.target.pageID {
+            // Bind optional active-Page calls to the Page that policy actually
+            // authorized. A focus change must never retarget the operation.
+            dispatchArguments["pageId"] = boundPageID
+        }
+        let expanded = expandedExternalRequest(
+            tool: canonicalTool,
+            arguments: dispatchArguments
+        )
+
+        let responseURL = BrowserCLI.responseDirectory.appendingPathComponent(
+            "tracked-\(UUID().uuidString).json"
+        )
+        defer { try? FileManager.default.removeItem(at: responseURL) }
+        let boundedMilliseconds = max(
+            50,
+            min(maximumElapsedMilliseconds, 60_000)
+        )
+        let attempts = Int((boundedMilliseconds + 49) / 50)
+        let operation: () async -> BrowserAutomationInvocationResult = { [self] in
+            guard await externalPageBindingsRemainAuthorized(
+                arguments: dispatchArguments,
+                descriptor: descriptor,
+                authorizedPageBindings: authorizedPageBindings
+            ) else {
+                return .generated(
+                    kind: .failed,
+                    message: "The authorized Page changed immediately before dispatch."
+                )
+            }
+            performAuthorized(
+                ["tool": expanded.tool, "arguments": expanded.arguments],
+                responseFilePath: responseURL.path
+            )
+            for _ in 0..<attempts {
+                if let data = try? Data(contentsOf: responseURL), !data.isEmpty {
+                    return BrowserAutomationInvocationResult(responseData: data)
+                }
+                if Task.isCancelled {
+                    return .generated(
+                        kind: .failed,
+                        message: "Browser automation was cancelled."
+                    )
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            return .generated(
+                kind: .timedOut,
+                message: "Browser automation timed out."
+            )
+        }
+        guard descriptor.requiresLivePageTarget,
+              let authorizedBinding = authorizedPageBindings.first,
+              let targetManager = manager(
+                  windowId: dispatchArguments["windowId"] as? String,
+                  pageId: authorizedBinding.target.pageID
+              ) else {
+            return await operation()
+        }
+        return await AgentReplayCaptureCoordinator.around(
+            descriptor: descriptor,
+            authorizedBinding: authorizedBinding,
+            permit: permit,
+            capture: { expectedBinding in
+                await targetManager.captureAgentReplayFrame(
+                    expectedBinding: expectedBinding
+                )
+            },
+            operationSucceeded: { $0.kind == .succeeded },
+            resolvePostOperationBinding: { [self] in
+                await resolvedExternalPageBindings(
+                    arguments: dispatchArguments,
+                    descriptor: descriptor
+                )?.first {
+                    $0.target.pageID == authorizedBinding.target.pageID
+                }
+            },
+            operation: operation
+        )
+    }
+
+    private func externalPageBindingsRemainAuthorized(
+        arguments: [String: Any],
+        descriptor: AgentToolDescriptor,
+        authorizedPageBindings: [BrowserAutomationPageDispatchBinding]
+    ) async -> Bool {
+        guard descriptor.requiresLivePageTarget else { return true }
+        guard !authorizedPageBindings.isEmpty,
+              let liveBindings = await resolvedExternalPageBindings(
+                  arguments: arguments,
+                  descriptor: descriptor
+              ), liveBindings.count == authorizedPageBindings.count else {
+            return false
+        }
+        let liveByPageID = Dictionary(uniqueKeysWithValues: liveBindings.map {
+            ($0.target.pageID, $0)
+        })
+        do {
+            for authorized in authorizedPageBindings {
+                try authorized.validate(live: liveByPageID[authorized.target.pageID])
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Expands canonical MCP tools only after policy approval. The helper sends
+    /// the original tool and arguments, so policy identity, risk, and durable
+    /// metadata can never be replaced by the `evaluate_script` transport used
+    /// to implement higher-level browser actions.
+    private func expandedExternalRequest(
+        tool: String,
+        arguments: [String: Any]
+    ) -> (tool: String, arguments: [String: Any]) {
+        func literal(_ value: String) -> String {
+            guard let data = try? JSONSerialization.data(
+                withJSONObject: value,
+                options: .fragmentsAllowed
+            ) else { return "\"\"" }
+            return String(data: data, encoding: .utf8) ?? "\"\""
+        }
+        func scriptRequest(_ script: String) -> (String, [String: Any]) {
+            var expanded = arguments
+            expanded["script"] = script
+            return ("evaluate_script", expanded)
+        }
+
+        switch tool {
+        case "get_page_content":
+            return scriptRequest(Self.externalMarkdownScript)
+        case "get_page_links":
+            return scriptRequest(#"Array.from(new Map(Array.from(document.querySelectorAll('a[href]')).map(a=>[a.href,{text:String(a.innerText||a.getAttribute('aria-label')||'').trim(),url:a.href}])).values())"#)
+        case "get_dom":
+            let expression = (arguments["selector"] as? String).map {
+                "document.querySelector(\(literal($0)))?.outerHTML||null"
+            } ?? "document.documentElement.outerHTML"
+            return scriptRequest(expression)
+        case "search_dom":
+            let query = arguments["query"] as? String ?? ""
+            let mode = arguments["mode"] as? String ?? "text"
+            let limit = max(1, min(arguments["limit"] as? Int ?? 50, 500))
+            return scriptRequest(
+                "(function(q,m,n){var a=[];if(m==='css')a=Array.from(document.querySelectorAll(q));else if(m==='xpath'){var x=document.evaluate(q,document,null,XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,null);for(var i=0;i<x.snapshotLength;i++)a.push(x.snapshotItem(i))}else a=Array.from(document.querySelectorAll('body *')).filter(e=>e.children.length===0&&String(e.textContent||'').toLowerCase().includes(q.toLowerCase()));return a.slice(0,n).map(e=>({tag:e.tagName?.toLowerCase()||'',text:String(e.innerText||e.textContent||'').trim().slice(0,500),html:e.outerHTML?.slice(0,2000)||''}))})(\(literal(query)),\(literal(mode)),\(limit))"
+            )
+        case "click_at":
+            let x = arguments["x"] as? Double ?? 0
+            let y = arguments["y"] as? Double ?? 0
+            return scriptRequest("var el=document.elementFromPoint(\(x),\(y));if(!el)throw new Error('no element at point');el.click();({tag:el.tagName,x:\(x),y:\(y)})")
+        case "press_key":
+            let combo = arguments["key"] as? String ?? ""
+            let parts = combo.split(separator: "+").map(String.init)
+            let key = parts.last ?? combo
+            let modifiers = Set(parts.dropLast().map { $0.lowercased() })
+            let options = "{key:\(literal(key)),code:\(literal(key)),bubbles:true,cancelable:true,metaKey:\(modifiers.contains("meta") || modifiers.contains("cmd")),ctrlKey:\(modifiers.contains("ctrl") || modifiers.contains("control")),altKey:\(modifiers.contains("alt") || modifiers.contains("option")),shiftKey:\(modifiers.contains("shift"))}"
+            return scriptRequest("var el=document.activeElement||document.body,o=\(options);el.dispatchEvent(new KeyboardEvent('keydown',o));el.dispatchEvent(new KeyboardEvent('keyup',o));'pressed'")
+        case "save_screenshot":
+            return ("take_screenshot", arguments)
+        default:
+            return (tool, arguments)
+        }
+    }
+
+    private static let externalMarkdownScript = #"""
+    (function(){var r=document.querySelector('main,article,[role=main]')||document.body;if(!r)return'';function c(s){return String(s||'').replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n').trim()}var o=[];Array.from(r.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,blockquote,pre,table,a[href]')).forEach(function(e){if(e.closest('nav,header,footer,aside')&&!e.matches('a[href]'))return;var t=c(e.innerText||e.textContent);if(!t)return;if(/^H[1-6]$/.test(e.tagName))o.push('#'.repeat(Number(e.tagName[1]))+' '+t);else if(e.tagName==='LI')o.push('- '+t);else if(e.tagName==='BLOCKQUOTE')o.push('> '+t.replace(/\n/g,'\n> '));else if(e.tagName==='PRE')o.push('```\n'+t+'\n```');else if(e.tagName==='A'&&!e.closest('p,li,h1,h2,h3,h4,h5,h6'))o.push('['+t+']('+e.href+')');else o.push(t)});return o.join('\n\n').slice(0,100000)})()
+    """#
+
     private func authorizeExternalInvocation(
         _ request: [String: Any],
         responseFilePath: String?
@@ -149,6 +647,33 @@ final class BrowserAutomationRegistry {
             BrowserCLI.writeResponse(["error": "tool arguments are not valid JSON"], to: responseFilePath)
             return
         }
+        if (tool == "new_page" || tool == "new_hidden_page"),
+           arguments["incognito"] as? Bool == true {
+            BrowserCLI.writeResponse(
+                ["error": "incognito pages are unavailable to local MCP"],
+                to: responseFilePath
+            )
+            return
+        }
+        let pageBindings = await resolvedExternalPageBindings(
+            arguments: arguments,
+            descriptor: descriptor
+        ) ?? []
+        let target: AgentResolvedTarget = if descriptor.requiresLivePageTarget {
+            pageBindings.first.map { .page($0.target) } ?? .none
+        } else {
+            resolvedExternalTarget(arguments: arguments, descriptor: descriptor)
+        }
+        let scope = externalRunScope(
+            descriptor: descriptor,
+            target: target,
+            pageBindings: pageBindings
+        )
+        let isIncognito = if case .page(let page) = target {
+            page.session == .incognito
+        } else {
+            arguments["incognito"] as? Bool == true
+        }
         do {
             let store = try AgentRunStoreRegistry.store(baseDirectory: BrowserCLI.supportDirectory)
             let run = try await store.createRun(
@@ -158,19 +683,24 @@ final class BrowserAutomationRegistry {
                     toolCatalogVersion: 1,
                     enabledCapabilities: descriptor.requiredCapabilities,
                     settings: ["transport": .string("local-mcp")]
-                )
+                ),
+                incognito: isIncognito
             )
             _ = try await store.transitionRun(run.id, to: .running, reason: "Local MCP invocation received")
-            _ = try await store.appendStep(
+            let limits = AgentObservabilitySettings.executionLimits()
+            let meter = AgentRunMeter(
                 runID: run.id,
-                kind: .toolInvocation,
-                summary: tool,
-                payload: .object(["tool": .string(tool)]),
-                redactionState: .redacted
+                taskDefinitionID: nil,
+                incognito: isIncognito,
+                limits: limits
             )
+            guard try await Self.handleLocalMCPAdmission(
+                await meter.admitToolCall(),
+                runID: run.id,
+                store: store,
+                responseFilePath: responseFilePath
+            ) else { return }
 
-            let target = resolvedExternalTarget(arguments: arguments, descriptor: descriptor)
-            let scope = externalRunScope(descriptor: descriptor, target: target)
             let context = AgentInvocationContext(
                 runID: run.id,
                 entryPoint: .localMCP,
@@ -179,7 +709,9 @@ final class BrowserAutomationRegistry {
                 arguments: argumentValue,
                 target: target,
                 runScope: scope,
-                dataLeavesDevice: descriptor.risk == .observe,
+                // Every local-MCP result crosses the browser process boundary,
+                // including navigation and mutation acknowledgements.
+                dataLeavesDevice: true,
                 effectSummary: descriptor.description
             )
             let decision = try AgentPolicyEngine().evaluate(descriptor: descriptor, context: context)
@@ -196,17 +728,73 @@ final class BrowserAutomationRegistry {
                     ]),
                     redactionState: .metadataOnly
                 )
-                let permit = authorization.recording(decisionStepID: policyStep.id)
-                performAuthorized(request, responseFilePath: responseFilePath)
-                _ = permit // The authorized boundary above validates tool identity.
-                _ = try await store.appendStep(
+                let invocationStep = try await store.appendStep(
                     runID: run.id,
-                    kind: .toolResult,
-                    summary: "Invocation accepted by browser automation",
-                    payload: .object(["accepted": .boolean(true)]),
-                    redactionState: .metadataOnly
+                    kind: .toolInvocation,
+                    summary: tool,
+                    payload: .object(["tool": .string(tool)]),
+                    policyDecisionStepID: policyStep.id,
+                    redactionState: .redacted
                 )
-                _ = try await store.transitionRun(run.id, to: .succeeded, reason: "Invocation accepted")
+                let permit = authorization
+                    .recording(decisionStepID: policyStep.id)
+                    .recording(invocationStepID: invocationStep.id)
+                let outcome = await performAuthorizedAndAwaitResult(
+                    request,
+                    permit: permit,
+                    authorizedPageBindings: pageBindings,
+                    maximumElapsedMilliseconds: limits.maximumElapsedMilliseconds
+                )
+                let metricOutcome: AgentToolMetricOutcome = switch outcome.kind {
+                case .succeeded: .succeeded
+                case .timedOut: .ambiguousTimeout
+                case .failed, .malformed: .failed
+                }
+                await meter.recordToolLatency(
+                    milliseconds: Int64(
+                        max(0, Date().timeIntervalSince(run.createdAt) * 1_000)
+                    ),
+                    toolName: tool,
+                    outcome: metricOutcome
+                )
+                // Local-MCP response bytes share the bounded model-result byte
+                // dimension: both are untrusted result material crossing into
+                // an agent context, and neither is retained in durable history.
+                guard try await Self.handleLocalMCPAdmission(
+                    await meter.admitModelResult(bytes: outcome.responseData.count),
+                    runID: run.id,
+                    store: store,
+                    responseFilePath: responseFilePath
+                ) else { return }
+                do {
+                    _ = try await store.appendStep(
+                        runID: run.id,
+                        kind: outcome.kind == .succeeded ? .toolResult : .error,
+                        summary: outcome.kind == .succeeded
+                            ? "Browser automation completed"
+                            : "Browser automation did not complete successfully",
+                        payload: outcome.durableMetadata,
+                        policyDecisionStepID: policyStep.id,
+                        redactionState: .metadataOnly
+                    )
+                    _ = try await store.transitionRun(
+                        run.id,
+                        to: outcome.kind == .succeeded ? .succeeded : .failed,
+                        reason: outcome.kind == .succeeded
+                            ? "Browser automation succeeded"
+                            : "Browser automation failed"
+                    )
+                } catch {
+                    Logger.log(
+                        "Could not finalize local MCP run metadata",
+                        type: "BrowserCLI"
+                    )
+                }
+                _ = try? await AgentRunStoreRegistry.enforceRetention(
+                    store,
+                    baseDirectory: BrowserCLI.supportDirectory
+                )
+                BrowserCLI.writeResponseData(outcome.responseData, to: responseFilePath)
 
             case .deny(let code, _):
                 _ = try await store.appendStep(
@@ -217,41 +805,31 @@ final class BrowserAutomationRegistry {
                     redactionState: .metadataOnly
                 )
                 _ = try await store.transitionRun(run.id, to: .failed, reason: "Policy denied invocation")
+                _ = try? await AgentRunStoreRegistry.enforceRetention(
+                    store,
+                    baseDirectory: BrowserCLI.supportDirectory
+                )
                 BrowserCLI.writeResponse(
                     ["error": "policy denied invocation", "code": code.rawValue, "runId": run.id.uuidString],
                     to: responseFilePath
                 )
 
-            case .requiresApproval(let approval), .requiresHuman(let approval):
-                _ = try await store.appendStep(
+            case .requiresApproval(let approval):
+                try await Self.terminateUnattendedApproval(
+                    approval,
                     runID: run.id,
-                    kind: .approvalRequest,
-                    summary: approval.effectSummary,
-                    payload: .object([
-                        "requestID": .string(approval.id.uuidString),
-                        "tool": .string(tool),
-                        "invocationDigest": .string(approval.invocationDigest),
-                    ]),
-                    redactionState: .redacted
+                    waitingStatus: .waitingForApproval,
+                    store: store,
+                    responseFilePath: responseFilePath
                 )
-                _ = try await store.transitionRun(
-                    run.id,
-                    to: .waitingForHuman,
-                    reason: "External invocation requires attended approval"
-                )
-                NotificationCenter.default.post(
-                    name: .agentRunNeedsApproval,
-                    object: nil,
-                    userInfo: ["runID": run.id.uuidString, "tool": tool]
-                )
-                BrowserCLI.writeResponse(
-                    [
-                        "error": "human approval required",
-                        "code": "approval_required",
-                        "runId": run.id.uuidString,
-                        "requestId": approval.id.uuidString,
-                    ],
-                    to: responseFilePath
+
+            case .requiresHuman(let approval):
+                try await Self.terminateUnattendedApproval(
+                    approval,
+                    runID: run.id,
+                    waitingStatus: .waitingForHuman,
+                    store: store,
+                    responseFilePath: responseFilePath
                 )
             }
         } catch {
@@ -260,6 +838,195 @@ final class BrowserAutomationRegistry {
                 to: responseFilePath
             )
         }
+    }
+
+    static func terminateUnattendedApproval(
+        _ approval: AgentApprovalRequest,
+        runID: UUID,
+        waitingStatus: AgentRunStatus,
+        store: AgentRunStore,
+        responseFilePath: String?
+    ) async throws {
+        _ = try await store.appendStep(
+            runID: runID,
+            kind: .approvalRequest,
+            summary: approval.effectSummary,
+            payload: .object([
+                "requestID": .string(approval.id.uuidString),
+                "tool": .string(approval.toolName),
+                "invocationDigest": .string(approval.invocationDigest),
+            ]),
+            redactionState: .redacted
+        )
+        _ = try await store.transitionRun(
+            runID,
+            to: waitingStatus,
+            reason: "Local MCP invocation requires an attended decision"
+        )
+        _ = try await store.appendStep(
+            runID: runID,
+            kind: .approvalResponse,
+            summary: "Local MCP has no attended continuation channel",
+            payload: .object([
+                "approved": .boolean(false),
+                "terminal": .boolean(true),
+            ]),
+            redactionState: .metadataOnly
+        )
+        _ = try await store.transitionRun(
+            runID,
+            to: .cancelled,
+            reason: "Invocation was not executed because no attended continuation is available"
+        )
+        _ = try? await AgentRunStoreRegistry.enforceRetention(
+            store,
+            baseDirectory: BrowserCLI.supportDirectory
+        )
+        BrowserCLI.writeResponse(
+            [
+                "error": "This invocation requires an attended human decision and was not executed. Start a new attended request instead.",
+                "code": "human_interaction_required",
+                "status": AgentRunStatus.cancelled.rawValue,
+                "retryable": false,
+                "runId": runID.uuidString,
+                "requestId": approval.id.uuidString,
+            ],
+            to: responseFilePath
+        )
+    }
+
+    static func handleLocalMCPAdmission(
+        _ admission: AgentBudgetAdmission,
+        runID: UUID,
+        store: AgentRunStore,
+        responseFilePath: String?
+    ) async throws -> Bool {
+        switch admission {
+        case .admitted:
+            return true
+        case .limited(let limit):
+            _ = try await store.appendStep(
+                runID: runID,
+                kind: .limit,
+                summary: limit.summary,
+                payload: .object([
+                    "dimension": .string(limit.dimension.rawValue),
+                    "reason": .string(limit.reason.rawValue),
+                    "current": limit.current.map { .number(Double($0)) } ?? .null,
+                    "attempted": limit.attempted.map { .number(Double($0)) } ?? .null,
+                    "maximum": limit.maximum.map { .number(Double($0)) } ?? .null,
+                ]),
+                redactionState: .metadataOnly
+            )
+            _ = try await store.transitionRun(
+                runID,
+                to: .failed,
+                reason: "Local MCP hard limit reached"
+            )
+            _ = try? await AgentRunStoreRegistry.enforceRetention(
+                store,
+                baseDirectory: BrowserCLI.supportDirectory
+            )
+            BrowserCLI.writeResponse(
+                [
+                    "error": limit.summary,
+                    "code": "limit_exceeded",
+                    "dimension": limit.dimension.rawValue,
+                    "runId": runID.uuidString,
+                ],
+                to: responseFilePath
+            )
+            return false
+        case .cancelled(let cancellation):
+            _ = try await store.transitionRun(
+                runID,
+                to: .cancelled,
+                reason: cancellation.reason
+            )
+            _ = try? await AgentRunStoreRegistry.enforceRetention(
+                store,
+                baseDirectory: BrowserCLI.supportDirectory
+            )
+            BrowserCLI.writeResponse(
+                ["error": "Local MCP run was cancelled.", "code": "cancelled"],
+                to: responseFilePath
+            )
+            return false
+        case .interrupted:
+            _ = try await store.transitionRun(
+                runID,
+                to: .interrupted,
+                reason: "Local MCP budget accounting was interrupted"
+            )
+            _ = try? await AgentRunStoreRegistry.enforceRetention(
+                store,
+                baseDirectory: BrowserCLI.supportDirectory
+            )
+            BrowserCLI.writeResponse(
+                ["error": "Local MCP run was interrupted.", "code": "interrupted"],
+                to: responseFilePath
+            )
+            return false
+        }
+    }
+
+    private func resolvedExternalPageBindings(
+        arguments: [String: Any],
+        descriptor: AgentToolDescriptor
+    ) async -> [BrowserAutomationPageDispatchBinding]? {
+        guard descriptor.requiresLivePageTarget else { return [] }
+        let requestedPageIDs: [String?]
+        if descriptor.acceptsMultiplePageTargets {
+            let pageIDs = arguments["pageIds"] as? [String] ?? []
+            guard !pageIDs.isEmpty else { return nil }
+            requestedPageIDs = pageIDs.map(Optional.some)
+        } else {
+            requestedPageIDs = [arguments["pageId"] as? String]
+        }
+        var seen = Set<PageHandle>()
+        var bindings: [BrowserAutomationPageDispatchBinding] = []
+        for requestedPageID in requestedPageIDs {
+            guard let manager = manager(
+                windowId: arguments["windowId"] as? String,
+                pageId: requestedPageID
+            ), let snapshot = await manager.automationPageAuthoritySnapshot(
+                pageID: requestedPageID
+            ), let page = try? PageHandle(parsing: snapshot.target.pageID),
+                  seen.insert(page).inserted else { return nil }
+            var invocationTarget = snapshot.target
+            invocationTarget.elementIdentity = arguments["elementId"] as? String
+                ?? arguments["selector"] as? String
+            let prior = pageAuthorityStates[page]
+            let sameDocument = prior?.document == snapshot.document
+                && prior?.target.pageID == snapshot.target.pageID
+                && prior?.target.origin == snapshot.target.origin
+                && prior?.target.session == snapshot.target.session
+            let version = if sameDocument, let prior {
+                prior.version
+            } else {
+                AgentPageLeaseVersion(
+                    navigation: prior?.version.navigation.advanced()
+                        ?? PageNavigationGeneration(rawValue: 0),
+                    document: snapshot.document
+                )
+            }
+            var stateTarget = snapshot.target
+            stateTarget.elementIdentity = nil
+            pageAuthorityStates[page] = PageAuthorityState(
+                document: snapshot.document,
+                target: stateTarget,
+                version: version
+            )
+            bindings.append(BrowserAutomationPageDispatchBinding(
+                target: invocationTarget,
+                version: version
+            ))
+        }
+        guard let session = bindings.first?.target.session,
+              bindings.allSatisfy({ $0.target.session == session }) else {
+            return nil
+        }
+        return bindings.sorted { $0.target.pageID < $1.target.pageID }
     }
 
     private func resolvedExternalTarget(
@@ -295,8 +1062,17 @@ final class BrowserAutomationRegistry {
 
     private func externalRunScope(
         descriptor: AgentToolDescriptor,
-        target: AgentResolvedTarget
+        target: AgentResolvedTarget,
+        pageBindings: [BrowserAutomationPageDispatchBinding]
     ) -> AgentRunScope {
+        if let session = pageBindings.first?.target.session {
+            return AgentRunScope(
+                capabilities: descriptor.requiredCapabilities,
+                pageIDs: Set(pageBindings.map(\.target.pageID)),
+                origins: Set(pageBindings.map(\.target.origin)),
+                session: session
+            )
+        }
         if case .page(let page) = target {
             return AgentRunScope(
                 capabilities: descriptor.requiredCapabilities,
@@ -547,6 +1323,11 @@ class BrowserCLI {
         if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
         }
+    }
+
+    static func writeResponseData(_ data: Data, to path: String?) {
+        guard let path, !data.isEmpty else { return }
+        try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 
     private func handleCommand(_ command: String) {

@@ -33,6 +33,9 @@ struct BrowserApp: App {
             if let container = modelStartup.container {
                 BrowserView_iOS()
                     .modelContainer(container)
+                    .task {
+                        _ = try? await AgentDefinitionSyncRuntime.shared.refresh()
+                    }
                     .alert(
                         "Browsing Data Recovery Mode",
                         isPresented: Binding(

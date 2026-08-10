@@ -163,6 +163,7 @@ class WebViewManager: NSObject, ObservableObject {
                 window.webkit.messageHandlers.sub.postMessage({type: 'painted'});
             });
         });
+        window.webkit.messageHandlers.sub.postMessage({type: 'agentDOMContentLoaded'});
     })();
     """
 
@@ -598,6 +599,9 @@ class WebViewManager: NSObject, ObservableObject {
             webView.navigationDelegate = nil
             webView.uiDelegate = nil
             webView.configuration.userContentController.removeScriptMessageHandler(forName: "sub")
+            webView.configuration.userContentController.removeScriptMessageHandler(
+                forName: WebKitAgentConsoleBridgeScripts.messageHandlerName
+            )
             webView.removeFromSuperview()
 
             // Remove from storage
@@ -622,6 +626,9 @@ class WebViewManager: NSObject, ObservableObject {
         // rebuild in the same store); drop it only on a genuine close. This must
         // run even when the tab never materialized a WebView.
         if notifyClosed {
+            Task {
+                await BrowserAgentWebKitSignalRuntime.shared.pageClosed(tabID: tabId)
+            }
             ownedTabIds.remove(tabId)
             tabSessions.removeValue(forKey: tabId)
             thumbnails.removeValue(forKey: tabId)
@@ -766,6 +773,10 @@ class WebViewManager: NSObject, ObservableObject {
             WeakScriptMessageHandler(handler: self),
             name: "sub"
         )
+        configuration.userContentController.add(
+            WeakScriptMessageHandler(handler: self),
+            name: WebKitAgentConsoleBridgeScripts.messageHandlerName
+        )
         if UserDefaults.standard.bool(forKey: "adBlockEnabled") {
             Self.reportContentBlocking(false, for: tabId)
             Self.compileAdBlockList { [weak self] list in
@@ -788,6 +799,14 @@ class WebViewManager: NSObject, ObservableObject {
         }
         configuration.userContentController.addUserScript(
             WKUserScript(source: Self.pageScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        )
+        configuration.userContentController.addUserScript(
+            WKUserScript(
+                source: SemanticPageJavaScript.bootstrap,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true,
+                in: .defaultClient
+            )
         )
         configuration.userContentController.addUserScript(
             WKUserScript(source: Self.translateScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
@@ -922,6 +941,16 @@ class WebViewManager: NSObject, ObservableObject {
         activeWebView?.evaluateJavaScript(javaScriptString, completionHandler: completionHandler)
     }
 
+    func activateAgentConsoleBridge(on webView: WKWebView, token: String) async throws {
+        let scripts = WebKitAgentConsoleBridgeScripts(configuration: .init(token: token))
+        _ = try await webView.callAsyncJavaScript(
+            scripts.installation + "\nreturn true;",
+            arguments: [:],
+            in: nil,
+            contentWorld: .defaultClient
+        )
+    }
+
     func setMuted(_ muted: Bool, for tabId: UUID) {
         let wasSuspended = mediaSuspendedTabs.contains(tabId)
         if muted {
@@ -951,6 +980,9 @@ class WebViewManager: NSObject, ObservableObject {
             webView.navigationDelegate = nil
             webView.uiDelegate = nil
             webView.configuration.userContentController.removeScriptMessageHandler(forName: "sub")
+            webView.configuration.userContentController.removeScriptMessageHandler(
+                forName: WebKitAgentConsoleBridgeScripts.messageHandlerName
+            )
             webView.removeFromSuperview()
         }
         webViews.removeAll()
@@ -966,8 +998,60 @@ class WebViewManager: NSObject, ObservableObject {
 }
 
 extension WebViewManager: WKScriptMessageHandler {
+    private func publishAgentSignal(_ draft: WebKitAgentSignalDraft, from webView: WKWebView) {
+        guard let tabID = tabId(for: webView) else { return }
+        Task {
+            await BrowserAgentWebKitSignalRuntime.shared.publish(draft, tabID: tabID)
+        }
+    }
+
+    private func agentFrameSource(for message: WKScriptMessage) -> WebKitAgentFrameSource {
+        guard !message.frameInfo.isMainFrame else { return .mainFrame }
+        let frameURL = message.frameInfo.request.url
+        let mainURL = message.webView?.url
+        let origin = frameURL.flatMap(Self.agentOrigin)
+        let isSameOrigin = frameURL?.scheme?.lowercased() == mainURL?.scheme?.lowercased()
+            && frameURL?.host()?.lowercased() == mainURL?.host()?.lowercased()
+            && frameURL?.port == mainURL?.port
+        return isSameOrigin
+            ? .sameOriginSubframe(origin: origin)
+            : .crossOriginBoundary(origin: origin)
+    }
+
+    private static func agentOrigin(_ url: URL) -> String? {
+        guard let scheme = url.scheme?.lowercased(), let host = url.host()?.lowercased() else {
+            return nil
+        }
+        return "\(scheme)://\(host)" + (url.port.map { ":\($0)" } ?? "")
+    }
+
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
+        guard let body = message.body as? [String: Any] else { return }
+        if message.name == WebKitAgentConsoleBridgeScripts.messageHandlerName {
+            guard let webView = message.webView,
+                  let tabID = tabId(for: webView),
+                  let token = body["token"] as? String,
+                  let rawLevel = body["level"] as? String,
+                  let level = WebKitAgentConsoleLevel(rawValue: rawLevel),
+                  let text = body["message"] as? String else { return }
+            let bridgeMessage = WebKitAgentConsoleBridgeMessage(
+                token: token,
+                level: level,
+                message: text,
+                sourceOrigin: body["sourceOrigin"] as? String,
+                line: (body["line"] as? NSNumber)?.uintValue,
+                column: (body["column"] as? NSNumber)?.uintValue,
+                frame: agentFrameSource(for: message)
+            )
+            Task {
+                await BrowserAgentWebKitSignalRuntime.shared.publishConsole(
+                    bridgeMessage,
+                    tabID: tabID
+                )
+            }
+            return
+        }
+        guard let type = body["type"] as? String else { return }
 
         switch type {
         case "downloadImage":
@@ -991,6 +1075,13 @@ extension WebViewManager: WKScriptMessageHandler {
             }
         case "painted":
             if let webView = message.webView { revealPage(webView) }
+        case "agentDOMContentLoaded":
+            if let webView = message.webView {
+                publishAgentSignal(
+                    .pageLifecycle(.init(phase: .domContentLoaded, url: webView.url)),
+                    from: webView
+                )
+            }
         case "linkDown":
             if let urlString = body["url"] as? String, let url = URL(string: urlString) {
                 NotificationCenter.default.post(name: .browserLinkPreviewDown, object: nil, userInfo: ["url": url])

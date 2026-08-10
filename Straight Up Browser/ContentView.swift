@@ -1993,14 +1993,21 @@ struct ContentView: View {
                     pageURL: currentURL?.absoluteString ?? "",
                     pageTarget: currentAgentPageTarget,
                     onClose: { showAgentPanel = false },
-                    execute: { tool, arguments, permit in
+                    resolvePageAuthority: { pageIDs in
+                        guard let manager = notificationManager else { return nil }
+                        return await manager.automationPageAuthoritySnapshots(
+                            pageIDs: pageIDs
+                        )
+                    },
+                    execute: { tool, arguments, permit, pageBindings in
                         guard let manager = notificationManager else {
                             return "{\"error\":\"Browser automation is not ready.\"}"
                         }
                         return await manager.automationJSONResult(
                             tool: tool,
                             arguments: arguments,
-                            permit: permit
+                            permit: permit,
+                            authorizedPageBindings: pageBindings
                         )
                     }
                 )
