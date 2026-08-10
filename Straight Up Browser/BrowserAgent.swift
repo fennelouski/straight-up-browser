@@ -7336,13 +7336,20 @@ struct BrowserAgentAuditView: View {
     }
 
     var body: some View {
-        HSplitView {
-            runList
-                .frame(minWidth: 250, idealWidth: 290)
-            timelineDetail
-                .frame(minWidth: 650)
+        Group {
+            if store.projection.runs.isEmpty {
+                emptyTimeline
+            } else {
+                HSplitView {
+                    runList
+                        .frame(minWidth: 250, idealWidth: 290)
+                    timelineDetail
+                        .frame(minWidth: 650)
+                }
+            }
         }
         .frame(minWidth: 940, minHeight: 620)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task { await reload() }
         .onReceive(
             NotificationCenter.default.publisher(for: .agentHistoryDidChange)
@@ -7374,10 +7381,98 @@ struct BrowserAgentAuditView: View {
         }
     }
 
+    private var emptyTimeline: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Agent Activity")
+                        .font(.title2.weight(.semibold))
+                    Text("Review each agent run, its decisions, and the browser changes it made.")
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if store.isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Button {
+                    Task { await reload() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .accessibilityLabel("Reload agent activity")
+            }
+            .padding(20)
+
+            Divider()
+
+            VStack(spacing: 24) {
+                ContentUnavailableView(
+                    store.isLoading ? "Loading Agent Activity" : "No Agent Activity Yet",
+                    systemImage: "point.3.connected.trianglepath.dotted",
+                    description: Text(
+                        "Runs from the assistant panel, scheduled tasks, local MCP, command line, and child agents will appear here."
+                    )
+                )
+
+                if !store.isLoading {
+                    HStack(alignment: .top, spacing: 24) {
+                        emptyStateGuide(
+                            "Run",
+                            icon: "play.circle",
+                            description: "One bounded agent execution."
+                        )
+                        emptyStateGuide(
+                            "Steps",
+                            icon: "list.number",
+                            description: "Decisions, approvals, and actions."
+                        )
+                        emptyStateGuide(
+                            "Replay",
+                            icon: "play.rectangle",
+                            description: "Eligible browser captures, linked to the action that made them."
+                        )
+                    }
+                    .frame(maxWidth: 700)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(32)
+
+            if let error = store.errorMessage {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Agent activity")
+    }
+
+    private func emptyStateGuide(
+        _ title: String,
+        icon: String,
+        description: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: icon)
+                .font(.headline)
+            Text(description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private var runList: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("All Agent Runs").font(.headline)
+                Text("Runs").font(.headline)
+                Text("\(store.projection.runs.count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
                 Spacer()
                 if store.isLoading { ProgressView().controlSize(.small) }
                 Button {
@@ -7394,7 +7489,7 @@ struct BrowserAgentAuditView: View {
                 Button {
                     selectRun(nil)
                 } label: {
-                    Label("Unified Timeline", systemImage: "point.3.connected.trianglepath.dotted")
+                    Label("All activity", systemImage: "point.3.connected.trianglepath.dotted")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
@@ -7448,9 +7543,9 @@ struct BrowserAgentAuditView: View {
             }
             if visibleItems.isEmpty {
                 ContentUnavailableView(
-                    store.projection.runs.isEmpty ? "No Agent Runs" : "No Matching Timeline Steps",
-                    systemImage: "clock.badge.questionmark",
-                    description: Text("Runs from the panel, scheduler, local MCP, command line, and child agents appear here.")
+                    "No Matching Activity",
+                    systemImage: "line.3.horizontal.decrease.circle",
+                    description: Text("Change the event filter to see other steps in this run.")
                 )
             } else {
                 HSplitView {
@@ -7467,25 +7562,18 @@ struct BrowserAgentAuditView: View {
     }
 
     private var timelineToolbar: some View {
-        VStack(spacing: 8) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(selectedRunID == nil ? "Unified Timeline" : "Run Timeline")
-                        .font(.title2.weight(.semibold))
-                    Text("\(visibleItems.count) visible of \(timelineItems.count) steps")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("Export Redacted Diagnostics") { exportDiagnostics() }
-                    .accessibilityIdentifier("agent-timeline-export")
-                if let run = store.projection.runs.first(where: { $0.id == selectedRunID }) {
-                    Button("Delete", role: .destructive) { runPendingDeletion = run }
-                        .disabled(!run.status.isTerminal)
-                        .accessibilityLabel("Delete selected agent run")
-                }
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(selectedRunID == nil ? "All activity" : "Run activity")
+                    .font(.title2.weight(.semibold))
+                Text("\(visibleItems.count) of \(timelineItems.count) recorded steps")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            HStack(spacing: 6) {
+            Spacer()
+            Menu {
+                Button("Show All Events") { showAllCategories() }
+                Divider()
                 ForEach(AgentTimelineCategory.allCases, id: \.self) { category in
                     Toggle(
                         category.rawValue.capitalized,
@@ -7494,10 +7582,18 @@ struct BrowserAgentAuditView: View {
                             set: { enabled in toggle(category, enabled: enabled) }
                         )
                     )
-                    .toggleStyle(.button)
-                    .controlSize(.small)
                 }
-                Spacer()
+            } label: {
+                Label(filterTitle, systemImage: "line.3.horizontal.decrease.circle")
+            }
+            .accessibilityLabel("Filter timeline events")
+            Button("Export Diagnostics") { exportDiagnostics() }
+                .accessibilityLabel("Export redacted diagnostics")
+                .accessibilityIdentifier("agent-timeline-export")
+            if let run = store.projection.runs.first(where: { $0.id == selectedRunID }) {
+                Button("Delete", role: .destructive) { runPendingDeletion = run }
+                    .disabled(!run.status.isTerminal)
+                    .accessibilityLabel("Delete selected agent run")
             }
         }
         .padding()
@@ -7676,6 +7772,18 @@ struct BrowserAgentAuditView: View {
         replayImage = nil
         replayError = nil
         if visibleItems.isEmpty { stopPlayback() }
+    }
+
+    private var filterTitle: String {
+        playback.enabledCategories.count == AgentTimelineCategory.allCases.count
+            ? "All events"
+            : "\(playback.enabledCategories.count) event types"
+    }
+
+    private func showAllCategories() {
+        playback.setFilter(Set(AgentTimelineCategory.allCases), items: timelineItems)
+        replayImage = nil
+        replayError = nil
     }
 
     private func move(_ command: AgentTimelineKeyboardCommand) {
