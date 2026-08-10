@@ -36,24 +36,46 @@ launch it, and accept the license agreement on first run.
   scopes, open extension popups, control private-tab access, and remove loaded
   extensions.
 - **Automation**: an App Intents/Shortcuts surface and an optional CLI for
-  navigation, page inspection, JavaScript, interaction, and screenshots, plus
-  a bundled MCP server with 53 BrowserOS-compatible browser tools, stable
-  per-window page IDs, parallel background pages, and local agent audit/replay.
-- **Built-in AI agent**: a permission-gated side panel with OpenAI, OpenRouter,
-  Ollama, LM Studio, and arbitrary OpenAI-compatible providers. Keys live in
-  Keychain. The agent can use the browser, a user-approved cowork folder, and
-  any enabled Streamable HTTP MCP app integration.
-- **Scheduled agents**: daily, hourly, or minute-based background tasks use
-  hidden pages, retain their run history locally, and can be run or stopped on
-  demand while Browser is open.
+  navigation, page inspection, JavaScript, interaction, and screenshots. The
+  bundled MCP server preserves the exact 53 BrowserOS-compatible browser tools,
+  stable per-window Page handles, and parallel hidden Pages.
+- **Built-in AI agent**: a permission-gated side panel with streaming adapters
+  for OpenAI-compatible Chat Completions, OpenAI Responses, Anthropic Messages,
+  and Gemini generateContent, plus direct OpenAI, OpenRouter, Ollama, LM Studio,
+  and custom endpoint presets. Provider keys stay in Keychain.
+- **Durable and bounded runs**: conversations, runs, steps, approvals, usage,
+  artifacts, and replay evidence share one local run store. Hard limits cover
+  turns, tool calls, time, Pages, model-result bytes, downloads, artifacts, and
+  optional provider tokens or known cost.
+- **Agent tools**: semantic WebKit references and observable waits reject stale
+  targets; opt-in WebKit signals expose supported navigation, console, dialog,
+  and download events without claiming Chromium/CDP data.
+- **Cowork and app integrations**: file changes are staged as previewable,
+  rollback-capable transactions inside one user-approved folder. Streamable
+  HTTP MCP connections support explicit trust, bearer credentials, and OAuth
+  2.1 with PKCE through the system authentication session.
+- **Scheduled and delegated work**: saved tasks have provider, scope, catch-up,
+  overlap, retention, and budget policies. A parent run may delegate bounded
+  child runs with least-privilege authority, shared budgets, and Page leases.
+- **Memory, diagnostics, and sync**: scoped memory is reviewable and off by
+  default. Metrics and redacted diagnostics stay local. Schedule definitions,
+  nonsecret provider presets, and user-authored memory can each opt in to the
+  user's private CloudKit database; credentials and execution content never
+  sync.
 
 ### Platform scope
 
-The macOS app has the full feature set above. The iPadOS target shares tabs,
+Browser 2.0.0 is a macOS release. The macOS app has the full agent execution and
+automation surface above. The companion iPadOS source shares tabs,
 containers/incognito, sync, bookmarks, downloads, settings, keyboard commands,
-and touch navigation. macOS-only integrations—global hotkeys, the terminal CLI,
-AppKit screenshot/window tools, and the unpacked-extension loader—are not
-present in the iPadOS build.
+touch navigation, and the agent-definition sync choices. It can retain
+definitions it cannot execute and marks them unavailable until their local
+provider, integration, Cowork, policy, and platform dependencies are satisfied.
+Its executable UI, accessibility, real-device/CloudKit, and App Store release
+acceptance are deferred to a separate iPad release; see the
+[iPadOS follow-up](docs/ai/roadmap.md#ipados-follow-up). Global hotkeys, the
+terminal CLI, full scheduled automation, AppKit screenshot/window tools, and
+the unpacked-extension loader remain macOS-only.
 
 Browser does not currently expose passkey/WebAuthn sign-in. Apple gates
 third-party browser access behind the
@@ -131,18 +153,19 @@ browser-cli install-mcp all       # Codex and/or Claude Code when installed
 browser-cli mcp-config            # generic stdio configuration
 ```
 
-MCP uses the same in-app authorization switches as CLI automation. Each MCP
-client session writes an append-only local timeline under `agent-audit/` in the
-browser's Application Support directory and captures page-only replay frames
-after actions. Page content and screenshots are not uploaded by Browser itself.
+MCP uses the same in-app authorization switches as CLI automation. Its events
+join the durable local Agent Run timeline and replay store in the browser's
+Application Support directory. Page content and screenshots are not uploaded
+by Browser itself.
 
-Open the sparkle button or press `⇧⌘A` for the built-in agent. Its model
-settings also provide the user-approved Cowork folder and external MCP app
-connections; the clock and replay buttons open scheduled tasks and the local
-action timeline. See [BrowserOS parity](docs/browseros-parity.md) for the
-feature-by-feature implementation map and the
-[AI tooling development guide](docs/ai/README.md) for the next implementation
-roadmap.
+Open the sparkle button or press `⇧⌘A` for the built-in agent. Settings has one
+Agent pane grouping the model provider and Keychain credential, Cowork folder,
+scheduled tasks, trusted MCP integrations, timeline/replay, approvals and hard
+budgets, child-run limits, memory controls, local diagnostics, WebKit signal
+opt-ins, and agent-definition sync. See
+[BrowserOS parity](docs/browseros-parity.md) for the compatibility map and the
+[AI tooling guide](docs/ai/README.md) for the 2.0 architecture, security model,
+feature contracts, and verification requirements.
 
 ## Build and verify
 

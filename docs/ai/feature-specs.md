@@ -1,15 +1,23 @@
-# Future AI tooling feature specifications
+# Browser 2.0 AI tooling feature specifications
 
-These are implementation-ready product slices, ordered by the roadmap. Each
-slice must preserve the current BrowserOS-compatible MCP surface unless its
-acceptance criteria explicitly define a versioned change. All slices inherit
+These are durable product and implementation contracts, ordered by the roadmap.
+Every slice is complete for the Browser 2.0 macOS release. Each slice preserves the
+BrowserOS-compatible MCP surface unless its acceptance criteria explicitly
+define a versioned change. All slices inherit
 the invariants in [Architecture](architecture.md),
 [Security and privacy](security-and-privacy.md), and
 [Testing strategy](testing.md).
 
+All user-facing controls live in the first-class Agent settings pane. Sections
+group Model Provider, Cowork Files, Automation & Records, Safety & Run Budgets,
+Delegated Runs, Scoped Memory, Observability & Page Signals, and Agent
+Definition Sync. Management buttons open the existing scheduled-task, trusted
+integration, and timeline/replay windows; decorative settings keys are not
+permitted.
+
 ## AI-001 — Canonical tool catalogue
 
-**Status:** Ready
+**Status:** Complete
 
 **Depends on:** None
 
@@ -19,29 +27,31 @@ One Foundation-only catalogue defines browser, Cowork, and internal tool
 metadata. The built-in agent and MCP server render provider/protocol schemas
 from it instead of hand-maintaining overlapping arrays.
 
-### Current limitation
+### Prior limitation
 
-`BrowserAgent` and `browserMCPTools` independently declare names,
+`BrowserAgent` and `browserMCPTools` independently declared names,
 descriptions, required fields, and JSON types. The built-in agent intentionally
-exposes a subset plus `wait_for_page` and Cowork tools, but shared tools can
+exposed a subset plus `wait_for_page` and Cowork tools, so shared tools could
 drift silently.
 
-### Build
+### Implemented design
 
-- Add `AgentToolDescriptor`, typed JSON Schema values, tool origin, risk,
-  required capabilities, output schema, version, and visibility profiles.
-- Put descriptors in a file/module compiled by both Browser and `browser-cli`
-  without SwiftUI, AppKit, or WebKit imports.
-- Render OpenAI-style function definitions and MCP `tools/list` entries.
-- Keep dispatch separate: a descriptor never executes its tool.
-- Support compatibility aliases and schema deprecation metadata without
-  exposing duplicate model-visible names in one profile.
+- `AgentToolDescriptor` carries typed JSON Schema, origin, risk, required
+  capabilities, route, output schema, version, and visibility profiles.
+- The Foundation-only catalogue compiles in Browser and `browser-cli` without
+  SwiftUI, AppKit, or WebKit imports.
+- OpenAI-style function definitions and MCP `tools/list` are rendered from the
+  same descriptors; the BrowserOS visibility profile is fixed at 53 tools.
+- Dispatch remains separate: a descriptor never executes its tool.
+- Compatibility aliases and schema deprecation metadata do not expose duplicate
+  model-visible names in one profile.
 
 ### Acceptance criteria
 
 - MCP still exposes the documented 53 names and compatible required arguments.
 - Every overlapping built-in/MCP tool comes from the same descriptor.
-- `wait_for_page`, Cowork, and future tools use explicit visibility profiles.
+- `wait_for` (including the `wait_for_page` alias), Cowork, delegation, memory,
+  and signal tools use explicit visibility profiles.
 - Catalogue validation rejects duplicate names, unresolved aliases, missing
   risk/capability metadata, and unsupported schema constructs.
 - Snapshot tests cover both renderers and the exact 53-tool compatibility view.
@@ -53,7 +63,7 @@ behavior.
 
 ## AI-002 — Durable conversations, runs, and steps
 
-**Status:** Proposed
+**Status:** Complete
 
 **Depends on:** AI-001
 
@@ -62,24 +72,25 @@ behavior.
 Every attended, scheduled, and externally initiated AI execution has a durable,
 queryable lifecycle and can be diagnosed or recovered after relaunch.
 
-### Current limitation
+### Prior limitation
 
 The panel writes message arrays to a newly generated conversation file but does
 not index or reopen them. Scheduled tasks retain 15 summary strings. MCP audit
 uses a separate JSONL format. Success is partly inferred from message roles.
 
-### Build
+### Implemented design
 
-- Introduce `AgentConversation`, `AgentRun`, `AgentStep`, `AgentArtifact`, and
-  a versioned `AgentRunStore` using the architecture's storage layout.
-- Record explicit state transitions and monotonic step sequence numbers.
-- Snapshot model/provider/tool/policy configuration into each run.
-- On launch, mark nonterminal runs `interrupted`; require an explicit recovery
-  decision.
-- Index by conversation, task definition, date, status, provider, and parent
-  run without reading step bodies.
-- Import legacy panel conversation JSON and MCP audit JSONL; do not call either
-  an AgentSession.
+- Versioned `AgentConversation`, `AgentRun`, `AgentStep`, `AgentArtifact`, and
+  `AgentRunStore` types implement the architecture's storage layout.
+- Explicit state transitions and monotonic Step sequence numbers distinguish
+  success, failure, cancellation, limits, and interruption.
+- Each Run snapshots model/provider/tool/policy configuration.
+- Launch recovery marks nonterminal Runs `interrupted` and requires an explicit
+  recovery decision.
+- Indexes cover conversation, task definition, date, status, provider, and
+  parent Run without reading Step bodies.
+- Validated, idempotent import handles legacy panel conversation JSON,
+  scheduler summaries, and MCP audit JSONL with owner-only migration receipts.
 
 ### Acceptance criteria
 
@@ -98,7 +109,7 @@ Automatic cross-device transcript sync or automatic resume after app launch.
 
 ## AI-003 — Contextual policy and approvals
 
-**Status:** Proposed
+**Status:** Complete
 
 **Depends on:** AI-001, AI-002
 
@@ -107,23 +118,23 @@ Automatic cross-device transcript sync or automatic resume after app launch.
 All tool entry points use one enforceable policy decision, and users approve
 the concrete effect of risky actions rather than relying on a system prompt.
 
-### Current limitation
+### Prior limitation
 
 CLI/MCP has global capability switches and the agent prompt warns against
 consequential actions, but the built-in run loop has no typed per-invocation
 approval gate. Dynamic MCP effects are not classified locally.
 
-### Build
+### Implemented design
 
-- Add typed capabilities, risk classes, `AgentInvocationContext`, policy rules,
+- Typed capabilities, risk classes, `AgentInvocationContext`, policy rules,
   approval requests, decisions, scopes, expiry, and invocation digests.
-- Resolve Page/origin/browser Session, file canonical path, or MCP identity
-  before evaluating policy.
-- Add nonmodal approval UI to attended runs and notification-based
-  `waitingForHuman` behavior for schedules.
-- Pass built-in agent, scheduler, MCP, and CLI execution through the same policy
+- Targets resolve to a Page/origin/browser Session, canonical Cowork path, or
+  MCP identity before policy evaluation.
+- Attended Runs use a nonmodal approval queue; schedules use notification-based
+  `waitingForHuman` behavior.
+- Built-in agent, scheduler, MCP, and CLI execution pass through the same policy
   service while preserving existing static Security switches.
-- Record decisions before effects and return structured denial/expiry results.
+- Decisions are recorded before effects; denial and expiry are structured results.
 
 ### Acceptance criteria
 
@@ -144,7 +155,7 @@ engine enforces authority and requires the user for consequential ambiguity.
 
 ## AI-004 — Streaming provider adapters
 
-**Status:** Proposed
+**Status:** Complete
 
 **Depends on:** AI-002
 
@@ -154,23 +165,22 @@ Provider APIs are isolated behind one normalized streaming contract. The panel
 shows incremental text/tool progress, cancellation is prompt, and usage/cost
 can be budgeted.
 
-### Current limitation
+### Prior limitation
 
 The current loop posts one OpenAI Chat Completions-shaped request and waits for
 the complete JSON response. Provider identity mostly changes endpoint/defaults,
 and usage is not persisted.
 
-### Build
+### Implemented design
 
-- Define normalized request/content parts, model events, finish reasons, usage,
+- Normalized request/content parts, model events, finish reasons, usage,
   provider capabilities, and retry classification.
-- Implement adapters for the current OpenAI-compatible chat path first, then
-  native OpenAI Responses, Anthropic Messages, and Gemini generateContent as
-  separate additions.
-- Support streaming text and incremental tool calls, cancellation, bounded
-  retry before side effects, and provider-reported usage.
-- Keep API keys in Keychain and adapter errors redacted.
-- Allow a task/run to snapshot its provider, model, endpoint identity,
+- Parsers/builders cover OpenAI-compatible Chat Completions, OpenAI Responses,
+  Anthropic Messages, and Gemini generateContent behind one adapter protocol.
+- Streaming text and incremental tool calls support cancellation, bounded retry
+  before side effects, and provider-reported usage.
+- API keys stay in Keychain and adapter errors are redacted.
+- Each task/Run snapshots its provider, model, endpoint identity,
   temperature/reasoning controls where supported, and hard budgets.
 
 ### Acceptance criteria
@@ -191,7 +201,7 @@ provider supplies neither usage nor configured pricing.
 
 ## AI-005 — Semantic references and observable waits
 
-**Status:** Proposed
+**Status:** Complete
 
 **Depends on:** AI-001
 
@@ -200,23 +210,24 @@ provider supplies neither usage nor configured pricing.
 Web agents can act reliably on dynamic pages without arbitrary sleeps or stale
 selectors, using semantics WebKit can safely expose.
 
-### Current limitation
+### Prior limitation
 
 Snapshot IDs are injected into the current DOM and the native agent has a load
 wait. Modern pages may replace nodes, use shadow roots or frames, and complete
 useful state changes after the main load event.
 
-### Build
+### Implemented design
 
-- Return element references containing PageHandle, navigation/document
+- Element references contain PageHandle, navigation/document
   generation, local ID, role/name/state, frame context, and geometry digest.
-- Resolve references just before action and reject stale/ambiguous matches.
-- Add `wait_for` conditions for load state, URL, selector, text, element state,
+- References resolve immediately before action and reject stale, substituted,
+  or ambiguous matches.
+- `wait_for` covers load state, URL, selector, text, element state,
   dialog, download start/completion, and Page close.
-- Observe DOM changes with bounded `MutationObserver` bridges and WebKit
-  navigation/download delegates; clean up observers on cancellation.
-- Traverse open shadow roots. Represent inaccessible cross-origin frames as
-  explicit boundaries rather than pretending their DOM is available.
+- Bounded `MutationObserver` bridges and WebKit navigation/download delegates
+  clean up on cancellation.
+- Open shadow roots are traversed. Inaccessible cross-origin frames are
+  explicit boundaries rather than pretend DOM access.
 
 ### Acceptance criteria
 
@@ -237,30 +248,31 @@ or anti-bot/captcha evasion.
 
 ## AI-006 — Unified timeline and replay
 
-**Status:** Proposed
+**Status:** Complete
 
 **Depends on:** AI-002, AI-003
 
 ### Outcome
 
-One timeline explains attended, scheduled, MCP, and future child-agent runs,
+One timeline explains attended, scheduled, MCP, and child Runs,
 including what was proposed, approved, executed, changed, and retained.
 
-### Current limitation
+### Prior limitation
 
 Replay reads MCP-specific JSONL and post-action frames. Built-in conversations
 and schedule summaries are separate and omit policy/model lifecycle events.
 
-### Build
+### Implemented design
 
-- Render model, tool, approval, handoff, state, artifact, usage, and error steps
-  from `AgentRunStore`.
-- Capture frames according to policy before and/or after visual mutations, with
-  PageHandle, URL origin, viewport, and step references.
-- Add redaction states, missing-artifact handling, retention, delete, and
-  redacted diagnostic export.
-- Show argument/result summaries without eagerly loading content artifacts.
-- Add step filters, autoplay, keyboard controls, and accessible descriptions.
+- Model, tool, approval, handoff, state, artifact, usage, limit, and error Steps
+  render from `AgentRunStore`.
+- Policy-controlled frames before and/or after visual mutations carry
+  PageHandle, URL origin, viewport, and Step references.
+- Redaction states, missing-artifact handling, retention, deletion, and
+  redacted diagnostic export share the Run store.
+- Argument/result summaries do not eagerly load content artifacts.
+- Step filters, autoplay, keyboard controls, and accessible descriptions are
+  shared across entry points.
 
 ### Acceptance criteria
 
@@ -276,7 +288,7 @@ and schedule summaries are separate and omit policy/model lifecycle events.
 
 ## AI-007 — Reliable scheduled tasks
 
-**Status:** Proposed
+**Status:** Complete
 
 **Depends on:** AI-002, AI-003, AI-004
 
@@ -285,32 +297,32 @@ and schedule summaries are separate and omit policy/model lifecycle events.
 Scheduled agent work has explicit execution configuration, downtime behavior,
 budgets, concurrency, and human-handoff semantics.
 
-### Current limitation
+### Prior limitation
 
 The in-process 30-second timer uses the current global provider/model and needs
 an available browser window. A missed run waits until a future schedule, task
 definitions cannot be edited comprehensively, and only summary output is kept.
 
-### Build
+### Implemented design
 
-- Extend task definitions with provider/model snapshot, Page/browser Session
+- Task definitions capture provider/model, Page/browser Session
   scope, MCP connections, Cowork access, budgets, timeout, concurrency policy,
   retention, and catch-up policy (`skip`, `runLatest`, or bounded `runAll`).
-- Add full create/edit/duplicate/delete UI and validate schedules across time
+- Create/edit/duplicate/delete UI validates schedules across time
   zone and daylight-saving changes.
-- Recover due tasks on launch and create full `AgentRun` records.
-- Serialize, skip, or queue overlap according to definition; never accidentally
-  run the same occurrence twice.
-- Notify on waiting-for-human, failure, repeated failure, and configured
-  success conditions.
+- Launch recovery plans due work and creates full `AgentRun` records.
+- Occurrences serialize, skip, or queue according to the definition and use
+  stable occurrence IDs to prevent duplicates.
+- Notifications cover waiting-for-human, failure, repeated failure, and
+  configured success conditions.
 
 ### Acceptance criteria
 
 - A task runs with its saved configuration even after global settings change.
 - Relaunch tests cover every catch-up and overlap policy with stable occurrence
   IDs and no duplicates.
-- No-window execution either creates a sanctioned hidden browser window or
-  records a clear blocked outcome according to the chosen platform design.
+- No-window execution records a clear blocked outcome. With an available browser
+  manager, scheduled work uses hidden Pages without changing focus.
 - An approval need pauses/notifies without displaying an unattended modal.
 - Disabling or deleting a task prevents future occurrences but preserves run
   history until separately deleted.
@@ -323,7 +335,7 @@ support, if added, requires a separate entitlement and energy-impact decision.
 
 ## AI-008 — MCP trust and OAuth lifecycle
 
-**Status:** Proposed
+**Status:** Complete
 
 **Depends on:** AI-003, AI-006
 
@@ -332,22 +344,30 @@ support, if added, requires a separate entitlement and energy-impact decision.
 Users can connect standards-compliant remote MCP servers, understand their
 identity and scopes, and revoke or reauthorize them without opaque credentials.
 
-### Current limitation
+### Prior limitation
 
 Connections accept a Streamable HTTP endpoint and optional bearer token.
 OAuth-only services require a separately operated local remote bridge, and
 server/schema changes are not a first-class trust version.
 
-### Build
+### Implemented design
 
-- Implement MCP authorization discovery and OAuth 2.1 with PKCE where advertised,
-  using the system authentication session and Keychain token storage.
-- Track normalized endpoint, server identity, protocol/capabilities, tool schema
-  digest, auth scopes, last test, and trust version.
-- Add reconnect, refresh, revoke, and reauthorize flows plus clear failure UI.
-- Enforce HTTPS except loopback, response size/depth limits, timeouts, and
-  namespaced collision-safe model tool names.
-- Feed connection/tool identity and egress details into policy and replay.
+- Standards discovery and OAuth authorization code flow require S256 PKCE, use
+  `ASWebAuthenticationSession`, and store tokens in device-only Keychain.
+- A one-shot `NWListener` binds to `127.0.0.1` on an OS-assigned ephemeral port;
+  it validates the exact callback path, Host/port, state, size, and timeout. The
+  sandbox's network-server entitlement is limited to this native callback.
+- Connections track normalized endpoint, server identity,
+  protocol/capabilities, tool-schema digest, auth scopes, last test, and trust
+  version.
+- Reconnect, single-flight refresh, immediate revoke, and reauthorize flows have
+  visible state and failure UI.
+- HTTPS is required except loopback. Response size/depth limits, timeouts, and
+  collision-safe names constrain dynamic tools.
+- Connection/tool identity and egress details flow into policy and replay.
+- Mutation retries use a logical-invocation idempotency key derived from the
+  permit digest plus persisted invocation Step ID: one 401 refresh reuses it,
+  while a later deliberate same-argument invocation receives another key.
 
 ### Acceptance criteria
 
@@ -357,17 +377,22 @@ server/schema changes are not a first-class trust version.
 - Revocation removes Keychain material and prevents calls immediately.
 - Concurrent calls use the correct MCP connection/session negotiation and
   recover from an expired access token once without duplicating mutations.
+- A retry of one persisted mutation carries the same header and MCP `_meta`
+  idempotency key; a later invocation with identical arguments has a new key.
+- The real callback listener accepts only its exact ephemeral `127.0.0.1`
+  redirect and matching OAuth state, then shuts down after one outcome.
 - Loopback fixtures cover OAuth success, denial, refresh, revocation, schema
   change, collision, protocol mismatch, oversized data, and timeout.
 
 ### Non-goals
 
-Shipping vendor-specific connector proxies or storing a service's website
-cookies as an integration credential.
+Shipping vendor-specific connector proxies, dynamic client registration, or
+storing a service's website cookies as an integration credential. OAuth requires
+a pre-registered public native client ID.
 
 ## AI-009 — Cowork artifact transactions
 
-**Status:** Proposed
+**Status:** Complete
 
 **Depends on:** AI-003, AI-006
 
@@ -376,20 +401,23 @@ cookies as an integration credential.
 Agents can create and update useful local artifacts with preview, recovery, and
 a precise record of what changed.
 
-### Current limitation
+### Prior limitation
 
 Cowork supports scoped UTF-8 list/read/write/move/Trash operations with size and
 containment checks, but writes are immediately applied and run history does not
 show a diff or artifact manifest.
 
-### Build
+### Implemented design
 
-- Introduce a per-run artifact workspace and transaction API for create,
-  replace, append, move, and recoverable delete.
-- Generate text diffs and metadata previews before committing risky changes.
-- Use atomic replacement and retain a bounded prior version for rollback.
-- Add typed artifact results with content type, byte count, digest, source
-  steps, final relative path, and commit status.
+- A per-Run artifact workspace and transaction API stages create, replace,
+  append, move, and recoverable delete.
+- Text diffs and metadata previews precede explicit approval and commit for
+  risky changes.
+- Atomic replacement retains a bounded prior version for rollback.
+- Typed artifact results carry content type, byte count, digest, source Steps,
+  final relative path, and commit status.
+- Containment is revalidated at effect time across traversal, symlink, alias,
+  volume, and hard-link policy boundaries, with byte/count bounds.
 - Later format handlers may add structured document operations, but each is a
   separate capability and must preserve format fidelity.
 
@@ -412,7 +440,7 @@ rewrites.
 
 ## AI-010 — Multi-agent run groups
 
-**Status:** Proposed
+**Status:** Complete
 
 **Depends on:** AI-002, AI-003, AI-005
 
@@ -421,16 +449,18 @@ rewrites.
 One parent run can delegate bounded independent work to child runs without Page
 races, focus theft, unbounded fan-out, or fragmented audit.
 
-### Build
+### Implemented design
 
-- Add `AgentRunGroup`, child-run contracts, Page read/write leases, shared
+- `AgentRunGroup` combines child-run contracts, Page read/write leases, shared
   budgets, maximum depth/fan-out, cancellation propagation, and result handoff.
-- Require a child objective, allowed tools, allowed Pages/origins/browser
-  Sessions, and return schema.
-- Prefer child-created hidden Pages. Mutating an existing user Tab requires an
-  explicit lease and applicable approval.
-- Present a tree/timeline with per-child status and parent synthesis.
-- Detect deadlock, orphaned Pages, duplicate work, and child failure policy.
+- A child contract requires an objective, allowed tools, allowed
+  Pages/origins/browser Sessions, and return schema.
+- Child-created Pages are hidden and never steal focus. Mutating an existing
+  user Tab requires an explicit lease and applicable approval.
+- The parent and children share one atomic meter; a child receives only a
+  subset of authority and a smaller budget.
+- The tree/timeline carries per-child status, cleanup ownership, and structured
+  handoff. Cancellation closes child-owned Pages but not user-owned Pages.
 
 ### Acceptance criteria
 
@@ -450,7 +480,7 @@ agent ownership primitive.
 
 ## AI-011 — Scoped, user-controlled memory
 
-**Status:** Proposed
+**Status:** Complete
 
 **Depends on:** AI-002, AI-003
 
@@ -459,17 +489,18 @@ agent ownership primitive.
 Agents can reuse durable facts and preferences without treating browsing
 history or old transcripts as invisible global memory.
 
-### Build
+### Implemented design
 
-- Add memory entries with source/provenance, scope (`global`, origin, task, or
+- Memory entries carry source/provenance, scope (`global`, origin, task, or
   conversation), sensitivity, created/last-used time, expiry, and user-edited
-  text.
-- Make writes explicit model proposals evaluated by policy; sensitive inferred
+  text, plus an explicit normal/container/all-persistent browser-Session scope.
+- Writes are explicit model proposals evaluated by policy; sensitive inferred
   facts require approval.
-- Retrieve a small ranked set only when scope matches and record which entries
-  entered a run.
-- Provide review, search, edit, disable, export, delete, and “forget this” UI.
-- Keep memory storage separate from browsing history, bookmarks, and provider
+- Deterministic retrieval applies exact scope, expiry, entry, and token bounds
+  and records the Run and Step that consumed each entry.
+- Review, search, edit, disable, export, exact “forget this,” and delete are
+  available independently of agent execution.
+- Memory storage remains separate from browsing history, bookmarks, and provider
   context caches.
 
 ### Acceptance criteria
@@ -481,6 +512,8 @@ history or old transcripts as invisible global memory.
 - Incognito runs neither read nor write durable memory by default.
 - Prompt injection cannot silently create a persistent instruction.
 - Retrieval tests are deterministic and enforce token/entry limits.
+- Forgetting an inaccessible ID does not reveal whether another scope or
+  browser Session contains it.
 
 ### Non-goals
 
@@ -489,7 +522,7 @@ authentication data.
 
 ## AI-012 — Budgets, observability, and diagnostics
 
-**Status:** Proposed
+**Status:** Complete
 
 **Depends on:** AI-002, AI-004, AI-006
 
@@ -498,17 +531,19 @@ authentication data.
 Users and maintainers can understand latency, failure, token use, cost when
 known, and resource consumption without sending telemetry by default.
 
-### Build
+### Implemented design
 
-- Add per-run and per-task limits for turns, tool calls, elapsed time, provider
-  tokens/cost, Pages, model-result bytes, downloads, and artifacts.
-- Record local metrics for provider latency, time-to-first-token, tool latency,
+- Per-Run and per-task hard limits cover turns, tool calls, elapsed time,
+  provider tokens/known cost, open Pages, model-result bytes, download
+  count/bytes, and artifact count/bytes.
+- A shared meter admits work before effects and records an explicit limit Step
+  before terminal cancellation. Child Runs atomically consume the root ledger.
+- Local metrics cover provider latency, time-to-first-token, tool latency,
   retries, approvals, failure categories, and resource peaks.
-- Add a run summary and aggregate local dashboard with clear unknown values.
-- Add a previewable redacted diagnostic bundle containing versions,
+- Run summaries and an aggregate local dashboard preserve unknown usage/cost.
+- A previewable redacted diagnostic bundle contains versions,
   configuration shape, timeline metadata, metrics, and selected errors.
-- Make any future remote diagnostics separate, opt-in, documented, and
-  independently disableable.
+- Remote diagnostics are off and no upload transport is implemented.
 
 ### Acceptance criteria
 
@@ -518,12 +553,14 @@ known, and resource consumption without sending telemetry by default.
   an ambiguous timeout.
 - Cost is shown only from provider usage plus user/provider pricing metadata;
   estimates are labeled.
+- Pricing metadata is bound to the provider/model used for that usage event;
+  stale global pricing is not applied retroactively, and unknown remains unknown.
 - Default diagnostic fixtures contain no prompts, page/file/MCP bodies, full
   URLs, screenshots, secrets, or authorization headers.
 
 ## AI-013 — WebKit-native diagnostic signals
 
-**Status:** Proposed
+**Status:** Complete
 
 **Depends on:** AI-001, AI-005
 
@@ -532,15 +569,16 @@ known, and resource consumption without sending telemetry by default.
 Agents can reason about console errors, downloads, navigation responses, and a
 bounded set of request outcomes using supported WebKit hooks.
 
-### Build
+### Implemented design
 
-- Capture opt-in page console messages through an isolated script bridge with
+- An isolated, opt-in script bridge captures page console messages with
   source, level, timestamp, and size limits.
-- Expose navigation response/status, redirects visible to delegates, TLS state,
-  failed resource signals WebKit actually surfaces, and download lifecycle.
-- Add observation/wait tools with explicit capability metadata and retention.
-- Mark unavailable details as unsupported; never fabricate CDP request IDs,
-  timing waterfalls, cache internals, or response bodies.
+- WebKit delegates expose navigation response/status, visible redirects, TLS
+  state, failed resource signals WebKit actually surfaces, and download lifecycle.
+- `observe_webkit_signals` and `wait_for_webkit_signal` have explicit capability
+  and retention metadata and use bounded Page/Run buffers.
+- Unavailable details are unsupported; the runtime never fabricates CDP request
+  IDs, timing waterfalls, cache internals, or response bodies.
 
 ### Acceptance criteria
 
@@ -558,7 +596,7 @@ capture proxy.
 
 ## AI-014 — Opt-in sync for agent definitions
 
-**Status:** Proposed
+**Status:** Complete
 
 **Depends on:** AI-002, AI-007
 
@@ -567,16 +605,23 @@ capture proxy.
 Safe reusable configuration can follow the user's existing private CloudKit
 sync without syncing execution content or secrets.
 
-### Build
+### Implemented design
 
-- Define separately toggleable sync for schedule definitions, nonsecret
-  provider presets, and optionally user-authored memory entries.
-- Use stable IDs, schema versions, conflict handling, tombstones, and capability
-  checks per device.
-- Keep endpoint credentials, OAuth tokens, Cowork bookmarks, run transcripts,
-  steps, frames, artifacts, Page handles, and incognito data local.
-- Show when a synced definition is unavailable on a device due to missing
-  provider credentials, MCP connection, Cowork scope, or platform support.
+- Schedule definitions, nonsecret provider presets, and user-authored memory
+  each have a separate off-by-default setting on macOS and iPadOS. Turning one
+  off offers keep-local, delete-cloud, or cancel; cloud deletion publishes
+  tombstones while retaining usable local-only payloads for a later re-enable.
+- Stable IDs, schema versions, monotonic revisions, deterministic conflict
+  handling, tombstones, and device capability checks prevent resurrection.
+- Endpoint credentials, OAuth tokens, Cowork bookmarks, Run transcripts, Steps,
+  frames, artifacts, Page handles, and incognito data remain local.
+- Remote tombstones and disabled schedules uninstall runnable occurrences while
+  preserving Run history. Revoking local authorization uninstalls immediately;
+  reauthorization can reinstall the same definition revision.
+- The UI shows missing provider credentials, MCP connection, Cowork scope,
+  browser Session, capability/policy authorization, or platform support.
+- Synced sensitive memory waits for local review. iPadOS retains unsupported
+  definitions and never attempts macOS-only automation.
 
 ### Acceptance criteria
 
@@ -585,8 +630,12 @@ sync without syncing execution content or secrets.
   occurrences.
 - Disabling sync stops new writes and offers keep-local versus delete-cloud
   behavior consistent with existing sync UX.
+- Delete-cloud publishes a monotonic tombstone without destroying the retained
+  local payload needed for an intentional later re-enable.
 - A receiving device never runs a schedule until local dependencies and policy
   are satisfied.
+- Tombstones, disabled definitions, and local authorization revocation uninstall
+  runnable schedules without deleting their Run history.
 - iPadOS can retain an unsupported definition without attempting macOS-only
   automation.
 

@@ -22,6 +22,8 @@ record without exposing unrelated browser data.
 | Cowork folder | User-approved local scope containing potentially sensitive data | Security-scoped bookmark, canonical-path and symlink containment, write approval |
 | Browser managers and WebKit | Privileged in-process executor | Main-actor isolation, validated targets, no direct model access |
 | Run/audit store | Sensitive local evidence | Owner-only permissions, redaction, retention controls, no CloudKit by default |
+| WebKit signal bridge | Hostile page-controlled text and incomplete platform observations | Run/Page scope, explicit content opt-ins, byte/count limits, unsupported-field markers |
+| Private CloudKit | External storage for a narrow definition allowlist | Per-category opt-in, payload allowlist, tombstones, local activation gate, no secrets or execution content |
 
 ## Threat model
 
@@ -47,6 +49,9 @@ The design must address at least these threats:
    approval that would require an attended user.
 10. **Resource exhaustion.** A provider or tool loop consumes unbounded time,
     tokens, storage, Pages, downloads, or external requests.
+11. **Definition resurrection or remote authority.** A stale CloudKit record
+    recreates deleted work or causes a receiving device to run without its own
+    credentials, scopes, and policy approval.
 
 Out of scope: defending a user who intentionally grants broad authority to a
 malicious model endpoint, OS compromise, and weaknesses inside WebKit or macOS.
@@ -140,21 +145,22 @@ Opening the task later creates an attended resume that revalidates all targets.
 
 ## Cowork safety
 
-Retain the current security-scoped bookmark and recoverable Trash deletion, and
-add these invariants for future tools:
+Cowork operations use the selected security-scoped bookmark and these enforced
+transaction invariants:
 
 - canonicalize the root and target after resolving symlinks at the time of each
   operation;
 - reject a target on another volume or outside the root, including through
   aliases and hard-link policy where detectable;
 - never accept absolute paths from the model for scoped tools;
-- preview overwrites and structured-file mutations as a diff;
-- use atomic replace for writes and preserve the previous version as a
+- stage creates, replacements, appends, moves, and recoverable deletes without
+  mutating the destination; preview risky changes before explicit commit;
+- use atomic replacement and preserve the previous version as a
   recoverable artifact until the run's retention window expires;
 - apply byte, file-count, recursion, and decompression limits;
 - treat file content as untrusted input and redact it from ordinary logs.
 
-## MCP connection safety
+## MCP connection and OAuth safety
 
 - Pin a connection record to normalized HTTPS endpoint and server identity.
   Loopback HTTP is allowed for local bridges; other cleartext HTTP is rejected.
@@ -170,6 +176,58 @@ add these invariants for future tools:
   explicit.
 - A changed endpoint, server identity, tool schema, or OAuth scope invalidates
   grants made for the prior connection version.
+- OAuth authorization code flow requires S256 PKCE and uses
+  `ASWebAuthenticationSession`. A one-shot `NWListener` binds only to
+  `127.0.0.1` on an OS-assigned ephemeral port; callback method, path, Host,
+  port, state, byte size, and timeout are validated before exchange. The
+  `com.apple.security.network.server` sandbox entitlement exists solely for
+  this local callback listener.
+- OAuth uses a pre-registered public native client ID. Browser does not retain
+  the authorization code or PKCE verifier and does not run a connector proxy.
+- A single 401 may refresh and retry a mutation only with the same logical
+  invocation idempotency key. The key binds the execution permit to the
+  persisted invocation Step, so a later intentional repeat is distinct.
+
+## Scoped memory safety
+
+- Memory is disabled by default and separate from browser history, bookmarks,
+  conversations, provider caches, and Keychain.
+- A model proposes memory; policy decides whether it may be stored. Sensitive
+  proposals require explicit review, and authentication material is prohibited.
+- Retrieval matches global/origin/task/conversation scope and an explicit
+  persistent browser-Session scope, applies expiry and deterministic entry/token
+  limits, and records Run/Step consumption backlinks.
+- Incognito Runs do not retrieve or create durable memory by default. Forgetting
+  an inaccessible or mismatched ID fails without revealing whether it exists.
+
+## WebKit signal safety
+
+- Navigation, TLS, download, and dialog metadata is captured only for a Page
+  owned by an active Run. Per-Page and per-Run count and byte bounds apply.
+- Console collection is off by default. Retaining diagnostic text is a separate
+  opt-in because page and dialog strings can contain sensitive hostile input.
+- Incognito content is memory-only and cleared by default. Ordinary logs receive
+  metadata/redaction state, not signal bodies.
+- WebKit does not expose a complete subresource waterfall. CDP request IDs,
+  bodies, cache details, and timing data are explicitly unsupported rather than
+  approximated.
+
+## Definition-sync safety
+
+- Schedule definitions, nonsecret provider presets, and user-authored memory
+  have independent, off-by-default switches. Disabling a category offers to
+  keep local copies or publish deletion tombstones; local payloads remain
+  available for later re-enabling.
+- Records use stable IDs, schema versions, monotonic revisions, deterministic
+  conflict resolution, and tombstones. Remote tombstones or disabled schedule
+  definitions deactivate local scheduling while preserving Run history.
+- Provider credentials, bearer/OAuth tokens, Cowork bookmarks, MCP credentials,
+  Page handles, browser state, Runs, Steps, approvals, replay frames, artifacts,
+  metrics, and incognito data are never part of the sync codec.
+- A receiving device must independently satisfy provider, trusted MCP, Cowork,
+  browser-Session, platform-capability, and scheduled-policy gates. Revoking
+  local authorization immediately uninstalls the runnable occurrence; iPadOS
+  retains unsupported definitions without executing them.
 
 ## Data handling and retention
 
@@ -182,8 +240,11 @@ Classify persisted data before writing it:
 | Prompts and model text | Local run store | Off | Never |
 | DOM/file/MCP content | Referenced local artifact when needed | Never | Never |
 | Replay frames | Local run artifacts | Never | Path/size only |
-| Schedule definitions | Local settings | Off until AI-014 | Name/status only |
+| Schedule definitions | Local settings; allowlisted private CloudKit when enabled | Off | Name/status only |
+| Nonsecret provider presets | Local settings; allowlisted private CloudKit when enabled | Off | Shape only |
 | User-approved memory | Local scoped memory store | Off | IDs/scope only |
+| Local metrics | Bounded local metric store | Never | Aggregate values only |
+| WebKit signal content | Bounded active-Run buffer | Never | Metadata/redaction state only |
 
 Users need controls to delete one run, one conversation, all agent history, all
 memory, and all data for one MCP connection. Retention settings should include
@@ -196,10 +257,14 @@ content bodies and screenshots, and never exports secrets.
 
 ## Resource limits
 
-Every run has hard limits for model turns, tool calls, elapsed time, output
-bytes, open background Pages, artifact bytes, and optional provider cost.
-Child runs consume the parent's budget. Provider retries use bounded backoff and
-do not repeat a non-idempotent tool invocation.
+Every Run has hard limits for model turns, tool calls, elapsed time, provider
+tokens and known cost, open Pages, model-result bytes, download count/bytes, and
+artifact count/bytes. Child Runs atomically consume the parent group's shared
+ledger and may receive only smaller limits. Provider cost is calculated only
+from actual usage plus provider/model-bound pricing metadata; otherwise it
+remains unknown. A finite limit whose usage cannot be measured fails closed.
+Provider retries use bounded backoff and do not repeat a non-idempotent tool
+invocation without a stable destination-supported key.
 
 Hitting a limit creates a terminal or waiting step with a clear reason. It must
 not be reported as successful completion.
@@ -216,4 +281,10 @@ Before a feature may execute tools, tests must demonstrate:
 - grants do not cross origins, browser Sessions, MCP identities, or runs;
 - cancellation prevents the next action and records a terminal state;
 - incognito content is not retained under the default policy;
-- size and step limits fail closed without freezing the browser.
+- size and step limits fail closed without freezing the browser;
+- a refreshed MCP mutation retains one logical invocation key and a later
+  deliberate identical call receives another;
+- sync tombstones prevent resurrection and imported schedules stay inert until
+  local authorization and dependencies pass;
+- disabling each definition-sync category exercises both keep-local and
+  delete-cloud choices without deleting Run history.

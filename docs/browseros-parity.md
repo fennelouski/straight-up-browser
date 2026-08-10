@@ -14,14 +14,18 @@ or automation-only profile.
 | 53 browser tools | The same 53-tool functional catalogue: 8 navigation/page, 8 observation, 14 interaction, 3 file/export, 5 window, 5 tab-group, 6 bookmark, and 4 history tools |
 | Real signed-in browser | Commands route into the live `WKWebView` instances and their existing session data stores |
 | Parallel agents/background tabs | Stable `windowUUID:tabUUID` page IDs, background/hidden pages and windows, and per-request routing; focus is never required to address a page |
-| Built-in browser agent | Native `⇧⌘A` side panel with a bounded tool loop, visible tool steps, cancellation, persisted conversations, and explicit capability authorization |
-| Bring your own AI / local models | Direct OpenAI and OpenRouter support, arbitrary OpenAI-compatible endpoints, Ollama, and LM Studio; provider secrets stay in Keychain |
-| External app integrations | Generic Streamable HTTP MCP connections with dynamic tool discovery and optional Keychain bearer tokens; OAuth-only services work through their MCP remote bridge rather than a vendor-owned connector proxy |
-| Cowork with browser and files | Six file tools scoped to a user-selected security-scoped folder; path/symlink containment, UTF-8 and size limits, and recoverable Trash deletion |
-| Scheduled tasks | Daily, every-N-hour, and every-N-minute tasks; hidden-page execution, run/stop controls, bounded agent steps, and the latest 15 local results |
-| Audit and replay | Append-only JSONL session/tool timelines plus post-action page frames, scrubber, step controls, and autoplay; stored only in the app container |
+| Built-in browser agent | Native `⇧⌘A` side panel with streaming model output, visible tool and approval steps, cancellation, durable conversations/Runs, scoped memory, and hard resource budgets |
+| Bring your own AI / local models | Direct OpenAI, OpenRouter, Ollama, LM Studio, and arbitrary OpenAI-compatible endpoints, plus normalized OpenAI Responses, Anthropic Messages, and Gemini generateContent adapters; provider secrets stay in Keychain |
+| External app integrations | Generic Streamable HTTP MCP with bounded discovery/calls, collision-safe dynamic tool names, explicit trust versions, Keychain bearer/OAuth tokens, and OAuth 2.1 + S256 PKCE through `ASWebAuthenticationSession` and a one-shot ephemeral `127.0.0.1` callback |
+| Cowork with browser and files | File tools scoped to a user-selected security-scoped folder, with path/symlink/alias/hard-link containment, bounded staging, preview and approval, atomic commit, retained prior versions, and rollback |
+| Scheduled tasks | Editable daily/interval tasks with captured provider, browser, MCP, Cowork, budget, timeout, catch-up, overlap, notification, and retention policies; hidden-page execution remains limited to times when Browser can run |
+| Multi-agent delegation | Bounded child Runs with explicit contracts, least-privilege authority, shared parent budgets, Page read/write leases, hidden child-created Pages, cancellation propagation, and structured handoff |
+| Audit and replay | One append-oriented Agent Run timeline for attended, scheduled, MCP, and child execution, with approval/usage/limit/artifact events, replay frames, redaction, retention, deletion, and local diagnostic export |
+| Scoped memory | Opt-in, reviewable facts and preferences scoped by origin/task/conversation and persistent browser Session, with provenance, sensitivity review, expiry, independent deletion, and no incognito use by default |
+| WebKit-native signals | Bounded, run-scoped observation/waits for supported navigation, TLS, console, dialog, and download lifecycle data; console text and diagnostic text are separately opt in, and unavailable CDP details are explicitly unsupported |
+| Definition sync | Separately opt-in private CloudKit sync for schedule definitions, nonsecret provider presets, and user-authored memory; local dependency/policy gates prevent imported definitions from executing automatically |
 | Human handoff | Real visible pages for login, captcha, 2FA, and consequential confirmations; CLI `notify` can foreground the browser |
-| Local privacy | No Browser telemetry or hosted agent proxy. Model requests go directly to the configured provider; MCP/browser audit data stays on disk |
+| Local privacy | No Browser telemetry or hosted agent proxy. Model requests go directly to the configured provider; metrics, Run evidence, replay, and redacted diagnostics stay on device unless the user explicitly exports them |
 
 ## Browser automation catalogue
 
@@ -45,8 +49,11 @@ The MCP server exposes these BrowserOS-compatible tools:
 - History: `search_history`, `get_recent_history`, `delete_history_url`,
   `delete_history_range`
 
-The native side-panel agent uses the same primitives and additionally exposes a
-page-load wait plus its scoped cowork-file and connected-app tools.
+The native side-panel agent uses the same primitives and adds canonical tools
+for observable waits, staged Cowork transactions, delegated Runs, scoped
+memory, WebKit signals, and trusted connected apps. Those additions do not
+alter the public names or required arguments of the compatibility catalogue:
+the bundled browser MCP profile remains exactly 53 tools.
 
 ## Engine/platform boundary
 
@@ -58,12 +65,20 @@ rather than the agent feature surface:
 - Chromium/CDP-specific debugging, emulation, and profile-import internals do
   not exist in WebKit; BrowserOS itself lists several debugging/performance
   tools as future work rather than part of its 53-tool browser catalogue.
+- `WKWebView` exposes main-navigation, delegate, download, dialog, and injected
+  console observations, not a complete subresource request waterfall. Missing
+  CDP-style request IDs, cache internals, bodies, and timing details are
+  returned as unsupported rather than synthesized.
 - Browser cannot expose passkeys until Apple grants the third-party-browser
   WebAuthn entitlement, and it does not attempt to decrypt another browser's
   password vault. Bookmarks can be imported normally.
+- macOS owns agent execution, external MCP OAuth, scheduled automation, Cowork,
+  and child-run Page control. iPadOS can sync and retain safe definitions but
+  does not attempt macOS-only execution; every receiving device must satisfy
+  its own provider, MCP, Cowork, browser-Session, capability, and policy gates.
 
 These boundaries do not change the agent's ability to observe, interact with,
 export from, parallelize, schedule, or replay work in the live browser.
 
-Future work beyond parity is specified in the
-[AI tooling development guide](ai/README.md).
+The implementation architecture and release-acceptance contract are documented
+in the [AI tooling guide](ai/README.md).

@@ -22,6 +22,22 @@ The tabs currently visible in the window — one normally, 2–4 in a split. The
 When a search query means a _destination_ ("download slack") rather than a _question_ ("is slack down"), Fast Forward opens the resolved destination as a second pane beside the search results, scrolled to and pulsing on the thing the query wanted. The results pane is never touched, so a wrong guess costs a pane, not an outcome. A fast-forwarded pane is an ordinary **Tab** in an ordinary **Split** — nothing about it is special except how it was created. Closing it is the "no thanks" and teaches Fast Forward to stop guessing that query (`FastForwardMemory`, local JSON).
 _Avoid_: redirect (Fast Forward never replaces the results), recommendation (it acts, it doesn't list)
 
+**Page / PageHandle**:
+The automation address of an ordinary **Tab**, written as `windowUUID:tabUUID`. A hidden Page is still a Tab using its real `WKWebView` and `BrowserSession`; it is not a headless or debug-browser profile.
+
+**AgentConversation / AgentRun / AgentStep**:
+An `AgentConversation` is the user-visible thread. An `AgentRun` is one bounded execution of one prompt. An `AgentStep` is one immutable model, tool, approval, handoff, usage, limit, artifact, or lifecycle event within that Run.
+_Avoid_: agent session (`BrowserSession` already means website-data isolation), task for a one-off execution (`AgentTaskDefinition` means reusable scheduled work)
+
+**AgentRunGroup**:
+A parent Run and its bounded child Runs. Children receive explicit objectives, return schemas, authority subsets, shared resource budgets, and Page leases. An AgentRunGroup is not a `TabGroup` or **Split**.
+
+**Cowork transaction**:
+A staged set of file changes beneath one user-approved security-scoped root. Preview, approval, commit, cancellation, and rollback are explicit states; staging does not mutate the destination.
+
+**Scoped memory**:
+A user-reviewable durable fact or preference with provenance, sensitivity, expiry, a global/origin/task/conversation scope, and an independent persistent `BrowserSession` scope. It is not browsing history, a transcript cache, or a source of authority.
+
 ## Relationships
 
 - A **Split** displays 2–4 **Tabs**; exactly one of them is the **Focused tab**
@@ -35,6 +51,12 @@ _Avoid_: redirect (Fast Forward never replaces the results), recommendation (it 
 - The **Split** arrangement (ordered member IDs + focused ID) persists in UserDefaults; on launch, unresolved IDs are dropped, and fewer than 2 survivors means a plain single view
 - Incognito tabs may join a **Split** (isolation is per-tab at the data-store level); they never survive relaunch, handled by the drop-unresolved rule
 - **Fast Forward** only ever _opens_ a **Split** from a single-view search; it never touches a Split the user built, and never resolves or records for incognito tabs
+- Every agent action addresses an exact **PageHandle** and re-resolves its origin, document generation, and `BrowserSession` before policy evaluation and execution
+- All entry points record the same **AgentRun** and **AgentStep** lifecycle; provider output, page/file content, and MCP metadata are observations, never authority
+- A child Run's tools, origins, Pages, browser Sessions, Cowork roots, MCP identities, data-egress permission, retention permission, and budget must be subsets of its parent
+- A Page mutation requires an exclusive lease; observation leases may be shared, and a Run releases leases before waiting for a human
+- Incognito Runs do not read or write durable memory, retain content-rich WebKit signals, or sync definitions by default
+- Agent-definition sync covers separately enabled schedules, nonsecret provider presets, and user-authored memory only; secrets, execution records, Page handles, Cowork bookmarks, and approvals stay local
 
 ## Example dialogue
 

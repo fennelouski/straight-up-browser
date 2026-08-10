@@ -1,6 +1,6 @@
 # AI executions are Runs, not browser Sessions
 
-Status: Proposed
+Status: Accepted
 
 Straight Up Browser already uses **Session** for a website-data isolation
 container. A `BrowserSession` determines the `WKWebsiteDataStore` and therefore
@@ -8,7 +8,7 @@ cookie/storage boundaries for normal, persistent container, and incognito Tabs.
 MCP also uses the word session for parts of its transport lifecycle, while an
 AI UI may casually call a conversation or execution a session.
 
-New AI lifecycle code will use three distinct terms:
+AI lifecycle code uses three distinct terms:
 
 - `AgentConversation` is the user-visible thread of prompts and responses.
 - `AgentRun` is one bounded execution of one prompt, including model calls,
@@ -39,5 +39,5 @@ such when exposed in logs or types.
   and `agent-audit/`, but new stores use run-oriented names.
 - Authorization scopes bind to a Run and concrete targets. Browser Session ID
   remains an independent dimension in that scope.
-- A future multi-agent parent is an `AgentRunGroup`; it is not a TabGroup,
+- A multi-agent parent is an `AgentRunGroup`; it is not a TabGroup,
   browser Session, or Split.

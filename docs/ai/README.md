@@ -1,32 +1,39 @@
-# AI tooling development guide
+# AI tooling guide
 
-This directory turns Straight Up Browser's existing BrowserOS-parity layer into
-an implementation roadmap for the next generation of agent tooling. It is for
-maintainers and coding agents: each planned capability has a stable ID,
-dependencies, boundaries, and testable acceptance criteria.
+This directory records the Straight Up Browser 2.0 agent runtime: its delivery
+map, component boundaries, security invariants, durable feature IDs, and release
+acceptance criteria. It is for maintainers and coding agents working on the
+implementation without duplicating schemas, weakening authority checks, or
+inventing capabilities WebKit does not expose.
 
-The baseline is the implementation described in
-[BrowserOS AI parity](../browseros-parity.md): the live WebKit browser already
-has a built-in agent, 53-tool MCP server, stable page IDs, background pages,
-model-provider configuration, Streamable HTTP MCP connections, a scoped Cowork
-folder, scheduled tasks, and local audit/replay. The items here improve the
-cohesion, reliability, safety, and extensibility of those features; they should
-not be presented as missing BrowserOS parity.
+The public compatibility baseline remains the implementation described in
+[BrowserOS AI parity](../browseros-parity.md): the live WebKit browser has a
+built-in agent, an exact 53-tool BrowserOS-compatible MCP profile, stable Page
+handles, hidden Pages, provider configuration, external Streamable HTTP MCP,
+Cowork, schedules, and replay. AI-001 through AI-014 consolidate those surfaces
+behind one durable, policy-gated, observable runtime. The extra native tools do
+not rename or expand the 53-tool compatibility profile.
 
 ## Read in this order
 
-1. [Roadmap](roadmap.md) — priority and dependency order.
-2. [Architecture](architecture.md) — target boundaries, domain names, and
+1. [Roadmap](roadmap.md) — delivery order and release milestones.
+2. [Architecture](architecture.md) — implemented boundaries, domain names, and
    contracts.
 3. [Security and privacy](security-and-privacy.md) — threat model and policy
    invariants.
-4. [Feature specifications](feature-specs.md) — independently buildable work.
-5. [Testing strategy](testing.md) — required verification and fixtures.
+4. [Feature specifications](feature-specs.md) — durable feature contracts and
+   acceptance criteria.
+5. [Testing strategy](testing.md) — required verification; it is not a record of
+   results until a release run is attached.
 
-The proposed naming decision in
-[ADR-0003](../adr/0003-agent-lifecycle-language.md) is normative for new code:
+The naming decision in
+[ADR-0003](../adr/0003-agent-lifecycle-language.md) is normative:
 `BrowserSession` remains the website-data isolation container; an AI execution
 is an `AgentRun`, never an "agent session."
+
+[ADR-0004](../adr/0004-browser-2-agent-runtime-and-mcp-oauth.md) records the
+2.0 execution-core and native MCP OAuth decisions, including the real ephemeral
+loopback callback and logical-invocation idempotency boundary.
 
 ## Planning conventions
 
@@ -43,7 +50,9 @@ may use one of these states in an issue or pull request:
   progress.
 
 A feature is ready only when its persistence impact, permission impact, failure
-behavior, and macOS/iPadOS scope are explicit. It is complete only when:
+behavior, and macOS/iPadOS scope are explicit. The implementation may be marked
+**In progress** while code is present but full release acceptance is pending. It
+is **Complete** only when:
 
 - public tool names and payloads remain compatible or have a versioned
   migration;
@@ -68,3 +77,10 @@ behavior, and macOS/iPadOS scope are explicit. It is complete only when:
 - Local-first is the default: definitions may sync only with an explicit
   product decision; secrets, run transcripts, replay frames, and Cowork files
   stay local by default.
+- Settings has one Agent pane for provider/Keychain configuration, Cowork,
+  schedules and MCP connections, timeline/replay, approvals and hard budgets,
+  child-run limits, memory, local observability/WebKit signal opt-ins, and
+  definition sync. A UI control must read the same setting key as its runtime.
+- Definition sync is private-CloudKit, category-specific, and off by default.
+  Imported definitions never carry local authority and cannot run until local
+  dependencies and policy are satisfied.

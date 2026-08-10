@@ -52,8 +52,8 @@ check on demand.
    separate metadata:
 
    ```
-   git tag -a v1.x -m "Browser 1.x (build N)"
-   git push origin main v1.x
+   git tag -a vX.Y.Z -m "Browser X.Y.Z (build N)"
+   git push origin main vX.Y.Z
    ```
 
 2. **Build the notarized DMG from that clean tagged commit:**
@@ -88,14 +88,14 @@ check on demand.
    cd ~/Documents/GitHub/nathanfennel.com
    git add public/downloads/Browser.dmg public/downloads/browser-appcast.xml \
      public/downloads/Browser.dmg.sha256 public/downloads/release-provenance.json
-   git commit -m "Update Browser.dmg to 1.x (build N)"
+   git commit -m "Update Browser.dmg to X.Y.Z (build N)"
    git push                     # Vercel auto-deploys main
    ```
 
    The appcast is what makes already-installed copies auto-update — skipping it
-   means new installs get 1.x but existing users never hear about it.
+   means new installs get the release but existing users never hear about it.
 
-   Nothing else to edit by hand. The "Version 1.x · macOS 15.6 or later · N MB"
+   Nothing else to edit by hand. The "Version X.Y.Z · macOS 15.6 or later · N MB"
    line on `/internet` is read out of `browser-appcast.xml` at build time
    (`downloadInfo()` in `src/app/internet/page.tsx`), so copying the appcast is
    what updates it. It used to be hardcoded and drifted from 1.1 to 1.4.3
