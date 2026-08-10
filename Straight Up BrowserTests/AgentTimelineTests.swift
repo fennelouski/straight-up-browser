@@ -176,6 +176,35 @@ struct AgentTimelineTests {
             .beforeMutation, .afterMutation,
         ])
 
+        let containerSession = AgentBrowserSession.container(UUID())
+        let containerPage = AgentPageTarget(
+            pageID: "container-window:container-tab",
+            origin: page.origin,
+            session: containerSession
+        )
+        let containerContext = AgentInvocationContext(
+            runID: run.id,
+            entryPoint: .attended,
+            humanPresent: true,
+            toolName: descriptor.name,
+            arguments: .object([
+                "pageId": .string(containerPage.pageID),
+                "selector": .string("#buy"),
+            ]),
+            target: .page(containerPage),
+            runScope: AgentRunScope(
+                capabilities: descriptor.requiredCapabilities,
+                pageIDs: [containerPage.pageID],
+                origins: [containerPage.origin],
+                session: containerSession
+            )
+        )
+        #expect(policy.positions(
+            for: run,
+            descriptor: descriptor,
+            context: containerContext
+        ) == [.beforeMutation, .afterMutation])
+
         let incognito = AgentRun(id: run.id, entryPoint: .attended, incognito: true)
         #expect(policy.positions(
             for: incognito,

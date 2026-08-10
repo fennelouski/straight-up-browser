@@ -54,6 +54,36 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         // as a group, not an "other" element.
         XCTAssertTrue(app.groups["Browser Library"].waitForExistence(timeout: 5))
     }
+
+    @MainActor
+    func testAgentRoadmapSettingsAreGroupedInOnePane() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-uiTesting",
+            "-ApplePersistenceIgnoreState", "YES",
+            "-acceptedEULAVersion", "1",
+            "-tabSyncEnabled", "NO",
+            "-tabBarWidth", "200",
+        ]
+        launchBrowserForUITesting(app)
+
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
+        app.typeKey(",", modifierFlags: .command)
+
+        let agentPane = app.buttons["Agent. Models, automation, memory, privacy"]
+        XCTAssertTrue(agentPane.waitForExistence(timeout: 5))
+        agentPane.click()
+
+        XCTAssertTrue(app.staticTexts["Model Provider"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Provider Pricing"].exists)
+        XCTAssertTrue(app.staticTexts["Cowork Files"].exists)
+        XCTAssertTrue(app.staticTexts["Automation & Records"].exists)
+        XCTAssertTrue(app.staticTexts["Safety & Run Budgets"].exists)
+        XCTAssertTrue(app.staticTexts["Delegated Runs"].exists)
+        XCTAssertTrue(app.staticTexts["Scoped Agent Memory"].exists)
+        XCTAssertTrue(app.staticTexts["Observability & Page Signals"].exists)
+        XCTAssertTrue(app.staticTexts["Agent Definition Sync"].exists)
+    }
 }
 
 @MainActor

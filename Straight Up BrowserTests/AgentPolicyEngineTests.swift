@@ -114,6 +114,95 @@ struct AgentPolicyEngineTests {
         ).denialCode == .sessionMismatch)
     }
 
+    @Test func pageOperationCannotBeAuthorizedWithoutAResolvedTarget() throws {
+        let descriptor = try #require(
+            AgentToolCatalog.canonical.descriptor(named: "take_snapshot")
+        )
+        let decision = try AgentPolicyEngine().evaluate(
+            descriptor: descriptor,
+            context: AgentInvocationContext(
+                runID: UUID(),
+                entryPoint: .attended,
+                humanPresent: true,
+                toolName: descriptor.name,
+                arguments: .object(["pageId": .string("window:unregistered")]),
+                target: .none,
+                runScope: AgentRunScope(
+                    capabilities: [.pageRead],
+                    pageIDs: ["window:unregistered"],
+                    origins: ["https://example.com"],
+                    session: .normal
+                )
+            )
+        )
+
+        #expect(decision.denialCode == .targetOutsideRunScope)
+    }
+
+    @Test func everyCanonicalPageAddressingToolRejectsNoneAndIncognitoTargets() throws {
+        let descriptors = AgentToolCatalog.canonical.allDescriptors.filter(
+            \.requiresLivePageTarget
+        )
+        #expect(!descriptors.isEmpty)
+        let engine = AgentPolicyEngine()
+        for descriptor in descriptors {
+            let arguments = validFixtureValue(for: descriptor.inputSchema)
+            let pageID: String = if case .object(let values) = arguments,
+                                    case .string(let requested) = values["pageId"] {
+                requested
+            } else if case .object(let values) = arguments,
+                      case .array(let requested) = values["pageIds"],
+                      case .string(let first) = requested.first {
+                first
+            } else {
+                "window:page"
+            }
+            let noTarget = try engine.evaluate(
+                descriptor: descriptor,
+                context: AgentInvocationContext(
+                    runID: UUID(),
+                    entryPoint: .localMCP,
+                    humanPresent: false,
+                    toolName: descriptor.name,
+                    arguments: arguments,
+                    target: .none,
+                    runScope: AgentRunScope(
+                        capabilities: descriptor.requiredCapabilities,
+                        pageIDs: [pageID],
+                        origins: ["https://example.com"],
+                        session: .normal
+                    )
+                )
+            )
+            #expect(noTarget.denialCode == .targetOutsideRunScope)
+
+            let privateTarget = AgentPageTarget(
+                pageID: pageID,
+                origin: "https://example.com",
+                session: .incognito
+            )
+            let incognito = try engine.evaluate(
+                descriptor: descriptor,
+                context: AgentInvocationContext(
+                    runID: UUID(),
+                    entryPoint: .localMCP,
+                    humanPresent: false,
+                    toolName: descriptor.name,
+                    arguments: arguments,
+                    target: .page(privateTarget),
+                    runScope: AgentRunScope(
+                        capabilities: descriptor.requiredCapabilities,
+                        pageIDs: [pageID],
+                        origins: [privateTarget.origin],
+                        session: .incognito
+                    ),
+                    dataLeavesDevice: true
+                )
+            )
+            #expect(incognito.denialCode == .prohibitedDataEgress)
+        }
+    }
+
     @Test func unattendedConsequentialActionsCannotSelfApprove() throws {
         let destructive = try #require(AgentToolCatalog.canonical.descriptor(named: "delete_history_url"))
         let external = try #require(AgentToolCatalog.canonical.descriptor(named: "click"))
@@ -180,6 +269,27 @@ struct AgentPolicyEngineTests {
         #expect(permit.runID == context.runID)
         #expect(permit.toolName == descriptor.name)
         #expect(permit.decisionStepID == stepID)
+    }
+}
+
+private func validFixtureValue(for schema: AgentJSONSchema) -> JSONValue {
+    switch schema {
+    case .string(_, let allowedValues):
+        return .string(allowedValues?.first ?? "x")
+    case .boolean:
+        return .boolean(false)
+    case .integer(_, let minimum, _):
+        return .number(Double(minimum ?? 0))
+    case .number(_, let minimum, _):
+        return .number(minimum ?? 0)
+    case .array(_, let items):
+        return .array([validFixtureValue(for: items)])
+    case .object(_, let properties, let required, _):
+        return .object(Dictionary(uniqueKeysWithValues: required.map {
+            ($0, validFixtureValue(for: properties[$0] ?? .string()))
+        }))
+    case .unsupported:
+        return .null
     }
 }
 

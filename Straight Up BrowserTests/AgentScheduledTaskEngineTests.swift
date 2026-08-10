@@ -3,6 +3,48 @@ import Testing
 @testable import Browser
 
 struct AgentScheduledTaskEngineTests {
+    @Test func legacyScheduleRetirementPersistsOwnerOnlySnapshotBeforePurgingRawOutputs() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "legacy-schedule-retirement-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let legacyURL = root.appendingPathComponent("agent-tasks.json")
+        let snapshotURL = root.appendingPathComponent("agent/schedules.json")
+        let rawOutput = "legacy page body that must be purged"
+        try Data(rawOutput.utf8).write(to: legacyURL)
+        let sanitized = Data(#"{"definitions":[]}"#.utf8)
+
+        try BrowserAgentScheduleSnapshotPersistence.persist(
+            sanitized,
+            to: snapshotURL,
+            retiring: legacyURL
+        )
+
+        #expect(try Data(contentsOf: snapshotURL) == sanitized)
+        #expect(!FileManager.default.fileExists(atPath: legacyURL.path))
+        #expect((try FileManager.default.attributesOfItem(
+            atPath: snapshotURL.path
+        )[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+        #expect((try FileManager.default.attributesOfItem(
+            atPath: snapshotURL.deletingLastPathComponent().path
+        )[.posixPermissions] as? NSNumber)?.intValue == 0o700)
+
+        let retryLegacyURL = root.appendingPathComponent("agent-tasks-retry.json")
+        try Data(rawOutput.utf8).write(to: retryLegacyURL)
+        let blockingFile = root.appendingPathComponent("not-a-directory")
+        try Data().write(to: blockingFile)
+        #expect(throws: CocoaError.self) {
+            try BrowserAgentScheduleSnapshotPersistence.persist(
+                sanitized,
+                to: blockingFile.appendingPathComponent("schedules.json"),
+                retiring: retryLegacyURL
+            )
+        }
+        #expect(FileManager.default.fileExists(atPath: retryLegacyURL.path))
+    }
+
     @Test func definitionRoundTripsTheSavedExecutionConfigurationWithoutSecretFields() throws {
         let definition = try makeDefinition()
 
@@ -20,11 +62,42 @@ struct AgentScheduledTaskEngineTests {
         ])
         #expect(decoded.execution.coworkRootID ==
             UUID(uuidString: "CCCCCCCC-CCCC-4CCC-8CCC-CCCCCCCCCCCC")!)
+        #expect(decoded.budgets.maximumProviderTokens == 42_000)
+        #expect(decoded.budgets.maximumDownloads == 6)
+        #expect(decoded.budgets.maximumDownloadBytes == 9_000_000)
+        #expect(decoded.budgets.maximumArtifacts == 12)
 
         let encoded = String(decoding: data, as: UTF8.self).lowercased()
         #expect(!encoded.contains("apikey"))
         #expect(!encoded.contains("bookmarkdata"))
         #expect(!encoded.contains("bearertoken"))
+    }
+
+    @Test func legacyBudgetPayloadDecodesWithFixedMigrationCeilings() throws {
+        let data = Data(#"""
+        {
+          "maximumModelTurns": 8,
+          "maximumToolCalls": 24,
+          "maximumOutputBytes": 1000000,
+          "maximumOpenBackgroundPages": 2,
+          "maximumArtifactBytes": 4000000,
+          "maximumProviderCostMicrounits": 50000
+        }
+        """#.utf8)
+
+        let decoded = try JSONDecoder().decode(AgentTaskBudgets.self, from: data)
+
+        #expect(decoded.maximumProviderTokens == nil)
+        #expect(decoded.maximumDownloads == AgentTaskBudgets.migratedMaximumDownloads)
+        #expect(decoded.maximumDownloadBytes == AgentTaskBudgets.migratedMaximumDownloadBytes)
+        #expect(decoded.maximumArtifacts == AgentTaskBudgets.migratedMaximumArtifacts)
+        let migratedData = try JSONEncoder().encode(decoded)
+        let object = try #require(
+            JSONSerialization.jsonObject(with: migratedData) as? [String: Any]
+        )
+        #expect(object["maximumDownloads"] as? Int == 32)
+        #expect(object["maximumDownloadBytes"] as? Int == 2_147_483_648)
+        #expect(object["maximumArtifacts"] as? Int == 128)
     }
 
     @Test func launchRecoveryHonorsEveryCatchUpPolicyAndStableOccurrenceIDs() throws {
@@ -158,6 +231,26 @@ struct AgentScheduledTaskEngineTests {
 
         var invalidBudgets = valid
         invalidBudgets.budgets.maximumToolCalls = 0
+        #expect(invalidBudgets.validationIssues().contains {
+            $0.code == .invalidBudgets
+        })
+        invalidBudgets = valid
+        invalidBudgets.budgets.maximumProviderTokens = 0
+        #expect(invalidBudgets.validationIssues().contains {
+            $0.code == .invalidBudgets
+        })
+        invalidBudgets = valid
+        invalidBudgets.budgets.maximumDownloads = 0
+        #expect(invalidBudgets.validationIssues().contains {
+            $0.code == .invalidBudgets
+        })
+        invalidBudgets = valid
+        invalidBudgets.budgets.maximumDownloadBytes = 0
+        #expect(invalidBudgets.validationIssues().contains {
+            $0.code == .invalidBudgets
+        })
+        invalidBudgets = valid
+        invalidBudgets.budgets.maximumArtifacts = 0
         #expect(invalidBudgets.validationIssues().contains {
             $0.code == .invalidBudgets
         })
@@ -687,6 +780,78 @@ struct AgentScheduledTaskEngineTests {
         )?.occurrenceRecords.isEmpty == true)
     }
 
+    @Test func clearHistoryPreservesDefinitionsAndFailsClosedForActiveOccurrences() async throws {
+        let startedAt = try date("2026-01-01T01:00:00Z")
+        let finishedAt = startedAt.addingTimeInterval(60)
+        let clearedAt = finishedAt.addingTimeInterval(60)
+        let definition = try replacingDates(
+            in: makeDefinition(),
+            createdAt: startedAt.addingTimeInterval(-60)
+        )
+        let completedEngine = try AgentScheduledTaskEngine()
+        try await completedEngine.register(definition)
+        let completedOccurrence = AgentTaskOccurrence(
+            definition: definition,
+            scheduledAt: startedAt,
+            source: .timer
+        )
+        guard case .start(let completedDirective) = await completedEngine.admit(
+            completedOccurrence,
+            browserAvailability: .sanctionedHiddenWindow,
+            at: startedAt
+        ) else {
+            Issue.record("Completed-history fixture should start")
+            return
+        }
+        _ = try await completedEngine.complete(
+            taskID: definition.id,
+            occurrenceID: completedOccurrence.id,
+            runID: completedDirective.runID,
+            outcome: .succeeded,
+            browserAvailability: .sanctionedHiddenWindow,
+            at: finishedAt
+        )
+
+        #expect(try await completedEngine.clearHistoryPreservingDefinitions(
+            at: clearedAt
+        ) == 1)
+        let snapshot = await completedEngine.snapshot()
+        #expect(snapshot.definitions == [definition])
+        #expect(snapshot.deletionTombstones.isEmpty)
+        let resetState = try #require(snapshot.runtimeStates.first)
+        #expect(resetState.taskDefinitionID == definition.id)
+        #expect(resetState.lastEvaluatedAt == clearedAt)
+        #expect(resetState.occurrenceRecords.isEmpty)
+        #expect(resetState.pendingOccurrenceIDs.isEmpty)
+        #expect(resetState.notifications.isEmpty)
+        #expect(resetState.consecutiveFailures == 0)
+
+        let activeEngine = try AgentScheduledTaskEngine()
+        try await activeEngine.register(definition)
+        let activeOccurrence = AgentTaskOccurrence(
+            definition: definition,
+            scheduledAt: clearedAt,
+            source: .manual
+        )
+        guard case .start = await activeEngine.admit(
+            activeOccurrence,
+            browserAvailability: .sanctionedHiddenWindow,
+            at: clearedAt
+        ) else {
+            Issue.record("Active-history fixture should start")
+            return
+        }
+        await #expect(throws: AgentTaskSchedulerError
+            .activeOccurrencesPreventHistoryDeletion([activeOccurrence.id])) {
+            try await activeEngine.clearHistoryPreservingDefinitions(
+                at: clearedAt.addingTimeInterval(1)
+            )
+        }
+        #expect(await activeEngine.runtimeState(
+            taskID: definition.id
+        )?.occurrenceRecords.count == 1)
+    }
+
     private func makeDefinition(
         schedule: AgentTaskSchedule = .daily(hour: 9, minute: 15),
         catchUpPolicy: AgentTaskCatchUpPolicy = .runLatest
@@ -732,7 +897,11 @@ struct AgentScheduledTaskEngineTests {
                 maximumOutputBytes: 1_000_000,
                 maximumOpenBackgroundPages: 2,
                 maximumArtifactBytes: 4_000_000,
-                maximumProviderCostMicrounits: 50_000
+                maximumProviderCostMicrounits: 50_000,
+                maximumProviderTokens: 42_000,
+                maximumDownloads: 6,
+                maximumDownloadBytes: 9_000_000,
+                maximumArtifacts: 12
             ),
             timeoutSeconds: 300,
             concurrencyPolicy: .serialize,

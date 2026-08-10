@@ -39,8 +39,19 @@ struct AgentToolCatalogTests {
             .descriptors(visibleIn: .browserOSMCP)
             .map { ($0.name, $0) })
 
-        #expect(builtIn.count == 34)
+        #expect(builtIn.count == 45)
         #expect(builtIn.contains { $0.name == "wait_for" })
+        #expect(builtIn.contains { $0.name == "observe_webkit_signals" })
+        #expect(builtIn.contains { $0.name == "wait_for_webkit_signal" })
+        #expect(builtIn.contains { $0.name == "delegate_child_run" })
+        #expect(builtIn.contains { $0.name == "inspect_run_group" })
+        #expect(builtIn.contains { $0.name == "cancel_child_run" })
+        #expect(builtIn.contains { $0.name == "commit_cowork_transaction" })
+        #expect(builtIn.contains { $0.name == "cancel_cowork_transaction" })
+        #expect(builtIn.contains { $0.name == "rollback_cowork_transaction" })
+        #expect(builtIn.contains { $0.name == "propose_agent_memory" })
+        #expect(builtIn.contains { $0.name == "search_agent_memory" })
+        #expect(builtIn.contains { $0.name == "forget_agent_memory" })
         #expect(catalog.descriptor(named: "wait_for_page")?.name == "wait_for")
         #expect(builtIn.contains { $0.name == "write_file" })
         for descriptor in builtIn where mcp[descriptor.name] != nil {
@@ -51,6 +62,8 @@ struct AgentToolCatalogTests {
         let mcpTools = try catalog.mcpTools(profile: .browserOSMCP)
         #expect(openAI.count == builtIn.count)
         #expect(mcpTools.count == compatibilityNames.count)
+        #expect(mcpTools.count == 53)
+        #expect(!mcpTools.contains { ($0["name"] as? String) == "delegate_child_run" })
     }
 
     @Test func catalogValidationRejectsContractAmbiguity() {

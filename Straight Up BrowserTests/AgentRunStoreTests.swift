@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 @testable import Browser
@@ -419,6 +420,921 @@ struct AgentRunStoreTests {
         #expect(try await reopened.listConversations().map(\.id) == [preservedConversation.id])
     }
 
+    @Test func retainedArtifactIsDurableInventoriedAndReadableByExactBacklink() async throws {
+        let root = temporaryStoreDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bytes = Data("Cowork output\n".utf8)
+        let artifactID = UUID()
+
+        let store = try AgentRunStore(baseDirectory: root)
+        let run = try await store.createRun(
+            conversationID: nil,
+            entryPoint: .attended
+        )
+        let source = try await store.appendStep(
+            runID: run.id,
+            kind: .artifact,
+            summary: "Committed Cowork output",
+            artifactID: artifactID,
+            redactionState: .retained
+        )
+
+        let artifact = try await store.persistArtifact(
+            id: artifactID,
+            runID: run.id,
+            sourceStepID: source.id,
+            contentType: "text/plain",
+            data: bytes
+        )
+
+        let retrySource = try await store.appendStep(
+            runID: run.id,
+            kind: .artifact,
+            summary: "Idempotent committed Cowork output",
+            artifactID: artifactID,
+            redactionState: .metadataOnly
+        )
+        let retried = try await store.persistArtifact(
+            id: artifactID,
+            runID: run.id,
+            sourceStepID: retrySource.id,
+            contentType: "text/plain",
+            data: bytes,
+            at: Date().addingTimeInterval(60)
+        )
+
+        #expect(artifact.id == artifactID)
+        #expect(retried == artifact)
+        #expect(retried.sourceStepID == source.id)
+        #expect(artifact.sourceStepID == source.id)
+        #expect(artifact.relativePath == "artifacts/\(artifactID.uuidString).data")
+        #expect(artifact.byteCount == bytes.count)
+        #expect(try permissions(of: runDirectory(root: root, runID: run.id)
+            .appendingPathComponent(artifact.relativePath)) == 0o600)
+
+        let inputs = try await AgentArtifactInventoryReader(
+            runsDirectory: root.appendingPathComponent("agent/runs", isDirectory: true)
+        ).inventory(runIDs: [run.id])
+        let input = try #require(inputs.first)
+        #expect(input.artifact == artifact)
+        #expect(input.storageObservation == .present)
+        let timeline = try await AgentTimelineService(store: store).load(artifacts: inputs)
+        let summary = try #require(timeline.artifacts.first)
+        let locator = try #require(summary.locator)
+        #expect(try await AgentArtifactReader(
+            runsDirectory: root.appendingPathComponent("agent/runs", isDirectory: true)
+        ).data(for: locator, maximumBytes: 1_024) == bytes)
+
+        let reopened = try AgentRunStore(baseDirectory: root)
+        #expect(await reopened.run(id: run.id) != nil)
+        #expect(try await reopened.steps(runID: run.id).contains { $0.id == source.id })
+    }
+
+    @Test func artifactPersistenceFailsClosedForIncognitoOrWrongSourceStep() async throws {
+        let root = temporaryStoreDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try AgentRunStore(baseDirectory: root)
+        let artifactID = UUID()
+        let run = try await store.createRun(
+            conversationID: nil,
+            entryPoint: .attended
+        )
+        let unrelated = try await store.appendStep(
+            runID: run.id,
+            kind: .system,
+            summary: "Not an artifact"
+        )
+
+        await #expect(throws: AgentRunStoreError.self) {
+            _ = try await store.persistArtifact(
+                id: artifactID,
+                runID: run.id,
+                sourceStepID: unrelated.id,
+                contentType: "text/plain",
+                data: Data("blocked".utf8)
+            )
+        }
+
+        let incognito = try await store.createRun(
+            conversationID: nil,
+            entryPoint: .attended,
+            incognito: true
+        )
+        let incognitoArtifactID = UUID()
+        let incognitoStep = try await store.appendStep(
+            runID: incognito.id,
+            kind: .artifact,
+            summary: "Incognito metadata only",
+            artifactID: incognitoArtifactID,
+            redactionState: .metadataOnly
+        )
+        await #expect(throws: AgentRunStoreError.self) {
+            _ = try await store.persistArtifact(
+                id: incognitoArtifactID,
+                runID: incognito.id,
+                sourceStepID: incognitoStep.id,
+                contentType: "text/plain",
+                data: Data("must not persist".utf8)
+            )
+        }
+        #expect(!FileManager.default.fileExists(
+            atPath: runDirectory(root: root, runID: incognito.id)
+                .appendingPathComponent("artifacts/index.json").path
+        ))
+    }
+
+    @Test func replayFrameTransactionRollsBackInjectedFailureAndRetryIsValid() async throws {
+        let root = temporaryStoreDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bytes = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A])
+        let frameID = UUID()
+        let page = PageHandle(windowID: UUID(), tabID: UUID())
+        let metadata = AgentReplayFrameMetadata(
+            artifactID: frameID,
+            pageHandle: page,
+            urlOrigin: "https://example.test",
+            viewport: AgentReplayViewport(width: 800, height: 600, scale: 2),
+            capturePosition: .beforeMutation
+        )
+        let store = try AgentRunStore(
+            baseDirectory: root,
+            failureInjector: { point in
+                if case .beforeReplayFrameManifestWrite = point {
+                    throw ReplayPersistenceTestError.injected
+                }
+            }
+        )
+        let run = try await store.createRun(
+            conversationID: nil,
+            entryPoint: .attended
+        )
+        let policy = try await store.appendStep(
+            runID: run.id,
+            kind: .policyDecision,
+            summary: "Allowed click"
+        )
+        let invocation = try await store.appendStep(
+            runID: run.id,
+            kind: .toolInvocation,
+            summary: "click",
+            payload: .object(["tool": .string("click")]),
+            policyDecisionStepID: policy.id
+        )
+
+        await #expect(throws: ReplayPersistenceTestError.self) {
+            _ = try await store.persistReplayFrame(
+                id: frameID,
+                runID: run.id,
+                sourceStepID: invocation.id,
+                contentType: "image/png",
+                data: bytes,
+                metadata: metadata
+            )
+        }
+        let runDirectory = runDirectory(root: root, runID: run.id)
+        let rolledBackArtifacts = try JSONDecoder().decode(
+            [AgentArtifact].self,
+            from: Data(contentsOf: runDirectory.appendingPathComponent("artifacts/index.json"))
+        )
+        let rolledBackFrames = try JSONDecoder().decode(
+            [AgentReplayFrameMetadata].self,
+            from: Data(contentsOf: runDirectory.appendingPathComponent("frames/index.json"))
+        )
+        #expect(rolledBackArtifacts.isEmpty)
+        #expect(rolledBackFrames.isEmpty)
+        #expect(!FileManager.default.fileExists(
+            atPath: runDirectory.appendingPathComponent(
+                "artifacts/\(frameID.uuidString).data"
+            ).path
+        ))
+
+        let retryingStore = try AgentRunStore(baseDirectory: root)
+        let artifact = try await retryingStore.persistReplayFrame(
+            id: frameID,
+            runID: run.id,
+            sourceStepID: invocation.id,
+            contentType: "image/png",
+            data: bytes,
+            metadata: metadata
+        )
+        let retried = try await retryingStore.persistReplayFrame(
+            id: frameID,
+            runID: run.id,
+            sourceStepID: invocation.id,
+            contentType: "image/png",
+            data: bytes,
+            metadata: metadata,
+            at: Date().addingTimeInterval(60)
+        )
+        #expect(retried == artifact)
+        #expect(artifact.sourceStepID == invocation.id)
+
+        let inventory = try await AgentArtifactInventoryReader(
+            runsDirectory: root.appendingPathComponent("agent/runs", isDirectory: true)
+        ).inventory(runIDs: [run.id])
+        #expect(inventory.count == 1)
+        #expect(inventory.first?.frame == metadata)
+        let projection = try await AgentTimelineService(store: retryingStore).load(
+            artifacts: inventory
+        )
+        #expect(projection.validationIssues.isEmpty)
+        let locator = try #require(projection.artifacts.first?.locator)
+        #expect(try await AgentArtifactReader(
+            runsDirectory: root.appendingPathComponent("agent/runs", isDirectory: true)
+        ).data(for: locator, maximumBytes: 1_024) == bytes)
+    }
+
+    @Test func replayJournalCompletesArtifactFirstCrashOnStoreReopen() async throws {
+        let root = temporaryStoreDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bytes = Data("encoded-frame".utf8)
+        let frameID = UUID()
+        let store = try AgentRunStore(baseDirectory: root)
+        let run = try await store.createRun(conversationID: nil, entryPoint: .localMCP)
+        let policy = try await store.appendStep(
+            runID: run.id,
+            kind: .policyDecision,
+            summary: "Allowed fill"
+        )
+        let invocation = try await store.appendStep(
+            runID: run.id,
+            kind: .toolInvocation,
+            summary: "fill",
+            payload: .object(["tool": .string("fill")]),
+            policyDecisionStepID: policy.id
+        )
+        let artifact = AgentArtifact(
+            id: frameID,
+            runID: run.id,
+            sourceStepID: invocation.id,
+            contentType: "image/png",
+            byteCount: bytes.count,
+            sha256: SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(),
+            relativePath: "artifacts/\(frameID.uuidString).data",
+            redactionState: .retained,
+            createdAt: Date(timeIntervalSince1970: 2_000_000_000)
+        )
+        let frame = AgentReplayFrameMetadata(
+            artifactID: frameID,
+            pageHandle: PageHandle(windowID: UUID(), tabID: UUID()),
+            urlOrigin: "https://example.test",
+            viewport: .init(width: 640, height: 480, scale: 1),
+            capturePosition: .afterMutation
+        )
+        let runDirectory = runDirectory(root: root, runID: run.id)
+        let artifactsDirectory = runDirectory.appendingPathComponent("artifacts")
+        let pendingDirectory = runDirectory.appendingPathComponent("frames/pending")
+        try FileManager.default.createDirectory(
+            at: artifactsDirectory,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: pendingDirectory,
+            withIntermediateDirectories: true
+        )
+        try bytes.write(to: runDirectory.appendingPathComponent(artifact.relativePath))
+        try JSONEncoder().encode([artifact]).write(
+            to: artifactsDirectory.appendingPathComponent("index.json")
+        )
+        let journal = ReplayPersistenceTestJournal(
+            schemaVersion: 1,
+            artifact: artifact,
+            frame: frame
+        )
+        let journalURL = pendingDirectory.appendingPathComponent(
+            "\(frameID.uuidString).json"
+        )
+        try JSONEncoder().encode(journal).write(to: journalURL)
+
+        _ = try AgentRunStore(baseDirectory: root)
+
+        let frames = try JSONDecoder().decode(
+            [AgentReplayFrameMetadata].self,
+            from: Data(contentsOf: runDirectory.appendingPathComponent("frames/index.json"))
+        )
+        #expect(frames == [frame])
+        #expect(!FileManager.default.fileExists(atPath: journalURL.path))
+    }
+
+    @Test func replayFrameCountAcceptsExactMaximumThenRejectsNext() async throws {
+        let root = temporaryStoreDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try AgentRunStore(baseDirectory: root)
+        let run = try await store.createRun(conversationID: nil, entryPoint: .attended)
+        let policy = try await store.appendStep(
+            runID: run.id,
+            kind: .policyDecision,
+            summary: "Allowed mutation"
+        )
+        let invocation = try await store.appendStep(
+            runID: run.id,
+            kind: .toolInvocation,
+            summary: "click",
+            payload: .object(["tool": .string("click")]),
+            policyDecisionStepID: policy.id
+        )
+        let page = PageHandle(windowID: UUID(), tabID: UUID())
+        for index in 0..<256 {
+            let id = UUID()
+            _ = try await store.persistReplayFrame(
+                id: id,
+                runID: run.id,
+                sourceStepID: invocation.id,
+                contentType: "image/png",
+                data: Data([UInt8(index % 255)]),
+                metadata: AgentReplayFrameMetadata(
+                    artifactID: id,
+                    pageHandle: page,
+                    urlOrigin: "https://example.test",
+                    viewport: .init(width: 1, height: 1, scale: 1),
+                    capturePosition: .afterMutation
+                )
+            )
+        }
+        let rejectedID = UUID()
+        await #expect(throws: AgentRunStoreError.artifactManifestFull(
+            maximumEntries: 256
+        )) {
+            _ = try await store.persistReplayFrame(
+                id: rejectedID,
+                runID: run.id,
+                sourceStepID: invocation.id,
+                contentType: "image/png",
+                data: Data([0]),
+                metadata: AgentReplayFrameMetadata(
+                    artifactID: rejectedID,
+                    pageHandle: page,
+                    urlOrigin: "https://example.test",
+                    viewport: .init(width: 1, height: 1, scale: 1),
+                    capturePosition: .afterMutation
+                )
+            )
+        }
+    }
+
+    @Test func replayByteAccountingOverflowFailsClosedWithoutWriting() async throws {
+        let root = temporaryStoreDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try AgentRunStore(baseDirectory: root)
+        let run = try await store.createRun(
+            conversationID: nil,
+            entryPoint: .attended
+        )
+        let decision = try await store.appendStep(
+            runID: run.id,
+            kind: .policyDecision,
+            summary: "Allowed click"
+        )
+        let invocation = try await store.appendStep(
+            runID: run.id,
+            kind: .toolInvocation,
+            summary: "click",
+            payload: .object(["tool": .string("click")]),
+            policyDecisionStepID: decision.id
+        )
+        let retainedIDs = [UUID(), UUID()]
+        let artifacts = retainedIDs.map { id in
+            AgentArtifact(
+                id: id,
+                runID: run.id,
+                sourceStepID: invocation.id,
+                contentType: "image/png",
+                byteCount: Int.max,
+                sha256: String(repeating: "a", count: 64),
+                relativePath: "artifacts/\(id.uuidString).data",
+                redactionState: .retained,
+                createdAt: Date()
+            )
+        }
+        let page = PageHandle(windowID: UUID(), tabID: UUID())
+        let frames = retainedIDs.map { id in
+            AgentReplayFrameMetadata(
+                artifactID: id,
+                pageHandle: page,
+                urlOrigin: "https://example.test",
+                viewport: .init(width: 1, height: 1, scale: 1),
+                capturePosition: .afterMutation
+            )
+        }
+        let runDirectory = runDirectory(root: root, runID: run.id)
+        let artifactsDirectory = runDirectory.appendingPathComponent(
+            "artifacts",
+            isDirectory: true
+        )
+        let framesDirectory = runDirectory.appendingPathComponent(
+            "frames",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: artifactsDirectory,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: framesDirectory,
+            withIntermediateDirectories: true
+        )
+        try JSONEncoder().encode(artifacts).write(
+            to: artifactsDirectory.appendingPathComponent("index.json"),
+            options: .atomic
+        )
+        try JSONEncoder().encode(frames).write(
+            to: framesDirectory.appendingPathComponent("index.json"),
+            options: .atomic
+        )
+        let rejectedID = UUID()
+
+        await #expect(throws: AgentRunStoreError.corruptStore(
+            path: "artifacts/index.json",
+            reason: "replay frame byte accounting overflowed"
+        )) {
+            _ = try await store.persistReplayFrame(
+                id: rejectedID,
+                runID: run.id,
+                sourceStepID: invocation.id,
+                contentType: "image/png",
+                data: Data([0]),
+                metadata: AgentReplayFrameMetadata(
+                    artifactID: rejectedID,
+                    pageHandle: page,
+                    urlOrigin: "https://example.test",
+                    viewport: .init(width: 1, height: 1, scale: 1),
+                    capturePosition: .afterMutation
+                )
+            )
+        }
+        #expect(!FileManager.default.fileExists(
+            atPath: artifactsDirectory.appendingPathComponent(
+                "\(rejectedID.uuidString).data"
+            ).path
+        ))
+    }
+
+    @MainActor
+    @Test func replayRejectsReloadedApprovalDocumentWithoutEffectOrArtifacts() async throws {
+        let root = temporaryStoreDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let defaultsName = "AgentReplayAuthorityTests.\(UUID().uuidString)"
+        defer {
+            UserDefaults(suiteName: defaultsName)?
+                .removePersistentDomain(forName: defaultsName)
+        }
+        let store = try AgentRunStore(baseDirectory: root)
+        let run = try await store.createRun(
+            conversationID: nil,
+            entryPoint: .attended
+        )
+        let descriptor = try #require(
+            AgentToolCatalog.canonical.descriptor(named: "click")
+        )
+        let decision = try await store.appendStep(
+            runID: run.id,
+            kind: .policyDecision,
+            summary: "Allowed click"
+        )
+        let invocation = try await store.appendStep(
+            runID: run.id,
+            kind: .toolInvocation,
+            summary: descriptor.name,
+            payload: .object(["tool": .string(descriptor.name)]),
+            policyDecisionStepID: decision.id
+        )
+        let page = PageHandle(windowID: UUID(), tabID: UUID())
+        let approved = BrowserAutomationPageDispatchBinding(
+            target: AgentPageTarget(
+                pageID: page.description,
+                origin: "https://approval.test",
+                session: .normal
+            ),
+            version: AgentPageLeaseVersion(
+                navigation: PageNavigationGeneration(rawValue: 0),
+                document: PageDocumentGeneration(rawValue: UUID())
+            )
+        )
+        // Same Page and URL, but a replacement isolated-world document after
+        // approval. Neither pixels nor the effect may cross this boundary.
+        let reloaded = BrowserAutomationPageDispatchBinding(
+            target: approved.target,
+            version: AgentPageLeaseVersion(
+                navigation: approved.version.navigation,
+                document: PageDocumentGeneration(rawValue: UUID())
+            )
+        )
+        let observability = AgentObservabilityRuntime(
+            baseDirectory: root,
+            defaultsSuiteName: defaultsName
+        )
+        let meter = AgentRunMeter(
+            runID: run.id,
+            taskDefinitionID: nil,
+            incognito: false,
+            limits: try AgentExecutionLimits(
+                maximumArtifacts: 4,
+                maximumArtifactBytes: 1_024
+            ),
+            observability: observability
+        )
+        let permit = AgentExecutionPermit(
+            runID: run.id,
+            toolName: descriptor.name,
+            invocationDigest: "fixture",
+            decisionStepID: decision.id,
+            invocationStepID: invocation.id
+        )
+        var effectRan = false
+        var captureCount = 0
+
+        let succeeded = await AgentReplayCaptureCoordinator.around(
+            descriptor: descriptor,
+            authorizedBinding: approved,
+            permit: permit,
+            capture: { expected in
+                captureCount += 1
+                guard expected == reloaded else { return nil }
+                return AgentReplayCapturedFrame(
+                    data: Data("replacement pixels".utf8),
+                    target: reloaded.target,
+                    viewport: .init(width: 10, height: 10, scale: 1)
+                )
+            },
+            operationSucceeded: { $0 },
+            resolvePostOperationBinding: { reloaded },
+            store: store,
+            meter: meter,
+            operation: {
+                guard approved == reloaded else { return false }
+                effectRan = true
+                return true
+            }
+        )
+
+        #expect(!succeeded)
+        #expect(!effectRan)
+        #expect(captureCount == 1)
+        let inventory = try await AgentArtifactInventoryReader(
+            runsDirectory: root.appendingPathComponent(
+                "agent/runs",
+                isDirectory: true
+            )
+        ).inventory(runIDs: [run.id])
+        #expect(inventory.isEmpty)
+        #expect(!FileManager.default.fileExists(
+            atPath: runDirectory(root: root, runID: run.id)
+                .appendingPathComponent("frames/index.json").path
+        ))
+    }
+
+    @MainActor
+    @Test func replayCapturesFreshPostNavigationDocumentAfterSuccessfulDispatch() async throws {
+        let root = temporaryStoreDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let defaultsName = "AgentReplayNavigationTests.\(UUID().uuidString)"
+        defer {
+            UserDefaults(suiteName: defaultsName)?
+                .removePersistentDomain(forName: defaultsName)
+        }
+        let store = try AgentRunStore(baseDirectory: root)
+        let run = try await store.createRun(
+            conversationID: nil,
+            entryPoint: .localMCP
+        )
+        let descriptor = try #require(
+            AgentToolCatalog.canonical.descriptor(named: "navigate_page")
+        )
+        let decision = try await store.appendStep(
+            runID: run.id,
+            kind: .policyDecision,
+            summary: "Allowed navigation"
+        )
+        let invocation = try await store.appendStep(
+            runID: run.id,
+            kind: .toolInvocation,
+            summary: descriptor.name,
+            payload: .object(["tool": .string(descriptor.name)]),
+            policyDecisionStepID: decision.id
+        )
+        let page = PageHandle(windowID: UUID(), tabID: UUID())
+        let approved = BrowserAutomationPageDispatchBinding(
+            target: AgentPageTarget(
+                pageID: page.description,
+                origin: "https://before.test",
+                session: .normal
+            ),
+            version: AgentPageLeaseVersion(
+                navigation: PageNavigationGeneration(rawValue: 0),
+                document: PageDocumentGeneration(rawValue: UUID())
+            )
+        )
+        let navigated = BrowserAutomationPageDispatchBinding(
+            target: AgentPageTarget(
+                pageID: page.description,
+                origin: "https://after.test",
+                session: .normal
+            ),
+            version: AgentPageLeaseVersion(
+                navigation: approved.version.navigation.advanced(),
+                document: PageDocumentGeneration(rawValue: UUID())
+            )
+        )
+        let observability = AgentObservabilityRuntime(
+            baseDirectory: root,
+            defaultsSuiteName: defaultsName
+        )
+        let meter = AgentRunMeter(
+            runID: run.id,
+            taskDefinitionID: nil,
+            incognito: false,
+            limits: try AgentExecutionLimits(
+                maximumArtifacts: 4,
+                maximumArtifactBytes: 1_024
+            ),
+            observability: observability
+        )
+        let permit = AgentExecutionPermit(
+            runID: run.id,
+            toolName: descriptor.name,
+            invocationDigest: "fixture",
+            decisionStepID: decision.id,
+            invocationStepID: invocation.id
+        )
+        var live = approved
+        var captureBindings: [BrowserAutomationPageDispatchBinding] = []
+
+        let succeeded = await AgentReplayCaptureCoordinator.around(
+            descriptor: descriptor,
+            authorizedBinding: approved,
+            permit: permit,
+            capture: { expected in
+                captureBindings.append(expected)
+                guard expected == live else { return nil }
+                return AgentReplayCapturedFrame(
+                    data: Data("fresh pixels".utf8),
+                    target: live.target,
+                    viewport: .init(width: 10, height: 10, scale: 1)
+                )
+            },
+            operationSucceeded: { $0 },
+            resolvePostOperationBinding: { live },
+            store: store,
+            meter: meter,
+            operation: {
+                live = navigated
+                return true
+            }
+        )
+
+        #expect(succeeded)
+        #expect(captureBindings == [navigated])
+        let inventory = try await AgentArtifactInventoryReader(
+            runsDirectory: root.appendingPathComponent(
+                "agent/runs",
+                isDirectory: true
+            )
+        ).inventory(runIDs: [run.id])
+        let retained = try #require(inventory.first)
+        #expect(inventory.count == 1)
+        #expect(retained.artifact.sourceStepID == invocation.id)
+        #expect(retained.frame?.urlOrigin == "https://after.test")
+        #expect(retained.frame?.capturePosition == .afterMutation)
+    }
+
+    @MainActor
+    @Test func productionRetentionDeletesWholeExpiredRunAndStaleResponses() async throws {
+        let root = temporaryStoreDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let defaultsName = "AgentHistoryRetentionTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: defaultsName))
+        defer { defaults.removePersistentDomain(forName: defaultsName) }
+        defaults.set(AgentRetentionPolicy.hours24.rawValue, forKey: AgentHistoryRetentionSettings.Key.policy)
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let store = try AgentRunStore(baseDirectory: root)
+        let expiredConversation = try await store.createConversation(
+            title: "Expired prompt title",
+            at: now.addingTimeInterval(-90_001)
+        )
+        let expired = try await store.createRun(
+            conversationID: expiredConversation.id,
+            entryPoint: .attended,
+            at: now.addingTimeInterval(-90_000)
+        )
+        _ = try await store.transitionRun(
+            expired.id,
+            to: .running,
+            reason: "Started",
+            at: now.addingTimeInterval(-89_999)
+        )
+        let policy = try await store.appendStep(
+            runID: expired.id,
+            kind: .policyDecision,
+            summary: "Allowed click",
+            at: now.addingTimeInterval(-89_998.8)
+        )
+        let invocation = try await store.appendStep(
+            runID: expired.id,
+            kind: .toolInvocation,
+            summary: "click",
+            payload: .object(["tool": .string("click")]),
+            policyDecisionStepID: policy.id,
+            at: now.addingTimeInterval(-89_998.6)
+        )
+        let frameID = UUID()
+        _ = try await store.persistReplayFrame(
+            id: frameID,
+            runID: expired.id,
+            sourceStepID: invocation.id,
+            contentType: "image/png",
+            data: Data("frame".utf8),
+            metadata: AgentReplayFrameMetadata(
+                artifactID: frameID,
+                pageHandle: PageHandle(windowID: UUID(), tabID: UUID()),
+                urlOrigin: "https://example.test",
+                viewport: .init(width: 100, height: 100, scale: 1),
+                capturePosition: .afterMutation
+            ),
+            at: now.addingTimeInterval(-89_998.4)
+        )
+        _ = try await store.transitionRun(
+            expired.id,
+            to: .succeeded,
+            reason: "Done",
+            at: now.addingTimeInterval(-89_998)
+        )
+        let active = try await store.createRun(
+            conversationID: nil,
+            entryPoint: .localMCP,
+            at: now.addingTimeInterval(-200_000)
+        )
+        _ = try await store.transitionRun(
+            active.id,
+            to: .running,
+            reason: "Still active",
+            at: now.addingTimeInterval(-199_999)
+        )
+        let expiredDirectory = runDirectory(root: root, runID: expired.id)
+        let orphan = expiredDirectory.appendingPathComponent("frames/pending/.orphan-temp")
+        try FileManager.default.createDirectory(
+            at: orphan.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("temporary".utf8).write(to: orphan)
+        let responseDirectory = root.appendingPathComponent("responses", isDirectory: true)
+        try FileManager.default.createDirectory(at: responseDirectory, withIntermediateDirectories: true)
+        let response = responseDirectory.appendingPathComponent("stale.json")
+        try Data("{}".utf8).write(to: response)
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-7_200)],
+            ofItemAtPath: response.path
+        )
+
+        let report = try await AgentHistoryRetentionController.enforce(
+            store: store,
+            baseDirectory: root,
+            defaults: defaults,
+            now: now
+        )
+
+        #expect(report.deletedRunIDs == [expired.id])
+        #expect(report.deletedConversationIDs == [expiredConversation.id])
+        #expect(report.deletedTemporaryRelativePaths == ["responses/stale.json"])
+        #expect(await store.run(id: expired.id) == nil)
+        #expect(await store.run(id: active.id) != nil)
+        #expect(try await store.listConversations().isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: expiredDirectory.path))
+        #expect(!FileManager.default.fileExists(atPath: response.path))
+        let conversationIndex = root.appendingPathComponent(
+            "agent/conversations/index.json"
+        )
+        #expect(
+            try !String(contentsOf: conversationIndex, encoding: .utf8)
+                .contains("Expired prompt title")
+        )
+        let reopened = try AgentRunStore(baseDirectory: root)
+        #expect(await reopened.run(id: active.id) != nil)
+        #expect(await reopened.run(id: expired.id) == nil)
+        #expect(try await reopened.listConversations().isEmpty)
+    }
+
+    @MainActor
+    @Test func manualRetentionPreservesOldRunAndConversationTitle() async throws {
+        let root = temporaryStoreDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let defaultsName = "AgentHistoryRetentionTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: defaultsName))
+        defer { defaults.removePersistentDomain(forName: defaultsName) }
+        defaults.set(
+            AgentRetentionPolicy.manual.rawValue,
+            forKey: AgentHistoryRetentionSettings.Key.policy
+        )
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let store = try AgentRunStore(baseDirectory: root)
+        let conversation = try await store.createConversation(
+            title: "Retain this title",
+            at: now.addingTimeInterval(-200_001)
+        )
+        let run = try await store.createRun(
+            conversationID: conversation.id,
+            entryPoint: .attended,
+            at: now.addingTimeInterval(-200_000)
+        )
+        _ = try await store.transitionRun(
+            run.id,
+            to: .running,
+            reason: "Started",
+            at: now.addingTimeInterval(-199_999)
+        )
+        _ = try await store.transitionRun(
+            run.id,
+            to: .succeeded,
+            reason: "Done",
+            at: now.addingTimeInterval(-199_998)
+        )
+
+        let report = try await AgentHistoryRetentionController.enforce(
+            store: store,
+            baseDirectory: root,
+            defaults: defaults,
+            now: now
+        )
+
+        #expect(report.deletedRunIDs.isEmpty)
+        #expect(report.deletedConversationIDs.isEmpty)
+        #expect(await store.run(id: run.id) != nil)
+        let retained = try #require(try await store.listConversations().first)
+        #expect(retained.id == conversation.id)
+        #expect(retained.title == "Retain this title")
+        #expect(retained.runIDs == [run.id])
+    }
+
+    @MainActor
+    @Test func retentionPreservesConversationWhenAnotherRunRemains() async throws {
+        let root = temporaryStoreDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let defaultsName = "AgentHistoryRetentionTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: defaultsName))
+        defer { defaults.removePersistentDomain(forName: defaultsName) }
+        defaults.set(
+            AgentRetentionPolicy.hours24.rawValue,
+            forKey: AgentHistoryRetentionSettings.Key.policy
+        )
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let store = try AgentRunStore(baseDirectory: root)
+        let conversation = try await store.createConversation(
+            title: "Two related runs",
+            at: now.addingTimeInterval(-100_001)
+        )
+        let expired = try await store.createRun(
+            conversationID: conversation.id,
+            entryPoint: .attended,
+            at: now.addingTimeInterval(-100_000)
+        )
+        _ = try await store.transitionRun(
+            expired.id,
+            to: .running,
+            reason: "Started",
+            at: now.addingTimeInterval(-99_999)
+        )
+        _ = try await store.transitionRun(
+            expired.id,
+            to: .succeeded,
+            reason: "Done",
+            at: now.addingTimeInterval(-99_998)
+        )
+        let retained = try await store.createRun(
+            conversationID: conversation.id,
+            entryPoint: .attended,
+            at: now.addingTimeInterval(-3_600)
+        )
+        _ = try await store.transitionRun(
+            retained.id,
+            to: .running,
+            reason: "Started",
+            at: now.addingTimeInterval(-3_599)
+        )
+        _ = try await store.transitionRun(
+            retained.id,
+            to: .succeeded,
+            reason: "Done",
+            at: now.addingTimeInterval(-3_598)
+        )
+
+        let report = try await AgentHistoryRetentionController.enforce(
+            store: store,
+            baseDirectory: root,
+            defaults: defaults,
+            now: now
+        )
+
+        #expect(report.deletedRunIDs == [expired.id])
+        #expect(report.deletedConversationIDs.isEmpty)
+        #expect(await store.run(id: expired.id) == nil)
+        #expect(await store.run(id: retained.id) != nil)
+        let persistedConversation = try #require(
+            try await store.listConversations().first
+        )
+        #expect(persistedConversation.id == conversation.id)
+        #expect(persistedConversation.title == "Two related runs")
+        #expect(persistedConversation.runIDs == [retained.id])
+    }
+
     @Test func runLifecycleHasExplicitTerminalAndRecoverableOutcomes() throws {
         #expect(AgentRunStatus.succeeded.isTerminal)
         #expect(AgentRunStatus.failed.isTerminal)
@@ -518,4 +1434,14 @@ struct AgentRunStoreTests {
     private func runDirectory(root: URL, runID: UUID) -> URL {
         root.appendingPathComponent("agent/runs/\(runID.uuidString)", isDirectory: true)
     }
+}
+
+private enum ReplayPersistenceTestError: Error {
+    case injected
+}
+
+private struct ReplayPersistenceTestJournal: Codable {
+    let schemaVersion: Int
+    let artifact: AgentArtifact
+    let frame: AgentReplayFrameMetadata
 }

@@ -8,14 +8,25 @@ import Testing
 struct BrowserAgentTests {
     @Test func providerTemplatesCoverCloudLocalAndCustomEndpoints() {
         #expect(BrowserAgentProvider.allCases == [
-            .openAI, .openRouter, .ollama, .lmStudio, .compatible,
+            .openAI, .openAIResponses, .anthropicMessages, .gemini,
+            .openRouter, .ollama, .lmStudio, .compatible,
         ])
-        #expect(BrowserAgentProvider.openAI.defaultEndpoint.hasPrefix("https://"))
+        #expect(BrowserAgentProvider.openAI.defaultEndpoint ==
+            "https://api.openai.com/v1/chat/completions")
+        #expect(BrowserAgentProvider.openAIResponses.defaultEndpoint ==
+            "https://api.openai.com/v1/responses")
+        #expect(BrowserAgentProvider.anthropicMessages.defaultEndpoint ==
+            "https://api.anthropic.com/v1/messages")
+        #expect(BrowserAgentProvider.gemini.defaultEndpoint ==
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:streamGenerateContent?alt=sse")
         #expect(BrowserAgentProvider.openRouter.defaultEndpoint.hasPrefix("https://"))
         #expect(BrowserAgentProvider.ollama.defaultEndpoint.contains("11434"))
         #expect(BrowserAgentProvider.lmStudio.defaultEndpoint.contains("1234"))
         #expect(BrowserAgentProvider.compatible.defaultEndpoint.isEmpty)
         #expect(!BrowserAgentProvider.openAI.defaultModel.isEmpty)
+        #expect(BrowserAgentProvider.openAIResponses.defaultModel == "gpt-5-mini")
+        #expect(BrowserAgentProvider.anthropicMessages.defaultModel == "claude-sonnet-5")
+        #expect(BrowserAgentProvider.gemini.defaultModel == "gemini-3.6-flash")
         #expect(!BrowserAgentProvider.openRouter.defaultModel.isEmpty)
         #expect(!BrowserAgentProvider.ollama.defaultModel.isEmpty)
         #expect(!BrowserAgentProvider.lmStudio.defaultModel.isEmpty)
@@ -23,17 +34,72 @@ struct BrowserAgentTests {
         #expect(BrowserAgentProvider.openAI.needsAPIKey)
         #expect(!BrowserAgentProvider.ollama.needsAPIKey)
         #expect(!BrowserAgentProvider.lmStudio.needsAPIKey)
+        #expect(BrowserAgentProvider.openAI.dialect == .openAICompatibleChat)
+        #expect(BrowserAgentProvider.openAIResponses.dialect == .openAIResponses)
+        #expect(BrowserAgentProvider.anthropicMessages.dialect == .anthropicMessages)
+        #expect(BrowserAgentProvider.gemini.dialect == .geminiGenerateContent)
+        #expect(BrowserAgentProvider.openRouter.dialect == .openAICompatibleChat)
+        #expect(BrowserAgentProvider.ollama.dialect == .openAICompatibleChat)
+        #expect(BrowserAgentProvider.lmStudio.dialect == .openAICompatibleChat)
+        #expect(BrowserAgentProvider.compatible.dialect == .openAICompatibleChat)
+        #expect(BrowserAgentProvider.gemini.endpoint(model: "gemini-custom") ==
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-custom:streamGenerateContent?alt=sse")
+        #expect(BrowserAgentProvider.gemini.endpointIdentity(model: "gemini-custom") ==
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-custom:streamGenerateContent")
     }
 
     @Test func builtInAgentToolCatalogueIsUniqueAndComplete() {
         let names = BrowserAgent.builtInToolNames
-        #expect(names.count == 34)
+        #expect(names.count == 45)
         #expect(Set(names).count == names.count)
         #expect(names.contains("take_snapshot"))
         #expect(names.contains("wait_for"))
+        #expect(names.contains("observe_webkit_signals"))
+        #expect(names.contains("wait_for_webkit_signal"))
+        #expect(names.contains("delegate_child_run"))
+        #expect(names.contains("inspect_run_group"))
+        #expect(names.contains("cancel_child_run"))
         #expect(names.contains("create_bookmark"))
         #expect(names.contains("write_file"))
         #expect(names.contains("delete_file"))
+        #expect(names.contains("commit_cowork_transaction"))
+        #expect(names.contains("rollback_cowork_transaction"))
+        #expect(names.contains("propose_agent_memory"))
+        #expect(names.contains("search_agent_memory"))
+        #expect(names.contains("forget_agent_memory"))
+    }
+
+    @Test func childPageCreationCannotExpandOriginOrSessionAuthority() {
+        let scope = AgentRunScope(
+            capabilities: [.browserControl],
+            origins: ["https://allowed.example"],
+            session: .normal
+        )
+
+        #expect(BrowserAgent.pageCreationDenial(
+            arguments: [
+                "url": "https://escaped.example/path",
+                "incognito": false,
+            ],
+            scope: scope,
+            restrictOrigin: true
+        )?.contains("origin scope") == true)
+        #expect(BrowserAgent.pageCreationDenial(
+            arguments: [
+                "url": "https://allowed.example/path",
+                "incognito": true,
+            ],
+            scope: scope,
+            restrictOrigin: true
+        )?.contains("browser Session") == true)
+        #expect(BrowserAgent.pageCreationDenial(
+            arguments: [
+                "url": "https://allowed.example/path",
+                "incognito": false,
+            ],
+            scope: scope,
+            restrictOrigin: true
+        ) == nil)
     }
 
     @Test func schedulesCalculateAllSupportedCadences() throws {
@@ -102,7 +168,7 @@ struct BrowserAgentTests {
                 model: "",
                 apiKey: ""
             ),
-            execute: { _, _, _ in "{\"ok\":true}" }
+            execute: { _, _, _, _ in "{\"ok\":true}" }
         )
         for _ in 0..<100 where agent.isRunning {
             try await Task.sleep(for: .milliseconds(10))
@@ -174,7 +240,7 @@ struct BrowserAgentTests {
             pageTitle: "Test",
             pageURL: "https://example.com",
             configuration: fixtureConfiguration(apiKey: "never-persist-this-secret"),
-            execute: { _, _, _ in "{}" }
+            execute: { _, _, _, _ in "{}" }
         )
         for _ in 0..<200 where agent.isRunning {
             try await Task.sleep(for: .milliseconds(10))
@@ -194,6 +260,69 @@ struct BrowserAgentTests {
         })
         let persisted = try persistedText(in: directory)
         #expect(!persisted.contains("never-persist-this-secret"))
+    }
+
+    @Test func completedIncognitoSubmissionRetainsPromptOnlyInMemory() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("browser-agent-incognito-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try AgentRunStore(baseDirectory: directory)
+        let adapter = ScriptedAgentProviderAdapter(script: [
+            .event(.responseStarted(id: "incognito-response")),
+            .event(.textDelta("Private answer")),
+            .event(.usage(.unknown)),
+            .event(.finished(.stop)),
+        ])
+        let agent = BrowserAgent(
+            storageDirectory: directory,
+            runStore: store,
+            providerAdapterFactory: { _ in adapter }
+        )
+        let promptMarker = "incognito-prompt-marker-\(UUID().uuidString)"
+
+        agent.submit(
+            promptMarker,
+            pageTitle: "Private Page",
+            pageURL: "https://private.example/path",
+            configuration: fixtureConfiguration(),
+            incognito: true,
+            execute: { _, _, _, _ in "{}" }
+        )
+        for _ in 0..<200 where agent.isRunning {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(!agent.isRunning)
+        #expect(agent.messages.first?.text == promptMarker)
+        #expect(agent.selectedConversationID == nil)
+        #expect(try await store.listConversations().isEmpty)
+        #expect(await store.listRuns().isEmpty)
+        #expect(try !persistedText(in: directory).contains(promptMarker))
+    }
+
+    @Test func incognitoWaitingRunRemainsRecoverableUntilItBecomesTerminal() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("browser-agent-incognito-waiting-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try AgentRunStore(baseDirectory: directory)
+        let run = try await store.createRun(
+            conversationID: nil,
+            entryPoint: .attended,
+            incognito: true
+        )
+        _ = try await store.transitionRun(run.id, to: .running, reason: "Started")
+        _ = try await store.transitionRun(
+            run.id,
+            to: .waitingForHuman,
+            reason: "Waiting for explicit approval"
+        )
+
+        #expect(try await !BrowserAgentIncognitoRetention.discardTerminalRun(
+            run.id,
+            from: store,
+            cleanupPrivateCoworkState: { _ in }
+        ))
+        #expect(await store.run(id: run.id)?.status == .waitingForHuman)
     }
 
     @Test func cancellationOfAProviderStreamCannotExecuteALaterTool() async throws {
@@ -222,7 +351,7 @@ struct BrowserAgentTests {
             pageTitle: "Test",
             pageURL: "https://example.com",
             configuration: fixtureConfiguration(),
-            execute: { _, _, _ in
+            execute: { _, _, _, _ in
                 await counter.increment()
                 return "{}"
             }
@@ -250,7 +379,8 @@ struct BrowserAgentTests {
             pageURL: "https://example.com",
             pageTarget: nil,
             onClose: {},
-            execute: { _, _, _ in "{}" }
+            resolvePageAuthority: { _ in nil },
+            execute: { _, _, _, _ in "{}" }
         )
         _ = panel.body
         _ = BrowserAgentMCPConnectionsView().body

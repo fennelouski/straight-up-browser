@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import WebKit
 @testable import Browser
 
 struct SemanticPageReferenceTests {
@@ -255,6 +256,25 @@ struct SemanticPageReferenceTests {
         #expect(await source.cleanupCount() == 1)
     }
 
+    @Test func productionEventBufferDrivesHiddenPageWaitWithoutFocus() async throws {
+        let page = PageHandle(windowID: UUID(), tabID: UUID())
+        let source = WebKitPageWaitEventBuffer(page: page)
+        let request = try PageWaitRequest(
+            page: page,
+            condition: .load(.complete),
+            maximumTimeout: .seconds(1)
+        )
+        let wait = Task {
+            try await PageWaitCoordinator(source: source).wait(for: request)
+        }
+
+        await source.emit(.loadState(.committed))
+        await source.emit(.loadState(.complete))
+
+        #expect(try await wait.value == .load(.complete))
+        await source.finish()
+    }
+
     @Test func cancellingWaitReturnsTypedErrorAndCleansUpOnce() async throws {
         let page = PageHandle(windowID: UUID(), tabID: UUID())
         let source = FakePageWaitEventSource(state: PageWaitState(page: page))
@@ -307,6 +327,8 @@ struct SemanticPageReferenceTests {
         #expect(scripts.installation.contains("observer.disconnect()"))
         #expect(scripts.installation.contains("maxNodes = 4096"))
         #expect(!scripts.installation.contains("querySelectorAll"))
+        #expect(!scripts.installation.contains("data-sub-agent-id"))
+        #expect(!scripts.installation.contains("data-straight-up-semantic-id"))
         #expect(scripts.cleanup.contains("registry.get(token)"))
         #expect(scripts.cleanup.contains("cleanup()"))
     }
@@ -469,6 +491,272 @@ struct SemanticPageReferenceTests {
         #expect(throws: SemanticReferenceResolutionError.invalidIdentifier("sub-zero")) {
             try SemanticElementIdentifier(parsing: "sub-zero")
         }
+    }
+
+    @Test func productionSnapshotDecoderPreservesDocumentIdentityAndExplicitBoundaries() throws {
+        let page = PageHandle(windowID: UUID(), tabID: UUID())
+        let document = UUID()
+        let payload: [String: Any] = [
+            "documentToken": document.uuidString,
+            "url": "https://shop.example/checkout?private=value",
+            "title": "Checkout",
+            "nodes": [[
+                "localID": "semantic-node",
+                "legacySubID": 9,
+                "role": "button",
+                "name": "Pay",
+                "states": ["visible", "enabled"],
+                "frameContext": [
+                    [
+                        "kind": "sameOriginFrame",
+                        "localID": "frame-one",
+                        "origin": "https://shop.example",
+                    ],
+                    [
+                        "kind": "openShadowRoot",
+                        "hostLocalID": "payment-widget",
+                    ],
+                ],
+                "geometryDigest": "10:20:90:32",
+                "matchedSelectors": ["button.pay"],
+                "text": "Pay",
+                "destinationURL": NSNull(),
+                "isInteractive": true,
+            ]],
+            "inaccessibleFrameBoundaries": [[
+                "parentContext": [],
+                "frameLocalID": "third-party",
+                "sourceURL": "https://payments.example",
+                "reason": "crossOrigin",
+            ]],
+            "visibleText": "Ready to pay",
+        ]
+        var tracker = SemanticPageGenerationTracker()
+
+        let first = try SemanticPageJavaScriptSnapshot.decode(
+            payload,
+            page: page,
+            generationTracker: &tracker
+        )
+        let second = try SemanticPageJavaScriptSnapshot.decode(
+            payload,
+            page: page,
+            generationTracker: &tracker
+        )
+
+        #expect(first.snapshot.documentGeneration.rawValue == document)
+        #expect(first.snapshot.navigationGeneration == second.snapshot.navigationGeneration)
+        #expect(first.snapshot.nodes.first?.frameContext.path == [
+            .sameOriginFrame(localID: "frame-one", origin: "https://shop.example"),
+            .openShadowRoot(hostLocalID: "payment-widget"),
+        ])
+        #expect(first.snapshot.nodes.first?.legacySubID == 9)
+        #expect(first.snapshot.inaccessibleFrameBoundaries.first?.reason == .crossOrigin)
+
+        var replacement = payload
+        replacement["documentToken"] = UUID().uuidString
+        let navigated = try SemanticPageJavaScriptSnapshot.decode(
+            replacement,
+            page: page,
+            generationTracker: &tracker
+        )
+        #expect(navigated.snapshot.navigationGeneration == first.snapshot.navigationGeneration.advanced())
+    }
+
+    @Test func productionScriptsUseIsolatedStableIdentityAndAtomicEffectValidation() {
+        #expect(SemanticPageJavaScript.bootstrap.contains("identityByElement: new WeakMap()"))
+        #expect(SemanticPageJavaScript.bootstrap.contains("documentToken: uuid()"))
+        #expect(SemanticPageJavaScript.bootstrap.contains("openShadowRoot"))
+        #expect(SemanticPageJavaScript.bootstrap.contains("sameOriginFrame"))
+        #expect(SemanticPageJavaScript.bootstrap.contains("crossOrigin"))
+        #expect(SemanticPageJavaScript.bootstrap.contains("const refreshed = scan"))
+        #expect(SemanticPageJavaScript.bootstrap.contains("semantic element was replaced or substituted"))
+        #expect(SemanticPageJavaScript.bootstrap.contains("new MutationObserver"))
+        #expect(!SemanticPageJavaScript.bootstrap.contains("data-sub-agent-id"))
+        #expect(!SemanticPageJavaScript.effect.contains("querySelector"))
+        #expect(!SemanticPageJavaScript.effect.contains("arguments.request"))
+    }
+
+    @Test @MainActor func productionWebKitRuntimeHandlesShadowFramesReplacementWaitAndNavigation() async throws {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: SemanticPageJavaScript.bootstrap,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true,
+            in: .defaultClient
+        ))
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let loader = SemanticWebViewLoader()
+        webView.navigationDelegate = loader
+        try await loader.load(
+            """
+            <!doctype html><html><body>
+              <button id="primary">Primary</button>
+              <button id="delayed" disabled>Continue</button>
+              <div id="shadow-host"></div>
+              <iframe id="same" srcdoc='<button id="inside">Frame action</button>'></iframe>
+              <iframe id="opaque" sandbox srcdoc='<button>Opaque action</button>'></iframe>
+              <script>
+                const root = document.querySelector('#shadow-host').attachShadow({mode:'open'});
+                root.innerHTML = '<button id="shadow-action">Shadow action</button>';
+              </script>
+            </body></html>
+            """,
+            in: webView
+        )
+        try await Task.sleep(for: .milliseconds(100))
+
+        let page = PageHandle(windowID: UUID(), tabID: UUID())
+        var tracker = SemanticPageGenerationTracker()
+        let firstRaw = try #require(await webView.callAsyncJavaScript(
+            SemanticPageJavaScript.snapshot,
+            arguments: ["selectors": ["#primary"]],
+            in: nil,
+            contentWorld: .defaultClient
+        ))
+        let first = try SemanticPageJavaScriptSnapshot.decode(
+            firstRaw,
+            page: page,
+            generationTracker: &tracker
+        )
+        let primary = try #require(first.snapshot.nodes.first { $0.name == "Primary" })
+        let shadow = try #require(first.snapshot.nodes.first { $0.name == "Shadow action" })
+        let framed = try #require(first.snapshot.nodes.first { $0.name == "Frame action" })
+        #expect(shadow.frameContext.path.contains { component in
+            if case .openShadowRoot = component { return true }
+            return false
+        })
+        #expect(framed.frameContext.path.contains { component in
+            if case .sameOriginFrame = component { return true }
+            return false
+        })
+        let primaryY = Int(primary.geometryDigest.rawValue.split(separator: ":")[1])
+        let framedY = Int(framed.geometryDigest.rawValue.split(separator: ":")[1])
+        #expect(framedY != nil && primaryY != nil && framedY! > primaryY!)
+        #expect(first.snapshot.inaccessibleFrameBoundaries.contains { $0.reason == .crossOrigin })
+
+        let delayed = try #require(first.snapshot.nodes.first { $0.name == "Continue" })
+        let waitToken = UUID().uuidString
+        let waitTask = Task { @MainActor () throws -> String? in
+            let value = try await webView.callAsyncJavaScript(
+                SemanticPageJavaScript.wait,
+                arguments: ["request": [
+                    "condition": "elementState",
+                    "state": "enabled",
+                    "isPresent": true,
+                    "localID": delayed.localID,
+                    "timeoutMilliseconds": 1_000,
+                    "token": waitToken,
+                ]],
+                in: nil,
+                contentWorld: .defaultClient
+            )
+            return (value as? [String: Any])?["status"] as? String
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        _ = try await webView.callAsyncJavaScript(
+            "document.querySelector('#delayed').disabled = false; return true;",
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        )
+        #expect(try await waitTask.value == "matched")
+
+        let reference = primary.reference(
+            on: page,
+            navigationGeneration: first.snapshot.navigationGeneration,
+            documentGeneration: first.snapshot.documentGeneration,
+            preferLegacyIdentifier: true
+        )
+        _ = try await webView.callAsyncJavaScript(
+            "const old = document.querySelector('#primary'); const copy = old.cloneNode(true); old.replaceWith(copy); return true;",
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        )
+        let replacedRaw = try #require(await webView.callAsyncJavaScript(
+            SemanticPageJavaScript.snapshot,
+            arguments: [:],
+            in: nil,
+            contentWorld: .defaultClient
+        ))
+        let replaced = try SemanticPageJavaScriptSnapshot.decode(
+            replacedRaw,
+            page: page,
+            generationTracker: &tracker
+        )
+        #expect(throws: SemanticReferenceResolutionError.missing(.legacySub(primary.legacySubID!))) {
+            try SemanticElementResolver.resolve(reference, in: replaced.snapshot)
+        }
+        var effectFailedClosed = false
+        do {
+            _ = try await webView.callAsyncJavaScript(
+                SemanticPageJavaScript.effect,
+                arguments: ["request": [
+                    "action": "click",
+                    "reference": SemanticPageJavaScriptSnapshot.effectReference(
+                        for: primary,
+                        in: first.snapshot
+                    ),
+                ]],
+                in: nil,
+                contentWorld: .defaultClient
+            )
+        } catch {
+            effectFailedClosed = true
+        }
+        #expect(effectFailedClosed)
+
+        try await loader.load("<!doctype html><html><body>New document</body></html>", in: webView)
+        let navigatedRaw = try #require(await webView.callAsyncJavaScript(
+            SemanticPageJavaScript.snapshot,
+            arguments: [:],
+            in: nil,
+            contentWorld: .defaultClient
+        ))
+        let navigated = try SemanticPageJavaScriptSnapshot.decode(
+            navigatedRaw,
+            page: page,
+            generationTracker: &tracker
+        )
+        #expect(navigated.snapshot.documentGeneration != first.snapshot.documentGeneration)
+        #expect(navigated.snapshot.navigationGeneration == first.snapshot.navigationGeneration.advanced())
+    }
+}
+
+@MainActor
+private final class SemanticWebViewLoader: NSObject, WKNavigationDelegate {
+    private var continuation: CheckedContinuation<Void, Error>?
+
+    func load(_ html: String, in webView: WKWebView) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+            webView.loadHTMLString(html, baseURL: URL(string: "https://semantic.example/"))
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        continuation?.resume()
+        continuation = nil
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFail navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        continuation?.resume(throwing: error)
+        continuation = nil
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        continuation?.resume(throwing: error)
+        continuation = nil
     }
 }
 
