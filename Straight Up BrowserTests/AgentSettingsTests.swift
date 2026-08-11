@@ -125,7 +125,7 @@ struct AgentSettingsTests {
         #expect(models.contains("gpt-5.6-luna"))
         #expect(BrowserAgentProvider.openAI.defaultModel == "gpt-5.6-luna")
         #expect(BrowserAgentProvider.openAI.resolvedModel("gpt-5-mini") == "gpt-5.6-luna")
-        #expect(BrowserAgentProvider.openRouter.defaultModel == "~openai/gpt-latest")
+        #expect(BrowserAgentProvider.openRouter.defaultModel == "openai/gpt-latest")
         #expect(BrowserAgentProvider.ollama.defaultModel.isEmpty)
         #expect(BrowserAgentProvider.lmStudio.defaultModel.isEmpty)
 
