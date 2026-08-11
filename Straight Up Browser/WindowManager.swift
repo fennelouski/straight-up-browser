@@ -56,6 +56,18 @@ enum WindowLayout {
         static let squareCorners = "squareWindowCorners"
     }
 
+    // AppKit rounds every titled window's corners itself and exposes no API to
+    // read the radius back, so this is the best available match for it — used
+    // by any SwiftUI content that draws flush against the window edge (progress
+    // bars, the tab sidebar) so it can curve/inset itself instead of being cut
+    // off square by the real corner. ponytail: measured against macOS 15
+    // Sequoia; if a future macOS changes the system radius, nudge this to match.
+    static let windowCornerRadius: CGFloat = 10
+
+    static var isSquareCorners: Bool {
+        UserDefaults.standard.bool(forKey: Key.squareCorners)
+    }
+
     // nil ratio = span the full screen width; otherwise width = height * ratio.
     static let widths: [(id: String, label: String, ratio: CGFloat?)] = [
         ("full", "Full width", nil),

@@ -236,20 +236,8 @@ struct TabRowView: View {
         }
         .onDrop(of: [UTType.text], delegate: TabDropDelegate(tabId: tab.id, onReorder: onReorder))
         .contentShape(Rectangle()) // Make the entire area droppable
-        .contextMenu {
-            Menu("Memory Saving") {
-                ForEach(MemoryPolicy.allCases, id: \.self) { policy in
-                    Button {
-                        tab.memoryPolicy = policy
-                    } label: {
-                        if tab.memoryPolicy == policy {
-                            Label(policy.label, systemImage: "checkmark")
-                        } else {
-                            Text(policy.label)
-                        }
-                    }
-                }
-            }
-        }
+        // The full action menu lives in ContentView (it needs webViewManager,
+        // tabManager, and sibling tabs) — a second .contextMenu here would
+        // shadow it, so this row stays menu-free.
     }
 }
