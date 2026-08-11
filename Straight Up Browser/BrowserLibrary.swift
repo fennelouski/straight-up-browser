@@ -141,7 +141,7 @@ private extension String {
     }
 }
 
-struct ReaderInline: Equatable {
+nonisolated struct ReaderInline: Codable, Equatable {
     let text: String
     let link: URL?
     let isStrong: Bool
@@ -167,7 +167,7 @@ struct ReaderInline: Equatable {
     }
 }
 
-enum ReaderBlock: Equatable {
+nonisolated enum ReaderBlock: Codable, Equatable {
     case heading(level: Int, runs: [ReaderInline])
     case paragraph(runs: [ReaderInline])
     case listItem(
@@ -194,10 +194,37 @@ enum ReaderBlock: Equatable {
     }
 }
 
-struct ReaderArticle: Equatable {
+nonisolated struct ReaderImage: Codable, Equatable {
+    let url: URL
+    let altText: String?
+}
+
+nonisolated struct ReaderArticle: Codable, Equatable {
     let title: String
     let byline: String?
     let blocks: [ReaderBlock]
+    let publication: String?
+    let section: String?
+    let publishedAt: Date?
+    let images: [ReaderImage]
+
+    init(
+        title: String,
+        byline: String?,
+        blocks: [ReaderBlock],
+        publication: String? = nil,
+        section: String? = nil,
+        publishedAt: Date? = nil,
+        images: [ReaderImage] = []
+    ) {
+        self.title = title
+        self.byline = byline
+        self.blocks = blocks
+        self.publication = publication
+        self.section = section
+        self.publishedAt = publishedAt
+        self.images = images
+    }
 
     var plainText: String {
         blocks.map(\.plainText).joined(separator: "\n\n")
@@ -210,7 +237,11 @@ enum ReaderMode {
           const source = document.querySelector('article') || document.querySelector('main') || document.body;
           if (!source) return null;
           const copy = source.cloneNode(true);
-          copy.querySelectorAll('script, style, nav, form, button, aside, footer, noscript').forEach(node => node.remove());
+          copy.querySelectorAll(`
+            script, style, nav, form, button, aside, footer, noscript, iframe,
+            [aria-label*="advert" i], [class~="advertisement"], [class~="ad"],
+            [data-ad], [id^="ad-"], [class^="ad-"]
+          `).forEach(node => node.remove());
 
           const runsFor = node => {
             const runs = [];
@@ -317,10 +348,36 @@ enum ReaderMode {
           walk(copy);
           if (!blocks.length) addRuns('paragraph', copy);
           if (!blocks.length) return null;
+          const extractedCharacters = blocks.reduce((total, block) => {
+            if (block.text) return total + block.text.length;
+            return total + (block.runs || []).reduce((sum, run) => sum + run.text.length, 0);
+          }, 0);
+          if (blocks.length > 10000 || extractedCharacters > 2000000) {
+            return { error: 'tooLarge' };
+          }
           const author = document.querySelector('[rel="author"], .byline, [class*="author"]');
+          const textOf = selector => {
+            const node = document.querySelector(selector);
+            const value = node && (node.content || node.getAttribute('datetime') || node.textContent || '');
+            return typeof value === 'string' ? value.trim() : '';
+          };
+          const seenImages = new Set();
+          const images = Array.from(source.querySelectorAll('img')).flatMap(image => {
+            const src = image.currentSrc || image.src || image.dataset.src || '';
+            if (!src || seenImages.has(src)) return [];
+            const width = image.naturalWidth || image.width || Number.parseInt(image.getAttribute('width') || '0', 10);
+            const height = image.naturalHeight || image.height || Number.parseInt(image.getAttribute('height') || '0', 10);
+            if ((width && width < 160) || (height && height < 100)) return [];
+            seenImages.add(src);
+            return [{ url: src, alt: (image.alt || '').trim() }];
+          }).slice(0, 40);
           return {
             title: document.title || location.hostname,
             byline: author ? author.textContent.trim() : '',
+            publication: textOf('meta[property="og:site_name"], meta[name="application-name"]'),
+            section: textOf('meta[property="article:section"], meta[name="section"]'),
+            publishedAt: textOf('meta[property="article:published_time"], time[datetime]'),
+            images,
             blocks
           };
         })()
@@ -335,8 +392,38 @@ enum ReaderMode {
         return ReaderArticle(
             title: title.isEmpty ? String(localized: "Reader Mode") : title,
             byline: byline?.isEmpty == true ? nil : byline,
-            blocks: blocks
+            blocks: blocks,
+            publication: nonEmptyString(object["publication"]),
+            section: nonEmptyString(object["section"]),
+            publishedAt: date(from: object["publishedAt"]),
+            images: images(from: object["images"])
         )
+    }
+
+    private static func images(from value: Any?) -> [ReaderImage] {
+        guard let objects = value as? [[String: Any]] else { return [] }
+        var seen: Set<String> = []
+        return objects.compactMap { object in
+            guard let value = object["url"] as? String,
+                  let url = URL(string: value),
+                  url.scheme == "http" || url.scheme == "https",
+                  seen.insert(url.absoluteString).inserted else { return nil }
+            return ReaderImage(url: url, altText: nonEmptyString(object["alt"]))
+        }
+    }
+
+    private static func nonEmptyString(_ value: Any?) -> String? {
+        guard let string = value as? String else { return nil }
+        return string.trimmingCharacters(in: .whitespacesAndNewlines).trimmedNonEmpty
+    }
+
+    private static func date(from value: Any?) -> Date? {
+        guard let value = nonEmptyString(value) else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: value) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 
     private static func blocks(from value: Any?) -> [ReaderBlock] {

@@ -35,6 +35,7 @@ struct BrowserControlActions_iOS {
     let zoomOut: () -> Void
     let actualSize: () -> Void
     let readerMode: () -> Void
+    let addToNewspaper: () -> Void
     let toggleTranslation: () -> Void
     let translateInSplit: () -> Void
     let toggleBookmark: () -> Void
@@ -48,6 +49,7 @@ struct BrowserControlActions_iOS {
     let screenshotFullPageJPEG: () -> Void
     let showBookmarks: () -> Void
     let showHistory: () -> Void
+    let showNewspaper: () -> Void
     let showDownloads: () -> Void
     let newContainer: () -> Void
     let convertToIncognito: () -> Void
@@ -68,6 +70,7 @@ struct TopBrowserControls_iOS: View {
     let isLoading: Bool
     let canReopenTab: Bool
     let isCurrentBookmarked: Bool
+    let isCurrentInNewspaper: Bool
     let actions: BrowserControlActions_iOS
 
     @ObservedObject private var orientationLock = OrientationLockController.shared
@@ -218,6 +221,12 @@ struct TopBrowserControls_iOS: View {
                     Button("Actual Size", action: actions.actualSize)
                 }
                 Button("Reader Mode", systemImage: "doc.plaintext", action: actions.readerMode)
+                Button(
+                    isCurrentInNewspaper ? "Refresh Saved Article" : "Add to Newspaper",
+                    systemImage: "newspaper",
+                    action: actions.addToNewspaper
+                )
+                .disabled(activeTab?.url == nil || activeTab?.sessionKind == .incognito)
                 Button("Toggle Translation", systemImage: "translate", action: actions.toggleTranslation)
                 if allowsSplitPanes {
                     Button("Translate in Split Pane", systemImage: "rectangle.split.2x1", action: actions.translateInSplit)
@@ -241,6 +250,7 @@ struct TopBrowserControls_iOS: View {
                 Button("Print…", systemImage: "printer", action: actions.printPage)
             }
             Menu("Library", systemImage: "books.vertical") {
+                Button("Newspaper", systemImage: "newspaper", action: actions.showNewspaper)
                 Button("Bookmarks", systemImage: "star", action: actions.showBookmarks)
                 Button("History", systemImage: "clock", action: actions.showHistory)
                 Button("Downloads", systemImage: "arrow.down.circle", action: actions.showDownloads)

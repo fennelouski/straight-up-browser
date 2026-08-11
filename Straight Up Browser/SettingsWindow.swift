@@ -22,6 +22,7 @@ enum SettingsTint {
     static let general = Color.blue
     static let agent = Color.purple
     static let content = Color.purple
+    static let newspaper = Color.brown
     static let downloads = Color.teal
     static let appearance = Color.pink
     static let security = Color.orange
@@ -239,6 +240,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case shortcuts
     case autofill
     case content
+    case newspaper
     case downloads
     case screenshots
     case appearance
@@ -255,6 +257,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .shortcuts: return String(localized: "Shortcuts")
         case .autofill: return String(localized: "Autofill")
         case .content: return String(localized: "Content")
+        case .newspaper: return String(localized: "Newspaper")
         case .downloads: return String(localized: "Downloads")
         case .screenshots: return String(localized: "Screenshots")
         case .appearance: return String(localized: "Appearance")
@@ -273,6 +276,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .shortcuts: return String(localized: "Customize keyboard shortcuts")
         case .autofill: return String(localized: "Profiles, form filling, exceptions")
         case .content: return String(localized: "JavaScript and page content")
+        case .newspaper: return String(localized: "Layouts, offline text, article length")
         case .downloads: return String(localized: "Option-click downloads, folder")
         case .screenshots: return String(localized: "Capture shortcuts, formats, folders")
         case .appearance: return String(localized: "Theme and loading progress")
@@ -289,6 +293,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .shortcuts: return "keyboard"
         case .autofill: return "text.append"
         case .content: return "curlybraces"
+        case .newspaper: return "newspaper"
         case .downloads: return "arrow.down.circle"
         case .screenshots: return "camera"
         case .appearance: return "paintbrush"
@@ -305,6 +310,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .shortcuts: return SettingsTint.shortcuts
         case .autofill: return SettingsTint.autofill
         case .content: return SettingsTint.content
+        case .newspaper: return SettingsTint.newspaper
         case .downloads: return SettingsTint.downloads
         case .screenshots: return SettingsTint.screenshots
         case .appearance: return SettingsTint.appearance
@@ -404,6 +410,7 @@ struct SettingsWindow: View {
         case .shortcuts: ShortcutsSettingsView()
         case .autofill: AutofillSettingsView()
         case .content: ContentSettingsView()
+        case .newspaper: NewspaperSettingsView()
         case .downloads: DownloadsSettingsView()
         case .screenshots: ScreenshotsSettingsView()
         case .appearance: AppearanceSettingsView()

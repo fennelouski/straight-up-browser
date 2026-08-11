@@ -88,6 +88,8 @@ extension Notification.Name {
     static let browserAddBookmark = Notification.Name("browserAddBookmark")
     static let browserImportBookmarks = Notification.Name("browserImportBookmarks")
     static let browserShowHistory = Notification.Name("browserShowHistory")
+    static let browserShowNewspaper = Notification.Name("browserShowNewspaper")
+    static let browserAddToNewspaper = Notification.Name("browserAddToNewspaper")
     static let browserShowDownloads = Notification.Name("browserShowDownloads")
     static let browserToggleReader = Notification.Name("browserToggleReader")
 
