@@ -66,7 +66,7 @@ launch it, and accept the license agreement on first run.
 
 ### Platform scope
 
-Browser 2.0.0 gives macOS the full agent execution and automation surface above.
+Browser 2.0.1 gives macOS the full agent execution and automation surface above.
 The universal iPhone/iPad app shares tabs, groups, workspaces,
 containers/incognito, navigation and find,
 translation, Reader Mode, Fast Forward, bookmarks/history, downloads,
@@ -77,7 +77,8 @@ single-pane, while iPad supports 2–4 panes and an optional tab rail that follo
 the short edge of the app window. It can retain agent definitions it cannot
 execute, displays why schedules are unavailable, and offers local review of
 sensitive synced memory without creating a mobile execution path. See the
-[mobile deployment guide](IOS_DEPLOYMENT.md) for the separate App Store gate.
+[mobile deployment guide](IOS_DEPLOYMENT.md) for the development and acceptance work. The
+iPhone/iPad target is not part of the public website download.
 Global hotkeys, the terminal CLI, full scheduled automation, AppKit
 screenshot/window tools, Sparkle updater UI, and the unpacked-extension loader
 remain macOS-only.
