@@ -170,11 +170,18 @@ struct AgentSettingsView: View {
     }
 
     private var currentModelName: String {
-        savedModel.isEmpty ? provider.defaultModel : savedModel
+        provider.resolvedModel(savedModel)
     }
 
     private var endpoint: String {
         provider.endpoint(customEndpoint: customEndpoint, model: currentModelName)
+    }
+
+    private var usesIncludedPricing: Bool {
+        AgentProviderPricingSettings.metadata(
+            providerID: provider.rawValue,
+            model: currentModelName
+        )?.source == .providerPublished
     }
 
     private var pricingMatchesCurrentModel: Bool {
@@ -196,6 +203,7 @@ struct AgentSettingsView: View {
         .formStyle(.grouped)
         .onAppear {
             apiKey = BrowserAgentKeychain.read(provider: provider)
+            applyCatalogPricingIfNeeded()
             Task {
                 await observabilityController.refresh()
                 await definitionSyncService.start()
@@ -207,6 +215,7 @@ struct AgentSettingsView: View {
             }
             apiKey = BrowserAgentKeychain.read(provider: provider)
             savedModel = provider.defaultModel
+            applyCatalogPricingIfNeeded()
             Task { await definitionSyncService.preferencesChanged() }
         }
         .onChange(of: apiKey) { _, value in
@@ -214,6 +223,7 @@ struct AgentSettingsView: View {
             Task { await definitionSyncService.localDependenciesChanged() }
         }
         .onChange(of: savedModel) { _, _ in
+            applyCatalogPricingIfNeeded()
             guard syncProviderPresets else { return }
             Task { await definitionSyncService.preferencesChanged() }
         }
@@ -281,8 +291,15 @@ struct AgentSettingsView: View {
                 }
             }
 
-            TextField("Model", text: model)
-                .textFieldStyle(.roundedBorder)
+            LabeledContent("Model") {
+                ProviderModelPicker(
+                    model: model,
+                    provider: provider,
+                    apiKey: apiKey,
+                    customEndpoint: customEndpoint
+                )
+                .accessibilityIdentifier("agent-settings-model")
+            }
 
             if provider == .compatible {
                 TextField("Chat Completions URL", text: $customEndpoint)
@@ -331,6 +348,12 @@ struct AgentSettingsView: View {
                 pricingModel = currentModelName
             }
             .disabled(currentModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            if usesIncludedPricing {
+                Label("Included pricing is filled automatically for this model.", systemImage: "checkmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             TextField("Currency code (for example, USD)", text: $pricingCurrencyCode)
                 .textFieldStyle(.roundedBorder)
@@ -1109,6 +1132,21 @@ struct AgentSettingsView: View {
         pricingBlendedRate = ""
     }
 
+    private func applyCatalogPricingIfNeeded() {
+        guard let pricing = AgentProviderModelCatalog.pricing(
+            provider: provider,
+            model: currentModelName
+        ), !pricingMatchesCurrentModel else { return }
+
+        pricingProviderID = provider.rawValue
+        pricingModel = currentModelName
+        pricingCurrencyCode = pricing.currencyCode
+        pricingInputRate = String(pricing.inputMicrounitsPerMillionTokens ?? 0)
+        pricingCachedInputRate = String(pricing.cachedInputMicrounitsPerMillionTokens ?? 0)
+        pricingOutputRate = String(pricing.outputMicrounitsPerMillionTokens ?? 0)
+        pricingBlendedRate = pricing.estimatedBlendedMicrounitsPerMillionTokens.map(String.init) ?? ""
+    }
+
     private func syncedScheduleName(_ id: UUID) -> String {
         for envelope in definitionSyncService.definitions {
             guard envelope.definitionID == id,
@@ -1189,6 +1227,119 @@ struct AgentSettingsView: View {
             "Local capability approval is required"
         case .scheduledPolicyNotSatisfied:
             "Scheduled-run authorization is required"
+        }
+    }
+}
+
+/// An editable native combo box: users can type any provider model ID, while
+/// known IDs complete as they type and stay selectable with the arrow keys.
+struct ModelAutocompleteField: NSViewRepresentable {
+    @Binding var model: String
+    let suggestions: [String]
+    let placeholder: String
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSComboBox {
+        let field = NSComboBox()
+        field.isEditable = true
+        field.completes = true
+        field.placeholderString = placeholder
+        field.addItems(withObjectValues: suggestions)
+        field.stringValue = model
+        field.delegate = context.coordinator
+        return field
+    }
+
+    func updateNSView(_ field: NSComboBox, context: Context) {
+        context.coordinator.parent = self
+        if context.coordinator.suggestions != suggestions {
+            field.removeAllItems()
+            field.addItems(withObjectValues: suggestions)
+            context.coordinator.suggestions = suggestions
+        }
+        if field.stringValue != model { field.stringValue = model }
+    }
+
+    final class Coordinator: NSObject, NSComboBoxDelegate {
+        var parent: ModelAutocompleteField
+        var suggestions: [String]
+
+        init(_ parent: ModelAutocompleteField) {
+            self.parent = parent
+            suggestions = parent.suggestions
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSComboBox else { return }
+            parent.model = field.stringValue
+        }
+
+        func comboBoxSelectionDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSComboBox,
+                  field.indexOfSelectedItem >= 0 else { return }
+            parent.model = field.stringValue
+        }
+    }
+}
+
+/// An account-aware model input. The provider's own catalog takes precedence
+/// over the small current fallback list used before a refresh.
+struct ProviderModelPicker: View {
+    @Binding var model: String
+    let provider: BrowserAgentProvider
+    let apiKey: String
+    let customEndpoint: String
+
+    @State private var discoveredModels: [String] = []
+    @State private var status: String?
+    @State private var isRefreshing = false
+    @State private var hasRefreshed = false
+
+    private var suggestions: [String] {
+        guard !hasRefreshed else { return discoveredModels }
+        return AgentProviderModelCatalog.modelIDs(for: provider)
+    }
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            ModelAutocompleteField(
+                model: $model,
+                suggestions: suggestions,
+                placeholder: "Choose or refresh models"
+            )
+            HStack(spacing: 6) {
+                if let status {
+                    Text(status)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Button(isRefreshing ? "Refreshing…" : "Refresh Available Models") {
+                    refreshModels()
+                }
+                .disabled(isRefreshing)
+            }
+        }
+        .id(provider)
+    }
+
+    private func refreshModels() {
+        isRefreshing = true
+        status = nil
+        Task {
+            do {
+                let models = try await AgentProviderModelDiscovery.models(
+                    for: provider,
+                    apiKey: apiKey,
+                    customEndpoint: customEndpoint
+                )
+                discoveredModels = models
+                hasRefreshed = true
+                status = models.isEmpty ? "No models found" : "\(models.count) models available"
+            } catch {
+                status = error.localizedDescription
+            }
+            isRefreshing = false
         }
     }
 }

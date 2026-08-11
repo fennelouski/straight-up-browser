@@ -1006,7 +1006,7 @@ final class AgentDefinitionSyncService: ObservableObject {
         ) ?? .openRouter
         let savedModel = defaults.string(forKey: AgentSettingsRuntimeKey.model) ?? ""
         let savedEndpoint = defaults.string(forKey: AgentSettingsRuntimeKey.endpoint) ?? ""
-        let model = savedModel.isEmpty ? provider.defaultModel : savedModel
+        let model = provider.resolvedModel(savedModel)
         let providerPreset = try AgentSyncedProviderPreset(
             id: presetID,
             name: "Current \(provider.rawValue) provider",

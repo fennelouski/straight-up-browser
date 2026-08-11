@@ -37,14 +37,28 @@ enum BrowserAgentProvider: String, CaseIterable, Identifiable, Sendable {
 
     var defaultModel: String {
         switch self {
-        case .openAI: "gpt-5-mini"
-        case .openAIResponses: "gpt-5-mini"
+        case .openAI: "gpt-5.6-luna"
+        case .openAIResponses: "gpt-5.6-luna"
         case .anthropicMessages: "claude-sonnet-5"
         case .gemini: "gemini-3.6-flash"
-        case .openRouter: "openai/gpt-5-mini"
-        case .ollama: "qwen3:8b"
-        case .lmStudio: "local-model"
+        case .openRouter: "~openai/gpt-latest"
+        case .ollama, .lmStudio:
+            ""
         case .compatible: ""
+        }
+    }
+
+    /// Resolves only Browser's former defaults. Explicitly chosen model IDs are
+    /// preserved so existing configurations remain reproducible.
+    func resolvedModel(_ savedModel: String) -> String {
+        let model = savedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch (self, model) {
+        case (.openAI, "gpt-5-mini"),
+            (.openAIResponses, "gpt-5-mini"),
+            (.openRouter, "openai/gpt-5-mini"):
+            return defaultModel
+        default:
+            return model.isEmpty ? defaultModel : model
         }
     }
 
@@ -80,7 +94,7 @@ enum BrowserAgentProvider: String, CaseIterable, Identifiable, Sendable {
         return components.string ?? value
     }
 
-    var needsAPIKey: Bool {
+    nonisolated var needsAPIKey: Bool {
         self != .ollama && self != .lmStudio
     }
 
@@ -94,6 +108,235 @@ enum BrowserAgentProvider: String, CaseIterable, Identifiable, Sendable {
             return ""
         }
         return "https://generativelanguage.googleapis.com/v1beta/models/\(encodedModel):streamGenerateContent?alt=sse"
+    }
+}
+
+/// The small, provider-published price list Browser can safely apply without
+/// asking a user to transcribe rates. A provider's model-list endpoint tells us
+/// what an account can access, but does not include pricing.
+nonisolated enum AgentProviderModelCatalog {
+    private struct Preset: Sendable {
+        let model: String
+        let inputMicrounitsPerMillionTokens: Int64
+        let cachedInputMicrounitsPerMillionTokens: Int64
+        let outputMicrounitsPerMillionTokens: Int64
+
+        func pricing() -> AgentProviderPricingMetadata? {
+            try? AgentProviderPricingMetadata(
+                source: .providerPublished,
+                currencyCode: "USD",
+                inputMicrounitsPerMillionTokens: inputMicrounitsPerMillionTokens,
+                cachedInputMicrounitsPerMillionTokens: cachedInputMicrounitsPerMillionTokens,
+                outputMicrounitsPerMillionTokens: outputMicrounitsPerMillionTokens
+            )
+        }
+    }
+
+    // The current OpenAI GPT-5.6 family. Account-specific availability comes
+    // from the live model list; these are only useful offline fallbacks.
+    private static let openAIPresets = [
+        Preset(
+            model: "gpt-5.6",
+            inputMicrounitsPerMillionTokens: 5_000_000,
+            cachedInputMicrounitsPerMillionTokens: 500_000,
+            outputMicrounitsPerMillionTokens: 30_000_000
+        ),
+        Preset(
+            model: "gpt-5.6-sol",
+            inputMicrounitsPerMillionTokens: 5_000_000,
+            cachedInputMicrounitsPerMillionTokens: 500_000,
+            outputMicrounitsPerMillionTokens: 30_000_000
+        ),
+        Preset(
+            model: "gpt-5.6-terra",
+            inputMicrounitsPerMillionTokens: 2_000_000,
+            cachedInputMicrounitsPerMillionTokens: 200_000,
+            outputMicrounitsPerMillionTokens: 12_000_000
+        ),
+        Preset(
+            model: "gpt-5.6-luna",
+            inputMicrounitsPerMillionTokens: 200_000,
+            cachedInputMicrounitsPerMillionTokens: 20_000,
+            outputMicrounitsPerMillionTokens: 1_200_000
+        ),
+    ]
+
+    @MainActor static func modelIDs(for provider: BrowserAgentProvider) -> [String] {
+        switch provider {
+        case .openAI, .openAIResponses:
+            openAIPresets.map(\.model)
+        case .anthropicMessages, .gemini, .openRouter:
+            provider.defaultModel.isEmpty ? [] : [provider.defaultModel]
+        case .ollama, .lmStudio, .compatible:
+            []
+        }
+    }
+
+    static func pricing(
+        providerID: String,
+        model: String
+    ) -> AgentProviderPricingMetadata? {
+        guard let provider = BrowserAgentProvider(rawValue: providerID) else { return nil }
+        return pricing(provider: provider, model: model)
+    }
+
+    static func pricing(
+        provider: BrowserAgentProvider,
+        model: String
+    ) -> AgentProviderPricingMetadata? {
+        guard provider == .openAI || provider == .openAIResponses else { return nil }
+        return openAIPresets.first(where: { $0.model == model })?.pricing()
+    }
+
+    static func isPublishedPricing(
+        providerID: String,
+        model: String,
+        currencyCode: String,
+        inputMicrounitsPerMillionTokens: Int64?,
+        cachedInputMicrounitsPerMillionTokens: Int64?,
+        outputMicrounitsPerMillionTokens: Int64?,
+        estimatedBlendedMicrounitsPerMillionTokens: Int64?
+    ) -> Bool {
+        guard let published = pricing(providerID: providerID, model: model) else { return false }
+        return published.currencyCode == currencyCode.uppercased()
+            && published.inputMicrounitsPerMillionTokens == inputMicrounitsPerMillionTokens
+            && published.cachedInputMicrounitsPerMillionTokens == cachedInputMicrounitsPerMillionTokens
+            && published.outputMicrounitsPerMillionTokens == outputMicrounitsPerMillionTokens
+            && published.estimatedBlendedMicrounitsPerMillionTokens == estimatedBlendedMicrounitsPerMillionTokens
+    }
+}
+
+/// Loads only the models a configured provider currently exposes. Keeping the
+/// list at the provider avoids shipping a stale cross-provider catalog.
+nonisolated enum AgentProviderModelDiscovery {
+    enum DiscoveryError: LocalizedError {
+        case apiKeyRequired
+        case invalidCompatibleEndpoint
+        case invalidResponse
+        case requestFailed(Int)
+
+        var errorDescription: String? {
+            switch self {
+            case .apiKeyRequired:
+                "Enter an API key before refreshing models."
+            case .invalidCompatibleEndpoint:
+                "Enter a Chat Completions URL ending in /chat/completions first."
+            case .invalidResponse:
+                "The provider returned an unrecognized model list."
+            case .requestFailed(let status):
+                "The provider could not list models (HTTP \(status))."
+            }
+        }
+    }
+
+    static func models(
+        for provider: BrowserAgentProvider,
+        apiKey: String,
+        customEndpoint: String = ""
+    ) async throws -> [String] {
+        let request = try request(
+            for: provider,
+            apiKey: apiKey,
+            customEndpoint: customEndpoint
+        )
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let response = response as? HTTPURLResponse,
+              (200..<300).contains(response.statusCode) else {
+            throw DiscoveryError.requestFailed(
+                (response as? HTTPURLResponse)?.statusCode ?? 0
+            )
+        }
+        return try modelIDs(provider: provider, data: data)
+    }
+
+    static func modelIDs(
+        provider: BrowserAgentProvider,
+        data: Data
+    ) throws -> [String] {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw DiscoveryError.invalidResponse
+        }
+        let values: [String]
+        switch provider {
+        case .gemini:
+            guard let models = object["models"] as? [[String: Any]] else {
+                throw DiscoveryError.invalidResponse
+            }
+            values = models.compactMap { ($0["name"] as? String)?.replacingOccurrences(of: "models/", with: "") }
+        case .ollama:
+            guard let models = object["models"] as? [[String: Any]] else {
+                throw DiscoveryError.invalidResponse
+            }
+            values = models.compactMap { ($0["name"] ?? $0["model"]) as? String }
+        case .openAI, .openAIResponses, .anthropicMessages, .openRouter, .lmStudio, .compatible:
+            guard let models = object["data"] as? [[String: Any]] else {
+                throw DiscoveryError.invalidResponse
+            }
+            values = models.compactMap { $0["id"] as? String }
+        }
+        var seen = Set<String>()
+        return values.compactMap { value in
+            let model = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !model.isEmpty && seen.insert(model).inserted ? model : nil
+        }
+    }
+
+    private static func request(
+        for provider: BrowserAgentProvider,
+        apiKey: String,
+        customEndpoint: String
+    ) throws -> URLRequest {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if provider.needsAPIKey && key.isEmpty {
+            throw DiscoveryError.apiKeyRequired
+        }
+
+        let url: URL
+        switch provider {
+        case .openAI, .openAIResponses:
+            url = URL(string: "https://api.openai.com/v1/models")!
+        case .anthropicMessages:
+            url = URL(string: "https://api.anthropic.com/v1/models")!
+        case .gemini:
+            var components = URLComponents(
+                string: "https://generativelanguage.googleapis.com/v1beta/models"
+            )!
+            components.queryItems = [URLQueryItem(name: "key", value: key)]
+            url = components.url!
+        case .openRouter:
+            url = URL(string: "https://openrouter.ai/api/v1/models")!
+        case .ollama:
+            url = URL(string: "http://127.0.0.1:11434/api/tags")!
+        case .lmStudio:
+            url = URL(string: "http://127.0.0.1:1234/v1/models")!
+        case .compatible:
+            guard var components = URLComponents(string: customEndpoint),
+                  components.scheme == "https" || components.scheme == "http",
+                  components.path.hasSuffix("/chat/completions") else {
+                throw DiscoveryError.invalidCompatibleEndpoint
+            }
+            components.path.removeLast("/chat/completions".count)
+            components.path += "/models"
+            components.query = nil
+            components.fragment = nil
+            guard let value = components.url else {
+                throw DiscoveryError.invalidCompatibleEndpoint
+            }
+            url = value
+        }
+
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.httpMethod = "GET"
+        switch provider {
+        case .anthropicMessages:
+            request.setValue(key, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        case .openAI, .openAIResponses, .openRouter, .compatible:
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        case .gemini, .ollama, .lmStudio:
+            break
+        }
+        return request
     }
 }
 
@@ -149,12 +392,16 @@ nonisolated enum AgentProviderPricingSettings {
         model: String,
         defaults: UserDefaults = .standard
     ) -> AgentProviderPricingMetadata? {
+        let published = AgentProviderModelCatalog.pricing(
+            providerID: providerID,
+            model: model
+        )
         guard defaults.string(forKey: Key.providerID) == providerID,
               defaults.string(forKey: Key.model) == model,
               let currency = defaults.string(forKey: Key.currencyCode)?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
               !currency.isEmpty else {
-            return nil
+            return published
         }
         func rate(_ key: String) -> Int64? {
             let value: Int64?
@@ -168,21 +415,26 @@ nonisolated enum AgentProviderPricingSettings {
             }
             return value.flatMap { $0 >= 0 ? $0 : nil }
         }
-        return try? AgentProviderPricingMetadata(
-            source: .userConfigured,
+        let input = rate(Key.inputMicrounitsPerMillionTokens)
+        let cachedInput = rate(Key.cachedInputMicrounitsPerMillionTokens)
+        let output = rate(Key.outputMicrounitsPerMillionTokens)
+        let blended = rate(Key.blendedMicrounitsPerMillionTokens)
+        let source: AgentPricingMetadataSource = AgentProviderModelCatalog.isPublishedPricing(
+            providerID: providerID,
+            model: model,
             currencyCode: currency,
-            inputMicrounitsPerMillionTokens: rate(
-                Key.inputMicrounitsPerMillionTokens
-            ),
-            cachedInputMicrounitsPerMillionTokens: rate(
-                Key.cachedInputMicrounitsPerMillionTokens
-            ),
-            outputMicrounitsPerMillionTokens: rate(
-                Key.outputMicrounitsPerMillionTokens
-            ),
-            estimatedBlendedMicrounitsPerMillionTokens: rate(
-                Key.blendedMicrounitsPerMillionTokens
-            )
+            inputMicrounitsPerMillionTokens: input,
+            cachedInputMicrounitsPerMillionTokens: cachedInput,
+            outputMicrounitsPerMillionTokens: output,
+            estimatedBlendedMicrounitsPerMillionTokens: blended
+        ) ? .providerPublished : .userConfigured
+        return try? AgentProviderPricingMetadata(
+            source: source,
+            currencyCode: currency,
+            inputMicrounitsPerMillionTokens: input,
+            cachedInputMicrounitsPerMillionTokens: cachedInput,
+            outputMicrounitsPerMillionTokens: output,
+            estimatedBlendedMicrounitsPerMillionTokens: blended
         )
     }
 }
@@ -4379,7 +4631,7 @@ struct BrowserAgentPanel: View {
     }
 
     private var model: String {
-        savedModel.isEmpty ? provider.defaultModel : savedModel
+        provider.resolvedModel(savedModel)
     }
 
     private var endpoint: String {
@@ -4606,8 +4858,12 @@ struct BrowserAgentPanel: View {
             Picker("Provider", selection: $providerRaw) {
                 ForEach(BrowserAgentProvider.allCases) { Text($0.rawValue).tag($0.rawValue) }
             }
-            TextField("Model", text: Binding(get: { model }, set: { savedModel = $0 }))
-                .textFieldStyle(.roundedBorder)
+            ProviderModelPicker(
+                model: Binding(get: { model }, set: { savedModel = $0 }),
+                provider: provider,
+                apiKey: apiKey,
+                customEndpoint: customEndpoint
+            )
             if provider == .compatible {
                 TextField("Chat Completions URL", text: $customEndpoint)
                     .textFieldStyle(.roundedBorder)
@@ -5861,7 +6117,7 @@ final class BrowserAgentScheduler: ObservableObject {
         ) ?? .openRouter
         let savedModel = UserDefaults.standard.string(forKey: "browserAgentModel") ?? ""
         let customEndpoint = UserDefaults.standard.string(forKey: "browserAgentEndpoint") ?? ""
-        let model = savedModel.isEmpty ? provider.defaultModel : savedModel
+        let model = provider.resolvedModel(savedModel)
         let now = Date()
         let schedule: AgentTaskSchedule = switch scheduleKind {
         case .daily: .daily(hour: dailyHour, minute: dailyMinute)
@@ -5952,8 +6208,9 @@ final class BrowserAgentScheduler: ObservableObject {
         let provider = BrowserAgentProvider(
             rawValue: UserDefaults.standard.string(forKey: "browserAgentProvider") ?? ""
         ) ?? .openRouter
-        let model = UserDefaults.standard.string(forKey: "browserAgentModel")
-            .flatMap { $0.isEmpty ? nil : $0 } ?? provider.defaultModel
+        let model = provider.resolvedModel(
+            UserDefaults.standard.string(forKey: "browserAgentModel") ?? ""
+        )
         let customEndpoint = UserDefaults.standard.string(
             forKey: "browserAgentEndpoint"
         ) ?? ""

@@ -118,4 +118,75 @@ struct AgentSettingsTests {
             defaults: defaults
         ) == nil)
     }
+
+    @Test func cataloguedOpenAIModelsAutocompleteAndCarryPublishedPricing() throws {
+        let models = AgentProviderModelCatalog.modelIDs(for: .openAI)
+        #expect(!models.contains("gpt-5-mini"))
+        #expect(models.contains("gpt-5.6-luna"))
+        #expect(BrowserAgentProvider.openAI.defaultModel == "gpt-5.6-luna")
+        #expect(BrowserAgentProvider.openAI.resolvedModel("gpt-5-mini") == "gpt-5.6-luna")
+        #expect(BrowserAgentProvider.openRouter.defaultModel == "~openai/gpt-latest")
+        #expect(BrowserAgentProvider.ollama.defaultModel.isEmpty)
+        #expect(BrowserAgentProvider.lmStudio.defaultModel.isEmpty)
+
+        let suiteName = "AgentSettingsTests.Catalog.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let pricing = try #require(AgentProviderPricingSettings.metadata(
+            providerID: BrowserAgentProvider.openAI.rawValue,
+            model: "gpt-5.6-luna",
+            defaults: defaults
+        ))
+        #expect(pricing.source == .providerPublished)
+        #expect(pricing.currencyCode == "USD")
+        #expect(pricing.inputMicrounitsPerMillionTokens == 200_000)
+        #expect(pricing.cachedInputMicrounitsPerMillionTokens == 20_000)
+        #expect(pricing.outputMicrounitsPerMillionTokens == 1_200_000)
+
+        defaults.set(BrowserAgentProvider.openAI.rawValue, forKey: AgentProviderPricingSettings.Key.providerID)
+        defaults.set("gpt-5.6-luna", forKey: AgentProviderPricingSettings.Key.model)
+        defaults.set("USD", forKey: AgentProviderPricingSettings.Key.currencyCode)
+        defaults.set("999", forKey: AgentProviderPricingSettings.Key.inputMicrounitsPerMillionTokens)
+        let override = try #require(AgentProviderPricingSettings.metadata(
+            providerID: BrowserAgentProvider.openAI.rawValue,
+            model: "gpt-5.6-luna",
+            defaults: defaults
+        ))
+        #expect(override.source == .userConfigured)
+        #expect(override.inputMicrounitsPerMillionTokens == 999)
+    }
+
+    @Test func providerModelDiscoveryParsesEverySupportedCatalogShape() throws {
+        let openAIData = Data(#"{"data":[{"id":"gpt-5.6-luna"},{"id":"gpt-5.6-luna"},{"id":"gpt-5.6-sol"}]}"#.utf8)
+        #expect(try AgentProviderModelDiscovery.modelIDs(
+            provider: .openAI,
+            data: openAIData
+        ) == ["gpt-5.6-luna", "gpt-5.6-sol"])
+        #expect(try AgentProviderModelDiscovery.modelIDs(
+            provider: .anthropicMessages,
+            data: Data(#"{"data":[{"id":"claude-sonnet-5"}]}"#.utf8)
+        ) == ["claude-sonnet-5"])
+        #expect(try AgentProviderModelDiscovery.modelIDs(
+            provider: .gemini,
+            data: Data(#"{"models":[{"name":"models/gemini-3.6-flash"}]}"#.utf8)
+        ) == ["gemini-3.6-flash"])
+        #expect(try AgentProviderModelDiscovery.modelIDs(
+            provider: .openRouter,
+            data: Data(#"{"data":[{"id":"openai/gpt-5.6-luna"}]}"#.utf8)
+        ) == ["openai/gpt-5.6-luna"])
+        #expect(try AgentProviderModelDiscovery.modelIDs(
+            provider: .ollama,
+            data: Data(#"{"models":[{"name":"qwen3:8b"}]}"#.utf8)
+        ) == ["qwen3:8b"])
+        #expect(try AgentProviderModelDiscovery.modelIDs(
+            provider: .lmStudio,
+            data: Data(#"{"data":[{"id":"local/current"}]}"#.utf8)
+        ) == ["local/current"])
+        #expect(try AgentProviderModelDiscovery.modelIDs(
+            provider: .compatible,
+            data: Data(#"{"data":[{"id":"provider/current"}]}"#.utf8)
+        ) == ["provider/current"])
+    }
 }
