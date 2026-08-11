@@ -2440,7 +2440,11 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .browserToggleReader)) { _ in
             showReaderMode()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .browserAddToNewspaper)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .browserAddToNewspaper)) { notification in
+            guard BrowserWindowCommandRouting.matches(
+                target: notification.object as AnyObject?,
+                recipient: webViewManager?.activeWebView?.window
+            ) else { return }
             addCurrentPageToNewspaper()
         }
         .onReceive(NotificationCenter.default.publisher(for: .browserShowNewspaper)) { _ in

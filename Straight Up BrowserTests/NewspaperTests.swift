@@ -247,6 +247,121 @@ struct NewspaperStoreTests {
         #expect(item.cardExcerpt == "A genuinely changed body.")
     }
 
+    @Test func reconciliationMakesInterruptedInitialCaptureRetryable() throws {
+        let fixture = try makeFixture()
+        let item = fixture.store.enqueue(
+            url: URL(string: "https://example.com/interrupted-capture")!,
+            title: "Interrupted"
+        ).article
+        item.captureState = .capturing
+        item.captureRequestID = UUID()
+        try fixture.context.save()
+        let recoveryDate = Date(timeIntervalSince1970: 1_800_000_000)
+
+        let result = fixture.store.reconcileInterruptedWork(at: recoveryDate)
+
+        #expect(result == NewspaperInterruptedWorkReconciliation(captures: 1))
+        #expect(item.captureState == .failed)
+        #expect(item.captureError == NewspaperCaptureError.interrupted.localizedDescription)
+        #expect(item.captureRequestID == nil)
+        #expect(item.originalPayloadData == nil)
+        #expect(item.updatedAt == recoveryDate)
+    }
+
+    @Test func reconciliationPreservesLastGoodOriginalAndRecoversCondensation() throws {
+        let fixture = try makeFixture()
+        let item = fixture.store.enqueue(
+            url: URL(string: "https://example.com/interrupted-refresh")!,
+            title: "Original"
+        ).article
+        fixture.store.finishCapture(
+            item,
+            article: ReaderArticle(
+                title: "Original",
+                byline: nil,
+                blocks: [.paragraph(runs: [.plain("The durable original text.")])]
+            )
+        )
+        let originalPayload = item.originalPayloadData
+        let originalDigest = item.sourceDigest
+        item.captureState = .capturing
+        item.captureRequestID = UUID()
+        item.condensationState = .condensing
+        item.condensationRequestID = UUID()
+        try fixture.context.save()
+
+        let result = fixture.store.reconcileInterruptedWork()
+
+        #expect(result == NewspaperInterruptedWorkReconciliation(captures: 1, condensations: 1))
+        #expect(item.captureState == .ready)
+        #expect(item.captureError == NewspaperCaptureError.interrupted.localizedDescription)
+        #expect(item.captureRequestID == nil)
+        #expect(item.originalPayloadData == originalPayload)
+        #expect(item.sourceDigest == originalDigest)
+        #expect(item.originalText == "The durable original text.")
+        #expect(item.condensationState == .failed)
+        #expect(item.condensationError == NewspaperCondensationError.interrupted.localizedDescription)
+        #expect(item.condensationRequestID == nil)
+    }
+
+    @Test func captureRequestIdentityRejectsReplacedAndDeletedCallbacks() throws {
+        let fixture = try makeFixture()
+        let item = fixture.store.enqueue(
+            url: URL(string: "https://example.com/capture-generation")!,
+            title: "Pending"
+        ).article
+        let firstRequest = try #require(fixture.store.beginCapture(item))
+        let replacementRequest = try #require(fixture.store.beginCapture(item))
+        let article = ReaderArticle(
+            title: "Captured",
+            byline: nil,
+            blocks: [.paragraph(runs: [.plain("Current result")])]
+        )
+
+        #expect(!fixture.store.finishCapture(
+            articleID: item.id,
+            requestID: firstRequest,
+            article: article
+        ))
+        #expect(fixture.store.isCaptureCurrent(
+            articleID: item.id,
+            requestID: replacementRequest
+        ))
+        #expect(item.originalPayloadData == nil)
+
+        let itemID = item.id
+        fixture.store.remove(item)
+
+        #expect(!fixture.store.finishCapture(
+            articleID: itemID,
+            requestID: replacementRequest,
+            article: article
+        ))
+        #expect(try fixture.context.fetch(FetchDescriptor<NewspaperArticle>()).isEmpty)
+    }
+
+    @Test func reconciliationDoesNotCancelWorkOwnedByAnotherDevice() throws {
+        let fixture = try makeFixture()
+        let item = fixture.store.enqueue(
+            url: URL(string: "https://example.com/remote-work")!,
+            title: "Remote"
+        ).article
+        _ = try #require(fixture.store.beginCapture(item))
+        item.captureOwnerID = "another-device"
+        item.condensationState = .condensing
+        item.condensationRequestID = UUID()
+        item.condensationOwnerID = "another-device"
+        try fixture.context.save()
+
+        let result = fixture.store.reconcileInterruptedWork()
+
+        #expect(result.total == 0)
+        #expect(item.captureState == .capturing)
+        #expect(item.captureRequestID != nil)
+        #expect(item.condensationState == .condensing)
+        #expect(item.condensationRequestID != nil)
+    }
+
     private func makeFixture() throws -> (
         container: ModelContainer,
         context: ModelContext,
@@ -270,6 +385,48 @@ struct NewspaperURLNormalizationTests {
 
         #expect(firstKey == "https://example.com/story?edition=morning")
         #expect(firstKey == secondKey)
+    }
+}
+
+struct NewspaperCapturePolicyTests {
+    @Test func documentBindingRequiresTheSameTokenAtEveryBoundary() {
+        let expected = UUID()
+        let replacement = UUID()
+
+        #expect(NewspaperCaptureDocumentBinding.accepts(
+            expected: expected,
+            extractionBefore: expected,
+            extractionAfter: expected,
+            final: expected
+        ))
+        #expect(!NewspaperCaptureDocumentBinding.accepts(
+            expected: expected,
+            extractionBefore: replacement,
+            extractionAfter: expected,
+            final: expected
+        ))
+        #expect(!NewspaperCaptureDocumentBinding.accepts(
+            expected: expected,
+            extractionBefore: expected,
+            extractionAfter: replacement,
+            final: expected
+        ))
+        #expect(!NewspaperCaptureDocumentBinding.accepts(
+            expected: expected,
+            extractionBefore: expected,
+            extractionAfter: expected,
+            final: replacement
+        ))
+    }
+
+    @Test @MainActor func extractionUsesTheIsolatedSemanticDocumentToken() {
+        #expect(NewspaperCaptureJavaScript.documentToken.contains(SemanticPageJavaScript.bootstrap))
+        #expect(NewspaperCaptureJavaScript.extractArticle.contains("expectedDocumentToken"))
+        #expect(NewspaperCaptureJavaScript.extractArticle.contains("beforeDocumentToken"))
+        #expect(NewspaperCaptureJavaScript.extractArticle.contains("afterDocumentToken"))
+        #expect(NewspaperCapturePolicy.maximumLoadingWaitAttempts == 24)
+        #expect(NewspaperCaptureError.loadingTimedOut.localizedDescription ==
+            "The page took too long to finish loading. Add it again when it is ready.")
     }
 }
 
@@ -311,5 +468,50 @@ struct NewspaperCondensationTests {
         )
 
         #expect(targets == [2, 2, 1])
+    }
+
+    @Test func deadlineProducesStableTimeoutWithoutInvokingAModel() async {
+        await #expect(throws: NewspaperCondensationError.timedOut) {
+            try await NewspaperCondensationDeadline.run(
+                timeout: .seconds(1),
+                sleeper: { _ in },
+                operation: {
+                    try await Task.sleep(for: .seconds(30))
+                    return "too late"
+                }
+            )
+        }
+    }
+
+    @Test func deadlineMapsTaskCancellationToAStableError() async {
+        let task = Task {
+            try await NewspaperCondensationDeadline.run(
+                timeout: .seconds(30),
+                sleeper: { duration in
+                    try await ContinuousClock().sleep(for: duration)
+                },
+                operation: {
+                    try await Task.sleep(for: .seconds(30))
+                    return "too late"
+                }
+            )
+        }
+        task.cancel()
+
+        await #expect(throws: NewspaperCondensationError.cancelled) {
+            _ = try await task.value
+        }
+    }
+}
+
+struct BrowserWindowCommandRoutingTests {
+    @Test func onlyTheTargetWindowReceivesAProcessWideCommand() {
+        let target = NSObject()
+        let otherWindow = NSObject()
+
+        #expect(BrowserWindowCommandRouting.matches(target: target, recipient: target))
+        #expect(!BrowserWindowCommandRouting.matches(target: target, recipient: otherWindow))
+        #expect(!BrowserWindowCommandRouting.matches(target: nil, recipient: target))
+        #expect(!BrowserWindowCommandRouting.matches(target: target, recipient: nil))
     }
 }

@@ -603,7 +603,11 @@ struct Straight_Up_BrowserApp: App {
                 }
 
                 Button("Add to Newspaper") {
-                    NotificationCenter.default.post(name: .browserAddToNewspaper, object: nil)
+                    guard let keyWindow = NSApp.keyWindow else { return }
+                    NotificationCenter.default.post(
+                        name: .browserAddToNewspaper,
+                        object: keyWindow
+                    )
                 }
 
                 Divider()

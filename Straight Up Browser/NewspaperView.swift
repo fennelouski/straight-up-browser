@@ -119,7 +119,7 @@ struct NewspaperView: View {
             }
         }
         .onChange(of: sortedArticles.count) { _, count in
-            pageIndex = min(pageIndex, max(count - 1, 0))
+            pageIndex = min(max(pageIndex, 0), max(count - 1, 0))
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Newspaper")
@@ -419,18 +419,44 @@ private struct NewspaperPagedIssue: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dragOffset: CGFloat = 0
 
-    private var article: NewspaperArticle { articles[pageIndex] }
+    private var clampedPageIndex: Int? {
+        guard !articles.isEmpty else { return nil }
+        return min(max(pageIndex, articles.startIndex), articles.index(before: articles.endIndex))
+    }
+
+    private var selection: (index: Int, article: NewspaperArticle)? {
+        guard let index = clampedPageIndex else { return nil }
+        return (index, articles[index])
+    }
 
     var body: some View {
+        Group {
+            if let selection {
+                page(article: selection.article, index: selection.index)
+            } else {
+                ContentUnavailableView(
+                    "No pages",
+                    systemImage: "newspaper",
+                    description: Text("Add an article or change the current filters.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .onAppear(perform: clampPageIndex)
+        .onChange(of: articles.map(\.id)) { _, _ in clampPageIndex() }
+        .onChange(of: pageIndex) { _, _ in clampPageIndex() }
+    }
+
+    private func page(article: NewspaperArticle, index: Int) -> some View {
         VStack(spacing: 12) {
             HStack {
                 Button { move(-1) } label: {
                     Label("Previous", systemImage: "chevron.left")
                 }
-                .disabled(pageIndex == 0)
+                .disabled(index == articles.startIndex)
 
                 Spacer()
-                Text("Page \(pageIndex + 1) of \(articles.count)")
+                Text("Page \(index + 1) of \(articles.count)")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -439,7 +465,7 @@ private struct NewspaperPagedIssue: View {
                     Label("Next", systemImage: "chevron.right")
                         .labelStyle(.titleAndIcon)
                 }
-                .disabled(pageIndex == articles.count - 1)
+                .disabled(index == articles.index(before: articles.endIndex))
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
@@ -473,14 +499,29 @@ private struct NewspaperPagedIssue: View {
     }
 
     private func move(_ direction: Int) {
-        guard direction != 0 else { return }
-        let next = min(max(pageIndex + direction, 0), articles.count - 1)
-        guard next != pageIndex else { return }
+        guard direction != 0, let current = clampedPageIndex else {
+            clampPageIndex()
+            return
+        }
+        let next = min(
+            max(current + direction, articles.startIndex),
+            articles.index(before: articles.endIndex)
+        )
+        guard next != current else {
+            clampPageIndex()
+            return
+        }
         if reduceMotion {
             pageIndex = next
         } else {
             withAnimation(.snappy(duration: 0.28)) { pageIndex = next }
         }
+    }
+
+    private func clampPageIndex() {
+        let clamped = clampedPageIndex ?? 0
+        guard pageIndex != clamped else { return }
+        pageIndex = clamped
     }
 }
 
@@ -717,6 +758,7 @@ private struct NewspaperArticleView: View {
     }
 
     private var visibleImages: [ReaderImage] {
+        guard layout.usesImages else { return [] }
         let images = article.images
         return showsAllPhotos ? images : Array(images.prefix(max(photoLimit, 0)))
     }
@@ -741,7 +783,9 @@ private struct NewspaperArticleView: View {
                 articleHeader
                 articleActions
                 Divider()
-                imageGallery
+                if layout.usesImages {
+                    imageGallery
+                }
                 captureStatus
                 readingModeControl
                 articleText
@@ -880,34 +924,36 @@ private struct NewspaperArticleView: View {
 
     @ViewBuilder
     private var imageGallery: some View {
-        if !visibleImages.isEmpty {
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 220), spacing: 10)],
-                spacing: 10
-            ) {
-                ForEach(visibleImages, id: \.url.absoluteString) { image in
-                    NewspaperRemoteImage(image: image)
-                        .frame(height: 230)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+        if layout.usesImages {
+            if !visibleImages.isEmpty {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 220), spacing: 10)],
+                    spacing: 10
+                ) {
+                    ForEach(visibleImages, id: \.url.absoluteString) { image in
+                        NewspaperRemoteImage(image: image)
+                            .frame(height: 230)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
                 }
             }
-        }
 
-        if article.availableImageCount > visibleImages.count {
-            Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
-                    showsAllPhotos = true
+            if article.availableImageCount > visibleImages.count {
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
+                        showsAllPhotos = true
+                    }
+                } label: {
+                    Label(
+                        "Show \(article.availableImageCount - visibleImages.count) more photos",
+                        systemImage: "photo.stack"
+                    )
                 }
-            } label: {
-                Label(
-                    "Show \(article.availableImageCount - visibleImages.count) more photos",
-                    systemImage: "photo.stack"
-                )
-            }
-            .buttonStyle(.bordered)
-        } else if showsAllPhotos, article.imageURLs.count > max(photoLimit, 0) {
-            Button("Show fewer photos") { showsAllPhotos = false }
                 .buttonStyle(.bordered)
+            } else if showsAllPhotos, article.imageURLs.count > max(photoLimit, 0) {
+                Button("Show fewer photos") { showsAllPhotos = false }
+                    .buttonStyle(.bordered)
+            }
         }
     }
 

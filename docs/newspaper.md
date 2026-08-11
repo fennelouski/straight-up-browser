@@ -58,7 +58,7 @@ flowchart LR
 
 The capture boundary is the current regular Tab and its existing `WKWebView`; Newspaper must not refetch a URL in a separate cookie context. Capture returns typed `ReaderArticle` data and then encodes a versioned Article Document. P0 reuses Reader Mode extraction, verifies the normalized URL before and after extraction, rejects unsupported schemes and incognito, limits documents to 10,000 blocks, 2,000,000 text characters, 40 image descriptors, and an 8 MiB encoded payload, and stores no raw HTML or publisher script.
 
-Before release, capture must also bind the request to the expected Tab, `BrowserSession`, and document generation, run its script in an isolated `WKContentWorld`, and make cancellation explicit. Page text and metadata are untrusted observations throughout.
+P0 binds each capture to the exact `WKWebView`, normalized source URL, request generation, and isolated-world document token before and after extraction. Replaced/deleted requests are ignored, loading is bounded, and interrupted local work becomes retryable at launch. Explicit Tab/`BrowserSession` cancellation and cross-device lease expiry remain release work. Page text and metadata are untrusted observations throughout.
 
 ### Storage, projection, and rendering
 
@@ -81,7 +81,7 @@ Required invariants are:
 - Record provenance and privacy-safe state, never article text in diagnostics. Unsupported devices and all failures fall back to the original.
 - Clearly label the shortened version and keep a one-action switch to the saved original. Tone fidelity needs editorial evaluation; a length check alone cannot establish quality.
 
-P0 implements on-device Apple Intelligence shortening, paragraph-aware chunks, hard word/character ceilings, prompt/model provenance, source-digest stale-result rejection, and full/original switching. Explicit timeout and task cancellation, structured source-block alignment, and a regression evaluation corpus remain release work. Any future remote provider is a separate opt-in and falls under ADR-0004 rather than this carve-out.
+P0 implements on-device Apple Intelligence shortening, paragraph-aware chunks, hard word/character ceilings, prompt/model provenance, source-digest and request-generation stale-result rejection, bounded per-request and whole-job deadlines, cancellation-safe failure states, and full/original switching. Structured source-block alignment and a regression evaluation corpus remain release work. Any future remote provider is a separate opt-in and falls under ADR-0004 rather than this carve-out.
 
 ## Sync, scale, and offline boundaries
 
@@ -108,7 +108,7 @@ These are product constraints, not a conclusion that every capture is legally pe
 | Phase | Outcome | Scope |
 | --- | --- | --- |
 | **P0 implemented in the current branch** | End-to-end personal text newspaper | macOS/iOS entry points; regular-tab capture and URL dedup/refresh; structured versioned documents and bounds; original preservation; Sections, unread filter, priority, rating, finish/remove/open-source actions; four layouts; scroll/pages; photo limit and reveal; words/characters settings; on-device shortening; private-schema registration; text-only offline behavior; initial document, store, URL, limiter, allocation, schema, and sync-disclosure tests |
-| **P0 release gates** | Trustworthy vertical slice | Expanded extraction, race, failure, transform, UI, and accessibility coverage; schema migration/build gates on both platforms; isolated and generation-bound capture; transform timeout/cancellation; two-device and partial-payload CloudKit validation; low-space/error UX; Dynamic Type, localization, legal/privacy review, and performance at representative scale |
+| **P0 release gates** | Trustworthy vertical slice | Expanded extraction, race, failure, transform-quality, UI, and accessibility coverage; schema migration/build gates on both platforms; Tab/session cancellation and cross-device work expiry; two-device and partial-payload CloudKit validation; low-space/error UX; Dynamic Type, localization, legal/privacy review, and performance at representative scale |
 | **P1 — durable library** | Reliable at large personal-library scale | Indexed pagination/search; content-addressed asset store and lazy hydration; explicit offline-download/eviction controls; conflict/tombstone/orphan rules; custom Section management; refresh/retry UI; extraction fixture corpus; shortening quality corpus and block provenance; optional remote shortening only behind explicit consent and ADR-0004 controls |
 | **P2 — visual editions** | Deliberate magazine-quality reading | Cached/downsampled photos with captions and alt text; richer responsive templates; cover/front-page composition; per-Section visual identity; download-size budgets; safe audio/video embeds; edition snapshots remain rebuildable projections rather than synced entities |
 | **P3 — immersive shelf** | Expressive, optional premium modes | Magazine shelf and covers; app-authored WebGL/Metal transitions; spatial/page physics honoring Reduce Motion; offline multimedia packs; transparent reader-controlled ranking or recommendations; strict resource and battery budgets |
