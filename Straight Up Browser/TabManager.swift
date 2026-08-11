@@ -294,6 +294,20 @@ class TabManager: NSObject, ObservableObject {
         }
     }
 
+    // Switch a live incognito tab back to normal: a fresh persisted tab on the
+    // same page. Nothing is carried over (history, cookies) — going private →
+    // public shouldn't silently persist what the incognito session held.
+    func convertToNormal(_ tab: Tab) {
+        guard tab.sessionKind == .incognito else { return }
+        let newTab = createNewTab(url: tab.url)
+        webViewManager?.removeWebView(for: tab.id)
+        incognitoTabs.removeAll { $0.id == tab.id }
+        if let sessionId = tab.sessionId, !incognitoTabs.contains(where: { $0.sessionId == sessionId }) {
+            webViewManager?.discardIncognitoStore(sessionId)
+        }
+        selectedTabId = newTab.id
+    }
+
     // MARK: - Split view
 
     // Shift-click / context-menu toggle: add the tab as a pane (focusing it) or

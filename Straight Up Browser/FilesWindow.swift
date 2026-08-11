@@ -244,18 +244,53 @@ struct FilesWindow: View {
     private func menu(for row: FileRow) -> some View {
         Button("Quick Look") { previewURL = row.record.url }.disabled(!row.exists)
         Button("Open") { open(row) }.disabled(!row.exists)
+        Menu("Open With") {
+            ForEach(openWithApps(for: row.record.url), id: \.self) { app in
+                Button(FileManager.default.displayName(atPath: app.path)) { open(row, with: app) }
+            }
+            Divider()
+            Button("Other…") { chooseApplication(for: row) }
+        }
+        .disabled(!row.exists)
         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([row.record.url]) }.disabled(!row.exists)
         Button("Copy Path") {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(row.record.path, forType: .string)
         }
         Divider()
+        Button("Move to Trash", role: .destructive) { moveToTrash(row) }.disabled(!row.exists)
         Button("Remove from List", role: .destructive) { manager.remove(row.record); refresh() }
     }
 
     private func open(_ row: FileRow) {
         guard row.exists else { return }
         NSWorkspace.shared.open(row.record.url)
+    }
+
+    private func open(_ row: FileRow, with app: URL) {
+        guard row.exists else { return }
+        NSWorkspace.shared.open([row.record.url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    private func openWithApps(for url: URL) -> [URL] {
+        NSWorkspace.shared.urlsForApplications(toOpen: url)
+            .sorted { FileManager.default.displayName(atPath: $0.path) < FileManager.default.displayName(atPath: $1.path) }
+    }
+
+    private func chooseApplication(for row: FileRow) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        if panel.runModal() == .OK, let app = panel.url {
+            open(row, with: app)
+        }
+    }
+
+    private func moveToTrash(_ row: FileRow) {
+        try? FileManager.default.trashItem(at: row.record.url, resultingItemURL: nil)
+        refresh()
     }
 
     private func refresh() {

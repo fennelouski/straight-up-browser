@@ -858,6 +858,13 @@ struct ContentView: View {
                             isDisplayedInSplit: tabManager.splitTabIds.contains(tab.id)
                         )
                         .contextMenu {
+                            let webView = webViewManager?.existingWebView(for: tab.id)
+
+                            Button("Reload") { webView?.reload() }.disabled(tab.url == nil)
+                            Button("Back") { webView?.goBack() }.disabled(!(webView?.canGoBack ?? false))
+                            Button("Forward") { webView?.goForward() }.disabled(!(webView?.canGoForward ?? false))
+                            Divider()
+
                             Button("Close Tab", action: { tabManager.closeTab(tab, tabs: allTabs) })
                             Button("Duplicate Tab", action: { _ = tabManager.duplicateTab(tab) })
                             Button(tab.isPinned ? "Unpin Tab" : "Pin Tab") {
@@ -869,6 +876,15 @@ struct ContentView: View {
                                 webViewManager?.setMuted(tab.isMuted, for: tab.id)
                                 try? modelContext.save()
                             }
+                            Button("Move to Top", action: { tabManager.reorderTabs(sourceTabId: tab.id, targetTabId: groupSection.tabs[0].id, tabs: allTabs) })
+                                .disabled(groupSection.tabs.first?.id == tab.id)
+                            Divider()
+
+                            if tab.sessionKind == .incognito {
+                                Button("Remove from Incognito", action: { tabManager.convertToNormal(tab) })
+                            } else {
+                                Button("Convert to Incognito", action: { tabManager.convertToIncognito(tab) })
+                            }
                             if tabManager.splitTabIds.contains(tab.id) {
                                 Button("Remove from Split", action: { tabManager.toggleSplitMembership(tab, tabs: allTabs) })
                             } else if tabManager.splitTabIds.count < TabManager.maxSplitTabs {
@@ -876,6 +892,24 @@ struct ContentView: View {
                                        action: { tabManager.toggleSplitMembership(tab, tabs: allTabs) })
                             }
                             Divider()
+
+                            Button("Share…", action: { shareTab(tab) }).disabled(tab.url == nil)
+                            Button("Copy URL", action: { copyURL(of: tab) }).disabled(tab.url == nil)
+                            Divider()
+
+                            Menu("Memory Saving") {
+                                ForEach(MemoryPolicy.allCases, id: \.self) { policy in
+                                    Button {
+                                        tab.memoryPolicy = policy
+                                    } label: {
+                                        if tab.memoryPolicy == policy {
+                                            Label(policy.label, systemImage: "checkmark")
+                                        } else {
+                                            Text(policy.label)
+                                        }
+                                    }
+                                }
+                            }
 
                             // Move to group submenu
                             Menu("Move to Group") {
@@ -1868,21 +1902,27 @@ struct ContentView: View {
         SettingsManager.shared.colorScheme
     }
 
+    // Inset from both ends by the window's corner radius: a 1pt line can't
+    // trace the curve, so rather than run flush into it and vanish under the
+    // clip (a straight bar has no pixels left inside a rounded corner), it
+    // stops short and lands cleanly on the straight part of the edge.
     private var horizontalProgressBar: some View {
         GeometryReader { geometry in
             if showProgressBar {
+                let barWidth = max(0, geometry.size.width - WindowLayout.windowCornerRadius * 2)
                 ZStack(alignment: .leading) {
                     // Background track
                     Rectangle()
                         .fill(Color.gray.opacity(0.2))
-                        .frame(height: 1)
+                        .frame(width: barWidth, height: 1)
 
                     // Progress fill
                     Rectangle()
                         .fill(Color.blue)
-                        .frame(width: max(0, progressValue * geometry.size.width), height: 1)
+                        .frame(width: max(0, progressValue * barWidth), height: 1)
                         .animation(.linear(duration: max(0.02, 0.1)), value: progressValue)
                 }
+                .padding(.horizontal, WindowLayout.windowCornerRadius)
                 .transition(.opacity.animation(.easeIn(duration: max(0.02, 0.2))))
                 .frame(height: 1)
             }
@@ -1894,16 +1934,18 @@ struct ContentView: View {
     private var verticalProgressBar: some View {
         GeometryReader { geometry in
             if showProgressBar {
+                let barHeight = max(0, geometry.size.height - WindowLayout.windowCornerRadius * 2)
                 ZStack(alignment: .top) {
                     Rectangle()
                         .fill(Color.gray.opacity(0.2))
-                        .frame(width: 1)
+                        .frame(width: 1, height: barHeight)
 
                     Rectangle()
                         .fill(Color.blue)
-                        .frame(width: 1, height: max(0, progressValue * geometry.size.height))
+                        .frame(width: 1, height: max(0, progressValue * barHeight))
                         .animation(.linear(duration: max(0.02, 0.1)), value: progressValue)
                 }
+                .padding(.vertical, WindowLayout.windowCornerRadius)
                 .transition(.opacity.animation(.easeIn(duration: max(0.02, 0.2))))
                 .frame(width: 1)
             }
@@ -2308,6 +2350,15 @@ struct ContentView: View {
                 dismissButton: .default(Text("OK"))
             )
         }
+        // Matches the window's own (unexposed) corner rounding so full-bleed
+        // overlays — the screenshot flash, the agent panel, anything else that
+        // paints edge to edge — follow the same curve instead of squaring off
+        // a corner the real window already clips.
+        .clipShape(
+            WindowLayout.isSquareCorners
+                ? AnyShape(Rectangle())
+                : AnyShape(RoundedRectangle(cornerRadius: WindowLayout.windowCornerRadius, style: .continuous))
+        )
         // Hides the traffic lights and titlebar on the window actually hosting this
         // view, once it has one — see WindowChrome for why this isn't done at onAppear.
         .background(WindowChrome())
@@ -2652,6 +2703,18 @@ struct ContentView: View {
 
     private func reloadAllTabs() {
         webViewManager?.reloadAllTabs()
+    }
+
+    private func copyURL(of tab: Tab) {
+        guard let url = tab.url else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+    }
+
+    private func shareTab(_ tab: Tab) {
+        guard let url = tab.url, let window = NSApp.keyWindow, let contentView = window.contentView else { return }
+        let point = contentView.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        NSSharingServicePicker(items: [url]).show(relativeTo: NSRect(origin: point, size: .zero), of: contentView, preferredEdge: .minY)
     }
 
     private func toggleBookmark() {
