@@ -62,7 +62,7 @@ struct GeneralSettingsView: View {
                             ForEach(TabSync.syncedDataCategories, id: \.self) { category in
                                 Label(category.label, systemImage: category.systemImage)
                             }
-                            Text("Live page state additionally includes scroll position, back/forward state, form fields, and session storage. Turning it off deletes those saved snapshots.")
+                            Text("Live page state additionally includes scroll position, back/forward state, and form fields. Cookies, local storage, session storage, and saved logins never sync. Turning it off deletes saved page-state snapshots.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

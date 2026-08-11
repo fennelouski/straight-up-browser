@@ -108,8 +108,9 @@ final class Tab {
     var lastThumbnail: Data?
     var favicon: Data?
     // Cache-state sync (opt-in): archived WKWebView.interactionState (scroll +
-    // back/forward history + much form state) and a best-effort sessionStorage
-    // snapshot, so a synced tab resumes where you left off on another device.
+    // back/forward history + form state), so a synced tab resumes where you left
+    // off on another device. sessionStorageData is retained only to migrate and
+    // delete snapshots written by builds before 2.0.0 (23); it is never restored.
     var interactionStateData: Data? = nil
     var sessionStorageData: Data? = nil
     var loadingProgress: Double = 0.0

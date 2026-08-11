@@ -62,6 +62,7 @@ struct BrowserControlActions_iOS {
 struct TopBrowserControls_iOS: View {
     let activeTab: Tab?
     let showsTabsMenu: Bool
+    let allowsSplitPanes: Bool
     let canGoBack: Bool
     let canGoForward: Bool
     let isLoading: Bool
@@ -145,8 +146,10 @@ struct TopBrowserControls_iOS: View {
                 Button(action: actions.duplicateTab) {
                     Label("Duplicate Tab", systemImage: "plus.square.on.square")
                 }
-                Button(action: actions.toggleSplit) {
-                    Label("Toggle Split Pane", systemImage: "rectangle.split.2x1")
+                if allowsSplitPanes {
+                    Button(action: actions.toggleSplit) {
+                        Label("Toggle Split Pane", systemImage: "rectangle.split.2x1")
+                    }
                 }
                 Button(action: actions.togglePinned) {
                     Label(activeTab.isPinned ? "Unpin Tab" : "Pin Tab", systemImage: "pin")
@@ -179,6 +182,7 @@ struct TopBrowserControls_iOS: View {
         }
         .accessibilityLabel("Tabs Menu")
         .accessibilityHint("Show tabs, open a new tab, or close the current tab")
+        .accessibilityIdentifier("browser.tabsMenu")
     }
 
     private var pageMenu: some View {
@@ -215,7 +219,9 @@ struct TopBrowserControls_iOS: View {
                 }
                 Button("Reader Mode", systemImage: "doc.plaintext", action: actions.readerMode)
                 Button("Toggle Translation", systemImage: "translate", action: actions.toggleTranslation)
-                Button("Translate in Split Pane", systemImage: "rectangle.split.2x1", action: actions.translateInSplit)
+                if allowsSplitPanes {
+                    Button("Translate in Split Pane", systemImage: "rectangle.split.2x1", action: actions.translateInSplit)
+                }
                 Button(
                     isCurrentBookmarked ? "Remove Bookmark" : "Add Bookmark",
                     systemImage: isCurrentBookmarked ? "star.fill" : "star",
@@ -272,6 +278,7 @@ struct TopBrowserControls_iOS: View {
         }
         .accessibilityLabel("Page Menu")
         .accessibilityHint("Navigation, sharing, address, find, and rotation controls")
+        .accessibilityIdentifier("browser.pageMenu")
     }
 
     private func controlLabel<Content: View>(

@@ -155,7 +155,7 @@ struct AdaptiveTabRail_iOS: View {
                     ),
                     progress: progressValue
                 )
-                .frame(width: 36, height: 36)
+                .frame(width: 44, height: 44)
                 .background(
                     tab.id == selectedTabId
                         ? (sessionColor(tab) ?? Color.accentColor).opacity(0.18)
@@ -200,10 +200,11 @@ struct AdaptiveTabRail_iOS: View {
         Button(action: onNewTab) {
             Image(systemName: "plus")
                 .font(.system(size: 15, weight: .semibold))
-                .frame(width: 36, height: 36)
+                .frame(width: 44, height: 44)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("New Tab")
+        .accessibilityIdentifier("tabRail.newTab")
     }
 
     private func replacePlacement(with placement: TabRailPlacement_iOS?, animated: Bool) {

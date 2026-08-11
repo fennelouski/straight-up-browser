@@ -1,8 +1,8 @@
 //
 //  BrowserApp_iOS.swift
-//  Browser (iPadOS)
+//  Browser (iOS and iPadOS)
 //
-//  Keyboard-first iPad browser. Shares the model/manager core with the Mac app
+//  Touch- and keyboard-first mobile browser. Shares the model/manager core with the Mac app
 //  (Tab, TabManager, WebViewManager, SettingsManager, …) and brings its own
 //  purpose-built iPad UI. See Straight_Up_BrowserApp.swift for the Mac entry point.
 //
@@ -10,9 +10,27 @@
 import SwiftUI
 import SwiftData
 
+@MainActor
+final class ExternalURLRouter_iOS: ObservableObject {
+    @Published private(set) var pendingURL: URL?
+
+    func receive(_ url: URL) {
+        guard ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+            return
+        }
+        pendingURL = url
+    }
+
+    func takePendingURL() -> URL? {
+        defer { pendingURL = nil }
+        return pendingURL
+    }
+}
+
 @main
 struct BrowserApp: App {
     @UIApplicationDelegateAdaptor(BrowserAppDelegate_iOS.self) private var appDelegate
+    @StateObject private var externalURLRouter = ExternalURLRouter_iOS()
 
     // Same SwiftData schema as the Mac app (Straight_Up_BrowserApp.swift). `Tab`
     // is the @Model class; the `BrowserTab` typealias lives in the Mac-only
@@ -35,8 +53,12 @@ struct BrowserApp: App {
             if let container = modelStartup.container {
                 BrowserView_iOS()
                     .modelContainer(container)
+                    .environmentObject(externalURLRouter)
+                    .onOpenURL { externalURLRouter.receive($0) }
                     .task {
-                        _ = try? await AgentDefinitionSyncRuntime.shared.refresh()
+                        if !MobileTestConfiguration.isUITesting {
+                            _ = try? await AgentDefinitionSyncRuntime.shared.refresh()
+                        }
                     }
                     .alert(
                         "Browsing Data Recovery Mode",
