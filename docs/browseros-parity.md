@@ -73,12 +73,14 @@ rather than the agent feature surface:
   WebAuthn entitlement, and it does not attempt to decrypt another browser's
   password vault. Bookmarks can be imported normally.
 - macOS owns agent execution, external MCP OAuth, scheduled automation, Cowork,
-  and child-run Page control. iPadOS can sync and retain safe definitions but
-  does not attempt macOS-only execution; every receiving device must satisfy
-  its own provider, MCP, Cowork, browser-Session, capability, and policy gates.
+  and child-run Page control. iPhone and iPad can sync, retain, and review safe
+  definitions but never attempt macOS-only execution. A receiving Mac must
+  still satisfy its own provider, MCP, Cowork, browser-Session, capability, and
+  policy gates before it can materialize runnable work.
 
-These boundaries do not change the agent's ability to observe, interact with,
-export from, parallelize, schedule, or replay work in the live browser.
+On macOS, these WebKit boundaries do not change the agent's ability to observe,
+interact with, export from, parallelize, schedule, or replay work in the live
+browser.
 
 The implementation architecture and release-acceptance contract are documented
 in the [AI tooling guide](ai/README.md).

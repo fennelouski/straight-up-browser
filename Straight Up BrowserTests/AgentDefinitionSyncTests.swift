@@ -1,11 +1,31 @@
 import Foundation
 import Testing
+#if canImport(CloudKit)
+import CloudKit
+#endif
 @testable import Browser
 
 struct AgentDefinitionSyncTests {
     #if canImport(CloudKit)
     @Test func cloudKitBackendConstructionDoesNotResolveTheContainer() {
         _ = CloudKitAgentDefinitionSyncBackend()
+    }
+
+    @Test func cloudKitAvailabilityFailsClosedBeforeContainerResolution() async {
+        let unavailable = await TabSync.iCloudAvailable(
+            effectiveContainerIdentifiers: [],
+            accountStatus: {
+                Issue.record("CloudKit must not resolve without its entitlement")
+                return .available
+            }
+        )
+        #expect(!unavailable)
+
+        let available = await TabSync.iCloudAvailable(
+            effectiveContainerIdentifiers: [TabSync.containerID],
+            accountStatus: { .available }
+        )
+        #expect(available)
     }
     #endif
 

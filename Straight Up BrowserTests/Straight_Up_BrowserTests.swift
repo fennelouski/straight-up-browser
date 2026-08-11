@@ -12,6 +12,20 @@ import AppKit
 import WebKit
 @testable import Browser
 
+struct TabSyncPrivacyTests {
+    @MainActor
+    @Test func legacySessionStorageIsDeletedWithoutRemovingAllowedPageState() {
+        let tab = Tab()
+        tab.interactionStateData = Data([0x01, 0x02])
+        tab.sessionStorageData = Data("token=secret".utf8)
+
+        #expect(TabSync.clearLegacySessionStorage(in: [tab]) == 1)
+        #expect(tab.sessionStorageData == nil)
+        #expect(tab.interactionStateData == Data([0x01, 0x02]))
+        #expect(TabSync.clearLegacySessionStorage(in: [tab]) == 0)
+    }
+}
+
 struct LoggingPrivacyTests {
     @Test func dynamicLogPayloadsArePrivateByDefault() {
         #expect(Logger.defaultPayloadVisibility == .private)

@@ -3,7 +3,7 @@
 //  Straight Up Browser
 //
 //  Cross-device tab sync (SwiftData + iCloud/CloudKit). Shared by both the macOS
-//  and iPadOS targets. The master toggle picks the CloudKit private database at
+//  and iOS/iPadOS targets. The master toggle picks the CloudKit private database at
 //  launch; the mode decides whether closing a tab propagates (openClose) or stays
 //  local (openOnly, the default). Cache-state syncs each tab's page state.
 //
@@ -112,9 +112,20 @@ enum TabSync {
     /// in and usable). The settings UI hides the sync controls when this is false,
     /// so we never offer a setting that can't work. Also covers the case where the
     /// CloudKit container isn't provisioned yet (the check errors → false).
-    static func iCloudAvailable() async -> Bool {
+    static func iCloudAvailable(
+        effectiveContainerIdentifiers: Set<String>? = nil,
+        accountStatus: @Sendable () async throws -> CKAccountStatus = {
+            try await CKContainer(identifier: containerID).accountStatus()
+        }
+    ) async -> Bool {
+        guard CloudKitEntitlements.permits(
+            containerID,
+            effectiveIdentifiers: effectiveContainerIdentifiers
+        ) else {
+            return false
+        }
         do {
-            return try await CKContainer(identifier: containerID).accountStatus() == .available
+            return try await accountStatus() == .available
         } catch {
             return false
         }
@@ -156,8 +167,6 @@ enum TabSync {
 
     // MARK: Cache state (opt-in)
 
-    private static let maxSessionStorageBytes = 300_000
-
     /// Page-state sync is separately opt-in. Removing that permission must also
     /// remove snapshots already stored on tab records so CloudKit propagates the
     /// deletion instead of retaining old form/session data.
@@ -172,17 +181,26 @@ enum TabSync {
         return changed
     }
 
+    /// Builds before 2.0.0 (23) could persist `sessionStorage`, which can contain
+    /// website authentication state. Scrub every legacy snapshot so SwiftData
+    /// propagates deletion to the user's private CloudKit database.
+    @discardableResult
+    static func clearLegacySessionStorage(in tabs: [Tab]) -> Int {
+        var changed = 0
+        for tab in tabs where tab.sessionStorageData != nil {
+            tab.sessionStorageData = nil
+            changed += 1
+        }
+        return changed
+    }
+
     /// Snapshot the web view's page state (scroll + back/forward + form state via
-    /// interactionState, plus best-effort sessionStorage) onto the tab so it syncs.
+    /// interactionState) onto the tab so it syncs. Website storage is excluded.
     static func captureCacheState(from webView: WKWebView, into tab: Tab) {
         guard cacheStateEnabled else { return }
+        tab.sessionStorageData = nil
         if let state = webView.interactionState {
             tab.interactionStateData = try? NSKeyedArchiver.archivedData(withRootObject: state, requiringSecureCoding: false)
-        }
-        webView.evaluateJavaScript("JSON.stringify(sessionStorage)") { result, _ in
-            guard let json = result as? String, json != "{}",
-                  let data = json.data(using: .utf8), data.count < maxSessionStorageBytes else { return }
-            tab.sessionStorageData = data
         }
     }
 
@@ -197,11 +215,4 @@ enum TabSync {
         return true
     }
 
-    /// Best-effort repopulate sessionStorage on the loading page (call on commit).
-    static func restoreSessionStorage(_ tab: Tab, into webView: WKWebView) {
-        guard cacheStateEnabled, let data = tab.sessionStorageData,
-              let json = String(data: data, encoding: .utf8) else { return }
-        // `json` is JSON.stringify output — a valid JS object literal.
-        webView.evaluateJavaScript("try{var s=\(json);for(var k in s){sessionStorage.setItem(k,s[k]);}}catch(e){}")
-    }
 }

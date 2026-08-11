@@ -62,8 +62,8 @@ check on demand.
    ./scripts/release.sh
    ```
 
-   First runs `scripts/verify.sh` with executable macOS and iPadOS UI tests,
-   Release builds, Apple-Silicon architecture validation, and warnings treated as
+   First runs `scripts/verify.sh` with executable macOS UI tests, Release builds,
+   Apple-Silicon architecture validation, and warnings treated as
    errors. Only a clean result proceeds to archive → Developer ID export → app
    notarization/stapling → DMG
    build/sign/notarization/stapling → EdDSA-signed Sparkle appcast.
@@ -77,6 +77,12 @@ check on demand.
    source commit/tag, version/build, Xcode version, and artifact hashes. The
    process takes a few minutes (two notarization round-trips to Apple). Override
    the profile with `NOTARY_PROFILE=name`.
+
+The universal iPhone/iPad app has a separate App Store release gate. Use
+[`IOS_DEPLOYMENT.md`](IOS_DEPLOYMENT.md), `scripts/verify-ios.sh`, and
+`scripts/archive-ios.sh`; the macOS release gate compiles the mobile target as a
+regression check, but deliberately does not sign, export, upload, or certify a
+mobile build.
 
 3. **Publish to the website:**
 

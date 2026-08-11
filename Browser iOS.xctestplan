@@ -1,0 +1,38 @@
+{
+  "configurations" : [
+    {
+      "id" : "A8B2475C-7638-49A2-89A3-F488F0A8FC51",
+      "name" : "Default",
+      "options" : {
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "codeCoverage" : true,
+    "testExecutionOrdering" : "lexical",
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:Straight Up Browser.xcodeproj",
+      "identifier" : "5799E6C8B0A6D3D0970EB02B",
+      "name" : "Browser iOS"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:Straight Up Browser.xcodeproj",
+        "identifier" : "B14B00000000000000000001",
+        "name" : "Browser iOSTests"
+      }
+    },
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:Straight Up Browser.xcodeproj",
+        "identifier" : "A13A00000000000000000001",
+        "name" : "Browser iOSUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

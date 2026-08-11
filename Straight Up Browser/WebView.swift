@@ -380,7 +380,6 @@ struct WebView: NSViewRepresentable {
             let pct = UserDefaults.standard.object(forKey: "spaceScrollPercent") as? Double ?? 90
             webView.evaluateJavaScript("window.__subSpacePct = \(pct)")
             if let tab = tab(for: webView) {
-                TabSync.restoreSessionStorage(tab, into: webView)
                 // The search URL is known here, so a recipe/memory hit can open the
                 // pane already — racing the search results' own load.
                 parent.fastForward?.pageCommitted(webView: webView, tab: tab)

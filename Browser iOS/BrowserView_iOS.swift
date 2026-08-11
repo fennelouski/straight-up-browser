@@ -2,7 +2,7 @@
 //  BrowserView_iOS.swift
 //  Browser (iPadOS)
 //
-//  The iPad browser: a NavigationSplitView tab sidebar plus a full-bleed web view
+//  The universal mobile browser: an adaptive tab sidebar plus a full-bleed web view
 //  with no persistent chrome — the omnibar is summoned on demand (⌘L / new tab) as
 //  a floating overlay and progress shows on the window edges, matching the Mac
 //  app's "the web is the app" spirit. Reuses the shared TabManager / WebViewManager
@@ -59,6 +59,7 @@ private enum MobileClearRequest_iOS: Identifiable {
 
 struct BrowserView_iOS: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var externalURLRouter: ExternalURLRouter_iOS
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \Tab.orderIndex) private var tabs: [Tab]
     @Query(sort: \TabGroup.orderIndex) private var tabGroups: [TabGroup]
@@ -138,6 +139,9 @@ struct BrowserView_iOS: View {
     private var allTabs: [Tab] { tabs + tabManager.incognitoTabs }
 
     private var activeTab: Tab? { allTabs.first { $0.id == tabManager.selectedTabId } }
+    private var supportsSplitPanes: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
 
     private var isDownloadFailurePresented: Binding<Bool> {
         Binding(
@@ -245,7 +249,7 @@ struct BrowserView_iOS: View {
                            fastForward: fastForward,
                            tabs: allTabs,
                            activeTabId: tabManager.selectedTabId,
-                           splitTabIds: tabManager.splitTabIds,
+                           splitTabIds: supportsSplitPanes ? tabManager.splitTabIds : [],
                            onURLChange: { _ in },
                            onPageFinished: { pageTranslator.maybeAutoTranslate(webView: $0) })
                     .ignoresSafeArea()
@@ -338,6 +342,10 @@ struct BrowserView_iOS: View {
             // selection across the merged working set (incognito included).
             webViewManager?.syncSessions(from: newTabs)
             tabManager.ensureSelectedTab(from: TabSync.visible(newTabs) + tabManager.incognitoTabs)
+        }
+        .onChange(of: externalURLRouter.pendingURL) { _, url in
+            guard url != nil else { return }
+            openPendingExternalURLIfReady()
         }
     }
 
@@ -536,6 +544,7 @@ struct BrowserView_iOS: View {
         TopBrowserControls_iOS(
             activeTab: activeTab,
             showsTabsMenu: showsTabsMenu,
+            allowsSplitPanes: supportsSplitPanes,
             canGoBack: canGoBack,
             canGoForward: canGoForward,
             isLoading: isLoading,
@@ -671,6 +680,7 @@ struct BrowserView_iOS: View {
         .ignoresSafeArea(edges: .bottom)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tabs")
+        .accessibilityIdentifier("browser.tabSidebar")
         .accessibilityAddTraits(.isModal)
         .accessibilityFocused(
             $accessibilityFocus,
@@ -727,6 +737,7 @@ struct BrowserView_iOS: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             TextField("Search or enter address", text: $omnibarText)
+                .accessibilityIdentifier("browser.omnibar")
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.webSearch)
@@ -780,7 +791,7 @@ struct BrowserView_iOS: View {
             Capsule()
                 .fill(Color.secondary.opacity(0.5))
                 .frame(width: 140, height: 5)
-                .padding(.vertical, 18)      // fat invisible hit area for the thumb
+                .padding(.vertical, 20)      // at least a 44-point touch target
                 .padding(.horizontal, 40)
                 .contentShape(Rectangle())
                 .onTapGesture { focusOmnibar() }
@@ -791,6 +802,7 @@ struct BrowserView_iOS: View {
                 .accessibilityValue(activeTab?.title ?? activeTab?.url?.host ?? String(localized: "New Tab"))
                 .accessibilityHint("Activate for the address bar. Swipe up for tabs, or left and right to change tabs.")
                 .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("browser.controls")
                 .accessibilityAction { focusOmnibar() }
                 .accessibilityAction(named: "New Tab") { createNewTab() }
                 .accessibilityAction(named: "Show Tabs") { toggleSidebar() }
@@ -866,6 +878,9 @@ struct BrowserView_iOS: View {
 
     private func firstAppear() {
         guard !managersInitialized else { return }
+        if TabSync.clearLegacySessionStorage(in: tabs) > 0 {
+            try? modelContext.save()
+        }
         let wvm = WebViewManager()
         webViewManager = wvm
         navigationManager = NavigationManager()
@@ -883,12 +898,18 @@ struct BrowserView_iOS: View {
         wvm.syncSessions(from: tabs)
         managersInitialized = true
         savedWorkspaces = SavedWorkspace.loadAll()
+        if !supportsSplitPanes {
+            tabManager.splitTabIds = []
+        }
 
-        // First run with no keyboard pops the touch guide; when it does, skip the
-        // omnibar auto-focus so the user reads "tap the bar" and then does it.
-        let showingGuide = maybeShowGestureGuide()
+        // An incoming browser URL always wins over onboarding and omnibar focus,
+        // including a cold first launch from the system default-browser route.
+        let openedExternalURL = openPendingExternalURLIfReady()
+        let showingGuide = openedExternalURL ? false : maybeShowGestureGuide()
 
-        if visibleTabs.isEmpty {
+        if openedExternalURL {
+            syncOmnibarToActiveTab()
+        } else if visibleTabs.isEmpty {
             let t = tabManager.createNewTab()
             #if DEBUG
             if let url = debugLaunchURL() { t.navigateTo(url) }
@@ -898,12 +919,54 @@ struct BrowserView_iOS: View {
             #endif
         } else {
             tabManager.selectedTabId = visibleTabs.first(where: { $0.isActive })?.id ?? visibleTabs.first?.id
-            tabManager.restoreSplit(from: visibleTabs)
+            if supportsSplitPanes {
+                tabManager.restoreSplit(from: visibleTabs)
+            }
             #if DEBUG
             if let url = debugLaunchURL(), let t = visibleTabs.first(where: { $0.id == tabManager.selectedTabId }) { t.navigateTo(url) }
             #endif
             syncOmnibarToActiveTab()
         }
+    }
+
+    @discardableResult
+    private func openPendingExternalURLIfReady() -> Bool {
+        guard managersInitialized,
+              let url = externalURLRouter.takePendingURL()
+        else { return false }
+
+        let destination: Tab
+        if let activeTab, activeTab.url == nil,
+           activeTab.sessionKind == .normal {
+            destination = activeTab
+            destination.navigateTo(url)
+            destination.updateTitleFromURL()
+        } else {
+            destination = tabManager.createNewTab(url: url)
+        }
+        tabManager.selectedTabId = destination.id
+        dismissBrowserOverlaysForExternalNavigation()
+        syncOmnibarToActiveTab()
+        return true
+    }
+
+    private func dismissBrowserOverlaysForExternalNavigation() {
+        showSidebar = false
+        showOmnibar = false
+        showShortcutSheet = false
+        showGestureGuide = false
+        showSettings = false
+        showLibrary = false
+        showDownloads = false
+        showActivitySheet = false
+        readerPresentation = nil
+        clearRequest = nil
+        showNewGroup = false
+        showNewContainer = false
+        showSaveWorkspace = false
+        downloadFailureMessage = nil
+        pageActionError = nil
+        containerDeletionError = nil
     }
 
     #if DEBUG
@@ -955,12 +1018,12 @@ struct BrowserView_iOS: View {
     }
 
     private func toggleActiveSplit() {
-        guard let activeTab else { return }
+        guard supportsSplitPanes, let activeTab else { return }
         tabManager.toggleSplitMembership(activeTab, tabs: visibleTabs)
     }
 
     private func translateActiveInSplit() {
-        guard let activeTab, let webViewManager else { return }
+        guard supportsSplitPanes, let activeTab, let webViewManager else { return }
         pageTranslator.translateIntoSplitPane(
             tab: activeTab,
             tabManager: tabManager,
@@ -1159,7 +1222,12 @@ struct BrowserView_iOS: View {
 
     private func handleMemoryPressure(critical: Bool) {
         guard memorySaverEnabled else { return }
-        for tab in allTabs where tab.id != tabManager.selectedTabId
+        let displayedTabIDs = Set(
+            tabManager.splitTabIds.count >= 2 && supportsSplitPanes
+                ? tabManager.splitTabIds
+                : [tabManager.selectedTabId].compactMap { $0 }
+        )
+        for tab in allTabs where !displayedTabIDs.contains(tab.id)
             && BrowserResourcePolicy.shouldUnload(tab.memoryPolicy, critical: critical) {
             webViewManager?.unloadWebView(for: tab.id)
         }

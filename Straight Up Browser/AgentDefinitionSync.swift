@@ -924,6 +924,7 @@ nonisolated enum AgentDefinitionDevicePlatform: String, Codable, Equatable,
     Hashable, Sendable
 {
     case macOS
+    case iOS
     case iPadOS
 }
 
@@ -1536,25 +1537,32 @@ actor CloudKitAgentDefinitionSyncBackend: AgentDefinitionSyncBackend {
         categories: Set<AgentDefinitionSyncCategory>
     ) async throws -> [AgentDefinitionCloudRecord] {
         guard !categories.isEmpty else { return [] }
-        let query = CKQuery(
-            recordType: AgentDefinitionCloudRecordCodec.recordType,
-            predicate: NSPredicate(value: true)
-        )
         let desiredKeys = Array(
             AgentDefinitionCloudRecordCodec.allowedFieldNames
         ).sorted()
-        let database = database()
-        var page = try await database.records(
-            matching: query,
-            inZoneWith: zoneID,
-            desiredKeys: desiredKeys,
-            resultsLimit: min(CKQueryOperation.maximumResults, maximumRecordsPerFetch)
-        )
-        var cloudRecords: [CKRecord] = try page.matchResults.map { try $0.1.get() }
-        while let cursor = page.queryCursor,
-              cloudRecords.count < maximumRecordsPerFetch {
-            page = try await database.records(
-                continuingMatchFrom: cursor,
+        let database = try database()
+        var cloudRecords: [CKRecord] = []
+
+        // Category switches are privacy boundaries, not presentation filters.
+        // Query only enabled categories so a device never downloads disabled
+        // provider presets, schedules, or user-authored memory. The production
+        // CloudKit schema must therefore keep `category` queryable.
+        for category in categories.sorted(by: { $0.rawValue < $1.rawValue }) {
+            guard cloudRecords.count < maximumRecordsPerFetch else {
+                throw AgentDefinitionSyncError.cloudRecordLimitExceeded(
+                    maximumRecordsPerFetch
+                )
+            }
+            let query = CKQuery(
+                recordType: AgentDefinitionCloudRecordCodec.recordType,
+                predicate: NSPredicate(
+                    format: "category == %@",
+                    category.rawValue
+                )
+            )
+            var page = try await database.records(
+                matching: query,
+                inZoneWith: zoneID,
                 desiredKeys: desiredKeys,
                 resultsLimit: min(
                     CKQueryOperation.maximumResults,
@@ -1564,11 +1572,25 @@ actor CloudKitAgentDefinitionSyncBackend: AgentDefinitionSyncBackend {
             cloudRecords.append(contentsOf: try page.matchResults.map {
                 try $0.1.get()
             })
-        }
-        if page.queryCursor != nil, cloudRecords.count >= maximumRecordsPerFetch {
-            throw AgentDefinitionSyncError.cloudRecordLimitExceeded(
-                maximumRecordsPerFetch
-            )
+            while let cursor = page.queryCursor,
+                  cloudRecords.count < maximumRecordsPerFetch {
+                page = try await database.records(
+                    continuingMatchFrom: cursor,
+                    desiredKeys: desiredKeys,
+                    resultsLimit: min(
+                        CKQueryOperation.maximumResults,
+                        maximumRecordsPerFetch - cloudRecords.count
+                    )
+                )
+                cloudRecords.append(contentsOf: try page.matchResults.map {
+                    try $0.1.get()
+                })
+            }
+            if page.queryCursor != nil {
+                throw AgentDefinitionSyncError.cloudRecordLimitExceeded(
+                    maximumRecordsPerFetch
+                )
+            }
         }
         return try cloudRecords.map(AgentDefinitionCloudRecordCodec.decode)
             .filter { categories.contains($0.category) }
@@ -1580,8 +1602,13 @@ actor CloudKitAgentDefinitionSyncBackend: AgentDefinitionSyncBackend {
     /// Keep that work behind an actual opted-in fetch/write so constructing the
     /// browser's scheduler and settings graph remains safe in unsigned test
     /// hosts and when every definition-sync category is disabled.
-    private func database() -> CKDatabase {
+    private func database() throws -> CKDatabase {
         if let resolvedDatabase { return resolvedDatabase }
+        guard CloudKitEntitlements.permits(containerIdentifier) else {
+            throw AgentDefinitionSyncError.missingCloudKitEntitlement(
+                containerIdentifier
+            )
+        }
         let database = CKContainer(identifier: containerIdentifier)
             .privateCloudDatabase
         resolvedDatabase = database
@@ -1903,6 +1930,7 @@ nonisolated enum AgentDefinitionSyncError: Error, Equatable, Sendable {
     case syncDisabled(AgentDefinitionSyncCategory)
     case activationPermitMismatch
     case cloudRecordLimitExceeded(Int)
+    case missingCloudKitEntitlement(String)
 }
 
 private nonisolated enum AgentDefinitionSyncValidation {

@@ -12,12 +12,7 @@ final class Browser_iOSUITests: XCTestCase {
 
     @MainActor
     func testBrowserControlsOpenTheAddressBar() throws {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "-ApplePersistenceIgnoreState", "YES",
-            "-tabSyncEnabled", "NO",
-            "-hasSeenGestureGuide", "YES",
-        ]
+        let app = configuredApplication()
         app.launch()
 
         let browserControls = app.descendants(matching: .any)["Browser Controls"]
@@ -29,12 +24,7 @@ final class Browser_iOSUITests: XCTestCase {
 
     @MainActor
     func testTopBrowserMenusAreDiscoverable() throws {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "-ApplePersistenceIgnoreState", "YES",
-            "-tabSyncEnabled", "NO",
-            "-hasSeenGestureGuide", "YES",
-        ]
+        let app = configuredApplication()
         app.launch()
 
         XCTAssertTrue(app.buttons["Tabs Menu"].waitForExistence(timeout: 10))
@@ -63,5 +53,52 @@ final class Browser_iOSUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Share Whole Page as PDF…"].exists)
         XCTAssertTrue(app.buttons["Share Whole Page as PNG…"].exists)
         XCTAssertTrue(app.buttons["Share Whole Page as JPEG…"].exists)
+    }
+
+    @MainActor
+    func testSettingsGroupSafeAgentDefinitionSync() throws {
+        let app = configuredApplication()
+        app.launch()
+
+        let pageMenu = app.buttons["browser.pageMenu"]
+        XCTAssertTrue(pageMenu.waitForExistence(timeout: 10))
+        pageMenu.tap()
+        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 3))
+        app.buttons["Settings"].tap()
+
+        XCTAssertTrue(
+            app.switches["settings.agentSync.schedules"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.switches["settings.agentSync.providerPresets"].exists)
+        XCTAssertTrue(app.switches["settings.agentSync.userMemory"].exists)
+        XCTAssertTrue(app.staticTexts["Agent Definition Sync"].exists)
+    }
+
+    @MainActor
+    func testPhoneKeepsSplitCommandsUnavailable() throws {
+        let app = configuredApplication()
+        app.launch()
+        guard app.frame.width < 600 else { throw XCTSkip("iPhone-only contract") }
+
+        let tabsMenu = app.buttons["browser.tabsMenu"]
+        XCTAssertTrue(tabsMenu.waitForExistence(timeout: 10))
+        tabsMenu.tap()
+        XCTAssertFalse(app.buttons["Toggle Split Pane"].exists)
+    }
+
+    @MainActor
+    private func configuredApplication() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-uiTesting",
+            "-ApplePersistenceIgnoreState", "YES",
+            "-tabSyncEnabled", "NO",
+            "-agentDefinitionSync.schedules.enabled", "NO",
+            "-agentDefinitionSync.providerPresets.enabled", "NO",
+            "-agentDefinitionSync.userAuthoredMemory.enabled", "NO",
+            "-hasSeenGestureGuide", "YES",
+        ]
+        return app
     }
 }

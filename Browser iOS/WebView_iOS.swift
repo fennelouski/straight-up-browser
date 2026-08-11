@@ -161,6 +161,7 @@ struct TabWebView: UIViewRepresentable {
         var lastRequestedURL: URL?
         private var downloadNavigationHistory = DownloadNavigationHistory()
         private var certificateOverrideWebViews: Set<ObjectIdentifier> = []
+        private var popupTabs: [ObjectIdentifier: Tab] = [:]
 
         // Each web view owns a separate redirect chain; background tabs must not
         // trip the active tab's loop threshold.
@@ -223,7 +224,6 @@ struct TabWebView: UIViewRepresentable {
             let pct = UserDefaults.standard.object(forKey: "spaceScrollPercent") as? Double ?? 90
             webView.evaluateJavaScript("window.__subSpacePct = \(pct)")
             if let tab = tab(for: webView) {
-                TabSync.restoreSessionStorage(tab, into: webView)
                 parent.fastForward?.pageCommitted(webView: webView, tab: tab)
             }
         }
@@ -635,14 +635,43 @@ struct TabWebView: UIViewRepresentable {
             let openerSession = webViewManager.tabId(for: webView)
                 .map { webViewManager.session(for: $0) }
                 ?? (.normal, nil)
-            let newTab = tabManager.createTab(inheriting: openerSession)
+            let isPopup = navigationAction.navigationType != .linkActivated
+            let newTab = tabManager.createTab(
+                inheriting: openerSession,
+                select: !isPopup
+            )
             webViewManager.adoptWebView(
                 popupWebView,
                 for: newTab.id,
                 navigationDelegate: self,
                 uiDelegate: self
             )
+            popupTabs[ObjectIdentifier(popupWebView)] = newTab
+            // JavaScript popups (OAuth/payment flows) stay visible beside their
+            // opener on iPad. A normal target=_blank link is a foreground tab.
+            // iPhone intentionally remains single-pane.
+            if isPopup {
+                if UIDevice.current.userInterfaceIdiom == .pad,
+                   tabManager.splitTabIds.count < TabManager.maxSplitTabs {
+                    tabManager.toggleSplitMembership(newTab, tabs: tabs ?? [])
+                } else {
+                    tabManager.selectedTabId = newTab.id
+                }
+            }
             return popupWebView
+        }
+
+        func webViewDidClose(_ webView: WKWebView) {
+            let popupTab = popupTabs.removeValue(
+                forKey: ObjectIdentifier(webView)
+            )
+            guard let tabManager,
+                  let id = parent.webViewManager?.tabId(for: webView),
+                  let tab = popupTab
+                    ?? (tabs ?? []).first(where: { $0.id == id })
+                    ?? tabManager.incognitoTabs.first(where: { $0.id == id })
+            else { return }
+            tabManager.closeTab(tab, tabs: tabs ?? [])
         }
 
         func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping @MainActor @Sendable (WKPermissionDecision) -> Void) {
@@ -756,7 +785,7 @@ final class WebViewContainer_iOS: UIView {
     private var webViewManager: WebViewManager?
     private weak var coordinator: TabWebView.Coordinator?
     private var activeTabId: UUID?
-    private var visibleWebViews: Set<WKWebView> = []
+    private var visibleWebViews: [WKWebView] = []
 
     var activeWebView: WKWebView? {
         if let activeTabId = activeTabId, let webViewManager = webViewManager {
@@ -794,7 +823,7 @@ final class WebViewContainer_iOS: UIView {
             webView.isHidden = false
             webView.layer.borderWidth = desiredId == tabId && desiredIds.count > 1 ? 2 : 0
             webView.layer.borderColor = UIColor.tintColor.cgColor
-            visibleWebViews.insert(webView)
+            visibleWebViews.append(webView)
         }
 
         setNeedsLayout()
@@ -837,7 +866,10 @@ final class WebViewContainer_iOS: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let panes = subviews.compactMap { $0 as? WKWebView }.filter { !$0.isHidden }
+        // `visibleWebViews` is rebuilt in splitTabIds order. UIKit subview
+        // insertion order reflects creation history and must not decide pane
+        // order after the user reorders a split.
+        let panes = visibleWebViews.filter { !$0.isHidden && $0.superview === self }
         guard panes.count > 1 else {
             panes.first?.frame = bounds
             return
@@ -879,7 +911,7 @@ final class WebViewContainer_iOS: UIView {
         if let webView = subview as? WKWebView {
             webView.removeObserver(self, forKeyPath: "estimatedProgress")
             webView.removeObserver(self, forKeyPath: #keyPath(WKWebView.url))
-            visibleWebViews.remove(webView)
+            visibleWebViews.removeAll { $0 === webView }
         }
         super.willRemoveSubview(subview)
     }

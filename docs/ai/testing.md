@@ -164,6 +164,17 @@ During development, run the narrow unit/integration target first. Before merge:
 ./scripts/verify.sh
 ```
 
+For changes to the universal iPhone/iPad app, also run its independent local
+release gate:
+
+```bash
+./scripts/verify-ios.sh
+```
+
+That gate builds generic device and simulator products, runs mobile contract
+tests, and executes compact UI smoke coverage on both form factors. Neither
+gate uses GitHub-hosted Actions.
+
 Security-sensitive changes also require manual inspection of a redacted
 diagnostic export and the app's Application Support directory to confirm file
 permissions, retention, and absence of Keychain values. Inspect the private
@@ -182,8 +193,9 @@ notarization, and published-artifact checks before changing feature status to
 
 ## Browser 2.0 macOS acceptance record
 
-The 2.0.0 release scope is macOS. The pre-release run on 2026-08-10 produced
-the following evidence before source integration and signing:
+This historical acceptance run covered the macOS 2.0.0 distribution. On
+2026-08-10 it produced the following evidence before source integration and
+signing:
 
 - all 420 macOS unit/integration tests passed with warnings as errors;
 - `Browser.app` line coverage was 44.96% against the 25% floor;
@@ -192,9 +204,9 @@ the following evidence before source integration and signing:
   based overlap probe was replaced by a bounded two-child rendezvous;
 - macOS Release built as arm64-only, including `browser-cli`, and reported
   version 2.0.0 build 55;
-- the iPadOS Release target compiled with warnings as errors, confirming the
-  shared safe-definition code remains buildable, but iPadOS shipping acceptance
-  is explicitly deferred by the product owner;
+- the universal mobile Release target compiled with warnings as errors,
+  confirming that the shared safe-definition code remained buildable; mobile
+  shipping acceptance was outside that historical macOS gate;
 - CI, release, security, exact-53-tool, focused migration/recovery/privacy,
   loopback OAuth/MCP, Cowork, settings, and replay policy gates passed.
 
@@ -206,8 +218,9 @@ inside `release.sh`. If the host service remains unavailable, record that
 infrastructure result alongside the successful compiled UI contract and direct
 app smoke check rather than treating it as an application failure.
 
-The iPadOS work intentionally left for a later release is enumerated in the
-[roadmap](roadmap.md#ipados-follow-up). It includes executable UI/accessibility,
-real-device and private-CloudKit round trips, App Store signing/provisioning,
-TestFlight upgrade, and separate release approval. None is implied by the
-macOS notarized DMG.
+The independent iPhone/iPad release acceptance is enumerated in the
+[roadmap](roadmap.md#iphone-and-ipad-release-acceptance) and the
+[mobile deployment guide](../../IOS_DEPLOYMENT.md). It includes executable
+UI/accessibility checks on both form factors, real-device and private-CloudKit
+round trips, App Store signing/provisioning, TestFlight upgrade, and separate
+release approval. None is implied by the macOS notarized DMG.

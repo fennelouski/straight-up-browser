@@ -25,10 +25,11 @@ The feature map and engine boundaries live in
 
 ## Delivery sequence
 
-Every slice is complete for the Browser 2.0 macOS release. The companion iPadOS
-target compiles with the shared safe-definition code, but its UI, accessibility,
-CloudKit round-trip, App Store, and device acceptance are a separately tracked
-follow-up and do not gate the signed macOS 2.0.0 distribution.
+Every slice is complete for the Browser 2.0 macOS release. The universal
+iPhone/iPad target exposes the safe definition-sync and review surface without
+an executor. Its accessibility, CloudKit round-trip, App Store, and physical
+device acceptance use the separate mobile gate and do not gate the signed
+macOS 2.0.0 distribution.
 
 | Horizon | ID | Outcome | Depends on | Status |
 |---|---|---|---|---|
@@ -112,7 +113,8 @@ Exit criteria:
 - incognito signal content is cleared under the default policy;
 - sync records contain only allowlisted, nonsecret definition payloads;
 - disabling a sync category offers keep-local or delete-cloud behavior;
-- iPadOS retains unsupported definitions without attempting macOS-only work.
+- iPhone and iPad retain unsupported definitions without attempting macOS-only
+  work.
 
 ## Prioritization rules
 
@@ -123,31 +125,37 @@ provider or tool category is lower priority than making current runs
 recoverable and reviewable.
 
 Platform differences are intentional. macOS owns the full automation surface.
-iPadOS exposes the safe definition-sync choices and can retain unsupported
-definitions, but it cannot execute macOS-only scheduled/Cowork/MCP automation.
-Neither platform treats a synced record as authority: local credentials,
+iPhone and iPad expose the safe definition-sync choices and can retain
+unsupported definitions, but they cannot execute macOS-only
+scheduled/Cowork/MCP automation. No platform treats a synced record as
+authority: local credentials,
 connections, scopes, browser Sessions, capabilities, and policy must all pass.
 
-## iPadOS follow-up
+## iPhone and iPad release acceptance
 
-The macOS 2.0.0 release does not ship or certify a new iPad build. Before the
-companion target is released, complete all of the following on the exact iPad
+The macOS DMG does not certify the universal mobile build. Before the mobile
+target is released, complete all of the following on the exact mobile
 source revision selected for that release:
 
-1. Run the full `Browser iOS` unit and UI plans on the supported iPad simulator
-   matrix and at least one physical iPad, with warnings treated as errors.
+1. Run the focused `Browser iOS` unit and UI plans on the supported iPhone/iPad
+   simulator matrix and one physical device of each family, with warnings
+   treated as errors.
 2. Exercise all three definition-sync category toggles, including cancel,
    keep-local, delete-cloud, re-enable, tombstone convergence, and conflict
-   resolution across a real private CloudKit account shared with a Mac.
-3. Confirm imported schedules remain inert and visibly unavailable until every
-   local provider, MCP, Cowork, browser-Session, capability, and policy
-   dependency is satisfied; iPadOS must never attempt macOS-only execution.
+   resolution across a real private CloudKit account shared by a Mac, iPhone,
+   and iPad.
+3. Confirm imported schedules remain inert and visibly unavailable on mobile.
+   The review UI must identify missing local provider, MCP, Cowork,
+   browser-Session, capability, and policy dependencies, and mobile must never
+   attempt execution even when every non-platform dependency is satisfied.
 4. Verify VoiceOver, Dynamic Type, keyboard navigation, touch targets, rotation,
    multitasking, offline/relaunch recovery, and incognito non-retention for the
-   Agent Definition Sync settings and unavailable-definition review UI.
+   Agent Definition Sync settings and unavailable-definition review UI on both
+   form factors.
 5. Recheck production CloudKit container entitlements/schema, device-only
    Keychain behavior, privacy manifests, App Store signing/provisioning,
    screenshots, metadata, TestFlight installation, and upgrade migration from
-   the last public iPad build.
-6. Give iPadOS its own version/build decision and release approval. A passing
-   macOS DMG/notarization run is not evidence that the iPad app is ready to ship.
+   the last public mobile build.
+6. Give mobile its own version/build decision and release approval. A passing
+   macOS DMG/notarization run is not evidence that the iPhone/iPad app is ready
+   to ship.

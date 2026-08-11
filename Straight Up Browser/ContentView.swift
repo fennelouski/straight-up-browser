@@ -2314,6 +2314,9 @@ struct ContentView: View {
     }
 
     private func initializeManagers() {
+        if TabSync.clearLegacySessionStorage(in: tabs) > 0 {
+            try? modelContext.save()
+        }
         let webViewManager = WebViewManager()
         let navigationManager = NavigationManager()
         self.webViewManager = webViewManager

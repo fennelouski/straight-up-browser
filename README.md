@@ -1,6 +1,6 @@
 # Straight Up Browser
 
-A chromeless `WKWebView` browser for macOS, with a companion iPadOS app. The
+A chromeless `WKWebView` browser for macOS, iPhone, and iPad. The
 page fills the window; tabs live in a thin vertical sidebar that can be resized,
 reduced to favicons, or hidden entirely.
 
@@ -13,7 +13,8 @@ launch it, and accept the license agreement on first run.
 ## What is implemented
 
 - **Tabs and layouts**: vertical tabs, drag reordering, pinning, recently closed
-  tabs, groups, saved workspaces, thumbnails, and 2–4 pane splits.
+  tabs, groups, saved workspaces, thumbnails, and 2–4 pane splits on macOS and
+  iPad.
 - **Browsing sessions**: normal tabs, persistent isolated containers, and
   in-memory incognito sessions. New tabs inherit the current session.
 - **Navigation tools**: popup and global omnibars, configurable search engine,
@@ -65,22 +66,21 @@ launch it, and accept the license agreement on first run.
 
 ### Platform scope
 
-Browser 2.0.0 is a macOS release. The macOS app has the full agent execution and
-automation surface above. The companion iPadOS source shares tabs,
-groups, workspaces, split panes, containers/incognito, navigation and find,
+Browser 2.0.0 gives macOS the full agent execution and automation surface above.
+The universal iPhone/iPad app shares tabs, groups, workspaces,
+containers/incognito, navigation and find,
 translation, Reader Mode, Fast Forward, bookmarks/history, downloads,
 print/PDF, page captures, cookie and browsing-data controls, sync, settings,
 keyboard commands, touch navigation, and the agent-definition sync choices.
-Its compact controls are rotation-aware, and an optional iPad tab rail follows
+Its compact controls are rotation-aware; iPhone intentionally remains
+single-pane, while iPad supports 2–4 panes and an optional tab rail that follows
 the short edge of the app window. It can retain agent definitions it cannot
-execute and marks them unavailable until their local provider, integration,
-Cowork, policy, and platform dependencies are satisfied.
-
-The iPad executable UI, accessibility, real-device/CloudKit, and App Store
-release acceptance are deferred to a separate iPad release; see the
-[iPadOS follow-up](docs/ai/roadmap.md#ipados-follow-up). Global hotkeys, the
-terminal CLI, full scheduled automation, AppKit screenshot/window tools,
-Sparkle updater UI, and the unpacked-extension loader remain macOS-only.
+execute, displays why schedules are unavailable, and offers local review of
+sensitive synced memory without creating a mobile execution path. See the
+[mobile deployment guide](IOS_DEPLOYMENT.md) for the separate App Store gate.
+Global hotkeys, the terminal CLI, full scheduled automation, AppKit
+screenshot/window tools, Sparkle updater UI, and the unpacked-extension loader
+remain macOS-only.
 
 Browser does not currently expose passkey/WebAuthn sign-in. Apple gates
 third-party browser access behind the
@@ -177,23 +177,34 @@ feature contracts, and verification requirements.
 Requirements:
 
 - macOS 15.6 or later for the Mac app
-- iPadOS 18 or later for the iPad app
+- iOS or iPadOS 18 or later for the universal mobile app
 - Xcode 16 or later
 - Swift 6
 
-Run the warning-free gates used by releases:
+Run the warning-free macOS gate used by the notarized release:
 
 ```bash
 ./scripts/verify.sh
 ```
 
-This runs the macOS unit suite, builds both apps in Release, verifies that the
-macOS executable is Apple Silicon-only (`arm64`), and builds the macOS UI-test
-target. GitHub-hosted Actions are intentionally disabled; verification runs
-locally and `scripts/release.sh` repeats the gates before archiving. Set
+This runs the macOS unit suite, compiles the universal mobile app in Release,
+verifies that the macOS executable is Apple Silicon-only (`arm64`), and builds
+the macOS UI-test target. GitHub-hosted Actions are intentionally disabled;
+verification runs locally and `scripts/release.sh` repeats the gates before
+archiving. Set
 `RUN_UI_TESTS=1` locally on a Mac with Developer Mode/UI automation enabled to
 run the executable UI gates. Swift and Clang warnings are treated as errors,
 and Browser.app line coverage must remain at or above 25%.
+
+The mobile App Store gate is separate and exercises the universal app on both
+form factors:
+
+```bash
+./scripts/verify-ios.sh
+```
+
+See [IOS_DEPLOYMENT.md](IOS_DEPLOYMENT.md) for simulator/device acceptance,
+signing, archiving, and App Store Connect preparation.
 
 For a standalone release build:
 
@@ -229,8 +240,8 @@ To produce the signed, notarized DMG, run `./scripts/release.sh`. It runs
 Core navigation, sessions, cleanup, extension permissions, downloads, security
 state, accessibility, Library behavior, and WebKit integration have automated
 coverage. GitHub-hosted Actions are intentionally disabled. Run
-`scripts/verify.sh` locally before merging; releases cannot archive until that
-same verification script passes.
+`scripts/verify.sh` for macOS changes and `scripts/verify-ios.sh` for the
+universal mobile app; each archive script reruns its own local gate.
 
 ## License
 
