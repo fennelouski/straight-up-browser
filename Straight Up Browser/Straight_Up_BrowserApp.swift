@@ -643,6 +643,15 @@ struct Straight_Up_BrowserApp: App {
                 }
                 .keyboardShortcut(sc(.quickOpenNewTab))
 
+                Divider()
+
+                // Mirrors the sidebar's autofill button, so the feature is still
+                // reachable when the tab bar is hidden or minimal. Same view in
+                // both places — see AutofillMenu.swift.
+                Menu("Autofill") {
+                    AutofillMenuContent(hostsShortcut: true)
+                }
+
                 Button("Settings...") {
                     NotificationCenter.default.post(name: .browserShowSettings, object: nil)
                 }

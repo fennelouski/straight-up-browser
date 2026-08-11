@@ -24,12 +24,17 @@ launch it, and accept the license agreement on first run.
   browsing history with per-URL removal and clear-all.
 - **Media and downloads**: per-tab muting, a download manager, upload/download
   history, and visible/full-page/element/window screenshots.
+- **Form autofill**: saved profiles of names, contact details, and postal
+  addresses. Focusing a recognized field offers what you've saved, and one pick
+  fills every matching empty field on the page. Never fills passwords or payment
+  cards, never writes without an explicit pick, off in incognito unless you opt
+  in, and excludable per site. `⌘⌥A` turns it off entirely.
 - **Privacy controls**: per-session website data stores, cookie inspection and
   deletion, clear-site/session/all-data actions, media permission prompts,
   content blocking, redirect-loop protection, and secure/mixed/insecure
   connection state.
 - **Sync**: optional private CloudKit sync for tabs, groups, container metadata,
-  and bookmarks. Live page state is a separate opt-in. Incognito data, saved
+  bookmarks, and autofill profiles. Live page state is a separate opt-in. Incognito data, saved
   workspaces, cookies, website storage, logins, downloads, and extension state
   do not sync.
 - **macOS extensions**: load unpacked `WKWebExtension` folders, approve requested
@@ -87,7 +92,8 @@ third-party browser access behind the
 `com.apple.developer.web-browser.public-key-credential` entitlement; without
 that entitlement, Browser hides WebAuthn APIs so websites fall back instead of
 offering a passkey flow that cannot complete. Browser also does not ship a
-password vault or form-autofill database. Website camera and microphone requests
+password vault: form autofill covers saved names, contact details, and postal
+addresses only, never passwords or payment cards. Website camera and microphone requests
 use WebKit's permission prompt, and remembered per-site choices can be reviewed
 or revoked in Privacy settings. Private tabs never persist permission choices.
 
@@ -116,6 +122,7 @@ are the defaults:
 | `⌘Y` | Show history Library |
 | `⌘⇧J` | Show Downloads |
 | `⌘⌥R` | Reader mode |
+| `⌘⌥A` | Turn autofill on or off |
 | `⌘F` | Find on page |
 | `⌘+` / `⌘-` / `⌘0` | Zoom in / out / actual size |
 | `⌘⇧L` | Toggle the tab sidebar |

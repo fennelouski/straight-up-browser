@@ -49,6 +49,9 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Assets.xcassets,
+				Autofill.swift,
+				AutofillMenu.swift,
+				AutofillSettingsView.swift,
 				BrowserAgent.swift,
 				BookmarkImporter.swift,
 				BrowserCLI.swift,

@@ -1698,13 +1698,15 @@ struct TabSyncDisclosureTests {
             "Tab",
             "TabGroup",
             "Bookmark",
-            "BrowserSession"
+            "BrowserSession",
+            "AutofillProfile"
         ])
         #expect(TabSync.syncedDataCategories == [
             .tabs,
             .tabGroups,
             .bookmarks,
-            .browserSessions
+            .browserSessions,
+            .autofillProfiles
         ])
     }
 
