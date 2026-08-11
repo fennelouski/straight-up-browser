@@ -602,6 +602,11 @@ class WebViewManager: NSObject, ObservableObject {
             webView.configuration.userContentController.removeScriptMessageHandler(
                 forName: WebKitAgentConsoleBridgeScripts.messageHandlerName
             )
+            // World-scoped handlers need the world to be removed.
+            webView.configuration.userContentController.removeScriptMessageHandler(
+                forName: SemanticPageJavaScript.messageHandlerName,
+                contentWorld: .defaultClient
+            )
             webView.removeFromSuperview()
 
             // Remove from storage
@@ -776,6 +781,16 @@ class WebViewManager: NSObject, ObservableObject {
         configuration.userContentController.add(
             WeakScriptMessageHandler(handler: self),
             name: WebKitAgentConsoleBridgeScripts.messageHandlerName
+        )
+        // Scoped to the isolated world, where the semantic runtime lives. The
+        // "sub" handler above is page-world only (that's what `add(_:name:)`
+        // means), so the runtime can't reach it — and giving this its own name
+        // is the trust boundary: a page cannot forge messages into a handler it
+        // has no reference to.
+        configuration.userContentController.add(
+            WeakScriptMessageHandler(handler: self),
+            contentWorld: .defaultClient,
+            name: SemanticPageJavaScript.messageHandlerName
         )
         if UserDefaults.standard.bool(forKey: "adBlockEnabled") {
             Self.reportContentBlocking(false, for: tabId)
@@ -983,6 +998,11 @@ class WebViewManager: NSObject, ObservableObject {
             webView.configuration.userContentController.removeScriptMessageHandler(
                 forName: WebKitAgentConsoleBridgeScripts.messageHandlerName
             )
+            // World-scoped handlers need the world to be removed.
+            webView.configuration.userContentController.removeScriptMessageHandler(
+                forName: SemanticPageJavaScript.messageHandlerName,
+                contentWorld: .defaultClient
+            )
             webView.removeFromSuperview()
         }
         webViews.removeAll()
@@ -1025,6 +1045,51 @@ extension WebViewManager: WKScriptMessageHandler {
         return "\(scheme)://\(host)" + (url.port.map { ":\($0)" } ?? "")
     }
 
+    /// Autofill focus signals from the isolated world.
+    ///
+    /// The rect is converted here rather than in JavaScript because this is
+    /// where the web view — and therefore its bounds, zoom, and split-pane
+    /// position — is in hand.
+    private func handleSemanticRuntimeMessage(_ body: [String: Any], from message: WKScriptMessage) {
+        guard let type = body["type"] as? String else { return }
+        // The runtime is main-frame-only, but assert it: an iframe must never be
+        // able to summon a suggestion list.
+        guard message.frameInfo.isMainFrame else { return }
+
+        switch type {
+        case "autofillFieldFocused":
+            guard let webView = message.webView,
+                  let tabID = tabId(for: webView),
+                  let signal = try? AutofillFocusSignal.decode(body) else { return }
+            // Page zoom and pinch magnification multiply. `magnification` is
+            // AppKit-only; iPad has no autofill UI listening for this anyway.
+            #if os(macOS)
+            let scale = max(webView.pageZoom * webView.magnification, 0.01)
+            #else
+            let scale = max(webView.pageZoom, 0.01)
+            #endif
+            let viewRect = AutofillGeometry.viewRect(
+                css: signal.rect,
+                in: webView.bounds,
+                scale: scale
+            )
+            NotificationCenter.default.post(
+                name: .browserAutofillFieldFocused,
+                object: nil,
+                userInfo: [
+                    "signal": signal,
+                    "tabID": tabID,
+                    "rect": webView.convert(viewRect, to: nil),
+                    "url": webView.url as Any,
+                ]
+            )
+        case "autofillFieldDismissed":
+            NotificationCenter.default.post(name: .browserAutofillDismissed, object: nil)
+        default:
+            break
+        }
+    }
+
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any] else { return }
         if message.name == WebKitAgentConsoleBridgeScripts.messageHandlerName {
@@ -1049,6 +1114,10 @@ extension WebViewManager: WKScriptMessageHandler {
                     tabID: tabID
                 )
             }
+            return
+        }
+        if message.name == SemanticPageJavaScript.messageHandlerName {
+            handleSemanticRuntimeMessage(body, from: message)
             return
         }
         guard let type = body["type"] as? String else { return }

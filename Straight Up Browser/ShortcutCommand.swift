@@ -217,6 +217,7 @@ extension ShortcutCommand {
     static let toggleTranslation = Self("toggleTranslation", "Toggle Page Translation", .page, Shortcut(key: "t", command: true, option: true))
     static let translateInSplit  = Self("translateInSplit", "Open Translation in Split Pane", .page, Shortcut(key: "t", command: true, shift: true, option: true))
     static let readerMode    = Self("readerMode", "Reader Mode", .page, Shortcut(key: "r", command: true, option: true))
+    static let toggleAutofill = Self("toggleAutofill", "Toggle Autofill", .page, Shortcut(key: "a", command: true, option: true))
 
     // Element/window capture remains desktop-only, but visible and full-page
     // capture use WKWebView snapshots on iOS.
@@ -277,7 +278,7 @@ extension ShortcutCommand {
         + screenshots
         + [openLocation, back, forward, reload, hardReload, reloadAll,
            findInPage, findNext, findPrevious, zoomIn, zoomOut, actualSize, printPage, exportPDF, fullScreen,
-           toggleTranslation, translateInSplit, readerMode,
+           toggleTranslation, translateInSplit, readerMode, toggleAutofill,
            toggleTabBar, hideTabBar, minimalTabBar, compactTabBar, wideTabBar,
            addBookmark, showBookmarks, showHistory, clearSiteData, convertToIncognito,
            omnibar, quickOpen, quickOpenNewTab, tabGrid, shortcutOverlay, settings, help, extensionPopup]

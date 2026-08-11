@@ -471,6 +471,7 @@ struct ContentView: View {
     // Managers
     @StateObject private var tabManager: TabManager
     @StateObject private var linkPreview = LinkPreviewManager()
+    @StateObject private var autofill = AutofillManager()
     @StateObject private var pageTranslator = PageTranslator()
     @StateObject private var fastForward = FastForward()
     @StateObject private var browserAgent: BrowserAgent
@@ -552,6 +553,18 @@ struct ContentView: View {
     // Shutter flash marking what a screenshot just captured.
     @State private var flashRect: CGRect?
     @State private var flashOpacity: Double = 0
+
+    // Autofill: the ⌥⌘A confirmation HUD, and the saved profiles the sidebar and
+    // menu-bar autofill menus offer.
+    @State private var autofillHUD: String?
+    @State private var autofillHUDTask: Task<Void, Never>?
+    @Query(sort: \AutofillProfile.createdAt) private var autofillProfiles: [AutofillProfile]
+
+    /// Reading `displayName` here is what makes a renamed profile reach the menus:
+    /// it registers observation on the underlying fields.
+    private var autofillProfileSummaries: [AutofillProfileSummary] {
+        autofillProfiles.map { AutofillProfileSummary(id: $0.id, name: $0.displayName) }
+    }
 
     private var currentURL: URL? { activeTab?.url }
 
@@ -782,6 +795,21 @@ struct ContentView: View {
             .menuStyle(.borderlessButton)
             .help("Containers & Incognito")
             .accessibilityLabel("Containers and Incognito")
+
+            // Same items as the menu bar's Autofill submenu — see AutofillMenu.swift.
+            // The glyph dims when autofill is off so the state reads at a glance.
+            Menu {
+                AutofillMenuContent()
+            } label: {
+                Image(systemName: "text.append")
+                    .font(.system(size: 12))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .opacity(AutofillPreferences.shared.isEnabled ? 1 : 0.4)
+            .help(AutofillPreferences.shared.isEnabled ? "Autofill" : "Autofill (off)")
+            .accessibilityLabel("Autofill")
 
             Spacer(minLength: 0)
         }
@@ -1659,6 +1687,77 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.08), value: quitHoldActive)
     }
 
+    // Brief confirmation that ⌥⌘A landed. Driven by observing the preference
+    // rather than the shortcut, so flipping autofill from the sidebar menu, the
+    // menu bar, or Settings all read the same.
+    private var autofillHUDOverlay: some View {
+        Group {
+            if let autofillHUD {
+                Label(autofillHUD, systemImage: preferencesEnabledIcon)
+                    .font(.headline)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 14)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .shadow(radius: 10)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
+        }
+        .allowsHitTesting(false)
+        .animation(.easeInOut(duration: 0.12), value: autofillHUD)
+    }
+
+    private var preferencesEnabledIcon: String {
+        AutofillPreferences.shared.isEnabled ? "text.append" : "nosign"
+    }
+
+    private func showAutofillHUD(enabled: Bool) {
+        autofillHUDTask?.cancel()
+        autofillHUD = enabled
+            ? String(localized: "Autofill On")
+            : String(localized: "Autofill Off")
+        autofillHUDTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1100))
+            guard !Task.isCancelled else { return }
+            autofillHUD = nil
+        }
+    }
+
+    // The autofill suggestion list, anchored under the focused field. Same
+    // coordinate story as the shutter flash below: the rect arrives in AppKit
+    // window coordinates and SwiftUI counts y downward, hence the flip.
+    //
+    // Suppressed while another overlay owns the screen — three of them competing
+    // for Escape is a bug — and only ever for the frontmost tab, so a background
+    // split pane can't pop a list.
+    private var autofillSuggestionOverlay: some View {
+        GeometryReader { geo in
+            if let presentation = autofill.presentation,
+               presentation.tabID == tabManager.selectedTabId,
+               !autofill.suggestions.isEmpty,
+               !showOmnibar, contentModal == nil, !linkPreview.isShowing {
+                let size = autofillListSize(fieldWidth: presentation.fieldRect.width)
+                let origin = AutofillGeometry.listOrigin(
+                    fieldRect: presentation.fieldRect,
+                    listSize: size,
+                    windowHeight: geo.size.height
+                )
+                AutofillSuggestionList(autofill: autofill)
+                    .frame(width: size.width, height: size.height)
+                    .position(
+                        x: origin.x + size.width / 2,
+                        y: geo.size.height - (origin.y + size.height / 2)
+                    )
+            }
+        }
+    }
+
+    private func autofillListSize(fieldWidth: CGFloat) -> CGSize {
+        CGSize(
+            width: max(AutofillSuggestionList.minimumWidth, fieldWidth),
+            height: AutofillSuggestionList.height(rows: autofill.suggestions.count)
+        )
+    }
+
     // Screenshot shutter flash, sized to exactly what was captured. The rect
     // arrives in AppKit window coordinates (origin bottom-left); SwiftUI's root
     // fills the same content view but counts y downward, hence the flip.
@@ -1787,6 +1886,7 @@ struct ContentView: View {
         .overlay(saveWorkspaceDialogOverlay.zIndex(5))
         .overlay(importBookmarksDialogOverlay.zIndex(6))
         .overlay(quitHoldOverlay.zIndex(7))
+        .overlay(autofillHUDOverlay.zIndex(7))
         .overlay(shortcutCheatSheetOverlay.zIndex(8))
         .overlay(tabGridOverlay.zIndex(8))
         .overlay(alignment: .bottomTrailing, content: { defaultBrowserOverlay.zIndex(9) })
@@ -2035,6 +2135,15 @@ struct ContentView: View {
         .ignoresSafeArea(.all) // Ignore safe areas to extend to edges
         .background(Color(.windowBackgroundColor)) // Set explicit background
         .overlay(screenshotFlashOverlay)
+        .overlay(autofillSuggestionOverlay)
+        // The autofill menus live in two places that can't share a @Query — the
+        // sidebar header and the menu bar, which never sees the model container.
+        // This window owns the query and publishes a name-only projection.
+        .modifier(AutofillWindowBridge(
+            profiles: autofillProfileSummaries,
+            pageURL: currentURL,
+            onEnabledChange: showAutofillHUD(enabled:)
+        ))
         .overlay(alignment: .leading) { faviconPeekOverlay }
         .overlay(alignment: .trailing) {
             if showAgentPanel {
@@ -2397,6 +2506,7 @@ struct ContentView: View {
                               webViewManager: webViewManager,
                               tabs: { self.allTabs })
         bookmarkManager = BookmarkManager(modelContext: modelContext)
+        autofill.configure(webViewManager: webViewManager, modelContext: modelContext)
         managersInitialized = true
 
             notificationManager = NotificationManager(

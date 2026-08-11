@@ -212,6 +212,47 @@ transaction invariants:
   bodies, cache details, and timing data are explicitly unsupported rather than
   approximated.
 
+## Form autofill safety
+
+Autofill shares the semantic page runtime with the agent, so the boundary
+between them is stated explicitly rather than left to convention.
+
+- **Out of the agent's reach.** Autofill exposes no tool: nothing in
+  `AgentToolCatalog` reads, writes, or names a profile, and the pinned built-in
+  tool count fails the suite if one is added. Form-control metadata rides in
+  `SemanticNodeSnapshot.fieldHints` but is deliberately excluded from
+  `renderCompatibilityText`, so the agent's snapshot text is byte-identical to
+  what it was before autofill existed. A test asserts that equality directly.
+- **Scope.** Names, contact details, and postal addresses only. Passwords and
+  payment cards are not stored, not classified, and not fillable: `type=password`
+  is rejected by an allowlist and again by an explicit guard, and `cc-*`,
+  `new-password`, `current-password`, and `one-time-code` autocomplete tokens
+  stop at the token stage rather than falling through to keyword matching.
+- **Never unattended.** Nothing is written to a page without an explicit pick.
+  There is no fill-on-load path, so hidden-field harvesting has nothing to
+  harvest. Values already typed by the user are never overwritten.
+- **Origin limits.** Suggestions are offered on `http`/`https` only, so a local
+  file cannot summon the user's address. The runtime is injected
+  `forMainFrameOnly`, and focus events do not cross document boundaries, so a
+  cross-origin iframe structurally cannot trigger or receive a fill.
+- **Substitution.** Every write resolves through the runtime's staleness check —
+  document token, element identity, role, name, geometry, and frame path — and a
+  fill is abandoned entirely if the document token changed between focus and
+  pick. Values travel as `callAsyncJavaScript` arguments, never interpolated
+  into script text.
+- **Isolation and logging.** The focus signal uses its own isolated-world message
+  handler name; sharing the page world's `"sub"` would let a page forge it.
+  Autofill logs the field kinds and the host, never a value.
+- **Incognito and exceptions.** Off in private tabs unless explicitly enabled,
+  and excludable per site. Profiles are independent of browsing data — clearing
+  a site's data leaves them alone; "Delete All Autofill Data" removes them.
+- **Known exposure.** Field metadata (name, id, label, placeholder) crosses into
+  the app process on every text-field focus even when autofill is off, because
+  the listener is unconditional. It is never persisted.
+- **Sync.** Profiles are CloudKit-backed and therefore disclosed as their own
+  category in the sync settings; the disclosure is enforced by the type that
+  builds the schema.
+
 ## Definition-sync safety
 
 - Schedule definitions, nonsecret provider presets, and user-authored memory

@@ -172,6 +172,10 @@ nonisolated struct SemanticNodeSnapshot: Codable, Equatable, Hashable, Sendable 
     var text: String
     var destinationURL: URL?
     var isInteractive: Bool
+    /// Form-control attributes, present only for `input`/`textarea`/`select`.
+    /// Consumed by autofill in Swift; deliberately absent from
+    /// `renderCompatibilityText`, so this never reaches the agent's context.
+    var fieldHints: AutofillFieldDescriptor?
 
     init(
         localID: String,
@@ -184,7 +188,8 @@ nonisolated struct SemanticNodeSnapshot: Codable, Equatable, Hashable, Sendable 
         matchedSelectors: Set<String> = [],
         text: String = "",
         destinationURL: URL? = nil,
-        isInteractive: Bool = true
+        isInteractive: Bool = true,
+        fieldHints: AutofillFieldDescriptor? = nil
     ) {
         self.localID = localID
         self.legacySubID = legacySubID
@@ -197,6 +202,7 @@ nonisolated struct SemanticNodeSnapshot: Codable, Equatable, Hashable, Sendable 
         self.text = text
         self.destinationURL = destinationURL
         self.isInteractive = isInteractive
+        self.fieldHints = fieldHints
     }
 
     func reference(
@@ -377,6 +383,33 @@ nonisolated enum SemanticPageJavaScript {
       const safeOrigin = (raw, base) => {
         try { return new URL(raw || '', base).origin; } catch (_) { return null; }
       };
+      // Everything autofill needs to work out what a form control is asking for.
+      // Collected here; every decision about it is made in Swift, where the rules
+      // are type-checked and tested (see AutofillFieldClassifier).
+      //
+      // `element.labels` covers both <label for=…> and a wrapping <label> in one
+      // property, which is why the accessible-name fallback above doesn't need to
+      // learn about labels.
+      const FILLABLE_TAGS = /^(INPUT|TEXTAREA|SELECT)$/;
+      const fieldHints = element => {
+        let labelText = '';
+        try {
+          labelText = Array.from(element.labels || [], node => node.textContent || '').join(' ');
+        } catch (_) { labelText = ''; }
+        return {
+          tag: bounded(element.tagName, 16).toLowerCase(),
+          type: bounded(element.getAttribute('type'), 32).toLowerCase(),
+          autocomplete: bounded(element.getAttribute('autocomplete'), 120),
+          name: bounded(element.getAttribute('name'), 120),
+          elementID: bounded(element.getAttribute('id'), 120),
+          placeholder: bounded(element.getAttribute('placeholder'), 120),
+          label: bounded(labelText, 180),
+          ariaLabel: bounded(element.getAttribute('aria-label'), 120),
+          isVisible: statesFor(element).includes('visible'),
+          isEditable: !element.disabled && !element.readOnly,
+          isEmpty: !String(element.value || '').trim()
+        };
+      };
       const descriptor = (element, path, selectors) => {
         const identity = identityFor(element, path);
         const matchedSelectors = [];
@@ -406,6 +439,10 @@ nonisolated enum SemanticPageJavaScript {
           text: bounded(element.innerText || element.textContent || '', 512),
           destinationURL,
           isInteractive: interactive,
+          // Gated on the tag so only real form controls pay the extra attribute
+          // reads — scan() runs this up to 4096 times, before every agent effect.
+          // Deliberately NOT rendered into the agent's snapshot text.
+          fieldHints: FILLABLE_TAGS.test(element.tagName || '') ? fieldHints(element) : null,
           includeInSnapshot: identity.exposed
         };
       };
@@ -698,9 +735,94 @@ nonisolated enum SemanticPageJavaScript {
         timer = setTimeout(() => finish({status: 'timeout'}), timeout);
         check();
       });
+      // ---- Autofill -------------------------------------------------------
+      // Writes every assignment in ONE pass: a single scan (which refreshes all
+      // identities), then resolve + setValue per field. Looping effect() instead
+      // would re-scan up to 4096 nodes for each of them.
+      const autofillApply = request => {
+        const assignments = Array.isArray(request && request.assignments) ? request.assignments : [];
+        if (!assignments.length) return {filled: 0, failed: []};
+        const refreshed = scan({maximumNodes: 4096, maximumRoots: 128, maximumDepth: 32});
+        if (refreshed.error) throw new Error(refreshed.error);
+        const restoreTo = document.activeElement;
+        const failed = [];
+        let filled = 0;
+        // setValue() focuses each element it writes, which would re-fire focusin
+        // and reopen the suggestion list on every field we touch.
+        state.autofillSuppressed = true;
+        try {
+          for (const assignment of assignments) {
+            try {
+              const element = resolve(assignment.reference);
+              if (element.type === 'password') continue;   // belt and braces
+              setValue(element, String(assignment.value == null ? '' : assignment.value));
+              filled += 1;
+            } catch (error) {
+              failed.push({localID: assignment.reference && assignment.reference.localID,
+                           error: String(error && error.message || error)});
+            }
+          }
+        } finally {
+          state.autofillSuppressed = false;
+          try { if (restoreTo && restoreTo.focus) restoreTo.focus(); } catch (_) {}
+        }
+        return {filled, failed};
+      };
+
+      const postAutofill = payload => {
+        try { window.webkit.messageHandlers.straightUpSemantic.postMessage(payload); } catch (_) {}
+      };
+      let autofillDetach = null;
+      const dismissAutofill = () => {
+        if (autofillDetach) { autofillDetach(); autofillDetach = null; }
+        postAutofill({type: 'autofillFieldDismissed'});
+      };
+      document.addEventListener('focusin', event => {
+        if (state.autofillSuppressed) return;
+        const element = event.target;
+        if (!element || !/^(INPUT|TEXTAREA)$/.test(element.tagName || '')) return;
+        const type = String(element.type || '').toLowerCase();
+        if (type === 'password' || type === 'hidden') return;
+        // Register the identity now so the localID we report can be resolved later.
+        const identity = identityFor(element, []);
+        // One frame of slack: focusing a field near the fold scrolls it into view,
+        // and a rect read before that settles points at where the field WAS.
+        requestAnimationFrame(() => {
+          if (document.activeElement !== element || state.autofillSuppressed) return;
+          const rect = element.getBoundingClientRect();
+          postAutofill({
+            type: 'autofillFieldFocused',
+            documentToken: state.documentToken,
+            localID: identity.localID,
+            role: roleFor(element),
+            name: nameFor(element),
+            geometryDigest: geometryFor(element),
+            frameContext: [],
+            hints: fieldHints(element),
+            // CSS viewport pixels. Swift converts; see AutofillGeometry.
+            rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height}
+          });
+        });
+        // Attached only while a text field is focused, so no page pays for these
+        // unless the user is actually in a form.
+        const onScroll = () => dismissAutofill();
+        window.addEventListener('scroll', onScroll, {capture: true, passive: true, once: true});
+        window.addEventListener('resize', onScroll, {once: true});
+        autofillDetach = () => {
+          window.removeEventListener('scroll', onScroll, {capture: true});
+          window.removeEventListener('resize', onScroll);
+        };
+      }, true);
+      document.addEventListener('focusout', () => {
+        if (state.autofillSuppressed) return;
+        dismissAutofill();
+      }, true);
+
       state.snapshot = scan;
       state.effect = effect;
       state.wait = wait;
+      state.autofillApply = autofillApply;
+      state.autofillSuppressed = false;
       state.cancelWait = token => state.waits.get(String(token || ''))?.();
       Object.defineProperty(window, runtimeKey, {
         value: state,
@@ -738,6 +860,19 @@ nonisolated enum SemanticPageJavaScript {
     const runtime = window.__straightUpSemanticRuntimeV2;
     if (runtime && runtime.ownerDocument === document) runtime.cancelWait(token);
     return true;
+    """#
+
+    /// Message-handler name for the isolated world. It cannot share `"sub"`:
+    /// that handler is registered with `add(_:name:)`, which is page-world only,
+    /// so `window.webkit.messageHandlers.sub` doesn't exist here. Sharing a name
+    /// across worlds would also erase the trust boundary — `WKScriptMessage`
+    /// can't report which world it came from, so a page could forge these.
+    static let messageHandlerName = "straightUpSemantic"
+
+    static let autofillApply = #"""
+    const runtime = window.__straightUpSemanticRuntimeV2;
+    if (!runtime || runtime.ownerDocument !== document) throw new Error('semantic runtime is unavailable');
+    return runtime.autofillApply(request);
     """#
 }
 
@@ -803,7 +938,8 @@ nonisolated struct SemanticPageJavaScriptSnapshot: Equatable, Sendable {
                 matchedSelectors: Set(node.matchedSelectors),
                 text: node.text,
                 destinationURL: node.destinationURL.flatMap(URL.init(string:)),
-                isInteractive: node.isInteractive
+                isInteractive: node.isInteractive,
+                fieldHints: node.fieldHints
             )
         }
         let boundaries = try payload.inaccessibleFrameBoundaries.map { boundary in
@@ -928,6 +1064,8 @@ nonisolated struct SemanticPageJavaScriptSnapshot: Equatable, Sendable {
         let text: String
         let destinationURL: String?
         let isInteractive: Bool
+        /// Absent for everything that isn't a form control.
+        let fieldHints: AutofillFieldDescriptor?
     }
 
     private struct Boundary: Decodable {

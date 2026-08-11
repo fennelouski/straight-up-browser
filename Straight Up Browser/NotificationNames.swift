@@ -43,6 +43,14 @@ extension Notification.Name {
     static let browserToggleTranslation = Notification.Name("browserToggleTranslation")
     static let browserTranslateInSplit = Notification.Name("browserTranslateInSplit")
 
+    // Autofill focus signals from the page runtime, posted when a fillable field
+    // gains or loses focus (userInfo["signal"]: AutofillFocusSignal,
+    // userInfo["tabID"]: UUID). The ⌥⌘A master switch needs no notification —
+    // the menu item drives AutofillPreferences directly and ContentView shows the
+    // HUD by observing it, so every path (menu, sidebar, Settings) behaves alike.
+    static let browserAutofillFieldFocused = Notification.Name("browserAutofillFieldFocused")
+    static let browserAutofillDismissed = Notification.Name("browserAutofillDismissed")
+
     // Screenshot menu (macOS). Distinct from `browserScreenshot` below, which is
     // the CLI's own capture-to-a-response-file command.
     static let browserScreenshotVisible = Notification.Name("browserScreenshotVisible")
