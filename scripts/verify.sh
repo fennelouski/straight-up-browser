@@ -37,7 +37,6 @@ RUN_IOS_UI_TESTS="${RUN_IOS_UI_TESTS:-1}"
 RUN_TSAN="${RUN_TSAN:-1}"
 MIN_APP_COVERAGE_PERCENT="${MIN_APP_COVERAGE_PERCENT:-25}"
 
-./scripts/validate-ci.sh
 ./scripts/validate-release-policy.sh
 ./scripts/validate-security-policy.sh
 

@@ -181,7 +181,7 @@ Requirements:
 - Xcode 16 or later
 - Swift 6
 
-Run the same warning-free gates used by CI and releases:
+Run the warning-free gates used by releases:
 
 ```bash
 ./scripts/verify.sh
@@ -189,11 +189,11 @@ Run the same warning-free gates used by CI and releases:
 
 This runs the macOS unit suite, builds both apps in Release, verifies that the
 macOS executable is Apple Silicon-only (`arm64`), and builds the macOS UI-test
-target. On CI and in `scripts/release.sh`, it also executes the macOS and iPadOS
-UI suites. Set `RUN_UI_TESTS=1` locally on a Mac with Developer Mode/UI
-automation enabled to run the same executable UI gates. Swift and Clang warnings
-are treated as errors, Browser.app line coverage must remain at or above 25%,
-and CI failures retain `.xcresult` bundles for diagnosis.
+target. GitHub-hosted Actions are intentionally disabled; verification runs
+locally and `scripts/release.sh` repeats the gates before archiving. Set
+`RUN_UI_TESTS=1` locally on a Mac with Developer Mode/UI automation enabled to
+run the executable UI gates. Swift and Clang warnings are treated as errors,
+and Browser.app line coverage must remain at or above 25%.
 
 For a standalone release build:
 
@@ -228,9 +228,9 @@ To produce the signed, notarized DMG, run `./scripts/release.sh`. It runs
 
 Core navigation, sessions, cleanup, extension permissions, downloads, security
 state, accessibility, Library behavior, and WebKit integration have automated
-coverage. The shared `Browser`, `Browser iOS`, and `Browser UI` schemes are
-checked by `.github/workflows/ci.yml`; releases cannot archive until the same
-verification script passes.
+coverage. GitHub-hosted Actions are intentionally disabled. Run
+`scripts/verify.sh` locally before merging; releases cannot archive until that
+same verification script passes.
 
 ## License
 
