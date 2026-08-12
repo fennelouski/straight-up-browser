@@ -42,9 +42,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Has to land before the window's first layout pass — see the note on
-        // applyCornersAtLaunch for what happens if it doesn't.
+        // Has to land before the window's first layout pass — see the notes on
+        // hideTitleBar and applyCornersAtLaunch for what happens if it doesn't.
         if let window = NSApp.windows.first(where: { !($0 is NSPanel) && $0.contentView != nil }) {
+            WindowLayout.hideTitleBar(on: window)
             WindowLayout.applyCornersAtLaunch(to: window)
         }
         installURLHandler()

@@ -28,14 +28,7 @@ struct WindowChrome: NSViewRepresentable {
             super.viewDidMoveToWindow()
             guard let window else { return }
 
-            window.titleVisibility = .hidden
-            window.titlebarAppearsTransparent = true
-            window.styleMask.insert(.fullSizeContentView)
-            for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
-                window.standardWindowButton(button)?.isHidden = true
-            }
-            window.isMovableByWindowBackground = true
-            window.backgroundColor = .windowBackgroundColor
+            WindowLayout.hideTitleBar(on: window)
 
             // SwiftUI restores the saved frame after this runs, so claim the
             // launch position on the next turn of the run loop or it's lost.
@@ -136,6 +129,32 @@ enum WindowLayout {
             restoreFrames[id] = window.frame
             window.setFrame(target, display: true, animate: true)
         }
+    }
+
+    /// The default (square-corners-off) chrome hiding: keeps `.titled`
+    /// (removing it breaks dragging, focus routing, and fullscreen) but makes
+    /// the bar itself invisible and lets content draw under it.
+    ///
+    /// Called twice, on purpose: once from applicationDidFinishLaunching,
+    /// before the window's first layout pass, and again from WindowChrome's
+    /// viewDidMoveToWindow for windows that show up later (a second window
+    /// via ⌘N can't go through applicationDidFinishLaunching). The early call
+    /// is the one that matters — AppKit doesn't reliably re-layout an
+    /// already-presented window's content view just because styleMask /
+    /// titlebarAppearsTransparent change afterward, so a WindowChrome-only
+    /// application can hide the title text and buttons (pure AppKit toggles,
+    /// no layout dependency) while the content's frame stays short, leaving
+    /// window.backgroundColor showing through as a bare bar above it. Once
+    /// this runs before layout, WindowChrome's later call is a no-op repeat.
+    static func hideTitleBar(on window: NSWindow) {
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.styleMask.insert(.fullSizeContentView)
+        for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
+            window.standardWindowButton(button)?.isHidden = true
+        }
+        window.isMovableByWindowBackground = true
+        window.backgroundColor = .windowBackgroundColor
     }
 
     /// macOS rounds the corners of every titled window and offers no knob for
