@@ -38,6 +38,25 @@ A staged set of file changes beneath one user-approved security-scoped root. Pre
 **Scoped memory**:
 A user-reviewable durable fact or preference with provenance, sensitivity, expiry, a global/origin/task/conversation scope, and an independent persistent `BrowserSession` scope. It is not browsing history, a transcript cache, or a source of authority.
 
+**Saved Article**:
+A durable personal reading-list item that holds source attribution, filing and reading state, and references to the captured representations of one page.
+_Avoid_: TBR item, tab, bookmark
+
+**Article Document**:
+An immutable, versioned, bounded block representation extracted from a page, with stable block identities and a source digest rather than publisher HTML or scripts.
+
+**Rendition**:
+An immutable readable representation of one **Article Document**, either the preserved original or a derived version with length and transform provenance.
+_Avoid_: summary when the goal is to retain the article's voice and form
+
+**Newspaper**:
+A device-responsive presentation of **Saved Articles** arranged into **Sections**, not a durable or synced edition entity.
+_Avoid_: issue entity, tab collection
+
+**Section**:
+An editorial label that groups **Saved Articles**, derived from publisher metadata or chosen by the reader.
+_Avoid_: `TabGroup`, split group
+
 ## Relationships
 
 - A **Split** displays 2–4 **Tabs**; exactly one of them is the **Focused tab**
@@ -57,12 +76,24 @@ A user-reviewable durable fact or preference with provenance, sensitivity, expir
 - A Page mutation requires an exclusive lease; observation leases may be shared, and a Run releases leases before waiting for a human
 - Incognito Runs do not read or write durable memory, retain content-rich WebKit signals, or sync definitions by default
 - Agent-definition sync covers separately enabled schedules, nonsecret provider presets, and user-authored memory only; secrets, execution records, Page handles, Cowork bookmarks, and approvals stay local
+- A **Newspaper** presents zero or more **Saved Articles** grouped by **Section**; layout, navigation style, filter, and page position are local view state rather than synced entities
+- A **Saved Article** references one current **Article Document**, whose original **Rendition** is preserved alongside zero or more derived **Renditions**
+- Every **Rendition** belongs to exactly one **Article Document**; a shortened Rendition never replaces or mutates the original
+- A **Section** groups **Saved Articles**, never **Tabs**, and is not a `TabGroup` or **Split**
+- Opening a Saved Article's source creates or focuses an ordinary **Tab**; the Saved Article itself is neither a Tab nor a bookmark
+- Incognito pages do not create durable **Saved Articles** by default
 
 ## Example dialogue
 
 > **Dev:** "If a **Split** shows Mail and Calendar, which one does ⌘L edit?"
 > **Domain expert:** "The **Focused tab** — the omnibar always follows focus, and there's exactly one focused tab even when four are displayed."
+>
+> **Dev:** "Does moving a **Saved Article** into the Technology **Section** move its source **Tab** into a group?"
+> **Domain expert:** "No. The Section files the Saved Article inside the **Newspaper**; its source remains an ordinary Tab when opened."
 
 ## Flagged ambiguities
 
 - "active tab" historically meant the one visible tab; with splits it forks into **Displayed tabs** (visible) vs **Focused tab** (owns chrome). Code keeps `selectedTabId` = focused.
+- "reading list" and "TBR" refer to the collection of **Saved Articles**, not a second kind of Tab or bookmark.
+- "newspaper issue" refers to the current **Newspaper** projection; there is no durable edition object in the initial model.
+- "section" in reading flows means **Section**; it never means `TabGroup`.

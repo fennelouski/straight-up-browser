@@ -466,6 +466,8 @@ struct ContentView: View {
     @Query(sort: \BrowserTab.orderIndex) private var tabs: [BrowserTab]
     @Query(sort: \TabGroup.orderIndex) private var tabGroups: [TabGroup]
     @Query(sort: \Bookmark.createdAt, order: .reverse) private var allBookmarks: [Bookmark]
+    @Query(sort: \NewspaperArticle.addedAt, order: .reverse)
+    private var newspaperArticles: [NewspaperArticle]
     @Query(sort: \BrowserSession.createdAt) private var browserSessions: [BrowserSession]
 
     // Managers
@@ -713,6 +715,12 @@ struct ContentView: View {
         return bookmarkManager?.isBookmarked(currentURL) ?? false
     }
 
+    private var isCurrentPageInNewspaper: Bool {
+        guard let currentURL else { return false }
+        let key = NewspaperStore.sourceKey(for: currentURL)
+        return newspaperArticles.contains { $0.sourceKey == key }
+    }
+
     private var tabBarHeaderButtons: some View {
         HStack(spacing: 4) {
             Button(action: createNewTab) {
@@ -766,6 +774,23 @@ struct ContentView: View {
             .menuStyle(.borderlessButton)
             .help("Workspaces")
             .accessibilityLabel("Workspaces")
+
+            Menu {
+                Button("Open Newspaper") { openWindow(id: "newspaper") }
+                Button(
+                    isCurrentPageInNewspaper ? "Refresh Saved Article" : "Add Current Page",
+                    action: addCurrentPageToNewspaper
+                )
+                .disabled(activeTab?.url == nil || activeTab?.sessionKind == .incognito)
+            } label: {
+                Image(systemName: "newspaper")
+                    .font(.system(size: 12))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .help("Newspaper")
+            .accessibilityLabel("Newspaper")
 
             Menu {
                 Button("New Incognito Tab") {
@@ -921,6 +946,17 @@ struct ContentView: View {
                             }
                             Divider()
 
+                            let newspaperSourceKey = tab.url.map {
+                                NewspaperStore.sourceKey(for: $0)
+                            }
+                            let tabIsInNewspaper = newspaperSourceKey.map { key in
+                                newspaperArticles.contains { $0.sourceKey == key }
+                            } ?? false
+                            Button(
+                                tabIsInNewspaper ? "Refresh Saved Article" : "Add to Newspaper",
+                                action: { addTabToNewspaper(tab) }
+                            )
+                            .disabled(tab.url == nil || tab.sessionKind == .incognito)
                             Button("Share…", action: { shareTab(tab) }).disabled(tab.url == nil)
                             Button("Copy URL", action: { copyURL(of: tab) }).disabled(tab.url == nil)
                             Divider()
@@ -2404,6 +2440,16 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .browserToggleReader)) { _ in
             showReaderMode()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .browserAddToNewspaper)) { notification in
+            guard BrowserWindowCommandRouting.matches(
+                target: notification.object as AnyObject?,
+                recipient: webViewManager?.activeWebView?.window
+            ) else { return }
+            addCurrentPageToNewspaper()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .browserShowNewspaper)) { _ in
+            openWindow(id: "newspaper")
+        }
         .onChange(of: isLoading) { oldValue, newValue in
             if newValue {
                 // Page started loading: show the loading bar right away
@@ -2890,6 +2936,33 @@ struct ContentView: View {
                 alert.runModal()
             }
         }
+    }
+
+    private func addCurrentPageToNewspaper() {
+        guard let tab = activeTab else { return }
+        addTabToNewspaper(tab)
+    }
+
+    private func addTabToNewspaper(_ tab: Tab) {
+        guard tab.sessionKind != .incognito else {
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Newspaper Is Unavailable in Incognito")
+            alert.informativeText = String(localized: "Saving an article would persist its title, source, and readable text. Open it in a regular tab first.")
+            alert.runModal()
+            return
+        }
+        guard let url = tab.url,
+              url.scheme == "http" || url.scheme == "https",
+              let webView = webViewManager?.existingWebView(for: tab.id) else { return }
+
+        let store = NewspaperStore(modelContext: modelContext)
+        let result = store.enqueue(url: url, title: tab.title)
+        NewspaperCaptureCoordinator.capture(
+            result.article,
+            from: webView,
+            expectedURL: url,
+            store: store
+        )
     }
 
     private func presentImportBookmarksDialog() {

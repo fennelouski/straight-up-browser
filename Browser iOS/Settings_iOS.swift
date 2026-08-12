@@ -152,6 +152,14 @@ struct Settings_iOS: View {
                         .autocorrectionDisabled()
                 }
 
+                Section("Reading") {
+                    NavigationLink {
+                        NewspaperSettingsView()
+                    } label: {
+                        Label("Newspaper", systemImage: "newspaper")
+                    }
+                }
+
                 Section {
                     Toggle("⌥-click downloads the link", isOn: $optionClickDownloadEnabled)
                     if optionClickDownloadEnabled {

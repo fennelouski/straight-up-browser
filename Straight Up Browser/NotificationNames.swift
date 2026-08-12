@@ -10,6 +10,16 @@
 
 import Foundation
 
+/// App-menu commands are process-wide, while each browser window owns its own
+/// `ContentView`. Carrying the key window as the notification object and
+/// matching by identity prevents every observer from performing the command.
+enum BrowserWindowCommandRouting {
+    static func matches(target: AnyObject?, recipient: AnyObject?) -> Bool {
+        guard let target, let recipient else { return false }
+        return target === recipient
+    }
+}
+
 // Notification names
 extension Notification.Name {
     static let browserOpenURL = Notification.Name("browserOpenURL")
@@ -88,6 +98,8 @@ extension Notification.Name {
     static let browserAddBookmark = Notification.Name("browserAddBookmark")
     static let browserImportBookmarks = Notification.Name("browserImportBookmarks")
     static let browserShowHistory = Notification.Name("browserShowHistory")
+    static let browserShowNewspaper = Notification.Name("browserShowNewspaper")
+    static let browserAddToNewspaper = Notification.Name("browserAddToNewspaper")
     static let browserShowDownloads = Notification.Name("browserShowDownloads")
     static let browserToggleReader = Notification.Name("browserToggleReader")
 

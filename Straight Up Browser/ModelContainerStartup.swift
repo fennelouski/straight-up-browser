@@ -62,18 +62,20 @@ struct ModelContainerStartup {
         let launchConfiguration = isRunningUnderTests
             ? ephemeralConfiguration
             : persistentConfiguration
+        func makeContainer(configuration: ModelConfiguration) throws -> ModelContainer {
+            let container = try ModelContainer(
+                for: schema,
+                configurations: [configuration]
+            )
+            NewspaperStore(modelContext: container.mainContext).reconcileInterruptedWork()
+            return container
+        }
         return recover(
             persistent: {
-                try ModelContainer(
-                    for: schema,
-                    configurations: [launchConfiguration]
-                )
+                try makeContainer(configuration: launchConfiguration)
             },
             ephemeral: {
-                try ModelContainer(
-                    for: schema,
-                    configurations: [ephemeralConfiguration]
-                )
+                try makeContainer(configuration: ephemeralConfiguration)
             }
         )
     }

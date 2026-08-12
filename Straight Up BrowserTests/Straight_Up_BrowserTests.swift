@@ -661,11 +661,18 @@ struct SessionIsolationTests {
         #expect(BrowserSession.incognitoColor(for: id) == BrowserSession.incognitoColor(for: id))
     }
 
-    // Builds the real app schema (with the new BrowserSession model + Tab session
-    // fields) in memory to confirm it's valid and container tabs round-trip — a safe
-    // proxy for "the app still launches and migrates" without touching real data.
+    // Builds the real shared app schema in memory to confirm it's valid and
+    // container tabs round-trip — a safe proxy for "the app still launches and
+    // migrates" without touching real data.
     @Test func schemaBuildsAndPersistsContainerTabs() throws {
-        let schema = Schema([Tab.self, TabGroup.self, Bookmark.self, BrowserSession.self])
+        let schema = Schema([
+            Tab.self,
+            TabGroup.self,
+            Bookmark.self,
+            BrowserSession.self,
+            AutofillProfile.self,
+            NewspaperArticle.self
+        ])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [config])
         let ctx = ModelContext(container)
@@ -1713,14 +1720,16 @@ struct TabSyncDisclosureTests {
             "TabGroup",
             "Bookmark",
             "BrowserSession",
-            "AutofillProfile"
+            "AutofillProfile",
+            "NewspaperArticle"
         ])
         #expect(TabSync.syncedDataCategories == [
             .tabs,
             .tabGroups,
             .bookmarks,
             .browserSessions,
-            .autofillProfiles
+            .autofillProfiles,
+            .newspaper
         ])
     }
 

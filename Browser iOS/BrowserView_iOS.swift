@@ -65,6 +65,8 @@ struct BrowserView_iOS: View {
     @Query(sort: \TabGroup.orderIndex) private var tabGroups: [TabGroup]
     @Query(sort: \BrowserSession.createdAt) private var browserSessions: [BrowserSession]
     @Query(sort: \Bookmark.createdAt, order: .reverse) private var bookmarks: [Bookmark]
+    @Query(sort: \NewspaperArticle.addedAt, order: .reverse)
+    private var newspaperArticles: [NewspaperArticle]
 
     @StateObject private var tabManager = TabManager()
     @ObservedObject private var protectionStore = PageProtectionStore.shared
@@ -97,6 +99,7 @@ struct BrowserView_iOS: View {
     @State private var showGestureGuide = false
     @State private var showSettings = false
     @State private var showLibrary = false
+    @State private var showNewspaper = false
     @State private var showDownloads = false
     @State private var librarySection = BrowserLibrarySection.bookmarks
     @State private var downloadFailureMessage: String?
@@ -434,6 +437,12 @@ struct BrowserView_iOS: View {
         .sheet(item: $readerPresentation) { presentation in
             ReaderMode_iOS(article: presentation.article, onOpen: openFromLibrary)
         }
+        .fullScreenCover(isPresented: $showNewspaper) {
+            NewspaperView(
+                onOpenOriginal: openFromNewspaper,
+                onClose: { showNewspaper = false }
+            )
+        }
         .sheet(isPresented: $showLibrary) {
             BrowserLibrary_iOS(
                 bookmarks: bookmarks,
@@ -550,6 +559,7 @@ struct BrowserView_iOS: View {
             isLoading: isLoading,
             canReopenTab: !tabManager.closedTabs.isEmpty,
             isCurrentBookmarked: isCurrentBookmarked,
+            isCurrentInNewspaper: isCurrentInNewspaper,
             actions: browserControlActions
         )
     }
@@ -580,6 +590,7 @@ struct BrowserView_iOS: View {
             zoomOut: { zoom(by: 1 / 1.1) },
             actualSize: { setZoom(1) },
             readerMode: showReaderMode,
+            addToNewspaper: addCurrentPageToNewspaper,
             toggleTranslation: { pageTranslator.toggle(webView: webViewManager?.activeWebView) },
             translateInSplit: translateActiveInSplit,
             toggleBookmark: toggleBookmark,
@@ -595,6 +606,7 @@ struct BrowserView_iOS: View {
             },
             showBookmarks: { presentLibrary(.bookmarks) },
             showHistory: { presentLibrary(.history) },
+            showNewspaper: presentNewspaper,
             showDownloads: { showDownloads = true },
             newContainer: { newContainerName = ""; showNewContainer = true },
             convertToIncognito: convertActiveToIncognito,
@@ -957,6 +969,7 @@ struct BrowserView_iOS: View {
         showGestureGuide = false
         showSettings = false
         showLibrary = false
+        showNewspaper = false
         showDownloads = false
         showActivitySheet = false
         readerPresentation = nil
@@ -1066,6 +1079,26 @@ struct BrowserView_iOS: View {
                     ?? String(localized: "This page does not contain readable text.")
             }
         }
+    }
+
+    private func addCurrentPageToNewspaper() {
+        guard let tab = activeTab else { return }
+        guard tab.sessionKind != .incognito else {
+            pageActionError = String(localized: "Saving an article would persist its title, source, and readable text. Open it in a regular tab first.")
+            return
+        }
+        guard let url = tab.url,
+              url.scheme == "http" || url.scheme == "https",
+              let webView = webViewManager?.existingWebView(for: tab.id) else { return }
+
+        let store = NewspaperStore(modelContext: modelContext)
+        let result = store.enqueue(url: url, title: tab.title)
+        NewspaperCaptureCoordinator.capture(
+            result.article,
+            from: webView,
+            expectedURL: url,
+            store: store
+        )
     }
 
     private func printActivePage() {
@@ -1183,6 +1216,12 @@ struct BrowserView_iOS: View {
         return bookmarks.contains { $0.url.absoluteString == url.absoluteString }
     }
 
+    private var isCurrentInNewspaper: Bool {
+        guard let url = activeTab?.url else { return false }
+        let key = NewspaperStore.sourceKey(for: url)
+        return newspaperArticles.contains { $0.sourceKey == key }
+    }
+
     private func toggleBookmark() {
         guard let tab = activeTab, let url = tab.url, let bm = bookmarkManager else { return }
         if let existing = bookmarks.first(where: {
@@ -1198,6 +1237,17 @@ struct BrowserView_iOS: View {
         librarySection = section
         showSidebar = false
         showLibrary = true
+    }
+
+    private func presentNewspaper() {
+        showSidebar = false
+        showLibrary = false
+        showNewspaper = true
+    }
+
+    private func openFromNewspaper(_ url: URL) {
+        showNewspaper = false
+        openFromLibrary(url)
     }
 
     private func openFromLibrary(_ url: URL) {

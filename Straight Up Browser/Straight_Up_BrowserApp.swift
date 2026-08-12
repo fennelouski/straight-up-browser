@@ -333,6 +333,20 @@ struct Straight_Up_BrowserApp: App {
         .windowResizability(.contentMinSize)
         .defaultSize(width: 700, height: 540)
 
+        Window("Newspaper", id: "newspaper") {
+            if let container = modelStartup.container {
+                NewspaperWindowScene().modelContainer(container)
+            } else {
+                ContentUnavailableView(
+                    "Newspaper Unavailable",
+                    systemImage: "externaldrive.badge.xmark"
+                )
+            }
+        }
+        .windowStyle(.automatic)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 1120, height: 780)
+
         Window("Scheduled Agent Tasks", id: "agent-tasks") {
             BrowserAgentTasksView()
         }
@@ -389,7 +403,7 @@ struct Straight_Up_BrowserApp: App {
                     // those, close that window instead of a browser tab underneath it.
                     let key = NSApp.keyWindow
                     if let id = key?.identifier?.rawValue,
-                       ["settings", "downloads", "agent-tasks", "agent-integrations", "agent-audit", "help"].contains(where: id.contains) {
+                       ["settings", "downloads", "newspaper", "agent-tasks", "agent-integrations", "agent-audit", "help"].contains(where: id.contains) {
                         key?.performClose(nil)
                     } else {
                         NotificationCenter.default.post(name: .browserCloseTab, object: nil)
@@ -584,6 +598,20 @@ struct Straight_Up_BrowserApp: App {
 
             // Bookmarks menu commands
             CommandGroup(after: .textEditing) {
+                Button("Open Newspaper") {
+                    openWindow(id: "newspaper")
+                }
+
+                Button("Add to Newspaper") {
+                    guard let keyWindow = NSApp.keyWindow else { return }
+                    NotificationCenter.default.post(
+                        name: .browserAddToNewspaper,
+                        object: keyWindow
+                    )
+                }
+
+                Divider()
+
                 Button("Show Bookmarks") {
                     NotificationCenter.default.post(name: .browserShowBookmarks, object: nil)
                 }
