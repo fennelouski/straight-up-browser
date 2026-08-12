@@ -33,6 +33,14 @@ Golden fixtures should be human-readable JSON under a dedicated test-fixture
 directory. Changing a golden file requires a compatibility note in the pull
 request.
 
+Load them with `TestFixture.data(_:)`, which reads from the test bundle — the
+synchronized test folder copies `Straight Up BrowserTests/Fixtures/` in
+automatically. Never read a fixture from the source tree via `#filePath`: the
+test host is sandboxed without a Documents entitlement, so a checkout under
+`~/Documents` makes the read wait on a TCC prompt it cannot display. The test
+then dies at its time limit as "Time limit was exceeded", which reads as a hung
+test and points nowhere near the real cause.
+
 ### Executor integration tests
 
 Use existing browser managers with local deterministic pages:

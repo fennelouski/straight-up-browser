@@ -209,11 +209,7 @@ struct AgentLegacyImporterTests {
     }
 
     private func fixture(_ name: String) throws -> Data {
-        let url = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .appendingPathComponent("Fixtures")
-            .appendingPathComponent(name)
-        return try Data(contentsOf: url)
+        try TestFixture.data(name)
     }
 
     private func temporaryDirectory() -> URL {

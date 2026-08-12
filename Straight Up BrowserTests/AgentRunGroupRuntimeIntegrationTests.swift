@@ -623,7 +623,13 @@ struct BrowserAgentRunGroupEndToEndTests {
                 )
             }
         )
-        for _ in 0..<300 where agent.pendingApproval == nil {
+        // A deadline rather than a fixed 300 × 10ms budget. Three seconds is
+        // plenty when this test runs alone, and not enough under a loaded full
+        // suite or TSan — which is exactly when it was observed failing here on
+        // `pendingApproval` still being nil. Matches waitForAgent's 20s wait.
+        let approvalClock = ContinuousClock()
+        let approvalDeadline = approvalClock.now.advanced(by: .seconds(20))
+        while agent.pendingApproval == nil, approvalClock.now < approvalDeadline {
             try? await Task.sleep(for: .milliseconds(10))
         }
         _ = try #require(

@@ -110,10 +110,7 @@ struct AgentToolCatalogTests {
     }
 
     @Test func checkedInMCPGoldenMatchesCanonicalRenderer() throws {
-        let fixtureURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .appendingPathComponent("Fixtures/agent-tool-catalog-mcp.json")
-        let expected = try Data(contentsOf: fixtureURL)
+        let expected = try TestFixture.data("agent-tool-catalog-mcp.json")
         let rendered = try AgentToolCatalog.canonical.mcpSnapshotData()
         #expect(rendered == expected)
     }
