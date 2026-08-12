@@ -1100,11 +1100,11 @@ struct AppearanceSettingsView: View {
                 Picker("Position", selection: $launchLayoutPosition) {
                     ForEach(WindowLayout.positions, id: \.id) { Text($0.label).tag($0.id) }
                 }
-                Toggle("Square corners (takes effect on the next launch)", isOn: $squareWindowCorners)
+                Toggle("Square corners", isOn: $squareWindowCorners)
                 SettingCaptionRow(
                     caption: "Full screen height, and as wide and as far across as you like.",
                     title: "Window",
-                    explanation: "The window always fills the screen's height; the width is either the whole screen or a multiple of that height, which keeps the same shape on any display. Position slides it anywhere between flush left and flush right. ⇧⌘F snaps the window to these settings and back again, whether or not it launches there. Square corners work by dropping the window's title bar — the chrome looks the same, but macOS only rounds corners for windows that have one. It can only be swapped as the window is built, so it waits for the next launch, and while it's on there's no title bar for full screen to use, so ⌃⌘F does nothing.",
+                    explanation: "The window always fills the screen's height; the width is either the whole screen or a multiple of that height, which keeps the same shape on any display. Position slides it anywhere between flush left and flush right. ⇧⌘F snaps the window to these settings and back again, whether or not it launches there. The window has no title bar at all — macOS only rounds corners for windows that have one, so this app rounds its own edges to match by default; Square corners turns that off, and takes effect immediately. Since there's no title bar, native full screen isn't available, so ⌃⌘F does nothing — ⇧⌘F is the replacement.",
                     value: $launchLayoutPosition
                 ) { WindowLayoutDemo(position: $0, width: launchLayoutWidth, square: squareWindowCorners) }
             } header: {

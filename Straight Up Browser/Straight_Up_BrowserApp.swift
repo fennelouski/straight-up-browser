@@ -42,11 +42,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Has to land before the window's first layout pass — see the notes on
-        // hideTitleBar and applyCornersAtLaunch for what happens if it doesn't.
+        // Has to land before the window's first layout pass — see the note on
+        // hideTitleBar for what happens if it doesn't.
         if let window = NSApp.windows.first(where: { !($0 is NSPanel) && $0.contentView != nil }) {
             WindowLayout.hideTitleBar(on: window)
-            WindowLayout.applyCornersAtLaunch(to: window)
         }
         installURLHandler()
         // Test hosts cannot interact with this modal before the app finishes
@@ -530,8 +529,12 @@ struct Straight_Up_BrowserApp: App {
                 }
                 .keyboardShortcut(sc(.windowLayout))
 
+                // No window has a title bar, so native full screen isn't available —
+                // this shortcut now does the same thing as "Snap Window to Size".
                 Button("Toggle Full Screen") {
-                    (NSApp.keyWindow ?? NSApp.mainWindow)?.toggleFullScreen(nil)
+                    if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+                        WindowLayout.toggle(window)
+                    }
                 }
                 .keyboardShortcut(sc(.fullScreen))
 

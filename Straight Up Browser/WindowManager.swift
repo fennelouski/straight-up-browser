@@ -8,8 +8,8 @@
 import SwiftUI
 import AppKit
 
-// The single place window chrome is configured. Keeps .titled (removing it
-// breaks dragging, focus routing, and fullscreen) and hides everything else.
+// The single place window chrome is configured. Drops .titled entirely — see
+// WindowLayout.hideTitleBar for why keeping it isn't an option here.
 //
 // This resolves the window from the view hierarchy rather than guessing at
 // NSApplication.keyWindow / .windows.first, which is what made the traffic
@@ -131,52 +131,36 @@ enum WindowLayout {
         }
     }
 
-    /// The default (square-corners-off) chrome hiding: keeps `.titled`
-    /// (removing it breaks dragging, focus routing, and fullscreen) but makes
-    /// the bar itself invisible and lets content draw under it.
-    ///
-    /// Called twice, on purpose: once from applicationDidFinishLaunching,
-    /// before the window's first layout pass, and again from WindowChrome's
-    /// viewDidMoveToWindow for windows that show up later (a second window
-    /// via ⌘N can't go through applicationDidFinishLaunching). The early call
-    /// is the one that matters — AppKit doesn't reliably re-layout an
-    /// already-presented window's content view just because styleMask /
-    /// titlebarAppearsTransparent change afterward, so a WindowChrome-only
-    /// application can hide the title text and buttons (pure AppKit toggles,
-    /// no layout dependency) while the content's frame stays short, leaving
-    /// window.backgroundColor showing through as a bare bar above it. Once
-    /// this runs before layout, WindowChrome's later call is a no-op repeat.
-    static func hideTitleBar(on window: NSWindow) {
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.styleMask.insert(.fullSizeContentView)
-        for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
-            window.standardWindowButton(button)?.isHidden = true
-        }
-        window.isMovableByWindowBackground = true
-        window.backgroundColor = .windowBackgroundColor
-    }
-
-    /// macOS rounds the corners of every titled window and offers no knob for
-    /// it, so square corners mean dropping `.titled`. Two consequences, both
-    /// load-bearing:
+    /// Removes `.titled` entirely, unconditionally — confirmed empirically
+    /// (live debugger inspection of a running window) that this is the only
+    /// thing that works: `NSWindow.contentLayoutRect` keeps reserving
+    /// title-bar height for any *titled* window on this OS even with
+    /// `.fullSizeContentView` inserted and `titlebarAppearsTransparent` set,
+    /// so the standard "hidden title bar" recipe (keep .titled, just make it
+    /// transparent) leaves a bare strip of window.backgroundColor where the
+    /// bar would be. Neither reordering when that recipe runs nor forcing a
+    /// style-mask round-trip (remove/reinsert .titled) budges it — only
+    /// actually dropping .titled does. Two consequences, both load-bearing:
     ///
     /// * It has to happen before the window's first layout pass. Removing
     ///   `.titled` later swaps the theme frame out from under a laid-out
     ///   SwiftUI window and AppKit crashes in `_layoutSubtreeWithOldSize:` on
-    ///   the next display cycle — hence "takes effect on the next launch"
-    ///   rather than a live toggle.
+    ///   the next display cycle. Called twice on purpose: once from
+    ///   applicationDidFinishLaunching (before that first layout, for window
+    ///   #1 at cold launch) and again from WindowChrome's viewDidMoveToWindow
+    ///   (for any window that shows up later, e.g. a second window via ⌘N,
+    ///   which can't go through applicationDidFinishLaunching). The guard
+    ///   below makes the second call a no-op once the first has already run.
     /// * A window without a title bar won't become key, so clicking away would
     ///   leave the page permanently untypable. `canBecomeKey` can only be
     ///   answered by the class, and this is SwiftUI's own window class, so
-    ///   patch the method on it. Every other window of that class is titled and
-    ///   already answers true, so nothing else changes.
+    ///   patch the method on it. Every other window of that class is titled
+    ///   and already answers true, so nothing else changes.
     ///
-    /// Full screen goes with the title bar too, which is why ⇧⌘F snaps the
-    /// window to a size instead of going full screen.
-    static func applyCornersAtLaunch(to window: NSWindow) {
-        guard UserDefaults.standard.bool(forKey: Key.squareCorners),
-              window.styleMask.contains(.titled) else { return }
+    /// Costs native full screen (a window without `.titled` can't enter it) —
+    /// ⇧⌘F ("Snap Window to Size") is the replacement; see WindowLayout.toggle.
+    static func hideTitleBar(on window: NSWindow) {
+        guard window.styleMask.contains(.titled) else { return }
 
         if let cls: AnyClass = object_getClass(window) {
             let alwaysTrue: @convention(block) (AnyObject) -> Bool = { _ in true }
@@ -187,6 +171,8 @@ enum WindowLayout {
         window.styleMask.remove(.titled)
         window.styleMask.insert(.fullSizeContentView)
         window.isMovableByWindowBackground = true
+        window.titleVisibility = .hidden
+        window.backgroundColor = .windowBackgroundColor
     }
 }
 
