@@ -8,38 +8,141 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct TabDropDelegate: DropDelegate {
+extension UTType {
+    static let straightUpBrowserTab = UTType(exportedAs: "com.nathanfennel.straight-up-browser.tab")
+}
+
+func tabDragItemProvider(for tabId: UUID) -> NSItemProvider {
+    let provider = NSItemProvider()
+    let data = Data(tabId.uuidString.utf8)
+    provider.registerDataRepresentation(
+        forTypeIdentifier: UTType.straightUpBrowserTab.identifier,
+        visibility: .ownProcess
+    ) { completion in
+        completion(data, nil)
+        return nil
+    }
+    return provider
+}
+
+private struct AutomaticLinkMitosisModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let cue: AutomaticLinkBirthCue?
     let tabId: UUID
-    let onReorder: ((UUID, UUID) -> Void)?
 
+    @State private var sourceCompressed = false
+    @State private var childPresented = true
+    @State private var glowVisible = false
 
-    func performDrop(info: DropInfo) -> Bool {
-        Logger.log("TabDropDelegate performDrop called for tabId: \(tabId)", type: "TabRowView")
-        guard let itemProvider = info.itemProviders(for: [UTType.text]).first else {
-            Logger.log("No text item provider found", type: "TabRowView")
-            return false
+    private enum Role { case source, child }
+
+    private var role: Role? {
+        guard let cue else { return nil }
+        if cue.sourceTabId == tabId { return .source }
+        if cue.childTabId == tabId { return .child }
+        return nil
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(
+                x: sourceCompressed ? 0.96 : (childPresented ? 1 : 0.52),
+                y: sourceCompressed ? 1.04 : (childPresented ? 1 : 0.88),
+                anchor: .leading
+            )
+            .offset(x: role == .child && !childPresented ? -14 : 0)
+            .opacity(role == .child && !childPresented ? 0.3 : 1)
+            .overlay {
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(Color.accentColor.opacity(glowVisible ? 0.5 : 0), lineWidth: 1.5)
+                    .allowsHitTesting(false)
+            }
+            .onAppear { play() }
+            .onChange(of: cue?.token) { _, _ in play() }
+    }
+
+    private func play() {
+        guard !reduceMotion, let role else {
+            sourceCompressed = false
+            childPresented = true
+            glowVisible = false
+            return
         }
 
-        itemProvider.loadObject(ofClass: NSString.self) { (string, error) in
-            let draggedTabIdString = string as? String
+        switch role {
+        case .source:
+            withAnimation(.easeOut(duration: 0.11)) {
+                sourceCompressed = true
+                glowVisible = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.11) {
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.58)) {
+                    sourceCompressed = false
+                }
+            }
+        case .child:
+            childPresented = false
             DispatchQueue.main.async {
-                if let draggedTabIdString = draggedTabIdString,
-                   let draggedTabId = UUID(uuidString: draggedTabIdString) {
-                    Logger.log("Dropped tab \(draggedTabId) onto tab \(self.tabId)", type: "TabRowView")
-                    if draggedTabId != self.tabId {
-                        // Call the reorder function with source and target tab IDs
-                        self.onReorder?(draggedTabId, self.tabId)
-                    }
-                } else {
-                    Logger.log("Failed to parse dragged tab ID: \(draggedTabIdString ?? "nil")", type: "TabRowView")
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.62)) {
+                    childPresented = true
+                    glowVisible = true
                 }
             }
         }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+            withAnimation(.easeOut(duration: 0.2)) { glowVisible = false }
+        }
+    }
+}
+
+extension View {
+    func automaticLinkMitosis(cue: AutomaticLinkBirthCue?, tabId: UUID) -> some View {
+        modifier(AutomaticLinkMitosisModifier(cue: cue, tabId: tabId))
+    }
+}
+
+/// The row contracts, softens, and vanishes around its favicon instead of
+/// silently closing. Used by Back-to-source and ordinary sidebar closes alike.
+private struct TabPoofModifier: ViewModifier {
+    let progress: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(progress, anchor: .leading)
+            .opacity(progress)
+            .blur(radius: (1 - progress) * 7)
+            .rotationEffect(.degrees(Double(1 - progress) * -3), anchor: .leading)
+    }
+}
+
+extension AnyTransition {
+    static var tabPoof: AnyTransition {
+        .modifier(
+            active: TabPoofModifier(progress: 0.08),
+            identity: TabPoofModifier(progress: 1)
+        )
+    }
+}
+
+struct TabDropDelegate: DropDelegate {
+    let tabId: UUID
+    let draggedTabId: UUID?
+    let onReorder: ((UUID, UUID) -> Void)?
+    let onDropFinished: (() -> Void)?
+
+    func performDrop(info: DropInfo) -> Bool {
+        Logger.log("TabDropDelegate performDrop called for tabId: \(tabId)", type: "TabRowView")
+        // Reordering already happened as rows were crossed. Repeating the move
+        // here would reverse the final hover move, so drop only commits/clears.
+        onDropFinished?()
         return true
     }
 
     func dropEntered(info: DropInfo) {
-        // Could add visual feedback here if desired
+        guard let draggedTabId else { return }
+        onReorder?(draggedTabId, tabId)
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
@@ -57,15 +160,23 @@ struct TabRowView: View {
     let tabBarWidth: CGFloat
     let onSelect: () -> Void
     let onReorder: ((UUID, UUID) -> Void)? // sourceTabId, targetTabId
+    var onDragBegan: ((UUID) -> Void)? = nil
+    var onDropFinished: (() -> Void)? = nil
+    var draggedTabId: UUID? = nil
+    var dropTargetTabId: UUID? = nil
     var loadingProgress: Double? = nil // non-nil draws a progress ring around the favicon
     var downloads: [ActiveDownload] = [] // concentric, independently colored transfer rings
     var sessionColor: Color? = nil      // container/incognito session tint; nil = normal tab
     var isIncognito: Bool = false
     var isDisplayedInSplit: Bool = false // visible as a split pane (dimmer highlight + glyph)
+    var automaticLinkBirthCue: AutomaticLinkBirthCue? = nil
 
     private var isSelected: Bool {
         selectedTabId == tab.id
     }
+
+    private var isBeingDragged: Bool { draggedTabId == tab.id }
+    private var isDropTarget: Bool { draggedTabId != nil && dropTargetTabId == tab.id && !isBeingDragged }
 
     // Focused tab gets the full highlight; other displayed split members a dimmer one.
     private var rowHighlight: Color? {
@@ -229,13 +340,38 @@ struct TabRowView: View {
                     .padding(.vertical, 3)
             }
         }
+        .overlay {
+            if isDropTarget {
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(accent.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                    .padding(.vertical, 1)
+                    .allowsHitTesting(false)
+            }
+        }
+        .scaleEffect(isBeingDragged ? 1.035 : 1)
+        .opacity(isBeingDragged ? 0.68 : 1)
+        .shadow(color: .black.opacity(isBeingDragged ? 0.18 : 0), radius: 5, y: 2)
+        .zIndex(isBeingDragged ? 2 : (isDropTarget ? 1 : 0))
+        .animation(reduceMotion ? nil : .spring(response: 0.26, dampingFraction: 0.7),
+                   value: isBeingDragged)
+        .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.74),
+                   value: isDropTarget)
         .onDrag {
             Logger.log("TabRowView onDrag called for tab: \(tab.id)", type: "TabRowView")
-            // Provide the tab ID as the drag item
-            return NSItemProvider(object: tab.id.uuidString as NSString)
+            onDragBegan?(tab.id)
+            return tabDragItemProvider(for: tab.id)
         }
-        .onDrop(of: [UTType.text], delegate: TabDropDelegate(tabId: tab.id, onReorder: onReorder))
+        .onDrop(
+            of: [.straightUpBrowserTab],
+            delegate: TabDropDelegate(
+                tabId: tab.id,
+                draggedTabId: draggedTabId,
+                onReorder: onReorder,
+                onDropFinished: onDropFinished
+            )
+        )
         .contentShape(Rectangle()) // Make the entire area droppable
+        .automaticLinkMitosis(cue: automaticLinkBirthCue, tabId: tab.id)
         // The full action menu lives in ContentView (it needs webViewManager,
         // tabManager, and sibling tabs) — a second .contextMenu here would
         // shadow it, so this row stays menu-free.

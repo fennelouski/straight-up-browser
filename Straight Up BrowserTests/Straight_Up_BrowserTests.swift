@@ -983,6 +983,110 @@ struct ShortcutTests {
 // Split view is window view state on TabManager (docs/adr/0001): ordered member
 // ids + focused id, no SwiftData entity. Serialized: splitTabIds persists to
 // shared UserDefaults on every mutation.
+struct TabReorderingTests {
+    private func makeTabs() -> [Browser.Tab] {
+        (0..<3).map { index in
+            let tab = Browser.Tab()
+            tab.orderIndex = index
+            return tab
+        }
+    }
+
+    @Test func crossingTheNextRowMovesForwardImmediately() {
+        let manager = TabManager(terminateApplication: {})
+        let tabs = makeTabs()
+
+        manager.reorderTabs(sourceTabId: tabs[0].id, targetTabId: tabs[1].id, tabs: tabs)
+
+        #expect(tabs.sorted { $0.orderIndex < $1.orderIndex }.map(\.id)
+            == [tabs[1].id, tabs[0].id, tabs[2].id])
+    }
+
+    @Test func crossingAnEarlierRowMovesBackwardImmediately() {
+        let manager = TabManager(terminateApplication: {})
+        let tabs = makeTabs()
+
+        manager.reorderTabs(sourceTabId: tabs[2].id, targetTabId: tabs[0].id, tabs: tabs)
+
+        #expect(tabs.sorted { $0.orderIndex < $1.orderIndex }.map(\.id)
+            == [tabs[2].id, tabs[0].id, tabs[1].id])
+    }
+}
+
+@Suite(.serialized)
+struct AutomaticallyOpenedLinkTests {
+    private let defaults = UserDefaults.standard
+
+    private func resetSettings() {
+        defaults.removeObject(forKey: SettingsManager.automaticLinkMitosisKey)
+        defaults.removeObject(forKey: SettingsManager.automaticLinkSplitKey)
+        defaults.removeObject(forKey: "splitTabIds")
+    }
+
+    private func makePair() -> (TabManager, Browser.Tab, Browser.Tab) {
+        let manager = TabManager(terminateApplication: {})
+        let source = Browser.Tab(title: "Source", url: URL(string: "https://source.example"))
+        let child = Browser.Tab(title: "Child", url: URL(string: "https://child.example"))
+        source.orderIndex = 0
+        child.orderIndex = 1
+        manager.selectedTabId = source.id
+        return (manager, source, child)
+    }
+
+    @Test func settingsDefaultToMitosisOnAndSplitOff() {
+        resetSettings()
+        defer { resetSettings() }
+
+        #expect(SettingsManager.shared.automaticLinkMitosisEnabled)
+        #expect(!SettingsManager.shared.automaticLinkSplitEnabled)
+    }
+
+    @Test func defaultPresentationFocusesChildAndCreatesBirthCue() {
+        resetSettings()
+        defer { resetSettings() }
+        let (manager, source, child) = makePair()
+
+        manager.presentAutomaticallyOpenedLink(child, from: source.id, tabs: [source, child])
+
+        #expect(child.openerId == source.id)
+        #expect(manager.selectedTabId == child.id)
+        #expect(manager.splitTabIds.isEmpty)
+        #expect(manager.automaticLinkBirthCue?.sourceTabId == source.id)
+        #expect(manager.automaticLinkBirthCue?.childTabId == child.id)
+    }
+
+    @Test func splitSettingKeepsSourceAndChildVisible() {
+        resetSettings()
+        defaults.set(false, forKey: SettingsManager.automaticLinkMitosisKey)
+        defaults.set(true, forKey: SettingsManager.automaticLinkSplitKey)
+        defer { resetSettings() }
+        let (manager, source, child) = makePair()
+
+        manager.presentAutomaticallyOpenedLink(child, from: source.id, tabs: [source, child])
+
+        #expect(manager.splitTabIds == [source.id, child.id])
+        #expect(manager.selectedTabId == child.id)
+        #expect(manager.automaticLinkBirthCue == nil)
+    }
+
+    @Test func backClosesRegisteredChildButNotAnOrdinaryOpenedTab() {
+        resetSettings()
+        defaults.set(false, forKey: SettingsManager.automaticLinkMitosisKey)
+        defer { resetSettings() }
+        let (manager, source, child) = makePair()
+        manager.presentAutomaticallyOpenedLink(child, from: source.id, tabs: [source, child])
+
+        #expect(manager.closeAutomaticallyOpenedLinkOnBack(tabs: [source, child]))
+        #expect(manager.selectedTabId == source.id)
+        #expect(manager.closedTabs.last?.url == child.url)
+
+        let ordinary = Browser.Tab(title: "Ordinary", url: URL(string: "https://ordinary.example"))
+        ordinary.openerId = source.id
+        manager.selectedTabId = ordinary.id
+        #expect(!manager.closeAutomaticallyOpenedLinkOnBack(tabs: [source, ordinary]))
+    }
+}
+
 @Suite(.serialized)
 struct SplitViewTests {
 

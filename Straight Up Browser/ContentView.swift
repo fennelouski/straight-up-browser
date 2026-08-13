@@ -77,14 +77,23 @@ private struct FloatingDownloadRings: View {
 }
 
 private struct FloatingFaviconItem: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let tab: BrowserTab
     let isSelected: Bool
     let isInSplit: Bool
     let downloads: [ActiveDownload]
     let onSelect: () -> Void
     let onReorder: ((UUID, UUID) -> Void)?
+    let onDragBegan: (UUID) -> Void
+    let onDropFinished: () -> Void
+    let draggedTabId: UUID?
+    let dropTargetTabId: UUID?
+    let automaticLinkBirthCue: AutomaticLinkBirthCue?
 
     private let cell: CGFloat = 26
+    private var isBeingDragged: Bool { draggedTabId == tab.id }
+    private var isDropTarget: Bool { draggedTabId != nil && dropTargetTabId == tab.id && !isBeingDragged }
 
     var body: some View {
         Button(action: onSelect) {
@@ -104,10 +113,35 @@ private struct FloatingFaviconItem: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .onDrag {
             Logger.log("FloatingFaviconOverlay onDrag called for tab: \(tab.id)", type: "ContentView")
-            return NSItemProvider(object: tab.id.uuidString as NSString)
+            onDragBegan(tab.id)
+            return tabDragItemProvider(for: tab.id)
         }
-        .onDrop(of: [UTType.text], delegate: TabDropDelegate(tabId: tab.id, onReorder: onReorder))
+        .onDrop(
+            of: [.straightUpBrowserTab],
+            delegate: TabDropDelegate(
+                tabId: tab.id,
+                draggedTabId: draggedTabId,
+                onReorder: onReorder,
+                onDropFinished: onDropFinished
+            )
+        )
         .contentShape(Rectangle())
+        .overlay {
+            if isDropTarget {
+                RoundedRectangle(cornerRadius: ringRadius)
+                    .stroke(Color.accentColor.opacity(0.75), style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
+                    .frame(width: cell + 4, height: cell + 4)
+                    .allowsHitTesting(false)
+            }
+        }
+        .scaleEffect(isBeingDragged ? 1.12 : 1)
+        .opacity(isBeingDragged ? 0.62 : 1)
+        .zIndex(isBeingDragged ? 2 : (isDropTarget ? 1 : 0))
+        .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.68),
+                   value: isBeingDragged)
+        .animation(reduceMotion ? nil : .spring(response: 0.2, dampingFraction: 0.74),
+                   value: isDropTarget)
+        .automaticLinkMitosis(cue: automaticLinkBirthCue, tabId: tab.id)
     }
 
     private var ringRadius: CGFloat {
@@ -171,16 +205,22 @@ private struct FloatingFaviconItem: View {
 
 // Floating favicon overlay for compact mode
 struct FloatingFaviconOverlay: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let tabs: [BrowserTab]
     let selectedTabId: UUID?
     let onTabSelect: (UUID) -> Void
     let onReorder: ((UUID, UUID) -> Void)?
     let tabManager: TabManager?
     let downloads: [ActiveDownload]
+    let draggedTabId: UUID?
+    let dropTargetTabId: UUID?
+    let onDragBegan: (UUID) -> Void
+    let onDropFinished: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(tabs.enumerated()), id: \.0) { (_: Int, tab: BrowserTab) in
+            ForEach(tabs) { tab in
                 let isSelected = (tabManager?.selectedTabId ?? selectedTabId) == tab.id
                 let isInSplit = tabManager?.splitTabIds.contains(tab.id) ?? false
                 let tabDownloads = downloads.filter { $0.tabId == tab.id }
@@ -191,13 +231,26 @@ struct FloatingFaviconOverlay: View {
                     isInSplit: isInSplit,
                     downloads: tabDownloads,
                     onSelect: { onTabSelect(tab.id) },
-                    onReorder: onReorder
+                    onReorder: onReorder,
+                    onDragBegan: onDragBegan,
+                    onDropFinished: onDropFinished,
+                    draggedTabId: draggedTabId,
+                    dropTargetTabId: dropTargetTabId,
+                    automaticLinkBirthCue: tabManager?.automaticLinkBirthCue
                 )
+                .transition(.asymmetric(
+                    insertion: .move(edge: .leading).combined(with: .opacity),
+                    removal: .tabPoof
+                ))
             }
         }
         .padding(.top, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.leading, 3)
+        .animation(
+            reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.8),
+            value: tabs.map(\.id)
+        )
     }
 }
 
@@ -521,6 +574,10 @@ struct ContentView: View {
     // Force view updates when tab selection changes
     @State private var tabSelectionRefreshTrigger = UUID()
     @State private var tabTitleDisplayRefreshTrigger = UUID()
+    @State private var sidebarDraggedTabId: UUID?
+    @State private var sidebarDropTargetTabId: UUID?
+    @State private var sidebarLastCrossedTabId: UUID?
+    @State private var sidebarDragMonitorTask: Task<Void, Never>?
 
     // Progress Bar State
     @State private var showProgressBar = false
@@ -685,6 +742,69 @@ struct ContentView: View {
 
     private var visibleTabOrder: [BrowserTab] {
         groupedTabs.flatMap(\.tabs)
+    }
+
+    private func beginSidebarTabDrag(_ tabId: UUID) {
+        sidebarDragMonitorTask?.cancel()
+        sidebarDraggedTabId = tabId
+        sidebarDropTargetTabId = nil
+        sidebarLastCrossedTabId = tabId
+
+        // SwiftUI exposes drag start/drop but no cancellation callback. Polling
+        // the primary button prevents a cancelled drag outside the sidebar from
+        // leaving the source row translucent indefinitely.
+        sidebarDragMonitorTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(80))
+                guard !Task.isCancelled else { return }
+                if NSEvent.pressedMouseButtons & 1 == 0 {
+                    finishSidebarTabDrag()
+                    return
+                }
+            }
+        }
+    }
+
+    private func hoverSidebarTab(_ targetTabId: UUID, dragging sourceTabId: UUID) {
+        guard sidebarDraggedTabId == sourceTabId else { return }
+
+        if sourceTabId == targetTabId {
+            sidebarDropTargetTabId = nil
+            sidebarLastCrossedTabId = sourceTabId
+            return
+        }
+
+        // Reordering across a group boundary would appear to do nothing because
+        // group membership determines the section. Keep this gesture scoped to
+        // the section the drag began in; moving groups remains a separate action.
+        guard let source = allTabs.first(where: { $0.id == sourceTabId }),
+              let target = allTabs.first(where: { $0.id == targetTabId }),
+              source.groupId == target.groupId else {
+            sidebarDropTargetTabId = nil
+            return
+        }
+
+        sidebarDropTargetTabId = targetTabId
+        guard sidebarLastCrossedTabId != targetTabId else { return }
+        sidebarLastCrossedTabId = targetTabId
+
+        withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7)) {
+            tabManager.reorderTabs(
+                sourceTabId: sourceTabId,
+                targetTabId: targetTabId,
+                tabs: tabBarWidth <= 30 ? allTabs : visibleTabOrder
+            )
+        }
+    }
+
+    private func finishSidebarTabDrag() {
+        sidebarDragMonitorTask?.cancel()
+        sidebarDragMonitorTask = nil
+        withAnimation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.78)) {
+            sidebarDraggedTabId = nil
+            sidebarDropTargetTabId = nil
+        }
+        sidebarLastCrossedTabId = nil
     }
 
     private func sidebarY(for tabId: UUID, availableHeight: CGFloat) -> CGFloat {
@@ -901,14 +1021,19 @@ struct ContentView: View {
                                 }
                             },
                             onReorder: { sourceTabId, targetTabId in
-                                tabManager.reorderTabs(sourceTabId: sourceTabId, targetTabId: targetTabId, tabs: allTabs)
+                                hoverSidebarTab(targetTabId, dragging: sourceTabId)
                             },
+                            onDragBegan: beginSidebarTabDrag,
+                            onDropFinished: finishSidebarTabDrag,
+                            draggedTabId: sidebarDraggedTabId,
+                            dropTargetTabId: sidebarDropTargetTabId,
                             loadingProgress: progressFaviconRing && showProgressBar
                                 && tab.id == tabManager.selectedTabId ? progressValue : nil,
                             downloads: downloadManager.downloads(for: tab.id),
                             sessionColor: sessionColor(for: tab),
                             isIncognito: tab.sessionKind == .incognito,
-                            isDisplayedInSplit: tabManager.splitTabIds.contains(tab.id)
+                            isDisplayedInSplit: tabManager.splitTabIds.contains(tab.id),
+                            automaticLinkBirthCue: tabManager.automaticLinkBirthCue
                         )
                         .contextMenu {
                             let webView = webViewManager?.existingWebView(for: tab.id)
@@ -988,7 +1113,10 @@ struct ContentView: View {
                             }
                         }
                         .padding(.vertical, 4)
-                        .transition(.move(edge: .leading).combined(with: .opacity))
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .leading).combined(with: .opacity),
+                            removal: .tabPoof
+                        ))
                     }
                 }
             }
@@ -996,7 +1124,7 @@ struct ContentView: View {
             // A tab opened in the background (Cmd+click) slides its row in from the
             // leading edge, so you see it land instead of guessing whether it opened.
             .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.8),
-                       value: allTabs.count)
+                       value: visibleTabOrder.map(\.id))
         }
     }
 
@@ -1022,11 +1150,15 @@ struct ContentView: View {
                                 tabManager.selectedTabId = tabId
                             }
                         },
-                            onReorder: { sourceTabId, targetTabId in
-                                tabManager.reorderTabs(sourceTabId: sourceTabId, targetTabId: targetTabId, tabs: allTabs)
-                            },
+                        onReorder: { sourceTabId, targetTabId in
+                            hoverSidebarTab(targetTabId, dragging: sourceTabId)
+                        },
                         tabManager: tabManager,
-                        downloads: downloadManager.activeDownloads
+                        downloads: downloadManager.activeDownloads,
+                        draggedTabId: sidebarDraggedTabId,
+                        dropTargetTabId: sidebarDropTargetTabId,
+                        onDragBegan: beginSidebarTabDrag,
+                        onDropFinished: finishSidebarTabDrag
                     )
                 } else {
                     // Regular tab list view
@@ -2487,6 +2619,7 @@ struct ContentView: View {
             tabManager.ensureSelectedTab(from: allTabs)
         }
         .onDisappear {
+            finishSidebarTabDrag()
             notificationManager?.cleanup()
             keyboardShortcutsManager?.teardown()
         }
@@ -2838,7 +2971,15 @@ struct ContentView: View {
     // WKWebView's back-forward list is the single source of truth;
     // the tab's URL/title update via the navigation delegate.
     private func goBack() {
-        webViewManager?.goBack()
+        guard let webViewManager else { return }
+        if !webViewManager.canGoBack {
+            var closedChild = false
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
+                closedChild = tabManager.closeAutomaticallyOpenedLinkOnBack(tabs: allTabs)
+            }
+            if closedChild { return }
+        }
+        webViewManager.goBack()
     }
 
     private func goForward() {

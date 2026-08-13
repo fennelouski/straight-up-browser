@@ -1078,7 +1078,8 @@ struct WebView: NSViewRepresentable {
             // joins the opener in a split: a popup that hides the page that opened it
             // reads as "nothing happened", so opener and popup both stay on screen.
             let isPopup = navigationAction.navigationType != .linkActivated
-            let newTab = tabManager.createTab(inheriting: openerSession, select: !isPopup)
+            let sourceTabId = webViewManager.tabId(for: webView)
+            let newTab = tabManager.createTab(inheriting: openerSession, select: false)
             webViewManager.adoptWebView(
                 popupWebView,
                 for: newTab.id,
@@ -1094,6 +1095,12 @@ struct WebView: NSViewRepresentable {
                 } else {
                     tabManager.selectedTabId = newTab.id
                 }
+            } else {
+                tabManager.presentAutomaticallyOpenedLink(
+                    newTab,
+                    from: sourceTabId,
+                    tabs: tabs ?? []
+                )
             }
             return popupWebView
         }
