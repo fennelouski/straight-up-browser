@@ -46,6 +46,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // hideTitleBar for what happens if it doesn't.
         if let window = NSApp.windows.first(where: { !($0 is NSPanel) && $0.contentView != nil }) {
             WindowLayout.hideTitleBar(on: window)
+            WindowLayout.applyCornerMask(to: window)
         }
         installURLHandler()
         // Test hosts cannot interact with this modal before the app finishes

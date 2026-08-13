@@ -24,15 +24,48 @@ struct WindowChrome: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 
     private final class ChromeView: NSView {
+        // Read only from deinit (nonisolated by default even on a MainActor
+        // class), so Swift 6 needs the escape hatch to hand it a non-Sendable
+        // NSObjectProtocol token there — otherwise every write stays MainActor.
+        nonisolated(unsafe) private var defaultsObserver: NSObjectProtocol?
+        nonisolated(unsafe) private var resizeObserver: NSObjectProtocol?
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             guard let window else { return }
 
             WindowLayout.hideTitleBar(on: window)
+            WindowLayout.applyCornerMask(to: window)
+
+            // Square Corners takes effect immediately while the window is open,
+            // so keep the real silhouette in sync with the setting, not just
+            // whatever it was at launch.
+            if defaultsObserver == nil {
+                defaultsObserver = NotificationCenter.default.addMainActorObserver(
+                    forName: UserDefaults.didChangeNotification, object: nil, queue: .main
+                ) { [weak window] _ in
+                    guard let window else { return }
+                    WindowLayout.applyCornerMask(to: window)
+                }
+            }
+            // A non-opaque window's shadow is traced from its actually-drawn
+            // pixels, and AppKit doesn't always re-trace it on its own mid-drag.
+            if resizeObserver == nil {
+                resizeObserver = NotificationCenter.default.addMainActorObserver(
+                    forName: NSWindow.didResizeNotification, object: window, queue: .main
+                ) { [weak window] _ in
+                    window?.invalidateShadow()
+                }
+            }
 
             // SwiftUI restores the saved frame after this runs, so claim the
             // launch position on the next turn of the run loop or it's lost.
             DispatchQueue.main.async { WindowLayout.applyOnLaunch(to: window) }
+        }
+
+        deinit {
+            if let defaultsObserver { NotificationCenter.default.removeObserver(defaultsObserver) }
+            if let resizeObserver { NotificationCenter.default.removeObserver(resizeObserver) }
         }
     }
 }
@@ -172,7 +205,36 @@ enum WindowLayout {
         window.styleMask.insert(.fullSizeContentView)
         window.isMovableByWindowBackground = true
         window.titleVisibility = .hidden
-        window.backgroundColor = .windowBackgroundColor
+    }
+
+    /// Keeps the window's *real* silhouette and drop shadow matching what
+    /// ContentView draws (see its `.clipShape` comment). AppKit only
+    /// auto-rounds *titled* windows — hideTitleBar strips `.titled`, so
+    /// nothing rounds this window's actual edges or shadow unless it's done
+    /// by hand here.
+    ///
+    /// A CALayer corner mask alone only fixes the silhouette, not the
+    /// shadow: an opaque window's shadow is just its rectangular frame, full
+    /// stop, no matter how the content underneath is clipped. The only way
+    /// to get a shadow that hugs the rounded shape is to make the window
+    /// non-opaque with a clear background, so AppKit traces the shadow from
+    /// the actual drawn (opaque) pixels instead of the frame rect — the same
+    /// technique titled windows get for free from the system title bar.
+    ///
+    /// Called on every window at setup (from both `hideTitleBar` call
+    /// sites — see its doc comment) and again whenever Square Corners is
+    /// toggled live, since that's a plain `@AppStorage` write with no
+    /// dedicated notification of its own.
+    static func applyCornerMask(to window: NSWindow) {
+        let square = isSquareCorners
+        window.isOpaque = square
+        window.backgroundColor = square ? .windowBackgroundColor : .clear
+        let contentView = window.contentView
+        contentView?.wantsLayer = true
+        contentView?.layer?.cornerRadius = square ? 0 : windowCornerRadius
+        contentView?.layer?.masksToBounds = !square
+        contentView?.layer?.cornerCurve = .continuous
+        window.invalidateShadow()
     }
 }
 
