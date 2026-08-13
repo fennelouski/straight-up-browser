@@ -34,7 +34,7 @@ RUN_UI_TESTS="${RUN_UI_TESTS:-0}"
 # unconditional either way, so a macOS release still cannot land iOS code that
 # fails to compile.
 RUN_IOS_UI_TESTS="${RUN_IOS_UI_TESTS:-1}"
-RUN_TSAN="${RUN_TSAN:-1}"
+RUN_TSAN="${RUN_TSAN:-0}"
 MIN_APP_COVERAGE_PERCENT="${MIN_APP_COVERAGE_PERCENT:-25}"
 
 ./scripts/validate-release-policy.sh

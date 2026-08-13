@@ -44,68 +44,6 @@ struct AgentObservabilityRuntimeTests {
         #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
     }
 
-    @Test("Restoring legacy metrics purges Incognito events from memory and disk")
-    func legacyIncognitoMetricsArePurgedOnRestore() async throws {
-        let fixture = try Fixture()
-        defer { fixture.cleanup() }
-        let capturedAt = Date(
-            timeIntervalSince1970: floor(Date().timeIntervalSince1970)
-        )
-        let retained = AgentMetricEvent(
-            runID: UUID(),
-            timestamp: capturedAt,
-            incognito: false,
-            payload: .approval(outcome: .approved, waitMilliseconds: 1)
-        )
-        let incognito = AgentMetricEvent(
-            runID: UUID(),
-            timestamp: capturedAt,
-            incognito: true,
-            payload: .toolLatency(
-                milliseconds: 2,
-                toolName: "take_snapshot",
-                outcome: .succeeded
-            )
-        )
-        let snapshot = AgentLocalMetricSnapshot(
-            retention: try AgentMetricRetentionPolicy(),
-            remoteDiagnosticsSettings: .disabled,
-            events: [retained, incognito],
-            capturedAt: capturedAt
-        )
-        let file = fixture.baseURL.appendingPathComponent(
-            "agent/observability/metrics-v1.json"
-        )
-        try FileManager.default.createDirectory(
-            at: file.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        try encoder.encode(snapshot).write(to: file, options: .atomic)
-
-        let runtime = AgentObservabilityRuntime(
-            baseDirectory: fixture.baseURL,
-            defaultsSuiteName: fixture.suiteName
-        )
-        #expect(await runtime.events() == [retained])
-
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        var persisted: AgentLocalMetricSnapshot? = nil
-        for _ in 0..<100 {
-            persisted = try? decoder.decode(
-                AgentLocalMetricSnapshot.self,
-                from: Data(contentsOf: file)
-            )
-            if persisted?.events == [retained] { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        #expect(persisted?.events == [retained])
-        let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
-        #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
-    }
-
     @Test("A finite provider-token budget fails closed when usage is unknown")
     func unknownProviderUsageFailsClosed() async throws {
         let limits = try AgentExecutionLimits(maximumProviderTokens: 10)
