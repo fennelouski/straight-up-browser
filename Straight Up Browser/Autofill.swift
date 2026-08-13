@@ -29,11 +29,11 @@ import AppKit
 #endif
 
 struct AutofillSuggestion: Identifiable, Equatable {
-    let profileID: UUID
+    let person: AutofillPersonReference
     let profileName: String
     let value: String
 
-    var id: UUID { profileID }
+    var id: String { person.storageValue }
 }
 
 @MainActor
@@ -59,6 +59,7 @@ final class AutofillManager: ObservableObject {
     private var modelContext: ModelContext?
     private var preferences: AutofillPreferences { .shared }
     private var observers: [NSObjectProtocol] = []
+    private var focusToken = UUID()
     #if canImport(AppKit)
     private var keyMonitor: Any?
     #endif
@@ -112,51 +113,136 @@ final class AutofillManager: ObservableObject {
               preferences.allows(field.category)
         else { return dismiss() }
 
-        let rows = buildSuggestions(for: field)
-        guard !rows.isEmpty else { return dismiss() }
-
-        presentation = Presentation(
+        dismiss()
+        let token = UUID()
+        focusToken = token
+        let candidate = Presentation(
             tabID: tabID,
             signal: signal,
             field: field,
             fieldRect: rect,
             url: url
         )
-        suggestions = rows
-        selectedIndex = 0
-        installKeyMonitor()
+        let manualProfiles = manualProfiles()
+        let contactPeople = preferences.contactPeople
+        let activePerson = preferences.activePerson
+
+        Task { @MainActor [weak self] in
+            #if os(macOS)
+            let contacts = await AutofillContactStore.resolve(contactPeople)
+            #else
+            let contacts: [AutofillResolvedPerson] = []
+            #endif
+            guard let self,
+                  self.focusToken == token,
+                  self.stillAllows(candidate)
+            else { return }
+            let currentContacts = self.preferences.contactPeople
+            let selectedContacts = contacts.filter {
+                currentContacts.contains($0.reference) || currentContacts.contains($0.resolvedReference)
+            }
+            self.reconcileContactReferences(selectedContacts)
+            let rows = self.buildSuggestions(
+                for: field,
+                manualProfiles: manualProfiles,
+                contacts: selectedContacts,
+                activePerson: activePerson
+            )
+            guard !rows.isEmpty else { return }
+            self.presentation = candidate
+            self.suggestions = rows
+            self.selectedIndex = 0
+            self.installKeyMonitor()
+        }
     }
 
-    private func buildSuggestions(for field: AutofillField) -> [AutofillSuggestion] {
+    private func buildSuggestions(
+        for field: AutofillField,
+        manualProfiles: [AutofillResolvedPerson],
+        contacts: [AutofillResolvedPerson],
+        activePerson: AutofillPersonReference?
+    ) -> [AutofillSuggestion] {
         var seen = Set<String>()
-        return orderedProfiles().compactMap { profile in
-            let value = profile.value(for: field)
+        let people = orderedPeople(
+            manualProfiles: manualProfiles,
+            contacts: contacts,
+            activePerson: activePerson
+        )
+        return people.compactMap { person in
+            let value = person.values[field] ?? ""
             guard !value.isEmpty, seen.insert(value).inserted else { return nil }
             return AutofillSuggestion(
-                profileID: profile.id,
-                profileName: profile.displayName,
+                person: person.resolvedReference,
+                profileName: person.name,
                 value: String(value.prefix(AutofillFieldClassifier.maximumValueLength))
             )
         }
     }
 
     /// Fetched on demand rather than mirrored: focus is rare enough that a
-    /// fetch is cheaper than keeping a copy in step.
-    private func orderedProfiles() -> [AutofillProfile] {
+    /// fetch is cheaper than keeping a copy in step. Contacts are resolved on a
+    /// background task above and never enter SwiftData.
+    private func manualProfiles() -> [AutofillResolvedPerson] {
         guard let modelContext else { return [] }
         let descriptor = FetchDescriptor<AutofillProfile>(
             sortBy: [SortDescriptor(\.createdAt)]
         )
         let profiles = (try? modelContext.fetch(descriptor)) ?? []
-        // The chosen profile suggests first; the rest keep their order.
-        guard let activeID = preferences.activeProfileID,
-              let index = profiles.firstIndex(where: { $0.id == activeID }) else { return profiles }
-        var ordered = profiles
-        ordered.insert(ordered.remove(at: index), at: 0)
-        return ordered
+        return profiles.map { profile in
+            AutofillResolvedPerson(
+                reference: .manual(profile.id),
+                resolvedReference: .manual(profile.id),
+                contactIdentifier: nil,
+                name: profile.displayName,
+                values: Dictionary(
+                    uniqueKeysWithValues: AutofillField.allCases.map { ($0, profile.value(for: $0)) }
+                )
+            )
+        }
+    }
+
+    private func orderedPeople(
+        manualProfiles: [AutofillResolvedPerson],
+        contacts: [AutofillResolvedPerson],
+        activePerson: AutofillPersonReference?
+    ) -> [AutofillResolvedPerson] {
+        var people = contacts + manualProfiles
+        guard let activePerson,
+              let index = people.firstIndex(where: { $0.reference == activePerson }) else {
+            return people
+        }
+        people.insert(people.remove(at: index), at: 0)
+        return people
+    }
+
+    private func stillAllows(_ candidate: Presentation) -> Bool {
+        guard preferences.shouldOffer(url: candidate.url, incognito: webViewManager?
+            .isPrivateTab(candidate.tabID) ?? false), preferences.allows(candidate.field.category) else {
+            return false
+        }
+        return webViewManager?.activeTabId == candidate.tabID
+    }
+
+    private func reconcileContactReferences(_ contacts: [AutofillResolvedPerson]) {
+        for person in contacts {
+            if case .contact(let old) = person.reference,
+               case .contact(let resolved) = person.resolvedReference {
+                preferences.replaceContact(identifier: old, with: resolved)
+            }
+        }
+    }
+
+    private func remainsSelected(_ person: AutofillPersonReference) -> Bool {
+        switch person {
+        case .manual:
+            true
+        case .me, .contact:
+            preferences.contactPeople.contains(person)
+        }
     }
 
     func dismiss() {
+        focusToken = UUID()
         guard presentation != nil else { return }
         presentation = nil
         suggestions = []
@@ -204,26 +290,42 @@ final class AutofillManager: ObservableObject {
 
     // MARK: Filling
 
-    func commit(profileID: UUID? = nil) {
+    func commit(person: AutofillPersonReference? = nil) {
         guard let presentation,
               !suggestions.isEmpty,
-              let chosen = profileID ?? suggestions[safe: selectedIndex]?.profileID,
-              let profile = orderedProfiles().first(where: { $0.id == chosen }),
+              let chosen = person ?? suggestions[safe: selectedIndex]?.person,
               let webView = webViewManager?.getWebView(for: presentation.tabID)
         else { return dismiss() }
-
-        // Snapshot the profile's values now: `fill` runs async, and the model is
-        // a live object that could change (or be deleted) in between.
-        let values = Dictionary(
-            uniqueKeysWithValues: AutofillField.allCases.map { ($0, profile.value(for: $0)) }
-        )
-        let allowed = Dictionary(
-            uniqueKeysWithValues: AutofillCategory.allCases.map { ($0, preferences.allows($0)) }
-        )
         dismiss()
 
         Task { @MainActor in
+            guard self.stillAllows(presentation),
+                  self.remainsSelected(chosen),
+                  self.webViewManager?.getWebView(for: presentation.tabID) === webView
+            else { return }
+            let values = await values(for: chosen)
+            guard let values,
+                  self.stillAllows(presentation),
+                  self.remainsSelected(chosen),
+                  self.webViewManager?.getWebView(for: presentation.tabID) === webView
+            else { return }
+            let allowed = Dictionary(
+                uniqueKeysWithValues: AutofillCategory.allCases.map { ($0, self.preferences.allows($0)) }
+            )
             await fill(webView: webView, values: values, allowed: allowed, expecting: presentation)
+        }
+    }
+
+    private func values(for person: AutofillPersonReference) async -> [AutofillField: String]? {
+        switch person {
+        case .manual(let id):
+            return manualProfiles().first(where: { $0.reference == .manual(id) })?.values
+        case .me, .contact:
+            #if os(macOS)
+            return await AutofillContactStore.resolve(person)?.values
+            #else
+            return nil
+            #endif
         }
     }
 
@@ -304,7 +406,7 @@ struct AutofillSuggestionList: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(autofill.suggestions.enumerated()), id: \.element.id) { index, suggestion in
                 row(suggestion, selected: index == autofill.selectedIndex)
-                    .onTapGesture { autofill.commit(profileID: suggestion.profileID) }
+                    .onTapGesture { autofill.commit(person: suggestion.person) }
                     .onHover { hovering in
                         if hovering { autofill.selectedIndex = index }
                     }

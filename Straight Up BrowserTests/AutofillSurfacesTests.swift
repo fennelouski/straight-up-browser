@@ -12,6 +12,7 @@ struct AutofillSurfacesTests {
         #expect(SettingsPane.autofill.title == "Autofill")
         #expect(SettingsPane.autofill.systemImage == "text.append")
         #expect(SettingsPane.autofill.subtitle.contains("Profiles"))
+        #expect(SettingsPane.autofill.subtitle.contains("contacts"))
     }
 
     @Test func toggleAutofillIsRegisteredAndRebindable() {

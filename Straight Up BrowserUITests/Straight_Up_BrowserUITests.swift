@@ -84,6 +84,31 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Observability & Page Signals"].exists)
         XCTAssertTrue(app.staticTexts["Agent Definition Sync"].exists)
     }
+
+    @MainActor
+    func testAutofillContactsExplainsTheLocalReferenceBoundary() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-uiTesting",
+            "-ApplePersistenceIgnoreState", "YES",
+            "-acceptedEULAVersion", "1",
+            "-tabSyncEnabled", "NO",
+            "-tabBarWidth", "200",
+        ]
+        launchBrowserForUITesting(app)
+
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
+        app.typeKey(",", modifierFlags: .command)
+
+        let autofillPane = app.buttons["Autofill. Profiles, contacts, form filling"]
+        XCTAssertTrue(autofillPane.waitForExistence(timeout: 5))
+        autofillPane.click()
+
+        XCTAssertTrue(app.staticTexts["Contacts"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Use My Card"].exists)
+        XCTAssertTrue(app.buttons["Add Contact…"].exists)
+        XCTAssertTrue(app.staticTexts["Manual Profiles"].exists)
+    }
 }
 
 @MainActor
