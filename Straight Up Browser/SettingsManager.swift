@@ -11,6 +11,9 @@ import SwiftUI
 class SettingsManager {
     static let shared = SettingsManager()
 
+    static let automaticLinkMitosisKey = "automaticLinkMitosisEnabled"
+    static let automaticLinkSplitKey = "automaticLinkSplitEnabled"
+
     private let userDefaults = UserDefaults.standard
 
     // Keys for UserDefaults
@@ -116,6 +119,22 @@ class SettingsManager {
     /// the focused website can handle it. Defaults off when unset.
     var overrideWebsiteQuickOpen: Bool {
         userDefaults.bool(forKey: "overrideWebsiteQuickOpen")
+    }
+
+    // MARK: - Links That Open New Tabs
+
+    /// Give a link-created tab and its source a brief sidebar birth animation.
+    /// Defaults on so a site moving the reader into another tab never feels like
+    /// an unexplained page replacement. Command-clicks use their existing cue.
+    var automaticLinkMitosisEnabled: Bool {
+        userDefaults.object(forKey: Self.automaticLinkMitosisKey) == nil
+            || userDefaults.bool(forKey: Self.automaticLinkMitosisKey)
+    }
+
+    /// Keep the source visible beside a tab that the clicked link created.
+    /// Independent from the animation, and off by default.
+    var automaticLinkSplitEnabled: Bool {
+        userDefaults.bool(forKey: Self.automaticLinkSplitKey)
     }
 
     // MARK: - Option-Click Download

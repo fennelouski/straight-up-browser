@@ -36,6 +36,8 @@ struct GeneralSettingsView: View {
     @AppStorage(FastForward.Key.enabled) private var fastForwardEnabled = true
     @AppStorage(SiteHistory.useAppleIntelligenceKey) private var siteNicknamesUseAI = true
     @AppStorage(Prefetcher.enabledKey) private var prefetchEnabled = true
+    @AppStorage(SettingsManager.automaticLinkMitosisKey) private var automaticLinkMitosis = true
+    @AppStorage(SettingsManager.automaticLinkSplitKey) private var automaticLinkSplit = false
     @State private var iCloudAvailable: Bool?
 
     private let searchEngines = ["Google", "DuckDuckGo", "Bing", "Yahoo"]
@@ -100,6 +102,16 @@ struct GeneralSettingsView: View {
                 SettingsLabel("Fast Forward", systemImage: "forward.fill", tint: SettingsTint.general)
             } footer: {
                 Text("Runs on your Mac. The left pane always holds your actual search results, so Fast Forward only ever adds a head start — it never replaces what you asked for.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Show a mitosis animation in the sidebar", isOn: $automaticLinkMitosis)
+                Toggle("Open the new tab beside its source", isOn: $automaticLinkSplit)
+            } header: {
+                SettingsLabel("Links That Open New Tabs", systemImage: "arrow.up.right.square", tint: SettingsTint.general)
+            } footer: {
+                Text("These apply when a website makes a clicked link open in another tab. They are independent, and Command-click is unaffected.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

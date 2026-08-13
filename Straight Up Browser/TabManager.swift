@@ -33,6 +33,15 @@ struct ClosedTabSnapshot: Codable {
     let sessionId: UUID?
 }
 
+/// One short-lived visual event shared by the source and child rows when a
+/// clicked link creates a foreground tab. The token lets SwiftUI replay the
+/// effect when the same pair opens more than once.
+struct AutomaticLinkBirthCue: Equatable {
+    let token = UUID()
+    let sourceTabId: UUID
+    let childTabId: UUID
+}
+
 class TabManager: NSObject, ObservableObject {
     // The focused tab: owns the omnibar, title, and all key commands. In a split
     // it is always one of splitTabIds; selecting any non-member dissolves the split
@@ -69,6 +78,10 @@ class TabManager: NSObject, ObservableObject {
     // menus, CLI) funnels through createNewTab.
     @Published var offerDefaultBrowser = false
 
+    // Presentational only: link provenance below owns behavior; this value just
+    // lets both sidebar rows perform the same short birth animation.
+    @Published private(set) var automaticLinkBirthCue: AutomaticLinkBirthCue?
+
     private static let closedTabsKey = "closedTabsStack"
     private static let maxClosedTabs = 25
     private static let splitKey = "splitTabIds"
@@ -85,6 +98,11 @@ class TabManager: NSObject, ObservableObject {
     // it closes it automatically (see newTabOrUndo / handleSelectionChanged).
     private var pendingNewTabId: UUID?
     private var tabIdBeforePendingNewTab: UUID?
+
+    // Only tabs created because a clicked page link requested another tab live
+    // here. `Tab.openerId` is broader (Cmd+T, duplicates, Command-click queues),
+    // so it cannot by itself decide whether Back should close a child tab.
+    private var automaticLinkOpeners: [UUID: UUID] = [:]
 
     init(
         modelContext: ModelContext? = nil,
@@ -310,6 +328,58 @@ class TabManager: NSObject, ObservableObject {
 
     // MARK: - Split view
 
+    /// Finish opening a tab that a normal click caused the website to create.
+    /// This is deliberately separate from Command-click and JavaScript utility
+    /// popups, which have their own selection/split rules.
+    func presentAutomaticallyOpenedLink(_ tab: Tab, from sourceTabId: UUID?, tabs: [Tab]) {
+        guard let sourceTabId else {
+            selectedTabId = tab.id
+            return
+        }
+
+        tab.openerId = sourceTabId
+        automaticLinkOpeners[tab.id] = sourceTabId
+
+        if SettingsManager.shared.automaticLinkMitosisEnabled {
+            let cue = AutomaticLinkBirthCue(sourceTabId: sourceTabId, childTabId: tab.id)
+            automaticLinkBirthCue = cue
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+                guard self?.automaticLinkBirthCue?.token == cue.token else { return }
+                self?.automaticLinkBirthCue = nil
+            }
+        }
+
+        guard SettingsManager.shared.automaticLinkSplitEnabled else {
+            selectedTabId = tab.id
+            return
+        }
+
+        // Focus the actual source first. In a split, the clicked link may have
+        // come from a displayed but unfocused pane, and toggleSplitMembership
+        // uses the focused tab as its anchor for a new split.
+        selectedTabId = sourceTabId
+        if splitTabIds.count < Self.maxSplitTabs {
+            toggleSplitMembership(tab, tabs: tabs)
+        } else {
+            selectedTabId = tab.id
+        }
+    }
+
+    /// Safari-style Back at the beginning of a link-created child: close it and
+    /// return explicitly to the source. The caller first checks WKWebView's
+    /// history so ordinary in-tab Back always wins when available.
+    @discardableResult
+    func closeAutomaticallyOpenedLinkOnBack(tabs: [Tab]) -> Bool {
+        guard let childId = selectedTabId,
+              let sourceId = automaticLinkOpeners[childId],
+              let child = tabs.first(where: { $0.id == childId }),
+              tabs.contains(where: { $0.id == sourceId }) else { return false }
+
+        selectedTabId = sourceId
+        closeTab(child, tabs: tabs)
+        return true
+    }
+
     // Shift-click / context-menu toggle: add the tab as a pane (focusing it) or
     // remove its pane. Live — there is no separate selection/confirm step.
     func toggleSplitMembership(_ tab: Tab, tabs: [Tab]) {
@@ -390,6 +460,9 @@ class TabManager: NSObject, ObservableObject {
     }
 
     func closeTab(_ tab: Tab, tabs: [Tab]) {
+        automaticLinkOpeners.removeValue(forKey: tab.id)
+        automaticLinkOpeners = automaticLinkOpeners.filter { $0.value != tab.id }
+
         // Resolve the focus target while the list still contains the tab.
         let successor = neighbor(of: tab, in: tabs)
         let remaining = tabs.filter { $0.id != tab.id }
@@ -587,10 +660,11 @@ class TabManager: NSObject, ObservableObject {
         // Create a mutable copy of the tabs array to work with
         var reorderedTabs = tabs
 
-        // Remove the source tab and insert it at the target position
+        // Remove the source tab and insert it at the row it crossed. Using
+        // targetIndex - 1 for a forward move leaves adjacent rows unchanged,
+        // which made a drop feel ignored and makes live hover reordering jitter.
         let sourceTab = reorderedTabs.remove(at: sourceIndex)
-        let adjustedTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex
-        reorderedTabs.insert(sourceTab, at: adjustedTargetIndex)
+        reorderedTabs.insert(sourceTab, at: targetIndex)
 
         // Update orderIndex for all tabs
         for (index, tab) in reorderedTabs.enumerated() {
