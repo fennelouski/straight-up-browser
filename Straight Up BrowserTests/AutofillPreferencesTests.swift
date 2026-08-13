@@ -21,14 +21,18 @@ struct AutofillPreferencesTests {
 
         preferences.isEnabled = false
         preferences.allowInIncognito = true
-        preferences.activeProfileID = id
+        preferences.activePerson = .manual(id)
+        preferences.setMyCardIncluded(true)
+        #expect(preferences.addContact(identifier: "contact-a"))
         preferences.setCategory(.phone, enabled: false)
         preferences.setHost("Example.com", enabled: false)
 
         let reloaded = AutofillPreferences(defaults: defaults)
         #expect(reloaded.isEnabled == false)
         #expect(reloaded.allowInIncognito == true)
-        #expect(reloaded.activeProfileID == id)
+        #expect(reloaded.activePerson == .manual(id))
+        #expect(reloaded.includesMyCard)
+        #expect(reloaded.contactIdentifiers == ["contact-a"])
         #expect(reloaded.allows(.phone) == false)
         #expect(reloaded.allows(host: "example.com") == false)
     }
@@ -46,7 +50,9 @@ struct AutofillPreferencesTests {
         let (preferences, defaults) = scratch()
         preferences.isEnabled = false
         preferences.allowInIncognito = true
-        preferences.activeProfileID = UUID()
+        preferences.activePerson = .manual(UUID())
+        preferences.setMyCardIncluded(true)
+        #expect(preferences.addContact(identifier: "contact-a"))
         preferences.setCategory(.name, enabled: false)
         preferences.setHost("example.com", enabled: false)
 
@@ -59,7 +65,9 @@ struct AutofillPreferencesTests {
         let (preferences, defaults) = scratch()
         preferences.isEnabled = false
         preferences.allowInIncognito = true
-        preferences.activeProfileID = UUID()
+        preferences.activePerson = .manual(UUID())
+        preferences.setMyCardIncluded(true)
+        #expect(preferences.addContact(identifier: "contact-a"))
         preferences.setCategory(.address, enabled: false)
         preferences.setHost("example.com", enabled: false)
 
@@ -67,7 +75,9 @@ struct AutofillPreferencesTests {
 
         #expect(preferences.isEnabled)
         #expect(preferences.allowInIncognito == false)
-        #expect(preferences.activeProfileID == nil)
+        #expect(preferences.activePerson == nil)
+        #expect(preferences.includesMyCard == false)
+        #expect(preferences.contactIdentifiers.isEmpty)
         #expect(preferences.disabledCategories.isEmpty)
         #expect(preferences.disabledHosts.isEmpty)
         #expect(AutofillPreferences(defaults: defaults).disabledHosts.isEmpty)

@@ -10,6 +10,8 @@
 	     GENERATE_INFOPLIST_FILE. -->
 	<key>NSFocusStatusUsageDescription</key>
 	<string>Browser checks whether a Focus is on so it can dim pages only while you are winding down.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Browser needs access to Contacts so you can choose people. It reads only the cards you select to fill their current details when you ask it to.</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

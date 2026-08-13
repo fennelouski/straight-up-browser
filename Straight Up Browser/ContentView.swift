@@ -531,6 +531,9 @@ struct ContentView: View {
     @StateObject private var fastForward = FastForward()
     @StateObject private var browserAgent: BrowserAgent
     @ObservedObject private var downloadManager = DownloadManager.shared
+    #if os(macOS)
+    @ObservedObject private var autofillContactsRoster = AutofillContactsRoster.shared
+    #endif
     @ObservedObject private var persistenceDiagnostics = PersistenceDiagnostics.shared
     @ObservedObject private var protectionStore = PageProtectionStore.shared
     @State private var navigationManager: NavigationManager?
@@ -622,7 +625,16 @@ struct ContentView: View {
     /// Reading `displayName` here is what makes a renamed profile reach the menus:
     /// it registers observation on the underlying fields.
     private var autofillProfileSummaries: [AutofillProfileSummary] {
-        autofillProfiles.map { AutofillProfileSummary(id: $0.id, name: $0.displayName) }
+        #if os(macOS)
+        let contacts = autofillContactsRoster.people.map {
+            AutofillProfileSummary(person: $0.reference, name: $0.name)
+        }
+        #else
+        let contacts: [AutofillProfileSummary] = []
+        #endif
+        return contacts + autofillProfiles.map {
+            AutofillProfileSummary(person: .manual($0.id), name: $0.displayName)
+        }
     }
 
     private var currentURL: URL? { activeTab?.url }

@@ -298,6 +298,9 @@ struct WebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             certificateOverrideWebViews.remove(ObjectIdentifier(webView))
+            if isActiveWebView(webView) {
+                NotificationCenter.default.post(name: .browserAutofillDismissed, object: nil)
+            }
             let key = ObjectIdentifier(webView)
             agentNavigationObservationIDs[key] = UUID()
             if let url = webView.url { agentLastNavigationURLs[key] = url }

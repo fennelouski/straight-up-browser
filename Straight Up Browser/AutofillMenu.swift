@@ -15,8 +15,10 @@
 import SwiftUI
 
 struct AutofillProfileSummary: Identifiable, Equatable, Sendable {
-    let id: UUID
+    let person: AutofillPersonReference
     let name: String
+
+    var id: String { person.storageValue }
 }
 
 /// Shared, view-facing autofill state: which profiles exist and what page is in
@@ -52,6 +54,9 @@ struct AutofillWindowBridge: ViewModifier {
             .onAppear {
                 AutofillMenuState.shared.update(profiles: profiles)
                 AutofillMenuState.shared.currentPageURL = pageURL
+                #if os(macOS)
+                AutofillContactsRoster.shared.refresh()
+                #endif
             }
             .onChange(of: profiles) { _, value in
                 AutofillMenuState.shared.update(profiles: value)
@@ -84,12 +89,12 @@ struct AutofillMenuContent: View {
 
         if !state.profiles.isEmpty {
             Divider()
-            Menu("Profile") {
+            Menu("People") {
                 ForEach(state.profiles) { profile in
                     Button {
-                        preferences.activeProfileID = profile.id
+                        preferences.activePerson = profile.person
                     } label: {
-                        if profile.id == resolvedActiveProfileID {
+                        if profile.person == resolvedActivePerson {
                             Label(profile.name, systemImage: "checkmark")
                         } else {
                             Text(profile.name)
@@ -130,11 +135,12 @@ struct AutofillMenuContent: View {
         }
     }
 
-    private var resolvedActiveProfileID: UUID? {
-        if let id = preferences.activeProfileID, state.profiles.contains(where: { $0.id == id }) {
-            return id
+    private var resolvedActivePerson: AutofillPersonReference? {
+        if let person = preferences.activePerson,
+           state.profiles.contains(where: { $0.person == person }) {
+            return person
         }
-        return state.profiles.first?.id
+        return state.profiles.first?.person
     }
 }
 

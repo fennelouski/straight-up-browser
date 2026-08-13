@@ -243,6 +243,12 @@ between them is stated explicitly rather than left to convention.
 - **Isolation and logging.** The focus signal uses its own isolated-world message
   handler name; sharing the page world's `"sub"` would let a page forge it.
   Autofill logs the field kinds and the host, never a value.
+- **Contacts-backed people (macOS).** Contacts access requires the Address Book
+  sandbox entitlement and the system usage prompt. Browser keeps only selected
+  opaque contact identifiers locally; names are fetched for an in-memory roster
+  and fill values only while suggesting or filling. Contact references and values
+  never enter SwiftData, CloudKit, or an agent tool. Removing a person only
+  unlinks Browser; it neither edits Contacts nor revokes the system permission.
 - **Incognito and exceptions.** Off in private tabs unless explicitly enabled,
   and excludable per site. Profiles are independent of browsing data — clearing
   a site's data leaves them alone; "Delete All Autofill Data" removes them.
