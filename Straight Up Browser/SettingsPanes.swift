@@ -1083,6 +1083,8 @@ struct AppearanceSettingsView: View {
     @AppStorage("showTraditionalTopTabs") private var showTraditionalTopTabs = false
     @AppStorage("topTabsAutoHide") private var topTabsAutoHide = true
     @AppStorage("adaptiveLargeSidebarTabs") private var adaptiveLargeSidebarTabs = true
+    @AppStorage(BrowserChromePlacementSettings.Key.tabSidebarSide)
+    private var tabSidebarSideRaw = BrowserChromeSide.left.rawValue
     #if os(macOS)
     @AppStorage(DeveloperToolsPlacement.defaultsKey) private var developerToolsPlacementRaw = DeveloperToolsPlacement.bottom.rawValue
     #endif
@@ -1114,6 +1116,12 @@ struct AppearanceSettingsView: View {
     var body: some View {
         Form {
             Section {
+                Picker("Tab sidebar side", selection: $tabSidebarSideRaw) {
+                    ForEach(BrowserChromeSide.allCases) { side in
+                        Label(side.title, systemImage: side.systemImage).tag(side.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
                 Toggle("Show traditional tabs across the top", isOn: $showTraditionalTopTabs)
                 Toggle("Hide top tabs until the pointer reaches the top", isOn: $topTabsAutoHide)
                     .disabled(!showTraditionalTopTabs)

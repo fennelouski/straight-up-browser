@@ -5393,7 +5393,10 @@ final class BrowserAgent: ObservableObject {
 }
 
 struct BrowserAgentPanel: View {
+    static let width: CGFloat = 380
+
     @ObservedObject var agent: BrowserAgent
+    let side: BrowserChromeSide
     let pageTitle: String
     let pageURL: String
     let pageTarget: AgentPageTarget?
@@ -5415,6 +5418,7 @@ struct BrowserAgentPanel: View {
 
     init(
         agent: BrowserAgent,
+        side: BrowserChromeSide = .right,
         pageTitle: String,
         pageURL: String,
         pageTarget: AgentPageTarget?,
@@ -5435,6 +5439,7 @@ struct BrowserAgentPanel: View {
         ) async -> String
     ) {
         self.agent = agent
+        self.side = side
         self.pageTitle = pageTitle
         self.pageURL = pageURL
         self.pageTarget = pageTarget
@@ -5691,11 +5696,13 @@ struct BrowserAgentPanel: View {
             }
             .padding(12)
         }
-        .frame(width: 380)
+        .frame(width: Self.width)
         .frame(maxHeight: .infinity)
         .background(.ultraThickMaterial)
-        .overlay(alignment: .leading) { Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1) }
-        .shadow(color: .black.opacity(0.2), radius: 16, x: -4)
+        .overlay(alignment: side == .left ? .trailing : .leading) {
+            Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1)
+        }
+        .shadow(color: .black.opacity(0.2), radius: 16, x: side == .left ? 4 : -4)
         .onAppear {
             previousFirstResponder = NSApp.keyWindow?.firstResponder
             apiKey = BrowserAgentKeychain.read(provider: provider)

@@ -549,6 +549,8 @@ struct ContentView: View {
     @State private var showTabGrid = false
     @State private var showAgentPanel = false
     @AppStorage(AgentSettingsRuntimeKey.adjustsPageLayout) private var agentAdjustsPageLayout = false
+    @AppStorage(AgentSettingsRuntimeKey.loadsMorePageContent) private var agentLoadsMorePageContent = true
+    @AppStorage(AgentSettingsRuntimeKey.panelSide) private var agentPanelSideRaw = BrowserChromeSide.left.rawValue
     @State private var agentLassoSelection: AgentLassoSelection?
     @State private var showDeveloperTools = false
     @StateObject private var developerTools = DeveloperToolsModel()
@@ -579,6 +581,8 @@ struct ContentView: View {
     @State private var workspaceName = ""
     @State private var savedWorkspaces: [SavedWorkspace] = []
     @AppStorage("tabBarWidth") private var tabBarWidth: Double = 200.0
+    @AppStorage(BrowserChromePlacementSettings.Key.tabSidebarSide) private var tabSidebarSideRaw = BrowserChromeSide.left.rawValue
+    @State private var tabBarResizeStartWidth: Double?
     @AppStorage("showTraditionalTopTabs") private var showTraditionalTopTabs = false
     @AppStorage("topTabsAutoHide") private var topTabsAutoHide = true
     @AppStorage("adaptiveLargeSidebarTabs") private var adaptiveLargeSidebarTabs = true
@@ -648,6 +652,31 @@ struct ContentView: View {
     }
 
     private var currentURL: URL? { activeTab?.url }
+
+    private var agentPanelSide: BrowserChromeSide {
+        BrowserChromeSide(rawValue: agentPanelSideRaw) ?? .left
+    }
+
+    private var tabSidebarSide: BrowserChromeSide {
+        BrowserChromeSide(rawValue: tabSidebarSideRaw) ?? .left
+    }
+
+    private var effectiveTabSidebarWidth: CGFloat {
+        guard tabBarWidth > 0 else { return 0 }
+        return tabBarWidth <= 30 ? 32 : max(80, tabBarWidth)
+    }
+
+    private func reservedChromeWidth(on side: BrowserChromeSide) -> CGFloat {
+        BrowserChromeLayout.reservedWidth(
+            on: side,
+            tabWidth: effectiveTabSidebarWidth,
+            tabSide: tabSidebarSide,
+            agentVisible: showAgentPanel,
+            agentResizesPage: agentAdjustsPageLayout,
+            agentWidth: BrowserAgentPanel.width,
+            agentSide: agentPanelSide
+        )
+    }
 
     private var currentAgentPageTarget: AgentPageTarget? {
         guard let tab = activeTab, let manager = notificationManager, let url = tab.url,
@@ -1980,6 +2009,17 @@ struct ContentView: View {
     private var faviconPeekOverlay: some View {
         if tabBarWidth == 0, let tab = activeTab {
             GeometryReader { geometry in
+                let peekSide = BrowserChromeLayout.faviconPeekSide(
+                    tabSide: tabSidebarSide,
+                    agentVisible: showAgentPanel,
+                    agentSide: agentPanelSide
+                )
+                let isLeft = peekSide == .left
+                let panelInset = BrowserChromeLayout.faviconPeekInset(
+                    agentVisible: showAgentPanel,
+                    agentWidth: BrowserAgentPanel.width
+                )
+                let edgeX = isLeft ? panelInset : geometry.size.width - panelInset
                 let iconY = sidebarY(for: tab.id, availableHeight: geometry.size.height)
                 let label = tab.peekLabel(among: allTabs)
                 let labelWidth = peekLabelWidth(label)
@@ -1995,10 +2035,15 @@ struct ContentView: View {
                 let textY = iconY + direction * (20 + labelPadding + labelWidth / 2)
 
                 ZStack(alignment: .topLeading) {
-                    UnevenRoundedRectangle(bottomTrailingRadius: 20, topTrailingRadius: 20)
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: isLeft ? 0 : 20,
+                        bottomLeadingRadius: isLeft ? 0 : 20,
+                        bottomTrailingRadius: isLeft ? 20 : 0,
+                        topTrailingRadius: isLeft ? 20 : 0
+                    )
                         .fill(Color(.windowBackgroundColor))
                         .frame(width: 44, height: totalHeight)
-                        .position(x: 22, y: backgroundY)
+                        .position(x: edgeX + (isLeft ? 22 : -22), y: backgroundY)
 
                     Text(label)
                         .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -2007,7 +2052,7 @@ struct ContentView: View {
                         .foregroundStyle(.primary)
                         .frame(width: labelWidth, height: 16)
                         .rotationEffect(.degrees(runsDown ? 90 : -90))
-                        .position(x: 20, y: textY)
+                        .position(x: edgeX + (isLeft ? 20 : -20), y: textY)
 
                     Group {
                         if let data = tab.favicon, let icon = NSImage(data: data) {
@@ -2022,10 +2067,10 @@ struct ContentView: View {
                         }
                     }
                     .frame(width: 20, height: 20)
-                    .position(x: 28, y: iconY)
+                    .position(x: edgeX + (isLeft ? 28 : -28), y: iconY)
                 }
-                .shadow(color: .black.opacity(0.35), radius: 6, x: 2, y: 0)
-                .offset(x: showFaviconPeek ? 0 : -48)
+                .shadow(color: .black.opacity(0.35), radius: 6, x: isLeft ? 2 : -2, y: 0)
+                .offset(x: showFaviconPeek ? 0 : (isLeft ? -48 : 48))
                 .opacity(showFaviconPeek ? 1 : 0)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
@@ -2092,6 +2137,7 @@ struct ContentView: View {
     private var agentPanelView: some View {
         BrowserAgentPanel(
             agent: browserAgent,
+            side: agentPanelSide,
             pageTitle: currentTitle,
             pageURL: currentURL?.absoluteString ?? "",
             pageTarget: currentAgentPageTarget,
@@ -2405,84 +2451,95 @@ struct ContentView: View {
         .frame(width: showProgressBar ? 1 : 0)
     }
 
-    var body: some View {
-        ZStack(alignment: .leading) {
-            // Main content (web view) - render first so it's behind
-            HStack(spacing: 0) {
-                if tabBarWidth > 0 {
-                    Spacer()
-                        .frame(width: tabBarWidth <= 30 ? 32 : max(80, tabBarWidth))
+    private var tabSidebarResizeGrip: some View {
+        Color.clear
+            .frame(width: 5)
+            .contentShape(Rectangle())
+            .accessibilityElement()
+            .accessibilityLabel("Resize Tab Sidebar")
+            .accessibilityValue("\(Int(tabBarWidth)) points wide")
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment:
+                    tabBarWidth = min(400, tabBarWidth + 20)
+                case .decrement:
+                    tabBarWidth = max(0, tabBarWidth - 20)
+                @unknown default:
+                    break
                 }
-                browserAndDeveloperTools
-                    .clipped()
-                if showAgentPanel && agentAdjustsPageLayout {
-                    agentPanelView
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                UserDefaults.standard.set(tabBarWidth, forKey: "tabBarWidth")
+            }
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        let startWidth = tabBarResizeStartWidth ?? tabBarWidth
+                        if tabBarResizeStartWidth == nil {
+                            tabBarResizeStartWidth = startWidth
+                        }
+                        let newWidth = BrowserChromeLayout.resizedTabWidth(
+                            currentWidth: startWidth,
+                            translationX: value.translation.width,
+                            side: tabSidebarSide
+                        )
+                        tabBarWidth = newWidth
+                        UserDefaults.standard.set(newWidth, forKey: "tabBarWidth")
+                    }
+                    .onEnded { _ in
+                        tabBarResizeStartWidth = nil
+                    }
+            )
+            .onHover { isHovering in
+                if isHovering {
+                    NSCursor.resizeLeftRight.set()
+                } else {
+                    NSCursor.arrow.set()
                 }
             }
+    }
 
-            // Tab bar - render on top with solid background
+    private var tabSidebarResizeOverlay: some View {
+        VStack(spacing: 0) {
+            Color.clear
+                .frame(height: tabBarWidth <= 30 ? 0 : 38)
+                .allowsHitTesting(false)
+            HStack(spacing: 0) {
+                if tabSidebarSide == .right {
+                    tabSidebarResizeGrip
+                }
+                Spacer(minLength: 0)
+                    .allowsHitTesting(false)
+                if tabSidebarSide == .left {
+                    tabSidebarResizeGrip
+                }
+            }
+            Spacer(minLength: 0)
+                .allowsHitTesting(false)
+        }
+        .frame(width: effectiveTabSidebarWidth)
+    }
+
+    var body: some View {
+        ZStack {
+            HStack(spacing: 0) {
+                Spacer().frame(width: reservedChromeWidth(on: .left))
+                browserAndDeveloperTools
+                    .clipped()
+                Spacer().frame(width: reservedChromeWidth(on: .right))
+            }
+        }
+        .overlay(alignment: tabSidebarSide.alignment) {
             if tabBarWidth > 0 {
                 tabSidebar
-                    .frame(width: tabBarWidth <= 30 ? 32 : max(80, tabBarWidth))
+                    .frame(width: effectiveTabSidebarWidth)
                     .background(Color(.windowBackgroundColor))
                     .clipped()
             }
         }
-        .overlay(
-            // Invisible drag handle for resizing tab bar - positioned below button area
-            VStack(spacing: 0) {
-                // Spacer to skip the button area (32px height + padding)
-                Color.clear
-                    .frame(height: tabBarWidth <= 30 ? 0 : 38) // Button area height (0 in minimal mode)
-                    .allowsHitTesting(false) // Don't block buttons
-
-                // Resize handle only on the right edge of the tab bar (5px wide)
-                HStack(spacing: 0) {
-                    // Main tab area - allow hits to pass through to buttons
-                    Color.clear
-                        .frame(width: max(0, (tabBarWidth <= 30 ? 32 : tabBarWidth) - 5))
-                        .allowsHitTesting(false) // Don't interfere with tab clicks
-
-                    // Resize handle only on the edge (5px wide)
-                    Color.clear
-                        .frame(width: 5)
-                        .contentShape(Rectangle())
-                        .accessibilityElement()
-                        .accessibilityLabel("Resize Tab Sidebar")
-                        .accessibilityValue("\(Int(tabBarWidth)) points wide")
-                        .accessibilityAdjustableAction { direction in
-                            switch direction {
-                            case .increment:
-                                tabBarWidth = min(400, tabBarWidth + 20)
-                            case .decrement:
-                                tabBarWidth = max(0, tabBarWidth - 20)
-                            @unknown default:
-                                break
-                            }
-                            UserDefaults.standard.set(tabBarWidth, forKey: "tabBarWidth")
-                        }
-                        .gesture(
-                            DragGesture()
-                                .onChanged { value in
-                                    let newWidth = max(0, min(400, tabBarWidth + value.translation.width))
-                                    tabBarWidth = newWidth
-                                    UserDefaults.standard.set(newWidth, forKey: "tabBarWidth")
-                                }
-                        )
-                        .onHover { isHovering in
-                            if isHovering {
-                                NSCursor.resizeLeftRight.set()
-                            } else {
-                                NSCursor.arrow.set()
-                            }
-                        }
-
-                    Spacer()
-                }
-                Spacer()
+        .overlay(alignment: tabSidebarSide.alignment) {
+            if tabBarWidth > 0 {
+                tabSidebarResizeOverlay
             }
-        )
+        }
         .preferredColorScheme(colorScheme)
         .transaction {
             if reduceMotion { $0.disablesAnimations = true }
@@ -2500,12 +2557,12 @@ struct ContentView: View {
             pageURL: currentURL,
             onEnabledChange: showAutofillHUD(enabled:)
         ))
-        .overlay(alignment: .leading) { faviconPeekOverlay }
-        .overlay(alignment: .trailing) {
-            if showAgentPanel && !agentAdjustsPageLayout {
+        .overlay { faviconPeekOverlay }
+        .overlay(alignment: agentPanelSide.alignment) {
+            if showAgentPanel {
                 agentPanelView
-                .transition(.move(edge: .trailing).combined(with: .opacity))
-                .zIndex(20)
+                    .transition(.move(edge: agentPanelSide.edge).combined(with: .opacity))
+                    .zIndex(20)
             }
         }
         // One session, serialized by pageTranslator's own queue: it advances
@@ -3478,6 +3535,9 @@ struct ContentView: View {
               ),
               let encodedPrompt = String(data: promptData, encoding: .utf8) else {
             return AgentLocalPageContext(command: command, content: "")
+        }
+        if agentLoadsMorePageContent {
+            _ = try? await AgentPageLoadExpander.expand(webView)
         }
         let script: String
         switch command {
