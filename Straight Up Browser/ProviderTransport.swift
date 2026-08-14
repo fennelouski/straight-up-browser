@@ -7,6 +7,134 @@ nonisolated enum AgentProviderDialect: String, Codable, CaseIterable, Sendable {
     case geminiGenerateContent
 }
 
+nonisolated enum AgentReasoningRequestSchema: String, Codable, Equatable, Sendable {
+    case responsesObject
+    case chatReasoningEffort
+    case chatReasoningObject
+
+    var requestFieldName: String {
+        switch self {
+        case .responsesObject, .chatReasoningObject: "reasoning"
+        case .chatReasoningEffort: "reasoning_effort"
+        }
+    }
+
+    func matchesRejectedParameter(_ parameter: String) -> Bool {
+        switch self {
+        case .chatReasoningEffort:
+            parameter == "reasoning_effort"
+        case .responsesObject, .chatReasoningObject:
+            parameter == "reasoning" || parameter.hasPrefix("reasoning.")
+        }
+    }
+}
+
+/// A conservative, model-and-endpoint-specific view of optional provider
+/// features. Unknown OpenAI-compatible servers never receive reasoning fields.
+nonisolated struct AgentProviderCapabilityProfile: Equatable, Sendable {
+    let dialect: AgentProviderDialect
+    let modelID: String
+    let reasoningSchema: AgentReasoningRequestSchema?
+    let reasoningDecision: String
+    fileprivate let cacheKey: AgentProviderCapabilityCache.Key
+
+    static func resolve(
+        dialect: AgentProviderDialect,
+        endpoint: URL,
+        model: String
+    ) -> AgentProviderCapabilityProfile {
+        let endpointIdentity = sanitizedEndpointIdentity(endpoint)
+        let safeModelID = AgentProviderAdapterError.safeMachineValue(
+            model,
+            allowed: "_-./:"
+        ) ?? "redacted-model-id"
+        let normalizedModel = model
+            .lowercased()
+            .split(separator: "/")
+            .last
+            .map(String.init) ?? model.lowercased()
+        let isReasoningModel = ["gpt-5", "o1", "o3", "o4", "grok-3", "grok-4"]
+            .contains { normalizedModel == $0 || normalizedModel.hasPrefix("\($0)-") || normalizedModel.hasPrefix("\($0).") }
+        let host = endpoint.host?.lowercased()
+
+        let schema: AgentReasoningRequestSchema?
+        let decision: String
+        switch dialect {
+        case .openAIResponses
+            where (host == "api.openai.com" || host == "openrouter.ai")
+                && isReasoningModel:
+            schema = .responsesObject
+            decision = "supported_responses_reasoning_object"
+        case .openAIResponses where host == "api.openai.com" || host == "openrouter.ai":
+            schema = nil
+            decision = "omitted_unsupported_model"
+        case .openAIResponses:
+            schema = nil
+            decision = "omitted_unverified_custom_endpoint"
+        case .openAICompatibleChat where host == "api.openai.com" && isReasoningModel:
+            schema = .chatReasoningEffort
+            decision = "supported_chat_reasoning_effort"
+        case .openAICompatibleChat where host == "openrouter.ai" && isReasoningModel:
+            schema = .chatReasoningObject
+            decision = "supported_chat_reasoning_object"
+        case .openAICompatibleChat where host == "api.openai.com" || host == "openrouter.ai":
+            schema = nil
+            decision = "omitted_unsupported_model"
+        case .openAICompatibleChat:
+            schema = nil
+            decision = "omitted_unverified_custom_endpoint"
+        case .anthropicMessages, .geminiGenerateContent:
+            schema = nil
+            decision = "omitted_non_openai_dialect"
+        }
+
+        return AgentProviderCapabilityProfile(
+            dialect: dialect,
+            modelID: safeModelID,
+            reasoningSchema: schema,
+            reasoningDecision: decision,
+            cacheKey: AgentProviderCapabilityCache.Key(
+                dialect: dialect,
+                endpointIdentity: endpointIdentity,
+                model: model,
+                requestFieldName: schema?.requestFieldName ?? "none"
+            )
+        )
+    }
+
+    private static func sanitizedEndpointIdentity(_ endpoint: URL) -> String {
+        guard var components = URLComponents(
+            url: endpoint,
+            resolvingAgainstBaseURL: false
+        ) else { return "invalid" }
+        components.user = nil
+        components.password = nil
+        components.query = nil
+        components.fragment = nil
+        return components.string ?? "invalid"
+    }
+}
+
+actor AgentProviderCapabilityCache {
+    struct Key: Hashable, Sendable {
+        let dialect: AgentProviderDialect
+        let endpointIdentity: String
+        let model: String
+        let requestFieldName: String
+    }
+
+    static let shared = AgentProviderCapabilityCache()
+    private var rejectedCapabilities: Set<Key> = []
+
+    func isRejected(_ profile: AgentProviderCapabilityProfile) -> Bool {
+        rejectedCapabilities.contains(profile.cacheKey)
+    }
+
+    func recordRejected(_ profile: AgentProviderCapabilityProfile) {
+        rejectedCapabilities.insert(profile.cacheKey)
+    }
+}
+
 nonisolated struct AgentProviderHTTPResponse: Sendable {
     let statusCode: Int
     let headers: [String: String]
@@ -88,17 +216,20 @@ nonisolated struct AgentProviderHTTPAdapter: AgentProviderAdapter, CustomStringC
     let endpoint: URL
     private let apiKey: String
     private let transport: any AgentProviderHTTPTransport
+    private let capabilityCache: AgentProviderCapabilityCache
 
     init(
         dialect: AgentProviderDialect,
         endpoint: URL,
         apiKey: String,
-        transport: any AgentProviderHTTPTransport = URLSessionAgentProviderTransport()
+        transport: any AgentProviderHTTPTransport = URLSessionAgentProviderTransport(),
+        capabilityCache: AgentProviderCapabilityCache = .shared
     ) {
         self.dialect = dialect
         self.endpoint = endpoint
         self.apiKey = apiKey
         self.transport = transport
+        self.capabilityCache = capabilityCache
     }
 
     var providerID: String { dialect.rawValue }
@@ -123,76 +254,137 @@ nonisolated struct AgentProviderHTTPAdapter: AgentProviderAdapter, CustomStringC
     func events(
         for request: AgentModelRequest
     ) throws -> AsyncThrowingStream<AgentModelEvent, Error> {
-        try validateCapabilities(for: request)
-        let body = try requestBody(for: request)
-        // Chat Completions providers reject reasoning controls for some models.
-        // Keep this at the transport boundary so an upstream adapter change cannot
-        // accidentally reintroduce the unsupported parameter.
-        let outboundBody = sanitizedOutboundBody(body)
-        let outboundFieldNames = Self.topLevelFieldNames(in: outboundBody)
-        let bodyData = try JSONSerialization.data(
-            withJSONObject: outboundBody.foundationValue,
-            options: [.sortedKeys]
-        )
-        guard bodyData.count <= Self.maximumRequestBytes else {
-            throw AgentProviderAdapterError.invalidRequest(
+        let requiredCapabilities = request.requiredCapabilities.subtracting([.reasoningControls])
+        let missingCapabilities = requiredCapabilities.subtracting(capabilities.supported)
+        guard missingCapabilities.isEmpty else {
+            throw AgentProviderAdapterError.unsupportedCapabilities(
                 providerID: providerID,
-                message: "The normalized provider request exceeds the 4 MiB limit."
+                capabilities: missingCapabilities
             )
         }
-        let urlRequest = makeURLRequest(body: bodyData, model: request.model)
         let transport = self.transport
+        let capabilityCache = self.capabilityCache
         let providerID = self.providerID
         let dialect = self.dialect
+        let profile = AgentProviderCapabilityProfile.resolve(
+            dialect: dialect,
+            endpoint: endpoint,
+            model: request.model
+        )
 
         return AsyncThrowingStream { continuation in
             let producer = Task {
                 do {
-                    let response = try await transport.response(for: urlRequest)
-                    guard (200..<300).contains(response.statusCode) else {
-                        let retryAfter = response.headers["retry-after"].flatMap(TimeInterval.init)
-                        let errorBody = try await Self.boundedErrorBody(response.body)
-                        throw AgentProviderAdapterError.httpStatus(
-                            providerID: providerID,
-                            statusCode: response.statusCode,
-                            retryAfter: retryAfter,
-                            untrustedResponseBody: errorBody,
-                            sentRequestFields: outboundFieldNames
-                        )
-                    }
-
-                    var decoder = AgentSSEDecoder()
-                    var parser = AgentHTTPStreamParser(dialect: dialect)
-                    var responseBytes = 0
-                    for try await chunk in response.body {
+                    var isDowngraded = await capabilityCache.isRejected(profile)
+                    var didRetryRejectedCapability = false
+                    while true {
                         try Task.checkCancellation()
-                        responseBytes += chunk.count
-                        guard responseBytes <= Self.maximumResponseBytes else {
-                            throw AgentProviderAdapterError(
+                        let effectiveSchema = isDowngraded ? nil : profile.reasoningSchema
+                        let effectiveRequest = effectiveSchema == nil
+                            ? request.omittingReasoningEffort()
+                            : request
+                        let outboundBody = try requestBody(
+                            for: effectiveRequest,
+                            reasoningSchema: effectiveSchema
+                        )
+                        let outboundFieldNames = Self.topLevelFieldNames(in: outboundBody)
+                        let bodyData = try JSONSerialization.data(
+                            withJSONObject: outboundBody.foundationValue,
+                            options: [.sortedKeys]
+                        )
+                        guard bodyData.count <= Self.maximumRequestBytes else {
+                            throw AgentProviderAdapterError.invalidRequest(
                                 providerID: providerID,
-                                code: .malformedStream,
-                                safeMessage: "The provider stream exceeded the 16 MiB limit.",
-                                retryClassification: .permanent
+                                message: "The normalized provider request exceeds the 4 MiB limit."
                             )
                         }
-                        for frame in try decoder.append(chunk) {
+                        if request.reasoningEffort != nil {
+                            continuation.yield(.diagnostic(AgentProviderDiagnostic(
+                                dialect: dialect,
+                                modelID: profile.modelID,
+                                requestFieldNames: outboundFieldNames,
+                                capabilityDecision: isDowngraded
+                                    ? "cached_downgrade_omit"
+                                    : profile.reasoningDecision
+                            )))
+                        }
+
+                        let urlRequest = makeURLRequest(body: bodyData, model: request.model)
+                        let response = try await transport.response(for: urlRequest)
+                        guard (200..<300).contains(response.statusCode) else {
+                            let retryAfter = response.headers["retry-after"].flatMap(TimeInterval.init)
+                            let errorBody = try await Self.boundedErrorBody(response.body)
+                            let providerDetail = AgentProviderAdapterError.providerErrorDetail(
+                                from: errorBody
+                            )
+                            if response.statusCode == 400,
+                               !didRetryRejectedCapability,
+                               !isDowngraded,
+                               let schema = effectiveSchema,
+                               let parameter = providerDetail.parameter,
+                               schema.matchesRejectedParameter(parameter),
+                               outboundFieldNames.contains(schema.requestFieldName) {
+                                await capabilityCache.recordRejected(profile)
+                                continuation.yield(.diagnostic(AgentProviderDiagnostic(
+                                    dialect: dialect,
+                                    modelID: profile.modelID,
+                                    requestFieldNames: outboundFieldNames,
+                                    capabilityDecision: "downgraded_after_rejected_parameter",
+                                    providerErrorCode: providerDetail.code,
+                                    providerErrorParameter: parameter
+                                )))
+                                isDowngraded = true
+                                didRetryRejectedCapability = true
+                                continue
+                            }
+                            throw AgentProviderAdapterError.httpStatus(
+                                providerID: providerID,
+                                statusCode: response.statusCode,
+                                retryAfter: retryAfter,
+                                untrustedResponseBody: errorBody,
+                                sentRequestFields: outboundFieldNames,
+                                dialect: dialect,
+                                modelID: profile.modelID,
+                                capabilityDecision: isDowngraded
+                                    ? "cached_downgrade_omit"
+                                    : profile.reasoningDecision
+                            )
+                        }
+
+                        var decoder = AgentSSEDecoder()
+                        var parser = AgentHTTPStreamParser(dialect: dialect)
+                        var responseBytes = 0
+                        for try await chunk in response.body {
+                            try Task.checkCancellation()
+                            responseBytes += chunk.count
+                            guard responseBytes <= Self.maximumResponseBytes else {
+                                throw AgentProviderAdapterError(
+                                    providerID: providerID,
+                                    code: .malformedStream,
+                                    safeMessage: "The provider stream exceeded the 16 MiB limit.",
+                                    retryClassification: .permanent
+                                )
+                            }
+                            for frame in try decoder.append(chunk) {
+                                try Self.validateFrame(frame, providerID: providerID)
+                                for event in try parser.consume(frame) {
+                                    try Task.checkCancellation()
+                                    continuation.yield(event)
+                                }
+                            }
+                        }
+                        for frame in try decoder.finish() {
                             try Self.validateFrame(frame, providerID: providerID)
                             for event in try parser.consume(frame) {
                                 try Task.checkCancellation()
                                 continuation.yield(event)
                             }
                         }
-                    }
-                    for frame in try decoder.finish() {
-                        try Self.validateFrame(frame, providerID: providerID)
-                        for event in try parser.consume(frame) {
+                        for event in parser.finish() {
                             try Task.checkCancellation()
                             continuation.yield(event)
                         }
-                    }
-                    for event in parser.finish() {
-                        try Task.checkCancellation()
-                        continuation.yield(event)
+                        break
                     }
                     continuation.finish()
                 } catch {
@@ -214,10 +406,16 @@ nonisolated struct AgentProviderHTTPAdapter: AgentProviderAdapter, CustomStringC
         return components.string ?? "invalid"
     }
 
-    private func requestBody(for request: AgentModelRequest) throws -> JSONValue {
+    private func requestBody(
+        for request: AgentModelRequest,
+        reasoningSchema: AgentReasoningRequestSchema?
+    ) throws -> JSONValue {
         switch dialect {
         case .openAICompatibleChat:
-            try OpenAICompatibleChatRequestBuilder().makeBody(for: request)
+            try OpenAICompatibleChatRequestBuilder().makeBody(
+                for: request,
+                reasoningSchema: reasoningSchema
+            )
         case .openAIResponses:
             try OpenAIResponsesRequestBuilder().makeBody(for: request)
         case .anthropicMessages:
@@ -225,16 +423,6 @@ nonisolated struct AgentProviderHTTPAdapter: AgentProviderAdapter, CustomStringC
         case .geminiGenerateContent:
             try GeminiGenerateContentRequestBuilder().makeBody(for: request)
         }
-    }
-
-    private func sanitizedOutboundBody(_ body: JSONValue) -> JSONValue {
-        guard dialect == .openAICompatibleChat,
-              case .object(var fields) = body else {
-            return body
-        }
-        fields.removeValue(forKey: "reasoning_effort")
-        fields.removeValue(forKey: "reasoning")
-        return .object(fields)
     }
 
     /// Names only: suitable for diagnostics without retaining prompt, tool, or

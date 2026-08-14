@@ -230,8 +230,16 @@ actor AgentRunStore {
         runs = loadedRuns
     }
 
-    func createConversation(title: String, at date: Date = Date()) throws -> AgentConversation {
-        let conversation = AgentConversation(title: title, createdAt: date)
+    func createConversation(
+        title: String,
+        scopeKey: String? = nil,
+        at date: Date = Date()
+    ) throws -> AgentConversation {
+        let conversation = AgentConversation(
+            title: title,
+            createdAt: date,
+            scopeKey: scopeKey
+        )
         conversations[conversation.id] = conversation
         do {
             try persistConversationIndex()

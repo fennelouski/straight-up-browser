@@ -149,6 +149,21 @@ nonisolated struct AgentModelRequest: Codable, Equatable, Sendable {
         if reasoningEffort != nil { required.insert(.reasoningControls) }
         return required
     }
+
+    func omittingReasoningEffort() -> AgentModelRequest {
+        AgentModelRequest(
+            id: id,
+            model: model,
+            messages: messages,
+            tools: tools,
+            temperature: temperature,
+            maxOutputTokens: maxOutputTokens,
+            reasoningEffort: nil,
+            responseFormat: responseFormat,
+            allowParallelToolCalls: allowParallelToolCalls,
+            additionalRequiredCapabilities: additionalRequiredCapabilities
+        )
+    }
 }
 
 nonisolated enum AgentModelFinishReason: Codable, Equatable, Sendable {
@@ -193,6 +208,34 @@ nonisolated struct AgentProviderWarning: Codable, Equatable, Sendable {
     let message: String
 }
 
+/// Safe request metadata that can be retained in a Run Step. Values are
+/// deliberately limited to the endpoint dialect, a sanitized model ID, field
+/// names, the capability decision, and machine-readable provider error fields.
+nonisolated struct AgentProviderDiagnostic: Codable, Equatable, Sendable {
+    let dialect: AgentProviderDialect
+    let modelID: String
+    let requestFieldNames: [String]
+    let capabilityDecision: String
+    let providerErrorCode: String?
+    let providerErrorParameter: String?
+
+    init(
+        dialect: AgentProviderDialect,
+        modelID: String,
+        requestFieldNames: [String],
+        capabilityDecision: String,
+        providerErrorCode: String? = nil,
+        providerErrorParameter: String? = nil
+    ) {
+        self.dialect = dialect
+        self.modelID = modelID
+        self.requestFieldNames = requestFieldNames.sorted()
+        self.capabilityDecision = capabilityDecision
+        self.providerErrorCode = providerErrorCode
+        self.providerErrorParameter = providerErrorParameter
+    }
+}
+
 nonisolated enum AgentModelEvent: Codable, Equatable, Sendable {
     case responseStarted(id: String?)
     case textDelta(String)
@@ -201,6 +244,7 @@ nonisolated enum AgentModelEvent: Codable, Equatable, Sendable {
     case toolCallCompleted(call: AgentToolCall, arguments: AgentToolArguments)
     case usage(AgentModelUsage)
     case warning(AgentProviderWarning)
+    case diagnostic(AgentProviderDiagnostic)
     case finished(AgentModelFinishReason)
 }
 
@@ -256,6 +300,11 @@ nonisolated struct AgentProviderAdapterError: Error, Equatable, Sendable {
     let safeMessage: String
     let retryClassification: AgentProviderRetryClassification
 
+    nonisolated struct ProviderErrorDetail: Equatable, Sendable {
+        let code: String?
+        let parameter: String?
+    }
+
     static func unsupportedCapabilities(
         providerID: String,
         capabilities: Set<AgentProviderCapability>
@@ -292,7 +341,10 @@ nonisolated struct AgentProviderAdapterError: Error, Equatable, Sendable {
         statusCode: Int,
         retryAfter: TimeInterval? = nil,
         untrustedResponseBody: String? = nil,
-        sentRequestFields: [String] = []
+        sentRequestFields: [String] = [],
+        dialect: AgentProviderDialect? = nil,
+        modelID: String? = nil,
+        capabilityDecision: String? = nil
     ) -> AgentProviderAdapterError {
         let code: Code
         let retry: AgentProviderRetryClassification
@@ -320,12 +372,22 @@ nonisolated struct AgentProviderAdapterError: Error, Equatable, Sendable {
         let requestAudit = sentRequestFields.isEmpty
             ? ""
             : " Request fields: \(sentRequestFields.joined(separator: ", "))."
+        let capabilityAudit = [
+            dialect.map { "Dialect: \($0.rawValue)." },
+            safeMachineValue(modelID, allowed: "_-./:").map { "Model: \($0)." },
+            safeMachineValue(capabilityDecision, allowed: "_-.").map {
+                "Capability decision: \($0)."
+            },
+        ]
+        .compactMap { $0 }
+        .joined(separator: " ")
         return AgentProviderAdapterError(
             providerID: providerID,
             code: code,
             safeMessage: "\(providerID) request failed with HTTP \(statusCode)."
                 + (detail.isEmpty ? "" : " \(detail)")
-                + requestAudit,
+                + requestAudit
+                + (capabilityAudit.isEmpty ? "" : " \(capabilityAudit)"),
             retryClassification: retry
         )
     }
@@ -333,11 +395,13 @@ nonisolated struct AgentProviderAdapterError: Error, Equatable, Sendable {
     /// Server messages can echo prompt or account data. Surface only short,
     /// machine-readable code and parameter fields so the UI helps diagnose a
     /// request without retaining untrusted response text.
-    private static func providerErrorDetail(from body: String?) -> (code: String?, parameter: String?) {
+    static func providerErrorDetail(from body: String?) -> ProviderErrorDetail {
         guard let body,
               let data = body.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let error = root["error"] as? [String: Any] else { return (nil, nil) }
+              let error = root["error"] as? [String: Any] else {
+            return ProviderErrorDetail(code: nil, parameter: nil)
+        }
         let code = safeMachineValue(
             (error["code"] as? String) ?? (error["type"] as? String),
             allowed: "_-."
@@ -346,10 +410,10 @@ nonisolated struct AgentProviderAdapterError: Error, Equatable, Sendable {
             error["param"] as? String,
             allowed: "_-.[]"
         )
-        return (code, parameter)
+        return ProviderErrorDetail(code: code, parameter: parameter)
     }
 
-    private static func safeMachineValue(_ raw: String?, allowed: String) -> String? {
+    static func safeMachineValue(_ raw: String?, allowed: String) -> String? {
         guard let raw, raw.count <= 120 else { return nil }
         let permitted = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: allowed))
         guard raw.unicodeScalars.allSatisfy({ permitted.contains($0) }) else {
@@ -666,12 +730,15 @@ nonisolated struct OpenAICompatibleChatStreamParser: Sendable {
 nonisolated struct OpenAICompatibleChatRequestBuilder: Sendable {
     let capabilities = AgentProviderCapabilities([
         .streaming, .toolCalling, .parallelToolCalls, .imageInput,
-        .structuredOutput, .usageReporting,
+        .structuredOutput, .usageReporting, .reasoningControls,
     ])
 
     init() {}
 
-    func makeBody(for request: AgentModelRequest) throws -> JSONValue {
+    func makeBody(
+        for request: AgentModelRequest,
+        reasoningSchema: AgentReasoningRequestSchema? = nil
+    ) throws -> JSONValue {
         let providerID = "openai-compatible-chat"
         let missing = request.requiredCapabilities.subtracting(capabilities.supported)
         guard missing.isEmpty else {
@@ -713,6 +780,16 @@ nonisolated struct OpenAICompatibleChatRequestBuilder: Sendable {
         }
         if let responseFormat = request.responseFormat {
             body["response_format"] = chatResponseFormat(responseFormat)
+        }
+        if let reasoningEffort = request.reasoningEffort {
+            switch reasoningSchema {
+            case .chatReasoningEffort:
+                body["reasoning_effort"] = .string(reasoningEffort)
+            case .chatReasoningObject:
+                body["reasoning"] = .object(["effort": .string(reasoningEffort)])
+            case .responsesObject, nil:
+                break
+            }
         }
         return .object(body)
     }

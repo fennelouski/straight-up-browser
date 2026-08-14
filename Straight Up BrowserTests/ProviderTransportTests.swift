@@ -88,39 +88,137 @@ struct ProviderTransportTests {
         #expect(!error.safeMessage.contains("secret prompt text"))
     }
 
-    @Test func chatTransportDoesNotSerializeReasoningFields() async throws {
-        let recorder = ProviderRequestRecorder()
-        let adapter = AgentProviderHTTPAdapter(
-            dialect: .openAICompatibleChat,
-            endpoint: URL(string: "https://provider.invalid/v1/chat/completions")!,
-            apiKey: "fixture-secret",
-            transport: FixtureProviderTransport(
-                recorder: recorder,
-                response: AgentProviderHTTPResponse(
-                    statusCode: 200,
-                    headers: [:],
-                    body: AsyncThrowingStream { continuation in
-                        continuation.yield(Data(
-                            (#"data: {"id":"response-1","choices":[{"delta":{"content":"Hi"},"finish_reason":"stop"}]}"# + "\n\n").utf8
-                        ))
-                        continuation.yield(Data("data: [DONE]\n\n".utf8))
-                        continuation.finish()
-                    }
+    @Test func reasoningSerializationUsesTheProfileSchemaAndOmitsUnsupportedFields() async throws {
+        let fixtures: [(AgentProviderDialect, String, String, String?)] = [
+            (.openAIResponses, "https://api.openai.com/v1/responses", "gpt-5.6-luna", "reasoning"),
+            (.openAICompatibleChat, "https://api.openai.com/v1/chat/completions", "o3-mini", "reasoning_effort"),
+            (.openAICompatibleChat, "https://openrouter.ai/api/v1/chat/completions", "openai/gpt-5", "reasoning"),
+            (.openAIResponses, "https://api.openai.com/v1/responses", "gpt-4.1", nil),
+            (.openAICompatibleChat, "https://provider.invalid/v1/chat/completions", "gpt-5", nil),
+        ]
+
+        for fixture in fixtures {
+            let recorder = ProviderRequestRecorder()
+            let adapter = AgentProviderHTTPAdapter(
+                dialect: fixture.0,
+                endpoint: try #require(URL(string: fixture.1)),
+                apiKey: "fixture-secret",
+                transport: FixtureProviderTransport(
+                    recorder: recorder,
+                    response: successfulResponse(for: fixture.0)
                 )
             )
+            let request = AgentModelRequest(
+                model: fixture.2,
+                messages: [AgentModelMessage(role: .user, content: [.text("Hello")])],
+                reasoningEffort: "low"
+            )
+
+            _ = try await collect(adapter.events(for: request))
+
+            let sent = try #require(await recorder.request)
+            let body = try #require(sent.httpBody)
+            let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            if fixture.3 == "reasoning" {
+                let reasoning = try #require(json["reasoning"] as? [String: Any])
+                #expect(reasoning["effort"] as? String == "low")
+                #expect(json["reasoning_effort"] == nil)
+            } else if fixture.3 == "reasoning_effort" {
+                #expect(json["reasoning_effort"] as? String == "low")
+                #expect(json["reasoning"] == nil)
+            } else {
+                #expect(json["reasoning_effort"] == nil)
+                #expect(json["reasoning"] == nil)
+            }
+        }
+    }
+
+    @Test func explicitReasoningParameter400DowngradesCachesAndRetriesOnce() async throws {
+        let transport = ScriptedProviderTransport(responses: [
+            AgentProviderHTTPResponse(
+                statusCode: 400,
+                headers: [:],
+                body: AsyncThrowingStream { continuation in
+                    continuation.yield(Data(#"{"error":{"code":"invalid_request_error","param":"reasoning_effort","message":"prompt echo must stay private"}}"#.utf8))
+                    continuation.finish()
+                }
+            ),
+            successfulResponse(for: .openAICompatibleChat),
+            successfulResponse(for: .openAICompatibleChat),
+        ])
+        let capabilityCache = AgentProviderCapabilityCache()
+        let adapter = AgentProviderHTTPAdapter(
+            dialect: .openAICompatibleChat,
+            endpoint: URL(string: "https://api.openai.com/v1/chat/completions")!,
+            apiKey: "fixture-secret",
+            transport: transport,
+            capabilityCache: capabilityCache
         )
         let request = AgentModelRequest(
-            model: "fixture",
-            messages: [AgentModelMessage(role: .user, content: [.text("Hello")])]
+            model: "o3-mini",
+            messages: [AgentModelMessage(role: .user, content: [.text("Hello")])],
+            reasoningEffort: "low"
         )
 
+        let firstEvents = try await collect(adapter.events(for: request))
         _ = try await collect(adapter.events(for: request))
 
-        let sent = try #require(await recorder.request)
-        let body = try #require(sent.httpBody)
-        let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
-        #expect(json["reasoning_effort"] == nil)
-        #expect(json["reasoning"] == nil)
+        let requests = await transport.requests
+        #expect(requests.count == 3)
+        let bodies = try requests.map { request -> [String: Any] in
+            let data = try #require(request.httpBody)
+            return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+        #expect(bodies[0]["reasoning_effort"] as? String == "low")
+        #expect(bodies[1]["reasoning_effort"] == nil)
+        #expect(bodies[2]["reasoning_effort"] == nil)
+
+        let downgrade = firstEvents.compactMap { event -> AgentProviderDiagnostic? in
+            guard case .diagnostic(let diagnostic) = event else { return nil }
+            return diagnostic.providerErrorParameter == "reasoning_effort" ? diagnostic : nil
+        }.first
+        #expect(downgrade?.dialect == .openAICompatibleChat)
+        #expect(downgrade?.modelID == "o3-mini")
+        #expect(downgrade?.capabilityDecision == "downgraded_after_rejected_parameter")
+        #expect(downgrade?.providerErrorCode == "invalid_request_error")
+        #expect(downgrade?.requestFieldNames.contains("reasoning_effort") == true)
+        #expect(!String(describing: downgrade).contains("prompt echo must stay private"))
+    }
+
+    @Test func unrelated400ParameterIsNeverRetriedOrCached() async throws {
+        let transport = ScriptedProviderTransport(responses: [
+            AgentProviderHTTPResponse(
+                statusCode: 400,
+                headers: [:],
+                body: AsyncThrowingStream { continuation in
+                    continuation.yield(Data(#"{"error":{"code":"invalid_request_error","param":"temperature","message":"private response text"}}"#.utf8))
+                    continuation.finish()
+                }
+            ),
+        ])
+        let adapter = AgentProviderHTTPAdapter(
+            dialect: .openAICompatibleChat,
+            endpoint: URL(string: "https://api.openai.com/v1/chat/completions")!,
+            apiKey: "fixture-secret",
+            transport: transport,
+            capabilityCache: AgentProviderCapabilityCache()
+        )
+
+        do {
+            _ = try await collect(adapter.events(for: AgentModelRequest(
+                model: "o3-mini",
+                messages: [AgentModelMessage(role: .user, content: [.text("Hello")])],
+                reasoningEffort: "low"
+            )))
+            Issue.record("Expected the unrelated 400 to fail without retry")
+        } catch let error as AgentProviderAdapterError {
+            #expect(error.safeMessage.contains("Parameter: temperature."))
+            #expect(error.safeMessage.contains("Dialect: openAICompatibleChat."))
+            #expect(error.safeMessage.contains("Model: o3-mini."))
+            #expect(!error.safeMessage.contains("private response text"))
+        }
+
+        #expect(await transport.requests.count == 1)
     }
 
     @Test func selectableNativeProvidersRouteChunkedStreamsWithCorrectAuthentication() async throws {
@@ -435,6 +533,30 @@ struct ProviderTransportTests {
         for try await event in stream { events.append(event) }
         return events
     }
+
+    private func successfulResponse(
+        for dialect: AgentProviderDialect
+    ) -> AgentProviderHTTPResponse {
+        let chunks: [String] = switch dialect {
+        case .openAICompatibleChat:
+            [
+                #"data: {"id":"response-1","choices":[{"delta":{"content":"Hi"},"finish_reason":"stop"}]}"# + "\n\n",
+                "data: [DONE]\n\n",
+            ]
+        case .openAIResponses:
+            [#"data: {"type":"response.completed","response":{"status":"completed"}}"# + "\n\n"]
+        case .anthropicMessages, .geminiGenerateContent:
+            []
+        }
+        return AgentProviderHTTPResponse(
+            statusCode: 200,
+            headers: [:],
+            body: AsyncThrowingStream { continuation in
+                for chunk in chunks { continuation.yield(Data(chunk.utf8)) }
+                continuation.finish()
+            }
+        )
+    }
 }
 
 private struct NativeTransportFixture {
@@ -478,5 +600,22 @@ private struct FixtureProviderTransport: AgentProviderHTTPTransport {
     func response(for request: URLRequest) async throws -> AgentProviderHTTPResponse {
         await recorder.record(request)
         return response
+    }
+}
+
+private actor ScriptedProviderTransport: AgentProviderHTTPTransport {
+    private var responses: [AgentProviderHTTPResponse]
+    private(set) var requests: [URLRequest] = []
+
+    init(responses: [AgentProviderHTTPResponse]) {
+        self.responses = responses
+    }
+
+    func response(for request: URLRequest) async throws -> AgentProviderHTTPResponse {
+        requests.append(request)
+        guard !responses.isEmpty else {
+            throw URLError(.badServerResponse)
+        }
+        return responses.removeFirst()
     }
 }

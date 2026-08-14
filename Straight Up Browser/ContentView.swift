@@ -3511,15 +3511,125 @@ struct ContentView: View {
                 .map(item => item.tagName.toLowerCase() + ': ' + (item.innerText || '').replace(/\\s+/g, ' ').trim())
                 .filter(Boolean).slice(0, 100).join('\\n');
             """
+        case .articleIndex, .articleResearch:
+            script = """
+            (function() {
+                const root = document.body;
+                if (!root) return '[]';
+                const clean = value => String(value || '').replace(/\\s+/g, ' ').trim();
+                const rendered = element => {
+                    const style = getComputedStyle(element);
+                    return style.display !== 'none' && style.visibility !== 'hidden'
+                        && style.contentVisibility !== 'hidden';
+                };
+                const rows = [];
+                const identities = new Set();
+                const add = (title, url, context) => {
+                    title = clean(title).slice(0, 320);
+                    url = String(url || '').slice(0, 1000);
+                    const identity = (url || title).toLowerCase();
+                    if (!title || identities.has(identity)) return;
+                    identities.add(identity);
+                    rows.push({
+                        title,
+                        url,
+                        context: clean(context).slice(0, 700)
+                    });
+                };
+                root.querySelectorAll('article').forEach(article => {
+                    if (!rendered(article)) return;
+                    const heading = article.querySelector('h1,h2,h3,h4,[role=heading]');
+                    const link = heading?.closest('a[href]') || article.querySelector('a[href]');
+                    add(heading?.innerText || link?.innerText, link?.href, article.innerText);
+                });
+                root.querySelectorAll('h1,h2,h3,h4,[role=heading]').forEach(heading => {
+                    if (!rendered(heading)) return;
+                    const link = heading.closest('a[href]') || heading.querySelector('a[href]')
+                        || heading.parentElement?.querySelector('a[href]');
+                    if (!link?.href) return;
+                    const contextRoot = heading.closest('article,li,section') || heading.parentElement;
+                    add(heading.innerText, link.href, contextRoot?.innerText || heading.innerText);
+                });
+                root.querySelectorAll('a[href]').forEach(link => {
+                    if (!rendered(link) || link.closest('nav,header,footer')) return;
+                    let url;
+                    try { url = new URL(link.href, document.baseURI); } catch { return; }
+                    if (!/^https?:$/.test(url.protocol) || url.origin !== location.origin) return;
+                    const container = link.closest('article,li,[class*=card],[class*=story],section')
+                        || link.parentElement;
+                    const heading = container?.querySelector('h1,h2,h3,h4,[role=heading]');
+                    const linkText = clean(link.innerText || link.getAttribute('aria-label'));
+                    const title = clean(heading?.innerText) || linkText;
+                    if (title.length < 18 || /^(read more|learn more|more stories)$/i.test(title)) return;
+                    add(title, url.href, container?.innerText || linkText);
+                });
+                return JSON.stringify({
+                    candidates: rows.slice(0, 240),
+                    pageText: String(document.body?.innerText || '').slice(0, 36000)
+                });
+            })();
+            """
+        case .offerValidity:
+            script = """
+            (function() {
+                const root = document.querySelector('main,[role=main]') || document.body;
+                if (!root) return '';
+                const lines = (root.innerText || '').split(/\\n+/)
+                    .map(line => line.replace(/\\s+/g, ' ').trim())
+                    .filter(Boolean);
+                const relevant = /\\b(valid|active|expire|expires|expiration|until|through|after today|before|good for|offer|redeem|use by|full week|full month)\\b/i;
+                const selected = new Set();
+                lines.forEach((line, index) => {
+                    if (!relevant.test(line)) return;
+                    for (let nearby = Math.max(0, index - 1); nearby <= Math.min(lines.length - 1, index + 1); nearby++) {
+                        selected.add(nearby);
+                    }
+                });
+                const result = Array.from(selected).sort((a, b) => a - b)
+                    .slice(0, 60).map(index => lines[index].slice(0, 500));
+                const dates = Array.from(root.querySelectorAll('time,[datetime]'))
+                    .map(element => {
+                        const label = (element.innerText || '').replace(/\\s+/g, ' ').trim();
+                        const value = element.getAttribute('datetime') || '';
+                        return [label, value].filter(Boolean).join(' — ');
+                    }).filter(Boolean).slice(0, 20);
+                if (dates.length) result.push('Page date markers:', ...dates);
+                return result.join('\\n').slice(0, 12000);
+            })();
+            """
         case .mainText:
             script = """
-            ((document.querySelector('main,article,[role=main]') || document.body)?.innerText || '').slice(0, 12000);
+            (document.body?.innerText || '').slice(0, 36000);
             """
         case .none:
             return AgentLocalPageContext(command: .none, content: "")
         }
-        let content = (try? await webView.evaluateJavaScript(script) as? String) ?? ""
-        return AgentLocalPageContext(command: command, content: String(content.prefix(12_000)))
+        let rawContent = (try? await webView.evaluateJavaScript(script) as? String) ?? ""
+        let content: String
+        if command == .articleIndex || command == .articleResearch,
+           let data = rawContent.data(using: .utf8),
+           let evidence = try? JSONDecoder().decode(AgentArticlePageEvidence.self, from: data) {
+            if command == .articleResearch {
+                content = AgentArticleIndexFormatter.researchContent(
+                    evidence: evidence,
+                    prompt: prompt
+                )
+            } else {
+                content = AgentArticleIndexFormatter.content(
+                    candidates: evidence.candidates,
+                    prompt: prompt
+                )
+            }
+        } else {
+            content = rawContent
+        }
+        let maximumCharacters = command == .articleResearch || command == .mainText
+            ? 40_000
+            : 12_000
+        return AgentLocalPageContext(
+            command: command,
+            content: String(content.prefix(maximumCharacters))
+        )
     }
 
 }

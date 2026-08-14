@@ -3,6 +3,50 @@ import Testing
 @testable import Browser
 
 struct ProviderAdapterTests {
+    @Test func reasoningCapabilityProfilesAreModelAndEndpointAware() throws {
+        let openAIResponses = AgentProviderCapabilityProfile.resolve(
+            dialect: .openAIResponses,
+            endpoint: try #require(URL(string: "https://api.openai.com/v1/responses")),
+            model: "gpt-5.6-luna"
+        )
+        #expect(openAIResponses.reasoningSchema == .responsesObject)
+
+        let nonReasoningResponses = AgentProviderCapabilityProfile.resolve(
+            dialect: .openAIResponses,
+            endpoint: try #require(URL(string: "https://api.openai.com/v1/responses")),
+            model: "gpt-4.1"
+        )
+        #expect(nonReasoningResponses.reasoningSchema == nil)
+
+        let openAIChat = AgentProviderCapabilityProfile.resolve(
+            dialect: .openAICompatibleChat,
+            endpoint: try #require(URL(string: "https://api.openai.com/v1/chat/completions")),
+            model: "o3-mini"
+        )
+        #expect(openAIChat.reasoningSchema == .chatReasoningEffort)
+
+        let openRouterChat = AgentProviderCapabilityProfile.resolve(
+            dialect: .openAICompatibleChat,
+            endpoint: try #require(URL(string: "https://openrouter.ai/api/v1/chat/completions")),
+            model: "openai/gpt-5"
+        )
+        #expect(openRouterChat.reasoningSchema == .chatReasoningObject)
+
+        let unknownCompatible = AgentProviderCapabilityProfile.resolve(
+            dialect: .openAICompatibleChat,
+            endpoint: try #require(URL(string: "https://provider.invalid/v1/chat/completions")),
+            model: "gpt-5"
+        )
+        #expect(unknownCompatible.reasoningSchema == nil)
+
+        let unsafeModelID = AgentProviderCapabilityProfile.resolve(
+            dialect: .openAIResponses,
+            endpoint: try #require(URL(string: "https://api.openai.com/v1/responses")),
+            model: "gpt-5\nprompt text must not enter diagnostics"
+        )
+        #expect(unsafeModelID.modelID == "redacted-model-id")
+    }
+
     @Test func scriptedAdapterEmitsNormalizedEventsInOrder() async throws {
         let request = AgentModelRequest(
             model: "scripted",

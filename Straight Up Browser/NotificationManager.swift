@@ -1387,18 +1387,20 @@ class NotificationManager {
         permit: AgentExecutionPermit? = nil,
         authorizedPageBindings: [BrowserAutomationPageDispatchBinding] = []
     ) async -> String {
-        let authorization = CLIAuthorization()
-        let capability = CLIAuthorization.capability(forAgentTool: tool)
-        guard authorization.allows(capability: capability) else {
-            return "{\"error\":\"\(authorization.denialMessage(for: capability))\"}"
-        }
         guard let descriptor = AgentToolCatalog.canonical.descriptor(named: tool) else {
             return automationJSONString(["error": "unknown agent tool"])
         }
+        // This entry point is used by an in-app Run after AgentPolicyEngine has
+        // issued a concrete execution permit. CLI/MCP preferences protect the
+        // external entry points and must not reject an already-authorized Run.
+        guard let permit, permit.toolName == tool else {
+            return automationJSONString([
+                "error": "policy authorization does not match requested tool",
+            ])
+        }
         var boundArguments = arguments
         if descriptor.requiresLivePageTarget {
-            guard let permit, permit.toolName == tool,
-                  let validated = await validatedAutomationArguments(
+            guard let validated = await validatedAutomationArguments(
                       arguments,
                       descriptor: descriptor,
                       authorizedPageBindings: authorizedPageBindings
@@ -1409,7 +1411,7 @@ class NotificationManager {
             }
             boundArguments = validated
         }
-        if let permit, descriptor.requiresLivePageTarget,
+        if descriptor.requiresLivePageTarget,
            let targetTab = tab(for: boundArguments),
            let targetWebView = automationWebView(for: boundArguments) {
             do {
@@ -1446,7 +1448,6 @@ class NotificationManager {
             )
         }
         guard descriptor.requiresLivePageTarget,
-              let permit,
               let authorizedBinding = authorizedPageBindings.first else {
             return await operation()
         }

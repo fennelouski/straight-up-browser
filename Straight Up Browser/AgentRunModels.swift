@@ -135,13 +135,17 @@ nonisolated struct AgentConversation: Codable, Equatable, Identifiable, Sendable
     var updatedAt: Date
     var runIDs: [UUID]
     var importedFromLegacy: Bool
+    /// A metadata-only routing key. Nil is decoded as the legacy continuous
+    /// chat so existing conversation indexes remain compatible.
+    var scopeKey: String?
 
     init(
         id: UUID = UUID(),
         title: String,
         createdAt: Date = Date(),
         runIDs: [UUID] = [],
-        importedFromLegacy: Bool = false
+        importedFromLegacy: Bool = false,
+        scopeKey: String? = nil
     ) {
         schemaVersion = Self.schemaVersion
         self.id = id
@@ -150,6 +154,7 @@ nonisolated struct AgentConversation: Codable, Equatable, Identifiable, Sendable
         updatedAt = createdAt
         self.runIDs = runIDs
         self.importedFromLegacy = importedFromLegacy
+        self.scopeKey = scopeKey
     }
 }
 
