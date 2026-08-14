@@ -809,6 +809,7 @@ struct ShortcutTests {
 
         // Out of the box: reload is ours, find belongs to the page.
         #expect(priority.browserWins(.reload, host: "example.com"))
+        #expect(priority.browserWins(.toggleTabBar, host: "example.com"))
         #expect(!priority.browserWins(.findInPage, host: "example.com"))
 
         // Global setting applies everywhere…

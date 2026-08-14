@@ -170,6 +170,8 @@ struct TabRowView: View {
     var isIncognito: Bool = false
     var isDisplayedInSplit: Bool = false // visible as a split pane (dimmer highlight + glyph)
     var automaticLinkBirthCue: AutomaticLinkBirthCue? = nil
+    var thumbnail: NSImage? = nil
+    var expandedHeight: CGFloat? = nil
 
     private var isSelected: Bool {
         selectedTabId == tab.id
@@ -266,7 +268,59 @@ struct TabRowView: View {
             Button {
                 onSelect()
             } label: {
-                if showOnlyIcons {
+                if let expandedHeight, expandedHeight > 52, !showOnlyIcons {
+                    ZStack(alignment: .bottomLeading) {
+                        if let thumbnail {
+                            Image(nsImage: thumbnail)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(height: expandedHeight)
+                                .clipped()
+                                .overlay(
+                                    LinearGradient(
+                                        colors: [.clear, .black.opacity(0.72)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                        } else {
+                            LinearGradient(
+                                colors: [accent.opacity(0.34), accent.opacity(0.10)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        }
+                        HStack(spacing: 8) {
+                            faviconView(placeholderSize: 18)
+                                .padding(5)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 7))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(displayTitle)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(thumbnail == nil ? Color.primary : Color.white)
+                                    .lineLimit(2)
+                                if let host = tab.url?.host {
+                                    Text(host)
+                                        .font(.caption2)
+                                        .foregroundStyle(thumbnail == nil ? Color.secondary : Color.white.opacity(0.72))
+                                        .lineLimit(1)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                            if tab.isPinned { Image(systemName: "pin.fill").font(.caption2) }
+                        }
+                        .padding(10)
+                    }
+                    .frame(height: expandedHeight)
+                    .background(accent.opacity(isSelected ? 0.22 : 0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(isSelected ? accent.opacity(0.8) : Color.primary.opacity(0.08), lineWidth: isSelected ? 2 : 1)
+                    }
+                    .padding(.horizontal, 6)
+                    .contentShape(Rectangle())
+                } else if showOnlyIcons {
                     // Centered favicon layout for icon-only mode
                     // Use ZStack with explicit frame to ensure content stays within tab bar bounds
                     faviconView(placeholderSize: 14)

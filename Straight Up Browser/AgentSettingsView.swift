@@ -21,6 +21,7 @@ enum AgentSettingsRuntimeKey {
     static let model = "browserAgentModel"
     static let webKitConsoleCapture = "agentWebKitConsoleCaptureEnabled"
     static let webKitDiagnosticContent = "agentWebKitDiagnosticContentEnabled"
+    static let adjustsPageLayout = "browserAgentAdjustsPageLayout"
 
     static let allDefaultsKeys: Set<String> = [
         provider,
@@ -28,6 +29,7 @@ enum AgentSettingsRuntimeKey {
         model,
         webKitConsoleCapture,
         webKitDiagnosticContent,
+        adjustsPageLayout,
         AgentMemorySettings.Key.enabled,
         AgentMemorySettings.Key.allowSensitiveProposals,
         AgentMemorySettings.Key.maximumRetrievedEntries,
@@ -62,7 +64,9 @@ enum AgentSettingsRuntimeKey {
 
 struct AgentSettingsView: View {
     @AppStorage(AgentSettingsRuntimeKey.provider)
-    private var providerRaw = BrowserAgentProvider.openRouter.rawValue
+    private var providerRaw = BrowserAgentProvider.appleIntelligence.rawValue
+    @AppStorage(AgentSettingsRuntimeKey.adjustsPageLayout)
+    private var adjustsPageLayout = false
     @AppStorage(AgentSettingsRuntimeKey.endpoint)
     private var customEndpoint = ""
     @AppStorage(AgentSettingsRuntimeKey.model)
@@ -190,6 +194,7 @@ struct AgentSettingsView: View {
 
     var body: some View {
         Form {
+            interfaceSection
             providerSection
             providerPricingSection
             coworkSection
@@ -280,6 +285,17 @@ struct AgentSettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This permanently deletes every saved conversation, Run, Step, approval record, retained artifact, replay frame, scheduler occurrence record, private Cowork transaction workspace, and retired legacy history source. Scheduled task definitions, committed Cowork files, scoped memory, local metrics, provider credentials, and app integrations are preserved.")
+        }
+    }
+
+    private var interfaceSection: some View {
+        Section {
+            Toggle("Resize the page when the Agent is open", isOn: $adjustsPageLayout)
+            Text("Off keeps the Agent floating over the right edge. On gives it dedicated space and narrows the page and any Split panes.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } header: {
+            SettingsLabel("Agent Panel", systemImage: "sidebar.right", tint: SettingsTint.agent)
         }
     }
 

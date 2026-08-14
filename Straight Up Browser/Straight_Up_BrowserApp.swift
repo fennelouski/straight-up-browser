@@ -403,9 +403,13 @@ struct Straight_Up_BrowserApp: App {
                     // auxiliary window (Downloads/Settings/Help) is key. Over one of
                     // those, close that window instead of a browser tab underneath it.
                     let key = NSApp.keyWindow
-                    if let id = key?.identifier?.rawValue,
-                       ["settings", "downloads", "newspaper", "agent-tasks", "agent-integrations", "agent-audit", "help"].contains(where: id.contains) {
-                        key?.performClose(nil)
+                    let isBrowserWindow = key.map {
+                        !($0 is NSPanel)
+                            && ($0.titlebarAppearsTransparent || !$0.styleMask.contains(.titled))
+                            && $0.styleMask.contains(.fullSizeContentView)
+                    } ?? false
+                    if let key, !isBrowserWindow {
+                        key.performClose(nil)
                     } else {
                         NotificationCenter.default.post(name: .browserCloseTab, object: nil)
                     }
@@ -522,6 +526,16 @@ struct Straight_Up_BrowserApp: App {
                     NotificationCenter.default.post(name: .browserToggleAgent, object: nil)
                 }
                 .keyboardShortcut("a", modifiers: [.command, .shift])
+
+                Button("Developer Tools") {
+                    NotificationCenter.default.post(name: .browserToggleDeveloperTools, object: nil)
+                }
+                .keyboardShortcut("i", modifiers: [.command, .option])
+
+                Button("Developer Console") {
+                    NotificationCenter.default.post(name: .browserShowDeveloperConsole, object: nil)
+                }
+                .keyboardShortcut("j", modifiers: [.command, .option])
 
                 Button("Snap Window to Size") {
                     if let window = NSApp.keyWindow ?? NSApp.mainWindow {

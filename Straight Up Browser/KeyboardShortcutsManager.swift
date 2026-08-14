@@ -197,7 +197,10 @@ class KeyboardShortcutsManager {
 
     private static var auxiliaryWindowIsKey: Bool {
         guard let id = NSApp.keyWindow?.identifier?.rawValue else { return false }
-        return ["settings", "downloads", "help"].contains { id.contains($0) }
+        return [
+            "settings", "downloads", "newspaper", "agent-tasks",
+            "agent-integrations", "agent-audit", "help"
+        ].contains { id.contains($0) }
     }
 
     // What each contested command does when we claim it — the same work the
@@ -220,6 +223,7 @@ class KeyboardShortcutsManager {
         case .findInPage: return post(.browserFindInPage)
         case .addBookmark: return post(.browserAddBookmark)
         case .printPage: return post(.browserPrint)
+        case .toggleTabBar: return post(.browserToggleTabBar)
         default: return nil
         }
     }

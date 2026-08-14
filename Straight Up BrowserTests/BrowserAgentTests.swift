@@ -8,9 +8,11 @@ import Testing
 struct BrowserAgentTests {
     @Test func providerTemplatesCoverCloudLocalAndCustomEndpoints() {
         #expect(BrowserAgentProvider.allCases == [
-            .openAI, .openAIResponses, .anthropicMessages, .gemini,
+            .appleIntelligence, .openAI, .openAIResponses, .anthropicMessages, .gemini,
             .openRouter, .ollama, .lmStudio, .compatible,
         ])
+        #expect(BrowserAgentProvider.appleIntelligence.defaultModel == "apple-intelligence:on-device")
+        #expect(!BrowserAgentProvider.appleIntelligence.needsAPIKey)
         #expect(BrowserAgentProvider.openAI.defaultEndpoint ==
             "https://api.openai.com/v1/chat/completions")
         #expect(BrowserAgentProvider.openAIResponses.defaultEndpoint ==

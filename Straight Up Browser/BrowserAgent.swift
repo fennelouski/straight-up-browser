@@ -5,12 +5,16 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 import UserNotifications
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
 
 extension Notification.Name {
     static let agentRunNeedsApproval = Notification.Name("agentRunNeedsApproval")
 }
 
 enum BrowserAgentProvider: String, CaseIterable, Identifiable, Sendable {
+    case appleIntelligence = "Apple Intelligence"
     case openAI = "OpenAI"
     case openAIResponses = "OpenAI Responses"
     case anthropicMessages = "Anthropic Messages"
@@ -24,6 +28,7 @@ enum BrowserAgentProvider: String, CaseIterable, Identifiable, Sendable {
 
     var defaultEndpoint: String {
         switch self {
+        case .appleIntelligence: "apple-intelligence:on-device"
         case .openAI: "https://api.openai.com/v1/chat/completions"
         case .openAIResponses: "https://api.openai.com/v1/responses"
         case .anthropicMessages: "https://api.anthropic.com/v1/messages"
@@ -37,6 +42,7 @@ enum BrowserAgentProvider: String, CaseIterable, Identifiable, Sendable {
 
     var defaultModel: String {
         switch self {
+        case .appleIntelligence: "apple-intelligence:on-device"
         case .openAI: "gpt-5.6-luna"
         case .openAIResponses: "gpt-5.6-luna"
         case .anthropicMessages: "claude-sonnet-5"
@@ -67,7 +73,7 @@ enum BrowserAgentProvider: String, CaseIterable, Identifiable, Sendable {
         case .openAIResponses: .openAIResponses
         case .anthropicMessages: .anthropicMessages
         case .gemini: .geminiGenerateContent
-        case .openAI, .openRouter, .ollama, .lmStudio, .compatible:
+        case .appleIntelligence, .openAI, .openRouter, .ollama, .lmStudio, .compatible:
             .openAICompatibleChat
         }
     }
@@ -95,7 +101,7 @@ enum BrowserAgentProvider: String, CaseIterable, Identifiable, Sendable {
     }
 
     nonisolated var needsAPIKey: Bool {
-        self != .ollama && self != .lmStudio
+        self != .appleIntelligence && self != .ollama && self != .lmStudio
     }
 
     private func geminiEndpoint(for model: String) -> String {
@@ -108,6 +114,51 @@ enum BrowserAgentProvider: String, CaseIterable, Identifiable, Sendable {
             return ""
         }
         return "https://generativelanguage.googleapis.com/v1beta/models/\(encodedModel):streamGenerateContent?alt=sse"
+    }
+}
+
+nonisolated struct AppleIntelligenceAgentProviderAdapter: AgentProviderAdapter {
+    let providerID = "apple-intelligence"
+    let capabilities = AgentProviderCapabilities([.streaming])
+
+    func events(for request: AgentModelRequest) throws -> AsyncThrowingStream<AgentModelEvent, Error> {
+        try validateCapabilities(for: request)
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                #if canImport(FoundationModels)
+                if #available(macOS 26.0, *), SystemLanguageModel.default.availability == .available {
+                    do {
+                        let instructions = request.messages.compactMap { message -> String? in
+                            guard message.role == .system else { return nil }
+                            return message.content.compactMap { if case .text(let text) = $0 { text } else { nil } }.joined(separator: "\n")
+                        }.joined(separator: "\n")
+                        let prompt = request.messages.compactMap { message -> String? in
+                            guard message.role != .system else { return nil }
+                            let text = message.content.compactMap { if case .text(let value) = $0 { value } else { nil } }.joined(separator: "\n")
+                            return text.isEmpty ? nil : "\(message.role.rawValue): \(text)"
+                        }.joined(separator: "\n\n")
+                        let session = LanguageModelSession(instructions: instructions.isEmpty ? "Be a concise, helpful browser assistant." : instructions)
+                        continuation.yield(.responseStarted(id: nil))
+                        let response = try await session.respond(to: prompt).content
+                        continuation.yield(.textDelta(response))
+                        continuation.yield(.usage(.unknown))
+                        continuation.yield(.finished(.stop))
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                    return
+                }
+                #endif
+                continuation.finish(throwing: AgentProviderAdapterError(
+                    providerID: providerID,
+                    code: .serviceUnavailable,
+                    safeMessage: "Apple Intelligence is not available on this Mac.",
+                    retryClassification: .permanent
+                ))
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 }
 
@@ -163,6 +214,8 @@ nonisolated enum AgentProviderModelCatalog {
 
     @MainActor static func modelIDs(for provider: BrowserAgentProvider) -> [String] {
         switch provider {
+        case .appleIntelligence:
+            [provider.defaultModel]
         case .openAI, .openAIResponses:
             openAIPresets.map(\.model)
         case .anthropicMessages, .gemini, .openRouter:
@@ -234,6 +287,7 @@ nonisolated enum AgentProviderModelDiscovery {
         apiKey: String,
         customEndpoint: String = ""
     ) async throws -> [String] {
+        if provider == .appleIntelligence { return ["apple-intelligence:on-device"] }
         let request = try request(
             for: provider,
             apiKey: apiKey,
@@ -258,6 +312,8 @@ nonisolated enum AgentProviderModelDiscovery {
         }
         let values: [String]
         switch provider {
+        case .appleIntelligence:
+            values = ["apple-intelligence:on-device"]
         case .gemini:
             guard let models = object["models"] as? [[String: Any]] else {
                 throw DiscoveryError.invalidResponse
@@ -293,6 +349,8 @@ nonisolated enum AgentProviderModelDiscovery {
 
         let url: URL
         switch provider {
+        case .appleIntelligence:
+            throw DiscoveryError.invalidResponse
         case .openAI, .openAIResponses:
             url = URL(string: "https://api.openai.com/v1/models")!
         case .anthropicMessages:
@@ -333,7 +391,7 @@ nonisolated enum AgentProviderModelDiscovery {
             request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         case .openAI, .openAIResponses, .openRouter, .compatible:
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-        case .gemini, .ollama, .lmStudio:
+        case .appleIntelligence, .gemini, .ollama, .lmStudio:
             break
         }
         return request
@@ -1390,6 +1448,7 @@ final class BrowserAgent: ObservableObject {
         configurationSnapshot: AgentConfigurationSnapshot? = nil,
         runScopeOverride: AgentRunScope? = nil,
         executionLimits: AgentExecutionLimits? = nil,
+        attachments: [AgentModelImage] = [],
         resolvePageAuthority: @escaping (
             _ pageIDs: [String]
         ) async -> [BrowserAutomationPageAuthoritySnapshot]? = { _ in nil },
@@ -1420,6 +1479,7 @@ final class BrowserAgent: ObservableObject {
                 configurationSnapshot: configurationSnapshot,
                 runScopeOverride: runScopeOverride,
                 executionLimits: executionLimits,
+                attachments: attachments,
                 resolvePageAuthority: resolvePageAuthority,
                 execute: execute
             )
@@ -1439,6 +1499,7 @@ final class BrowserAgent: ObservableObject {
         configurationSnapshot: AgentConfigurationSnapshot?,
         runScopeOverride: AgentRunScope?,
         executionLimits: AgentExecutionLimits?,
+        attachments: [AgentModelImage],
         resolvePageAuthority: @escaping PageAuthorityResolver,
         execute: @escaping (
             _ tool: String,
@@ -1596,6 +1657,7 @@ final class BrowserAgent: ObservableObject {
                     runID: run.id,
                     incognito: incognito,
                     prompt: prompt,
+                    attachments: attachments,
                     promptStepID: promptStep.id,
                     pageTitle: pageTitle,
                     pageURL: pageURL,
@@ -1731,6 +1793,7 @@ final class BrowserAgent: ObservableObject {
         runID: UUID,
         incognito: Bool,
         prompt: String,
+        attachments: [AgentModelImage] = [],
         promptStepID: UUID,
         pageTitle: String,
         pageURL: String,
@@ -1808,21 +1871,33 @@ final class BrowserAgent: ObservableObject {
                 redactionState: .metadataOnly
             )
         }
-        transcript.append(AgentModelMessage(role: .user, content: [.text(prompt)]))
+        transcript.append(AgentModelMessage(
+            role: .user,
+            content: [.text(prompt)] + attachments.map(AgentModelContentPart.image)
+        ))
         let externalTools = activeRunGroupRuntime?.externalTools
             ?? BrowserAgentExternalTools()
         let runtimeCatalog = activeRunGroupRuntime?.toolCatalog ?? .canonical
         let allAvailableTools = runtimeCatalog.descriptors(visibleIn: .builtInAgent)
-        let availableTools = if let childContract {
+        let availableTools: [AgentToolDescriptor] = if configuration.provider == .appleIntelligence {
+            []
+        } else if let childContract {
             allAvailableTools.filter { childContract.authority.allowedTools.contains($0.name) }
         } else {
             allAvailableTools
         }
-        let adapter = try providerAdapterFactory?(configuration) ?? AgentProviderHTTPAdapter(
-            dialect: configuration.provider.dialect,
-            endpoint: endpoint,
-            apiKey: configuration.apiKey
-        )
+        let adapter: any AgentProviderAdapter
+        if let factory = providerAdapterFactory {
+            adapter = try factory(configuration)
+        } else if configuration.provider == .appleIntelligence {
+            adapter = AppleIntelligenceAgentProviderAdapter()
+        } else {
+            adapter = AgentProviderHTTPAdapter(
+                dialect: configuration.provider.dialect,
+                endpoint: endpoint,
+                apiKey: configuration.apiKey
+            )
+        }
         let retryPolicy = AgentProviderRetryPolicy(maximumAttempts: 2)
         var hasCommittedSideEffect = false
         var didPrepareSynthesis = false
@@ -4605,7 +4680,11 @@ struct BrowserAgentPanel: View {
     let pageTitle: String
     let pageURL: String
     let pageTarget: AgentPageTarget?
+    let lassoSelection: AgentLassoSelection?
     let onClose: () -> Void
+    let onStartLasso: () -> Void
+    let onClearLasso: () -> Void
+    let onAISearch: (_ query: String) async -> Bool
     let resolvePageAuthority: (
         _ pageIDs: [String]
     ) async -> [BrowserAutomationPageAuthoritySnapshot]?
@@ -4616,13 +4695,48 @@ struct BrowserAgentPanel: View {
         _ authorizedPageBindings: [BrowserAutomationPageDispatchBinding]
     ) async -> String
 
-    @AppStorage("browserAgentProvider") private var providerRaw = BrowserAgentProvider.openRouter.rawValue
+    init(
+        agent: BrowserAgent,
+        pageTitle: String,
+        pageURL: String,
+        pageTarget: AgentPageTarget?,
+        lassoSelection: AgentLassoSelection? = nil,
+        onClose: @escaping () -> Void,
+        onStartLasso: @escaping () -> Void = {},
+        onClearLasso: @escaping () -> Void = {},
+        onAISearch: @escaping (_ query: String) async -> Bool = { _ in false },
+        resolvePageAuthority: @escaping (_ pageIDs: [String]) async -> [BrowserAutomationPageAuthoritySnapshot]?,
+        execute: @escaping (
+            _ tool: String,
+            _ arguments: [String: Any],
+            _ permit: AgentExecutionPermit,
+            _ authorizedPageBindings: [BrowserAutomationPageDispatchBinding]
+        ) async -> String
+    ) {
+        self.agent = agent
+        self.pageTitle = pageTitle
+        self.pageURL = pageURL
+        self.pageTarget = pageTarget
+        self.lassoSelection = lassoSelection
+        self.onClose = onClose
+        self.onStartLasso = onStartLasso
+        self.onClearLasso = onClearLasso
+        self.onAISearch = onAISearch
+        self.resolvePageAuthority = resolvePageAuthority
+        self.execute = execute
+    }
+
+    @AppStorage("browserAgentProvider") private var providerRaw = BrowserAgentProvider.appleIntelligence.rawValue
     @AppStorage("browserAgentEndpoint") private var customEndpoint = ""
     @AppStorage("browserAgentModel") private var savedModel = ""
     @State private var apiKey = ""
     @State private var prompt = ""
     @State private var showingConfiguration = false
     @State private var showingHistory = false
+    @State private var aiSearchEnabled = false
+    @State private var aiSearchStatus: String?
+    @FocusState private var promptFocused: Bool
+    @State private var previousFirstResponder: NSResponder?
     @ObservedObject private var workspace = BrowserAgentWorkspace.shared
     @Environment(\.openWindow) private var openWindow
 
@@ -4661,6 +4775,9 @@ struct BrowserAgentPanel: View {
                 Button { showingConfiguration.toggle() } label: { Image(systemName: "slider.horizontal.3") }
                     .buttonStyle(.plain)
                     .help("Model settings")
+                Button(action: onStartLasso) { Image(systemName: "lasso") }
+                    .buttonStyle(.plain)
+                    .help("Circle something on the page")
                 Button { openWindow(id: "agent-tasks") } label: { Image(systemName: "clock.arrow.circlepath") }
                     .buttonStyle(.plain)
                     .help("Scheduled Agent Tasks")
@@ -4711,10 +4828,37 @@ struct BrowserAgentPanel: View {
                 Divider()
             }
             Divider()
+            if let lassoSelection {
+                HStack(spacing: 8) {
+                    Image(nsImage: lassoSelection.image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 56, height: 42)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Page selection").font(.caption.weight(.semibold))
+                        Text(lassoSelection.extractedText.isEmpty ? "Image selected" : lassoSelection.extractedText)
+                            .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                    }
+                    Spacer()
+                    Button(action: onClearLasso) { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain).accessibilityLabel("Remove page selection")
+                }
+                .padding(.horizontal, 12).padding(.top, 8)
+            }
+            if let aiSearchStatus {
+                Text(aiSearchStatus).font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.top, 6)
+            }
             HStack(alignment: .bottom, spacing: 8) {
-                TextField("Ask the agent…", text: $prompt, axis: .vertical)
+                Toggle("AI Search", isOn: $aiSearchEnabled)
+                    .toggleStyle(.button)
+                    .buttonStyle(.borderless)
+                    .help("Use semantic fuzzy search on this page")
+                TextField(aiSearchEnabled ? "Describe what to find…" : "Ask the agent…", text: $prompt, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...6)
+                    .focused($promptFocused)
                     .onSubmit { submit() }
                 if agent.isRunning {
                     Button(action: agent.cancel) { Image(systemName: "stop.fill") }
@@ -4736,9 +4880,17 @@ struct BrowserAgentPanel: View {
         .overlay(alignment: .leading) { Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1) }
         .shadow(color: .black.opacity(0.2), radius: 16, x: -4)
         .onAppear {
+            previousFirstResponder = NSApp.keyWindow?.firstResponder
             apiKey = BrowserAgentKeychain.read(provider: provider)
             Task { await agent.refreshHistory() }
+            DispatchQueue.main.async { promptFocused = true }
         }
+        .onDisappear {
+            if promptFocused, let previousFirstResponder {
+                NSApp.keyWindow?.makeFirstResponder(previousFirstResponder)
+            }
+        }
+        .onExitCommand(perform: onClose)
         .onReceive(
             NotificationCenter.default.publisher(for: .agentHistoryDidChange)
         ) { _ in
@@ -4987,9 +5139,30 @@ struct BrowserAgentPanel: View {
 
     private func submit() {
         let value = prompt
+        guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         prompt = ""
+        if aiSearchEnabled {
+            aiSearchStatus = "Searching this page…"
+            Task {
+                let found = await onAISearch(value)
+                aiSearchStatus = found ? "Found the closest match." : "No close match found."
+                promptFocused = true
+            }
+            return
+        }
+        var submittedValue = value
+        if let selection = lassoSelection, !selection.extractedText.isEmpty {
+            submittedValue += "\n\nThe user circled this page region. Visible text in that region:\n<selected-region>\n\(selection.extractedText)\n</selected-region>"
+        }
+        let attachments: [AgentModelImage]
+        if let image = lassoSelection?.modelImage,
+           provider == .openAIResponses || provider == .gemini {
+            attachments = [image]
+        } else {
+            attachments = []
+        }
         agent.submit(
-            value,
+            submittedValue,
             pageTitle: pageTitle,
             pageURL: pageURL,
             configuration: BrowserAgentConfiguration(
@@ -5000,9 +5173,11 @@ struct BrowserAgentPanel: View {
             ),
             incognito: pageTarget?.session == .incognito,
             initialPage: pageTarget,
+            attachments: attachments,
             resolvePageAuthority: resolvePageAuthority,
             execute: execute
         )
+        onClearLasso()
     }
 }
 

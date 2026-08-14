@@ -103,6 +103,69 @@ class WebViewManager: NSObject, ObservableObject {
     delete window.AuthenticatorAssertionResponse;
     """
 
+    // A lightweight DevTools bridge. The wrappers are installed before page code,
+    // but stay dormant until the user opens DevTools for that tab. This preserves
+    // normal console behaviour and avoids retaining page output while the tool is
+    // closed. Page code can write to its own console by definition, so this handler
+    // intentionally lives in the page world.
+    private static let developerToolsScript = """
+    (function() {
+        if (window.__subDevTools) return;
+        var enabled = false;
+        function format(value) {
+            if (value === undefined) return 'undefined';
+            if (value === null) return 'null';
+            if (typeof value === 'string') return value;
+            if (typeof value === 'function') return value.toString();
+            if (value instanceof Error) return value.stack || value.message;
+            if (value && value.nodeType) {
+                if (value.outerHTML) return value.outerHTML.slice(0, 4000);
+                return String(value);
+            }
+            try {
+                var seen = new WeakSet();
+                return JSON.stringify(value, function(_, item) {
+                    if (typeof item === 'bigint') return String(item) + 'n';
+                    if (typeof item === 'object' && item !== null) {
+                        if (seen.has(item)) return '[Circular]';
+                        seen.add(item);
+                    }
+                    return item;
+                }, 2);
+            } catch (_) { return String(value); }
+        }
+        function send(level, values, source, line, column) {
+            if (!enabled) return;
+            try {
+                window.webkit.messageHandlers.subDevTools.postMessage({
+                    type: 'console', level: level,
+                    message: values.map(format).join(' '),
+                    source: source || location.href,
+                    line: line || 0, column: column || 0,
+                    timestamp: Date.now()
+                });
+            } catch (_) {}
+        }
+        ['log', 'debug', 'info', 'warn', 'error'].forEach(function(method) {
+            var original = console[method];
+            console[method] = function() {
+                send(method, Array.prototype.slice.call(arguments));
+                return original.apply(console, arguments);
+            };
+        });
+        window.addEventListener('error', function(event) {
+            send('error', [event.error || event.message], event.filename, event.lineno, event.colno);
+        });
+        window.addEventListener('unhandledrejection', function(event) {
+            send('error', ['Uncaught (in promise)', event.reason]);
+        });
+        window.__subDevTools = {
+            enable: function() { enabled = true; },
+            disable: function() { enabled = false; }
+        };
+    })();
+    """
+
     // Injected into every page: alt-click image download, long-press link
     // preview signals, and percentage-based spacebar scrolling. Native side
     // sets window.__subSpacePct per navigation in the coordinator's didCommit.
@@ -164,6 +227,48 @@ class WebViewManager: NSObject, ObservableObject {
             });
         });
         window.webkit.messageHandlers.sub.postMessage({type: 'agentDOMContentLoaded'});
+
+        // Freehand page-region selection for the attended AI panel. The page
+        // receives only the temporary drawing surface; native code owns the
+        // resulting screenshot and bounded text extraction.
+        window.__subAgentLasso = {
+            start: function() {
+                var prior = document.getElementById('__sub-agent-lasso');
+                if (prior) prior.remove();
+                var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.id = '__sub-agent-lasso';
+                svg.setAttribute('style', 'position:fixed;inset:0;width:100vw;height:100vh;z-index:2147483647;cursor:crosshair;background:rgba(20,25,35,.08);touch-action:none');
+                var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('fill', 'rgba(94,92,230,.13)');
+                path.setAttribute('stroke', 'rgb(124,120,255)');
+                path.setAttribute('stroke-width', '3');
+                path.setAttribute('stroke-linecap', 'round');
+                path.setAttribute('stroke-linejoin', 'round');
+                svg.appendChild(path); document.documentElement.appendChild(svg);
+                var points = [], drawing = false;
+                function render() {
+                    if (!points.length) return;
+                    path.setAttribute('d', 'M ' + points.map(function(p) { return p.x + ' ' + p.y; }).join(' L ') + (points.length > 2 ? ' Z' : ''));
+                }
+                svg.addEventListener('pointerdown', function(e) {
+                    drawing = true; points = [{x:e.clientX,y:e.clientY}]; svg.setPointerCapture(e.pointerId); render();
+                });
+                svg.addEventListener('pointermove', function(e) {
+                    if (!drawing) return; points.push({x:e.clientX,y:e.clientY}); render();
+                });
+                svg.addEventListener('pointerup', function(e) {
+                    if (!drawing || points.length < 2) { svg.remove(); return; }
+                    drawing = false;
+                    var xs = points.map(function(p){return p.x;}), ys = points.map(function(p){return p.y;});
+                    var x = Math.max(0, Math.min.apply(null,xs)), y = Math.max(0,Math.min.apply(null,ys));
+                    var right = Math.min(innerWidth,Math.max.apply(null,xs)), bottom = Math.min(innerHeight,Math.max.apply(null,ys));
+                    svg.remove();
+                    window.webkit.messageHandlers.sub.postMessage({type:'agentLasso',x:x,y:y,width:right-x,height:bottom-y});
+                });
+                function cancel(e) { if (e.key === 'Escape') { svg.remove(); document.removeEventListener('keydown',cancel,true); } }
+                document.addEventListener('keydown', cancel, true);
+            }
+        };
     })();
     """
 
@@ -602,6 +707,7 @@ class WebViewManager: NSObject, ObservableObject {
             webView.configuration.userContentController.removeScriptMessageHandler(
                 forName: WebKitAgentConsoleBridgeScripts.messageHandlerName
             )
+            webView.configuration.userContentController.removeScriptMessageHandler(forName: "subDevTools")
             // World-scoped handlers need the world to be removed.
             webView.configuration.userContentController.removeScriptMessageHandler(
                 forName: SemanticPageJavaScript.messageHandlerName,
@@ -782,6 +888,10 @@ class WebViewManager: NSObject, ObservableObject {
             WeakScriptMessageHandler(handler: self),
             name: WebKitAgentConsoleBridgeScripts.messageHandlerName
         )
+        configuration.userContentController.add(
+            WeakScriptMessageHandler(handler: self),
+            name: "subDevTools"
+        )
         // Scoped to the isolated world, where the semantic runtime lives. The
         // "sub" handler above is page-world only (that's what `add(_:name:)`
         // means), so the runtime can't reach it — and giving this its own name
@@ -814,6 +924,9 @@ class WebViewManager: NSObject, ObservableObject {
         }
         configuration.userContentController.addUserScript(
             WKUserScript(source: Self.pageScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        )
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: Self.developerToolsScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
         )
         configuration.userContentController.addUserScript(
             WKUserScript(
@@ -998,6 +1111,7 @@ class WebViewManager: NSObject, ObservableObject {
             webView.configuration.userContentController.removeScriptMessageHandler(
                 forName: WebKitAgentConsoleBridgeScripts.messageHandlerName
             )
+            webView.configuration.userContentController.removeScriptMessageHandler(forName: "subDevTools")
             // World-scoped handlers need the world to be removed.
             webView.configuration.userContentController.removeScriptMessageHandler(
                 forName: SemanticPageJavaScript.messageHandlerName,
@@ -1092,6 +1206,27 @@ extension WebViewManager: WKScriptMessageHandler {
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any] else { return }
+        if message.name == "subDevTools" {
+            guard let webView = message.webView,
+                  let tabID = tabId(for: webView),
+                  body["type"] as? String == "console",
+                  let level = body["level"] as? String,
+                  let text = body["message"] as? String else { return }
+            NotificationCenter.default.post(
+                name: .browserDeveloperConsoleMessage,
+                object: nil,
+                userInfo: [
+                    "tabID": tabID,
+                    "level": level,
+                    "message": String(text.prefix(16_384)),
+                    "source": String((body["source"] as? String ?? "").prefix(2_048)),
+                    "line": (body["line"] as? NSNumber)?.intValue ?? 0,
+                    "column": (body["column"] as? NSNumber)?.intValue ?? 0,
+                    "timestamp": (body["timestamp"] as? NSNumber)?.doubleValue ?? 0,
+                ]
+            )
+            return
+        }
         if message.name == WebKitAgentConsoleBridgeScripts.messageHandlerName {
             guard let webView = message.webView,
                   let tabID = tabId(for: webView),
@@ -1143,7 +1278,16 @@ extension WebViewManager: WKScriptMessageHandler {
                 }
             }
         case "painted":
-            if let webView = message.webView { revealPage(webView) }
+            if let webView = message.webView {
+                revealPage(webView)
+                if let tabID = tabId(for: webView) {
+                    NotificationCenter.default.post(
+                        name: .browserDeveloperPageDidLoad,
+                        object: nil,
+                        userInfo: ["tabID": tabID]
+                    )
+                }
+            }
         case "agentDOMContentLoaded":
             if let webView = message.webView {
                 publishAgentSignal(
@@ -1151,6 +1295,19 @@ extension WebViewManager: WKScriptMessageHandler {
                     from: webView
                 )
             }
+        case "agentLasso":
+            guard let webView = message.webView,
+                  let tabID = tabId(for: webView),
+                  let x = (body["x"] as? NSNumber)?.doubleValue,
+                  let y = (body["y"] as? NSNumber)?.doubleValue,
+                  let width = (body["width"] as? NSNumber)?.doubleValue,
+                  let height = (body["height"] as? NSNumber)?.doubleValue,
+                  width >= 4, height >= 4 else { return }
+            NotificationCenter.default.post(
+                name: .browserAgentLassoSelected,
+                object: nil,
+                userInfo: ["tabID": tabID, "rect": CGRect(x: x, y: y, width: width, height: height)]
+            )
         case "linkDown":
             if let urlString = body["url"] as? String, let url = URL(string: urlString) {
                 NotificationCenter.default.post(name: .browserLinkPreviewDown, object: nil, userInfo: ["url": url])

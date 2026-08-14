@@ -1077,6 +1077,9 @@ struct AppearanceSettingsView: View {
     @AppStorage("progressBarLeft") private var progressBarLeft = false
     @AppStorage("progressBarRight") private var progressBarRight = false
     @AppStorage("progressFaviconRing") private var progressFaviconRing = false
+    @AppStorage("showTraditionalTopTabs") private var showTraditionalTopTabs = false
+    @AppStorage("topTabsAutoHide") private var topTabsAutoHide = true
+    @AppStorage("adaptiveLargeSidebarTabs") private var adaptiveLargeSidebarTabs = true
 
     // Flicker control.
     @AppStorage("fadeInPages") private var fadeInPages = true
@@ -1104,6 +1107,17 @@ struct AppearanceSettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                Toggle("Show traditional tabs across the top", isOn: $showTraditionalTopTabs)
+                Toggle("Hide top tabs until the pointer reaches the top", isOn: $topTabsAutoHide)
+                    .disabled(!showTraditionalTopTabs)
+                Toggle("Use adaptive preview cards in the widest sidebar", isOn: $adaptiveLargeSidebarTabs)
+                Text("Preview cards grow into spare vertical space when only a few tabs are open, then compress automatically as the tab count increases.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                SettingsLabel("Tabs", systemImage: "rectangle.topthird.inset.filled", tint: SettingsTint.appearance)
+            }
+
             Section {
                 Toggle("Place the window on launch", isOn: $launchLayoutEnabled)
                 Picker("Width", selection: $launchLayoutWidth) {

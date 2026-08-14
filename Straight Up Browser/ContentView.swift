@@ -547,6 +547,10 @@ struct ContentView: View {
     @State private var showOmnibar = false
     @State private var showTabGrid = false
     @State private var showAgentPanel = false
+    @AppStorage(AgentSettingsRuntimeKey.adjustsPageLayout) private var agentAdjustsPageLayout = false
+    @State private var agentLassoSelection: AgentLassoSelection?
+    @State private var showDeveloperTools = false
+    @StateObject private var developerTools = DeveloperToolsModel()
     @State private var showFindBar = false
     @State private var findText = ""
     @State private var findMatchIndex = 0 // 1-based position of the current match, 0 before the first hit
@@ -573,6 +577,10 @@ struct ContentView: View {
     @State private var workspaceName = ""
     @State private var savedWorkspaces: [SavedWorkspace] = []
     @AppStorage("tabBarWidth") private var tabBarWidth: Double = 200.0
+    @AppStorage("showTraditionalTopTabs") private var showTraditionalTopTabs = false
+    @AppStorage("topTabsAutoHide") private var topTabsAutoHide = true
+    @AppStorage("adaptiveLargeSidebarTabs") private var adaptiveLargeSidebarTabs = true
+    @State private var topTabsRevealed = false
 
     // Force view updates when tab selection changes
     @State private var tabSelectionRefreshTrigger = UUID()
@@ -1003,7 +1011,12 @@ struct ContentView: View {
     }
 
     private func tabListView(geometry: GeometryProxy) -> some View {
-        ScrollView {
+        let adaptiveHeight: CGFloat? = if adaptiveLargeSidebarTabs && tabBarWidth >= 300 && !allTabs.isEmpty {
+            min(140, max(36, (geometry.size.height - 52) / CGFloat(allTabs.count)))
+        } else {
+            nil
+        }
+        return ScrollView {
             VStack(spacing: 0) {
                 // Add a spacer at the top to allow dragging without scroll interference
                 Color.clear.frame(height: 1)
@@ -1045,7 +1058,9 @@ struct ContentView: View {
                             sessionColor: sessionColor(for: tab),
                             isIncognito: tab.sessionKind == .incognito,
                             isDisplayedInSplit: tabManager.splitTabIds.contains(tab.id),
-                            automaticLinkBirthCue: tabManager.automaticLinkBirthCue
+                            automaticLinkBirthCue: tabManager.automaticLinkBirthCue,
+                            thumbnail: webViewManager?.thumbnail(for: tab.id),
+                            expandedHeight: adaptiveHeight
                         )
                         .contextMenu {
                             let webView = webViewManager?.existingWebView(for: tab.id)
@@ -2072,6 +2087,127 @@ struct ContentView: View {
         .overlay(alignment: .bottomTrailing, content: { defaultBrowserOverlay.zIndex(9) })
     }
 
+    private var agentPanelView: some View {
+        BrowserAgentPanel(
+            agent: browserAgent,
+            pageTitle: currentTitle,
+            pageURL: currentURL?.absoluteString ?? "",
+            pageTarget: currentAgentPageTarget,
+            lassoSelection: agentLassoSelection,
+            onClose: { showAgentPanel = false },
+            onStartLasso: startAgentLasso,
+            onClearLasso: { agentLassoSelection = nil },
+            onAISearch: performAgentAISearch,
+            resolvePageAuthority: { pageIDs in
+                guard let manager = notificationManager else { return nil }
+                return await manager.automationPageAuthoritySnapshots(pageIDs: pageIDs)
+            },
+            execute: { tool, arguments, permit, pageBindings in
+                guard let manager = notificationManager else {
+                    return "{\"error\":\"Browser automation is not ready.\"}"
+                }
+                return await manager.automationJSONResult(
+                    tool: tool,
+                    arguments: arguments,
+                    permit: permit,
+                    authorizedPageBindings: pageBindings
+                )
+            }
+        )
+    }
+
+    private var browserAndDeveloperTools: some View {
+        Group {
+            if showDeveloperTools {
+                VSplitView {
+                    mainContent
+                        .frame(minHeight: 180)
+
+                    DeveloperToolsView(
+                        model: developerTools,
+                        webView: webViewManager?.activeWebView,
+                        tabID: tabManager.selectedTabId,
+                        onClose: {
+                            withAnimation(.easeInOut(duration: 0.16)) {
+                                showDeveloperTools = false
+                            }
+                        }
+                    )
+                    .frame(minHeight: 170, idealHeight: 320, maxHeight: 620)
+                }
+            } else {
+                mainContent
+            }
+        }
+        .overlay(alignment: .top) { traditionalTopTabBarOverlay }
+    }
+
+    @ViewBuilder
+    private var traditionalTopTabBarOverlay: some View {
+        if showTraditionalTopTabs {
+            VStack(spacing: 0) {
+                if topTabsRevealed || !topTabsAutoHide {
+                    HStack(spacing: 5) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 5) {
+                                ForEach(visibleTabOrder) { tab in
+                                    Button {
+                                        tabManager.selectedTabId = tab.id
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            if let data = tab.favicon, let image = NSImage(data: data) {
+                                                Image(nsImage: image).resizable().scaledToFit().frame(width: 15, height: 15)
+                                            } else {
+                                                Image(systemName: "globe").frame(width: 15)
+                                            }
+                                            Text(tab.title.isEmpty ? Tab.extractDomain(from: tab.url) : tab.title)
+                                                .lineLimit(1)
+                                            Button { tabManager.closeTab(tab, tabs: allTabs) } label: {
+                                                Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                                            }
+                                            .buttonStyle(.plain)
+                                            .accessibilityLabel("Close tab")
+                                        }
+                                        .font(.system(size: 11))
+                                        .padding(.horizontal, 10)
+                                        .frame(minWidth: 120, maxWidth: 220, minHeight: 30)
+                                        .background(
+                                            tab.id == tabManager.selectedTabId
+                                                ? (sessionColor(for: tab) ?? Color.accentColor).opacity(0.18)
+                                                : Color(nsColor: .controlBackgroundColor).opacity(0.88),
+                                            in: RoundedRectangle(cornerRadius: 8)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        Button(action: createNewTab) { Image(systemName: "plus").frame(width: 26, height: 26) }
+                            .buttonStyle(.plain).accessibilityLabel("New Tab")
+                    }
+                    .padding(5)
+                    .background(.ultraThickMaterial)
+                    .shadow(color: .black.opacity(0.16), radius: 8, y: 3)
+                    .onHover { hovering in
+                        if !hovering && topTabsAutoHide {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                if topTabsAutoHide { topTabsRevealed = false }
+                            }
+                        }
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                } else {
+                    Color.clear
+                        .frame(height: 9)
+                        .contentShape(Rectangle())
+                        .onHover { if $0 { withAnimation(.easeOut(duration: 0.14)) { topTabsRevealed = true } } }
+                }
+                Spacer(minLength: 0)
+            }
+            .zIndex(30)
+        }
+    }
+
     @ViewBuilder
     private func downloadPane(for tabId: UUID) -> some View {
         VStack(spacing: 0) {
@@ -2241,8 +2377,12 @@ struct ContentView: View {
                     Spacer()
                         .frame(width: tabBarWidth <= 30 ? 32 : max(80, tabBarWidth))
                 }
-                mainContent
+                browserAndDeveloperTools
                     .clipped()
+                if showAgentPanel && agentAdjustsPageLayout {
+                    agentPanelView
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
             }
 
             // Tab bar - render on top with solid background
@@ -2326,31 +2466,8 @@ struct ContentView: View {
         ))
         .overlay(alignment: .leading) { faviconPeekOverlay }
         .overlay(alignment: .trailing) {
-            if showAgentPanel {
-                BrowserAgentPanel(
-                    agent: browserAgent,
-                    pageTitle: currentTitle,
-                    pageURL: currentURL?.absoluteString ?? "",
-                    pageTarget: currentAgentPageTarget,
-                    onClose: { showAgentPanel = false },
-                    resolvePageAuthority: { pageIDs in
-                        guard let manager = notificationManager else { return nil }
-                        return await manager.automationPageAuthoritySnapshots(
-                            pageIDs: pageIDs
-                        )
-                    },
-                    execute: { tool, arguments, permit, pageBindings in
-                        guard let manager = notificationManager else {
-                            return "{\"error\":\"Browser automation is not ready.\"}"
-                        }
-                        return await manager.automationJSONResult(
-                            tool: tool,
-                            arguments: arguments,
-                            permit: permit,
-                            authorizedPageBindings: pageBindings
-                        )
-                    }
-                )
+            if showAgentPanel && !agentAdjustsPageLayout {
+                agentPanelView
                 .transition(.move(edge: .trailing).combined(with: .opacity))
                 .zIndex(20)
             }
@@ -2360,6 +2477,7 @@ struct ContentView: View {
         .translationTask(pageTranslator.configuration) { session in
             await pageTranslator.perform(session: session)
         }
+        .contentViewTypeErased()
         .onAppear {
             // One-time setup; onAppear can fire again (window reopen) and must
             // not recreate managers or stack observers
@@ -2377,6 +2495,14 @@ struct ContentView: View {
                     queue: .main
                 ) { [self] _ in
                     tabTitleDisplayRefreshTrigger = UUID()
+                }
+
+                NotificationCenter.default.addMainActorObserver(
+                    forName: .browserAgentLassoSelected,
+                    object: nil,
+                    queue: .main
+                ) { [self] note in
+                    captureAgentLasso(note)
                 }
 
                 // Find in page (Cmd+F)
@@ -2578,6 +2704,10 @@ struct ContentView: View {
             let critical = (note.userInfo?["critical"] as? Bool) ?? false
             handleMemoryPressure(critical: critical)
         }
+        .modifier(DeveloperToolsCommandModifier(
+            isPresented: $showDeveloperTools,
+            model: developerTools
+        ))
         .onReceive(NotificationCenter.default.publisher(for: .browserShowHistory)) { _ in
             showHistory()
         }
@@ -2630,11 +2760,8 @@ struct ContentView: View {
             webViewManager?.syncSessions(from: newTabs)
             tabManager.ensureSelectedTab(from: allTabs)
         }
-        .onDisappear {
-            finishSidebarTabDrag()
-            notificationManager?.cleanup()
-            keyboardShortcutsManager?.teardown()
-        }
+        .onDisappear(perform: handleContentViewDisappear)
+        .contentViewTypeErased()
         .sheet(item: $contentModal) { modal in
             switch modal {
             case .library:
@@ -2643,13 +2770,7 @@ struct ContentView: View {
                 readerSheet(article)
             }
         }
-        .alert(item: $persistenceDiagnostics.latestIssue) { issue in
-            Alert(
-                title: Text("Browser Data Couldn’t Be Saved"),
-                message: Text("\(issue.operation): \(issue.message)"),
-                dismissButton: .default(Text("OK"))
-            )
-        }
+        .alert(item: $persistenceDiagnostics.latestIssue, content: persistenceAlert)
         // Matches the window's own (unexposed) corner rounding so full-bleed
         // overlays — the screenshot flash, the agent panel, anything else that
         // paints edge to edge — follow the same curve instead of squaring off
@@ -2662,6 +2783,20 @@ struct ContentView: View {
         // Hides the traffic lights and titlebar on the window actually hosting this
         // view, once it has one — see WindowChrome for why this isn't done at onAppear.
         .background(WindowChrome())
+    }
+
+    private func handleContentViewDisappear() {
+        finishSidebarTabDrag()
+        notificationManager?.cleanup()
+        keyboardShortcutsManager?.teardown()
+    }
+
+    private func persistenceAlert(for issue: PersistenceIssue) -> Alert {
+        Alert(
+            title: Text("Browser Data Couldn’t Be Saved"),
+            message: Text(issue.operation + ": " + issue.message),
+            dismissButton: .default(Text("OK"))
+        )
     }
 
     private func initializeManagers() {
@@ -3182,6 +3317,106 @@ struct ContentView: View {
         }
     }
 
+    private func startAgentLasso() {
+        webViewManager?.activeWebView?.evaluateJavaScript(
+            "window.__subAgentLasso && window.__subAgentLasso.start()"
+        )
+    }
+
+    private func captureAgentLasso(_ note: Notification) {
+        guard let tabID = note.userInfo?["tabID"] as? UUID,
+              tabID == tabManager.selectedTabId,
+              let requested = note.userInfo?["rect"] as? CGRect,
+              let webView = webViewManager?.activeWebView else { return }
+        let bounds = CGRect(origin: .zero, size: webView.bounds.size)
+        let rect = requested.intersection(bounds)
+        guard rect.width >= 4, rect.height >= 4 else { return }
+
+        let script = """
+        (function() {
+            var r={left:\(rect.minX),top:\(rect.minY),right:\(rect.maxX),bottom:\(rect.maxY)};
+            var values=[];
+            document.querySelectorAll('body *').forEach(function(el) {
+                var b=el.getBoundingClientRect();
+                if (b.right<r.left||b.left>r.right||b.bottom<r.top||b.top>r.bottom) return;
+                if (el.children.length && !/^(BUTTON|A|INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+                var text=(el.innerText||el.getAttribute('aria-label')||el.getAttribute('alt')||'').replace(/\\s+/g,' ').trim();
+                if (text && !values.includes(text)) values.push(text.slice(0,500));
+            });
+            return values.join('\\n').slice(0,8000);
+        })();
+        """
+        webView.evaluateJavaScript(script) { value, _ in
+            let configuration = WKSnapshotConfiguration()
+            configuration.rect = rect
+            configuration.snapshotWidth = max(1, min(800, rect.width * 2)) as NSNumber
+            webView.takeSnapshot(with: configuration) { image, _ in
+                guard let image else { return }
+                DispatchQueue.main.async {
+                    agentLassoSelection = AgentLassoSelection(
+                        image: image,
+                        extractedText: value as? String ?? "",
+                        sourceURL: webView.url
+                    )
+                }
+            }
+        }
+    }
+
+    private func performAgentAISearch(_ query: String) async -> Bool {
+        guard let webView = webViewManager?.activeWebView else { return false }
+        let script = """
+        (function() {
+            function selector(el) {
+                if (el.id) return '#' + CSS.escape(el.id);
+                var parts=[];
+                while(el&&el.nodeType===1&&el!==document.documentElement){
+                    var part=el.tagName.toLowerCase();
+                    if(el.parentElement){var same=Array.from(el.parentElement.children).filter(function(x){return x.tagName===el.tagName;});if(same.length>1)part+=':nth-of-type('+(same.indexOf(el)+1)+')';}
+                    parts.unshift(part);el=el.parentElement;
+                }
+                return 'html > '+parts.join(' > ');
+            }
+            var items=[];
+            document.querySelectorAll('a,button,input,textarea,select,[role],h1,h2,h3,h4,p,li,label').forEach(function(el){
+                var r=el.getBoundingClientRect(),s=getComputedStyle(el);
+                if(r.width<2||r.height<2||s.display==='none'||s.visibility==='hidden')return;
+                var text=(el.innerText||el.value||el.getAttribute('aria-label')||el.title||el.placeholder||'').replace(/\\s+/g,' ').trim();
+                if(text)items.push({selector:selector(el),text:text.slice(0,500)});
+            });
+            return JSON.stringify(items.slice(0,500));
+        })();
+        """
+        guard let raw = try? await webView.evaluateJavaScript(script) as? String,
+              let data = raw.data(using: .utf8),
+              let candidates = try? JSONDecoder().decode([AgentPageSearchCandidate].self, from: data),
+              let match = await AgentPageAISearch.bestMatch(query: query, candidates: candidates) else {
+            return false
+        }
+        guard let encoded = try? JSONSerialization.data(withJSONObject: [match.selector]),
+              let array = String(data: encoded, encoding: .utf8) else { return false }
+        let selector = String(array.dropFirst().dropLast())
+        let highlight = """
+        (function(){
+            document.getElementById('__sub-ai-search-style')?.remove();
+            var el;try{el=document.querySelector(\(selector));}catch(_){return false;}if(!el)return false;
+            var style=document.createElement('style');style.id='__sub-ai-search-style';
+            style.textContent='@keyframes sub-ai-found{0%,100%{outline:3px solid rgba(124,120,255,.2);outline-offset:2px}50%{outline:5px solid rgb(124,120,255);outline-offset:7px}}.__sub-ai-found{animation:sub-ai-found .8s ease-in-out 3!important}';
+            document.documentElement.appendChild(style);el.classList.remove('__sub-ai-found');void el.offsetWidth;el.classList.add('__sub-ai-found');
+            el.scrollIntoView({behavior:'smooth',block:'center',inline:'center'});setTimeout(function(){el.classList.remove('__sub-ai-found');style.remove();},2600);return true;
+        })();
+        """
+        return (try? await webView.evaluateJavaScript(highlight) as? Bool) ?? false
+    }
+
+}
+
+private extension View {
+    /// Keeps the very feature-rich browser root from creating one enormous
+    /// generic SwiftUI type that can exceed the compiler's type-check budget.
+    func contentViewTypeErased() -> AnyView {
+        AnyView(self)
+    }
 }
 
 #Preview {

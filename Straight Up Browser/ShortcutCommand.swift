@@ -627,6 +627,7 @@ final class ShortcutPriorityStore {
         .newTab, .closeTab, .closeTabSet, .reopenTab, .nextTab, .previousTab,
         .reload, .hardReload, .reloadAll, .back, .forward,
         .openLocation, .findInPage, .addBookmark, .printPage, .quickOpen,
+        .toggleTabBar,
     ]
 
     // Browser chrome you'd never want a page to eat. The rest (find, print,
@@ -637,6 +638,7 @@ final class ShortcutPriorityStore {
         ShortcutCommand.reopenTab.id, ShortcutCommand.nextTab.id, ShortcutCommand.previousTab.id,
         ShortcutCommand.reload.id, ShortcutCommand.hardReload.id, ShortcutCommand.reloadAll.id,
         ShortcutCommand.back.id, ShortcutCommand.forward.id,
+        ShortcutCommand.toggleTabBar.id,
     ]
 
     private static let globalKey = "shortcutPriorityGlobal"
