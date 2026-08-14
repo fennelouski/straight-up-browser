@@ -26,6 +26,84 @@ struct AgentPageSearchCandidate: Codable, Sendable {
     let text: String
 }
 
+/// A deliberately small first-stage vocabulary for page work. The router is
+/// extensible without changing the model contract: new local commands can be
+/// added here as the browser learns more common workflows.
+enum AgentLocalPageCommand: String, CaseIterable, Sendable {
+    case matchingText = "matching_text"
+    case links = "links"
+    case headings = "headings"
+    case mainText = "main_text"
+    case none
+
+    var displayName: String {
+        switch self {
+        case .matchingText: "matching text"
+        case .links: "page links"
+        case .headings: "page outline"
+        case .mainText: "main text"
+        case .none: "no page context"
+        }
+    }
+}
+
+struct AgentLocalPageContext: Sendable {
+    let command: AgentLocalPageCommand
+    let content: String
+
+    var isEmpty: Bool { content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+}
+
+/// Chooses a bounded, read-only page extraction before an off-device model is
+/// invoked. It never receives page content while selecting a command, so the
+/// routing decision itself stays on-device and cheap.
+enum AgentLocalPageRouter {
+    static func command(for prompt: String) async -> AgentLocalPageCommand {
+        let fallback = heuristicCommand(for: prompt)
+
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, *), SystemLanguageModel.default.availability == .available,
+           let planned = await onDeviceCommand(for: prompt) {
+            return planned
+        }
+        #endif
+
+        return fallback
+    }
+
+    private static func heuristicCommand(for prompt: String) -> AgentLocalPageCommand {
+        let words = prompt.lowercased()
+        if words.contains("link") || words.contains("url") || words.contains("href") {
+            return .links
+        }
+        if words.contains("heading") || words.contains("section") || words.contains("outline") {
+            return .headings
+        }
+        if words.contains("summar") || words.contains("article") || words.contains("read this") {
+            return .mainText
+        }
+        let searchableWords = words.split { !$0.isLetter && !$0.isNumber }.filter { $0.count >= 3 }
+        return searchableWords.isEmpty ? .none : .matchingText
+    }
+
+    #if canImport(FoundationModels)
+    @available(macOS 26.0, *)
+    private static func onDeviceCommand(for prompt: String) async -> AgentLocalPageCommand? {
+        let session = LanguageModelSession(instructions: """
+            Select the smallest read-only browser page command that helps answer the user's request.
+            Reply with exactly one identifier: matching_text, links, headings, main_text, or none.
+            Do not assume page content and do not explain your choice.
+            """)
+        do {
+            let response = try await session.respond(to: String(prompt.prefix(600))).content
+            return AgentLocalPageCommand(rawValue: response.trimmingCharacters(in: .whitespacesAndNewlines))
+        } catch {
+            return nil
+        }
+    }
+    #endif
+}
+
 enum AgentPageAISearch {
     static func bestMatch(
         query: String,

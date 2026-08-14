@@ -77,6 +77,52 @@ struct ProviderTransportTests {
         }
     }
 
+    @Test func HTTPStatusSurfacesOnlyMachineReadableProviderCode() {
+        let error = AgentProviderAdapterError.httpStatus(
+            providerID: "openAICompatibleChat",
+            statusCode: 400,
+            untrustedResponseBody: #"{"error":{"code":"model_not_found","message":"secret prompt text"}}"#
+        )
+
+        #expect(error.safeMessage.contains("model_not_found"))
+        #expect(!error.safeMessage.contains("secret prompt text"))
+    }
+
+    @Test func chatTransportDoesNotSerializeReasoningFields() async throws {
+        let recorder = ProviderRequestRecorder()
+        let adapter = AgentProviderHTTPAdapter(
+            dialect: .openAICompatibleChat,
+            endpoint: URL(string: "https://provider.invalid/v1/chat/completions")!,
+            apiKey: "fixture-secret",
+            transport: FixtureProviderTransport(
+                recorder: recorder,
+                response: AgentProviderHTTPResponse(
+                    statusCode: 200,
+                    headers: [:],
+                    body: AsyncThrowingStream { continuation in
+                        continuation.yield(Data(
+                            (#"data: {"id":"response-1","choices":[{"delta":{"content":"Hi"},"finish_reason":"stop"}]}"# + "\n\n").utf8
+                        ))
+                        continuation.yield(Data("data: [DONE]\n\n".utf8))
+                        continuation.finish()
+                    }
+                )
+            )
+        )
+        let request = AgentModelRequest(
+            model: "fixture",
+            messages: [AgentModelMessage(role: .user, content: [.text("Hello")])]
+        )
+
+        _ = try await collect(adapter.events(for: request))
+
+        let sent = try #require(await recorder.request)
+        let body = try #require(sent.httpBody)
+        let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(json["reasoning_effort"] == nil)
+        #expect(json["reasoning"] == nil)
+    }
+
     @Test func selectableNativeProvidersRouteChunkedStreamsWithCorrectAuthentication() async throws {
         let expectedEvents: [AgentModelEvent] = [
             .responseStarted(id: "shared"),

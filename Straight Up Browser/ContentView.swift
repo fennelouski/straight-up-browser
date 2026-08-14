@@ -2098,6 +2098,7 @@ struct ContentView: View {
             onStartLasso: startAgentLasso,
             onClearLasso: { agentLassoSelection = nil },
             onAISearch: performAgentAISearch,
+            onPrepareLocalContext: prepareAgentLocalContext,
             resolvePageAuthority: { pageIDs in
                 guard let manager = notificationManager else { return nil }
                 return await manager.automationPageAuthoritySnapshots(pageIDs: pageIDs)
@@ -3407,6 +3408,65 @@ struct ContentView: View {
         })();
         """
         return (try? await webView.evaluateJavaScript(highlight) as? Bool) ?? false
+    }
+
+    /// Runs the local router before a remote provider is given page material.
+    /// Each command has an explicit output bound, keeping routine questions
+    /// small while leaving richer browser tools available to the agent later.
+    private func prepareAgentLocalContext(_ prompt: String) async -> AgentLocalPageContext {
+        guard let webView = webViewManager?.activeWebView else {
+            return AgentLocalPageContext(command: .none, content: "")
+        }
+        let command = await AgentLocalPageRouter.command(for: prompt)
+        guard command != .none,
+              let promptData = try? JSONSerialization.data(
+                withJSONObject: prompt,
+                options: [.fragmentsAllowed]
+              ),
+              let encodedPrompt = String(data: promptData, encoding: .utf8) else {
+            return AgentLocalPageContext(command: command, content: "")
+        }
+        let script: String
+        switch command {
+        case .matchingText:
+            script = """
+            (function(query) {
+                const words = query.toLowerCase().split(/[^\\p{L}\\p{N}]+/u).filter(word => word.length >= 3).slice(0, 12);
+                if (!words.length) return '';
+                const lines = (document.body?.innerText || '').split(/\\n+/).map(line => line.trim()).filter(Boolean);
+                const matches = lines.filter(line => {
+                    const value = line.toLowerCase();
+                    return words.some(word => value.includes(word));
+                }).slice(0, 40).map(line => line.slice(0, 420));
+                return matches.join('\\n');
+            })(\(encodedPrompt));
+            """
+        case .links:
+            script = """
+            (function() {
+                const links = Array.from(document.querySelectorAll('a[href]')).map(link => ({
+                    text: (link.innerText || link.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim(),
+                    url: link.href
+                })).filter(link => link.text || link.url);
+                const unique = Array.from(new Map(links.map(link => [link.url, link])).values()).slice(0, 80);
+                return unique.map(link => link.text.slice(0, 180) + ' — ' + link.url).join('\\n');
+            })();
+            """
+        case .headings:
+            script = """
+            Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role=heading]'))
+                .map(item => item.tagName.toLowerCase() + ': ' + (item.innerText || '').replace(/\\s+/g, ' ').trim())
+                .filter(Boolean).slice(0, 100).join('\\n');
+            """
+        case .mainText:
+            script = """
+            ((document.querySelector('main,article,[role=main]') || document.body)?.innerText || '').slice(0, 12000);
+            """
+        case .none:
+            return AgentLocalPageContext(command: .none, content: "")
+        }
+        let content = (try? await webView.evaluateJavaScript(script) as? String) ?? ""
+        return AgentLocalPageContext(command: command, content: String(content.prefix(12_000)))
     }
 
 }

@@ -125,8 +125,13 @@ nonisolated struct AgentProviderHTTPAdapter: AgentProviderAdapter, CustomStringC
     ) throws -> AsyncThrowingStream<AgentModelEvent, Error> {
         try validateCapabilities(for: request)
         let body = try requestBody(for: request)
+        // Chat Completions providers reject reasoning controls for some models.
+        // Keep this at the transport boundary so an upstream adapter change cannot
+        // accidentally reintroduce the unsupported parameter.
+        let outboundBody = sanitizedOutboundBody(body)
+        let outboundFieldNames = Self.topLevelFieldNames(in: outboundBody)
         let bodyData = try JSONSerialization.data(
-            withJSONObject: body.foundationValue,
+            withJSONObject: outboundBody.foundationValue,
             options: [.sortedKeys]
         )
         guard bodyData.count <= Self.maximumRequestBytes else {
@@ -146,10 +151,13 @@ nonisolated struct AgentProviderHTTPAdapter: AgentProviderAdapter, CustomStringC
                     let response = try await transport.response(for: urlRequest)
                     guard (200..<300).contains(response.statusCode) else {
                         let retryAfter = response.headers["retry-after"].flatMap(TimeInterval.init)
+                        let errorBody = try await Self.boundedErrorBody(response.body)
                         throw AgentProviderAdapterError.httpStatus(
                             providerID: providerID,
                             statusCode: response.statusCode,
-                            retryAfter: retryAfter
+                            retryAfter: retryAfter,
+                            untrustedResponseBody: errorBody,
+                            sentRequestFields: outboundFieldNames
                         )
                     }
 
@@ -217,6 +225,23 @@ nonisolated struct AgentProviderHTTPAdapter: AgentProviderAdapter, CustomStringC
         case .geminiGenerateContent:
             try GeminiGenerateContentRequestBuilder().makeBody(for: request)
         }
+    }
+
+    private func sanitizedOutboundBody(_ body: JSONValue) -> JSONValue {
+        guard dialect == .openAICompatibleChat,
+              case .object(var fields) = body else {
+            return body
+        }
+        fields.removeValue(forKey: "reasoning_effort")
+        fields.removeValue(forKey: "reasoning")
+        return .object(fields)
+    }
+
+    /// Names only: suitable for diagnostics without retaining prompt, tool, or
+    /// credential values in an error report.
+    private static func topLevelFieldNames(in body: JSONValue) -> [String] {
+        guard case .object(let fields) = body else { return [] }
+        return fields.keys.sorted()
     }
 
     private func makeURLRequest(body: Data, model: String) -> URLRequest {
@@ -296,6 +321,16 @@ nonisolated struct AgentProviderHTTPAdapter: AgentProviderAdapter, CustomStringC
             safeMessage: "The provider transport failed.",
             retryClassification: .transient
         )
+    }
+
+    private static func boundedErrorBody(_ body: AsyncThrowingStream<Data, Error>) async throws -> String {
+        var data = Data()
+        for try await chunk in body {
+            let remaining = 4_096 - data.count
+            guard remaining > 0 else { break }
+            data.append(chunk.prefix(remaining))
+        }
+        return String(decoding: data, as: UTF8.self)
     }
 }
 

@@ -291,7 +291,8 @@ nonisolated struct AgentProviderAdapterError: Error, Equatable, Sendable {
         providerID: String,
         statusCode: Int,
         retryAfter: TimeInterval? = nil,
-        untrustedResponseBody _: String? = nil
+        untrustedResponseBody: String? = nil,
+        sentRequestFields: [String] = []
     ) -> AgentProviderAdapterError {
         let code: Code
         let retry: AgentProviderRetryClassification
@@ -309,12 +310,52 @@ nonisolated struct AgentProviderAdapterError: Error, Equatable, Sendable {
             code = .transport
             retry = .permanent
         }
+        let providerDetail = providerErrorDetail(from: untrustedResponseBody)
+        let detail = [
+            providerDetail.code.map { "Provider code: \($0)." },
+            providerDetail.parameter.map { "Parameter: \($0)." },
+        ]
+        .compactMap { $0 }
+        .joined(separator: " ")
+        let requestAudit = sentRequestFields.isEmpty
+            ? ""
+            : " Request fields: \(sentRequestFields.joined(separator: ", "))."
         return AgentProviderAdapterError(
             providerID: providerID,
             code: code,
-            safeMessage: "\(providerID) request failed with HTTP \(statusCode).",
+            safeMessage: "\(providerID) request failed with HTTP \(statusCode)."
+                + (detail.isEmpty ? "" : " \(detail)")
+                + requestAudit,
             retryClassification: retry
         )
+    }
+
+    /// Server messages can echo prompt or account data. Surface only short,
+    /// machine-readable code and parameter fields so the UI helps diagnose a
+    /// request without retaining untrusted response text.
+    private static func providerErrorDetail(from body: String?) -> (code: String?, parameter: String?) {
+        guard let body,
+              let data = body.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let error = root["error"] as? [String: Any] else { return (nil, nil) }
+        let code = safeMachineValue(
+            (error["code"] as? String) ?? (error["type"] as? String),
+            allowed: "_-."
+        )
+        let parameter = safeMachineValue(
+            error["param"] as? String,
+            allowed: "_-.[]"
+        )
+        return (code, parameter)
+    }
+
+    private static func safeMachineValue(_ raw: String?, allowed: String) -> String? {
+        guard let raw, raw.count <= 120 else { return nil }
+        let permitted = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: allowed))
+        guard raw.unicodeScalars.allSatisfy({ permitted.contains($0) }) else {
+            return nil
+        }
+        return raw
     }
 }
 

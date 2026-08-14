@@ -14,7 +14,7 @@ struct BrowserAgentTests {
         #expect(BrowserAgentProvider.appleIntelligence.defaultModel == "apple-intelligence:on-device")
         #expect(!BrowserAgentProvider.appleIntelligence.needsAPIKey)
         #expect(BrowserAgentProvider.openAI.defaultEndpoint ==
-            "https://api.openai.com/v1/chat/completions")
+            "https://api.openai.com/v1/responses")
         #expect(BrowserAgentProvider.openAIResponses.defaultEndpoint ==
             "https://api.openai.com/v1/responses")
         #expect(BrowserAgentProvider.anthropicMessages.defaultEndpoint ==
@@ -38,7 +38,7 @@ struct BrowserAgentTests {
         #expect(BrowserAgentProvider.openAI.needsAPIKey)
         #expect(!BrowserAgentProvider.ollama.needsAPIKey)
         #expect(!BrowserAgentProvider.lmStudio.needsAPIKey)
-        #expect(BrowserAgentProvider.openAI.dialect == .openAICompatibleChat)
+        #expect(BrowserAgentProvider.openAI.dialect == .openAIResponses)
         #expect(BrowserAgentProvider.openAIResponses.dialect == .openAIResponses)
         #expect(BrowserAgentProvider.anthropicMessages.dialect == .anthropicMessages)
         #expect(BrowserAgentProvider.gemini.dialect == .geminiGenerateContent)

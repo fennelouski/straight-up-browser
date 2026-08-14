@@ -1070,6 +1070,9 @@ struct ScreenshotsSettingsView: View {
 struct AppearanceSettingsView: View {
     // Same "theme" defaults key SettingsManager reads — one store, no desync.
     @AppStorage("theme") private var theme = "System"
+    // Matches the app logo's blue by default. Stored as hex because Color itself
+    // is not a stable UserDefaults value across all supported OS releases.
+    @AppStorage("aiSearchEffectColorHex") private var aiSearchEffectColorHex = "#007AFF"
 
     // Load progress indicators (any combination).
     @AppStorage("progressBarTop") private var progressBarTop = true
@@ -1153,6 +1156,15 @@ struct AppearanceSettingsView: View {
                 ) { ThemeDemo(theme: $0) }
             } header: {
                 SettingsLabel("Theme", systemImage: "paintbrush", tint: SettingsTint.appearance)
+            }
+
+            Section {
+                ColorPicker("Effect color", selection: aiSearchEffectColorBinding, supportsOpacity: false)
+                Text("Used for the sparkles when AI Search is enabled. Defaults to the app logo blue.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                SettingsLabel("AI Search", systemImage: "sparkles", tint: aiSearchEffectColor)
             }
 
             Section {
@@ -1273,6 +1285,17 @@ struct AppearanceSettingsView: View {
 
     private func notifyScheduleChanged() {
         NotificationCenter.default.post(name: .toneScheduleChanged, object: nil)
+    }
+
+    private var aiSearchEffectColor: Color {
+        Color(hex: aiSearchEffectColorHex) ?? .blue
+    }
+
+    private var aiSearchEffectColorBinding: Binding<Color> {
+        Binding(
+            get: { aiSearchEffectColor },
+            set: { aiSearchEffectColorHex = $0.toHex() ?? "#007AFF" }
+        )
     }
 
     // DatePicker wants a Date; the schedule only cares about minutes-of-day.
