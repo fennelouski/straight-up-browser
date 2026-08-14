@@ -515,6 +515,7 @@ private struct ReaderBlockRow: View {
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \BrowserTab.orderIndex) private var tabs: [BrowserTab]
     @Query(sort: \TabGroup.orderIndex) private var tabGroups: [TabGroup]
@@ -551,6 +552,7 @@ struct ContentView: View {
     @State private var agentLassoSelection: AgentLassoSelection?
     @State private var showDeveloperTools = false
     @StateObject private var developerTools = DeveloperToolsModel()
+    @AppStorage(DeveloperToolsPlacement.defaultsKey) private var developerToolsPlacementRaw = DeveloperToolsPlacement.bottom.rawValue
     @State private var showFindBar = false
     @State private var findText = ""
     @State private var findMatchIndex = 0 // 1-based position of the current match, 0 before the first hit
@@ -2119,28 +2121,61 @@ struct ContentView: View {
 
     private var browserAndDeveloperTools: some View {
         Group {
-            if showDeveloperTools {
-                VSplitView {
-                    mainContent
-                        .frame(minHeight: 180)
-
-                    DeveloperToolsView(
-                        model: developerTools,
-                        webView: webViewManager?.activeWebView,
-                        tabID: tabManager.selectedTabId,
-                        onClose: {
-                            withAnimation(.easeInOut(duration: 0.16)) {
-                                showDeveloperTools = false
-                            }
-                        }
-                    )
-                    .frame(minHeight: 170, idealHeight: 320, maxHeight: 620)
-                }
-            } else {
+            if !showDeveloperTools || developerToolsPlacement == .window {
                 mainContent
+            } else {
+                switch developerToolsPlacement {
+                case .bottom:
+                    VSplitView {
+                        mainContent.frame(minHeight: 180)
+                        developerToolsView.frame(minHeight: 170, idealHeight: 320, maxHeight: 620)
+                    }
+                case .left:
+                    HSplitView {
+                        developerToolsView.frame(minWidth: 320, idealWidth: 460, maxWidth: 720)
+                        mainContent.frame(minWidth: 360)
+                    }
+                case .right:
+                    HSplitView {
+                        mainContent.frame(minWidth: 360)
+                        developerToolsView.frame(minWidth: 320, idealWidth: 460, maxWidth: 720)
+                    }
+                case .window:
+                    mainContent
+                }
             }
         }
         .overlay(alignment: .top) { traditionalTopTabBarOverlay }
+    }
+
+    private var developerToolsPlacement: DeveloperToolsPlacement {
+        DeveloperToolsPlacement(rawValue: developerToolsPlacementRaw) ?? .bottom
+    }
+
+    private var developerToolsView: some View {
+        DeveloperToolsView(
+            model: developerTools,
+            webView: webViewManager?.activeWebView,
+            tabID: tabManager.selectedTabId,
+            onClose: closeDeveloperTools
+        )
+    }
+
+    private func closeDeveloperTools() {
+        withAnimation(.easeInOut(duration: 0.16)) {
+            showDeveloperTools = false
+        }
+    }
+
+    private func synchronizeDeveloperToolsWindow() {
+        guard showDeveloperTools, developerToolsPlacement == .window else { return }
+        DeveloperToolsDetachedWindowState.shared.configure(
+            model: developerTools,
+            webView: webViewManager?.activeWebView,
+            tabID: tabManager.selectedTabId,
+            onClose: closeDeveloperTools
+        )
+        openWindow(id: "developer-tools")
     }
 
     @ViewBuilder
@@ -2700,7 +2735,25 @@ struct ContentView: View {
             // Update the WebViewManager with the new active tab. The WebView's
             // URL binding reads from the active tab, so nothing else to sync.
             webViewManager?.setActiveTab(newValue)
+            if showDeveloperTools && developerToolsPlacement == .window {
+                DispatchQueue.main.async { synchronizeDeveloperToolsWindow() }
+            }
         }
+        .onChange(of: showDeveloperTools) { _, isPresented in
+            if isPresented {
+                synchronizeDeveloperToolsWindow()
+            } else {
+                dismissWindow(id: "developer-tools")
+            }
+        }
+        .onChange(of: developerToolsPlacementRaw) { oldValue, _ in
+            if oldValue == DeveloperToolsPlacement.window.rawValue,
+               developerToolsPlacement != .window {
+                dismissWindow(id: "developer-tools")
+            }
+            synchronizeDeveloperToolsWindow()
+        }
+        .contentViewTypeErased()
         .onReceive(NotificationCenter.default.publisher(for: .memoryPressure)) { note in
             let critical = (note.userInfo?["critical"] as? Bool) ?? false
             handleMemoryPressure(critical: critical)

@@ -112,6 +112,11 @@ class WebViewManager: NSObject, ObservableObject {
     (function() {
         if (window.__subDevTools) return;
         var enabled = false;
+        var inspecting = false;
+        var lastInspectedElement = null;
+        var inspectorOverlay = null;
+        var savedCursor = null;
+
         function format(value) {
             if (value === undefined) return 'undefined';
             if (value === null) return 'null';
@@ -134,18 +139,112 @@ class WebViewManager: NSObject, ObservableObject {
                 }, 2);
             } catch (_) { return String(value); }
         }
-        function send(level, values, source, line, column) {
+        function post(payload) {
             if (!enabled) return;
-            try {
-                window.webkit.messageHandlers.subDevTools.postMessage({
-                    type: 'console', level: level,
-                    message: values.map(format).join(' '),
-                    source: source || location.href,
-                    line: line || 0, column: column || 0,
-                    timestamp: Date.now()
-                });
-            } catch (_) {}
+            try { window.webkit.messageHandlers.subDevTools.postMessage(payload); } catch (_) {}
         }
+        function send(level, values, source, line, column) {
+            post({
+                type: 'console', level: level,
+                message: values.map(format).join(' '),
+                source: source || location.href,
+                line: line || 0, column: column || 0,
+                timestamp: Date.now()
+            });
+        }
+        function cssEscape(value) {
+            if (window.CSS && CSS.escape) return CSS.escape(value);
+            return String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+        }
+        function selector(element) {
+            if (element.id) return '#' + cssEscape(element.id);
+            var parts = [];
+            while (element && element.nodeType === 1 && element !== document.documentElement) {
+                var part = element.tagName.toLowerCase();
+                if (element.parentElement) {
+                    var matching = Array.from(element.parentElement.children).filter(function(item) {
+                        return item.tagName === element.tagName;
+                    });
+                    if (matching.length > 1) part += ':nth-of-type(' + (matching.indexOf(element) + 1) + ')';
+                }
+                parts.unshift(part);
+                element = element.parentElement;
+            }
+            return 'html > ' + parts.join(' > ');
+        }
+        function description(element) {
+            var id = element.id ? '#' + element.id : '';
+            var classes = Array.from(element.classList || []).slice(0, 2).map(function(name) {
+                return '.' + name;
+            }).join('');
+            return '<' + element.tagName.toLowerCase() + id + classes + '>';
+        }
+        function ensureHighlighter() {
+            if (inspectorOverlay && inspectorOverlay.isConnected) return inspectorOverlay;
+            inspectorOverlay = document.createElement('div');
+            inspectorOverlay.id = '__sub-devtools-inspector-overlay';
+            inspectorOverlay.setAttribute('aria-hidden', 'true');
+            inspectorOverlay.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;' +
+                'box-sizing:border-box;border:1px solid rgb(66,133,244);background:rgba(66,133,244,.18);display:none';
+            document.documentElement.appendChild(inspectorOverlay);
+            return inspectorOverlay;
+        }
+        function showHighlighter(element) {
+            var overlay = ensureHighlighter();
+            var rect = element.getBoundingClientRect();
+            overlay.style.left = rect.left + 'px'; overlay.style.top = rect.top + 'px';
+            overlay.style.width = rect.width + 'px'; overlay.style.height = rect.height + 'px';
+            overlay.style.display = 'block';
+        }
+        function hideHighlighter() {
+            if (inspectorOverlay) inspectorOverlay.style.display = 'none';
+        }
+        function sendInspection(type, element) {
+            if (!element) return;
+            post({
+                type: type,
+                selector: selector(element),
+                description: description(element)
+            });
+        }
+        function setInspecting(next) {
+            next = !!next;
+            if (inspecting === next) return;
+            inspecting = next;
+            if (next) {
+                savedCursor = document.documentElement.style.cursor;
+                document.documentElement.style.cursor = 'crosshair';
+            } else {
+                document.documentElement.style.cursor = savedCursor || '';
+                savedCursor = null;
+                lastInspectedElement = null;
+                hideHighlighter();
+            }
+        }
+        document.addEventListener('pointermove', function(event) {
+            if (!inspecting || !event.target || event.target === inspectorOverlay) return;
+            var element = event.target.nodeType === 1 ? event.target : event.target.parentElement;
+            if (!element) return;
+            showHighlighter(element);
+            if (element !== lastInspectedElement) {
+                lastInspectedElement = element;
+                sendInspection('inspectHover', element);
+            }
+        }, true);
+        document.addEventListener('click', function(event) {
+            if (!inspecting || !event.target) return;
+            var element = event.target.nodeType === 1 ? event.target : event.target.parentElement;
+            if (!element) return;
+            event.preventDefault(); event.stopImmediatePropagation(); event.stopPropagation();
+            sendInspection('inspectSelect', element);
+            setInspecting(false);
+        }, true);
+        document.addEventListener('keydown', function(event) {
+            if (!inspecting || event.key !== 'Escape') return;
+            event.preventDefault(); event.stopImmediatePropagation(); event.stopPropagation();
+            setInspecting(false);
+            post({ type: 'inspectCancel' });
+        }, true);
         ['log', 'debug', 'info', 'warn', 'error'].forEach(function(method) {
             var original = console[method];
             console[method] = function() {
@@ -161,7 +260,8 @@ class WebViewManager: NSObject, ObservableObject {
         });
         window.__subDevTools = {
             enable: function() { enabled = true; },
-            disable: function() { enabled = false; }
+            disable: function() { setInspecting(false); enabled = false; },
+            setInspecting: setInspecting
         };
     })();
     """
@@ -1209,22 +1309,39 @@ extension WebViewManager: WKScriptMessageHandler {
         if message.name == "subDevTools" {
             guard let webView = message.webView,
                   let tabID = tabId(for: webView),
-                  body["type"] as? String == "console",
-                  let level = body["level"] as? String,
-                  let text = body["message"] as? String else { return }
-            NotificationCenter.default.post(
-                name: .browserDeveloperConsoleMessage,
-                object: nil,
-                userInfo: [
-                    "tabID": tabID,
-                    "level": level,
-                    "message": String(text.prefix(16_384)),
-                    "source": String((body["source"] as? String ?? "").prefix(2_048)),
-                    "line": (body["line"] as? NSNumber)?.intValue ?? 0,
-                    "column": (body["column"] as? NSNumber)?.intValue ?? 0,
-                    "timestamp": (body["timestamp"] as? NSNumber)?.doubleValue ?? 0,
-                ]
-            )
+                  let type = body["type"] as? String else { return }
+            switch type {
+            case "console":
+                guard let level = body["level"] as? String,
+                      let text = body["message"] as? String else { return }
+                NotificationCenter.default.post(
+                    name: .browserDeveloperConsoleMessage,
+                    object: nil,
+                    userInfo: [
+                        "tabID": tabID,
+                        "level": level,
+                        "message": String(text.prefix(16_384)),
+                        "source": String((body["source"] as? String ?? "").prefix(2_048)),
+                        "line": (body["line"] as? NSNumber)?.intValue ?? 0,
+                        "column": (body["column"] as? NSNumber)?.intValue ?? 0,
+                        "timestamp": (body["timestamp"] as? NSNumber)?.doubleValue ?? 0,
+                    ]
+                )
+            case "inspectHover", "inspectSelect", "inspectCancel":
+                guard message.frameInfo.isMainFrame else { return }
+                NotificationCenter.default.post(
+                    name: .browserDeveloperElementInspected,
+                    object: nil,
+                    userInfo: [
+                        "tabID": tabID,
+                        "type": type,
+                        "selector": String((body["selector"] as? String ?? "").prefix(8_192)),
+                        "description": String((body["description"] as? String ?? "").prefix(1_024)),
+                    ]
+                )
+            default:
+                break
+            }
             return
         }
         if message.name == WebKitAgentConsoleBridgeScripts.messageHandlerName {

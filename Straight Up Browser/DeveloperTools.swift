@@ -11,6 +11,68 @@ enum DeveloperToolsTab: String, CaseIterable, Identifiable {
     var id: Self { self }
 }
 
+enum DeveloperToolsPlacement: String, CaseIterable, Identifiable {
+    case bottom
+    case right
+    case left
+    case window
+
+    static let defaultsKey = "developerToolsPlacement"
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .bottom: "Bottom"
+        case .right: "Right"
+        case .left: "Left"
+        case .window: "Separate Window"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .bottom: "rectangle.bottomthird.inset.filled"
+        case .right: "rectangle.righthalf.inset.filled"
+        case .left: "rectangle.lefthalf.inset.filled"
+        case .window: "macwindow"
+        }
+    }
+}
+
+enum DeveloperNetworkCategory: String, CaseIterable, Identifiable {
+    case all
+    case document
+    case fetch
+    case script
+    case style
+    case image
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .all: "All"
+        case .document: "Document"
+        case .fetch: "Fetch/XHR"
+        case .script: "Scripts"
+        case .style: "Styles"
+        case .image: "Images"
+        }
+    }
+
+    func matches(_ type: String) -> Bool {
+        switch self {
+        case .all: true
+        case .document: type == "document"
+        case .fetch: type == "fetch" || type == "xmlhttprequest"
+        case .script: type == "script"
+        case .style: type == "css" || type == "link"
+        case .image: type == "img" || type == "image"
+        }
+    }
+}
+
 struct DeveloperConsoleEntry: Identifiable, Equatable {
     enum Kind: String {
         case command, result, log, debug, info, warn, error
@@ -72,8 +134,13 @@ final class DeveloperToolsModel: ObservableObject {
     @Published private(set) var elements: [DeveloperDOMRow] = []
     @Published private(set) var networkEntries: [DeveloperNetworkEntry] = []
     @Published var consoleFilter = ""
+    @Published var elementsFilter = ""
     @Published var networkFilter = ""
+    @Published var networkCategory: DeveloperNetworkCategory = .all
     @Published var preserveLog = false
+    @Published private(set) var selectedElementPath: String?
+    @Published private(set) var selectedElementDescription: String?
+    @Published var isInteractiveInspection = false
     @Published var isLoadingElements = false
     @Published var isLoadingNetwork = false
 
@@ -91,11 +158,24 @@ final class DeveloperToolsModel: ObservableObject {
     }
 
     var filteredNetworkEntries: [DeveloperNetworkEntry] {
-        guard !networkFilter.isEmpty else { return networkEntries }
-        return networkEntries.filter {
-            $0.name.localizedCaseInsensitiveContains(networkFilter)
-                || $0.url.localizedCaseInsensitiveContains(networkFilter)
-                || $0.type.localizedCaseInsensitiveContains(networkFilter)
+        networkEntries.filter {
+            networkCategory.matches($0.type)
+                && (networkFilter.isEmpty
+                    || $0.name.localizedCaseInsensitiveContains(networkFilter)
+                    || $0.url.localizedCaseInsensitiveContains(networkFilter)
+                    || $0.type.localizedCaseInsensitiveContains(networkFilter))
+        }
+    }
+
+    var filteredElements: [DeveloperDOMRow] {
+        guard !elementsFilter.isEmpty else { return elements }
+        return elements.filter { row in
+            row.tag.localizedCaseInsensitiveContains(elementsFilter)
+                || row.text?.localizedCaseInsensitiveContains(elementsFilter) == true
+                || row.attributes.contains { key, value in
+                    key.localizedCaseInsensitiveContains(elementsFilter)
+                        || value.localizedCaseInsensitiveContains(elementsFilter)
+                }
         }
     }
 
@@ -104,10 +184,12 @@ final class DeveloperToolsModel: ObservableObject {
         self.webView = webView
         self.tabID = tabID
         webView?.evaluateJavaScript("window.__subDevTools && window.__subDevTools.enable()")
+        if isInteractiveInspection { setInteractiveInspection(true) }
         refreshSelectedSurface()
     }
 
     func detach() {
+        setInteractiveInspection(false)
         removeHighlight()
         webView?.evaluateJavaScript("window.__subDevTools && window.__subDevTools.disable()")
         webView = nil
@@ -157,7 +239,41 @@ final class DeveloperToolsModel: ObservableObject {
               loadedTabID == tabID else { return }
         if !preserveLog { consoleByTab[loadedTabID] = [] }
         webView?.evaluateJavaScript("window.__subDevTools && window.__subDevTools.enable()")
+        if isInteractiveInspection { setInteractiveInspection(true) }
         refreshSelectedSurface()
+    }
+
+    func setInteractiveInspection(_ enabled: Bool) {
+        isInteractiveInspection = enabled
+        guard let webView else { return }
+        webView.evaluateJavaScript("window.__subDevTools && window.__subDevTools.setInspecting && window.__subDevTools.setInspecting(\(enabled ? "true" : "false"))")
+        if !enabled { removeHighlight() }
+    }
+
+    func receiveElementInspection(_ note: Notification) {
+        guard let receivedTabID = note.userInfo?["tabID"] as? UUID,
+              receivedTabID == tabID else { return }
+        if note.userInfo?["type"] as? String == "inspectCancel" {
+            isInteractiveInspection = false
+            return
+        }
+        guard let selector = note.userInfo?["selector"] as? String,
+              !selector.isEmpty else { return }
+        selectedElementPath = selector
+        selectedElementDescription = note.userInfo?["description"] as? String
+        if note.userInfo?["type"] as? String == "inspectSelect" {
+            isInteractiveInspection = false
+            selectedTab = .elements
+            highlight(selector)
+            refreshElements()
+        }
+    }
+
+    func selectElement(_ row: DeveloperDOMRow) {
+        guard row.tag != "#text" else { return }
+        selectedElementPath = row.id
+        selectedElementDescription = elementDescription(for: row)
+        highlight(row.id)
     }
 
     func execute(_ command: String) {
@@ -228,6 +344,7 @@ final class DeveloperToolsModel: ObservableObject {
             }
             function visit(node) {
                 if (!node || count++ >= limit) return null;
+                if (node.nodeType === 1 && node.id && node.id.indexOf('__sub-devtools-') === 0) return null;
                 if (node.nodeType === 3) {
                     var text = (node.nodeValue || '').replace(/\\s+/g, ' ').trim();
                     return text ? {path: '', tag: '#text', attributes: {}, text: text.slice(0, 300), children: []} : null;
@@ -266,11 +383,11 @@ final class DeveloperToolsModel: ObservableObject {
         let quoted = Self.javaScriptString(path)
         webView.evaluateJavaScript("""
         (function() {
-            var old = document.getElementById('__sub-devtools-highlight'); if (old) old.remove();
+            var old = document.getElementById('__sub-devtools-row-highlight'); if (old) old.remove();
             var el; try { el = document.querySelector(\(quoted)); } catch (_) { return; }
             if (!el) return;
             var r = el.getBoundingClientRect(), box = document.createElement('div');
-            box.id = '__sub-devtools-highlight';
+            box.id = '__sub-devtools-row-highlight';
             box.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;' +
                 'left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;' +
                 'background:rgba(70,140,255,.20);border:1px solid rgb(70,140,255);box-sizing:border-box';
@@ -280,7 +397,7 @@ final class DeveloperToolsModel: ObservableObject {
     }
 
     func removeHighlight() {
-        webView?.evaluateJavaScript("document.getElementById('__sub-devtools-highlight')?.remove()")
+        webView?.evaluateJavaScript("document.getElementById('__sub-devtools-row-highlight')?.remove()")
     }
 
     func refreshNetwork() {
@@ -335,6 +452,16 @@ final class DeveloperToolsModel: ObservableObject {
         return line > 0 ? "\(name):\(line)" : name
     }
 
+    private func elementDescription(for row: DeveloperDOMRow) -> String {
+        let id = row.attributes["id"].map { "#\($0)" } ?? ""
+        let classes = row.attributes["class"]?
+            .split(whereSeparator: \.isWhitespace)
+            .prefix(2)
+            .map { ".\($0)" }
+            .joined() ?? ""
+        return "<\(row.tag)\(id)\(classes)>"
+    }
+
     private static func javaScriptString(_ value: String) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: [value]),
               let array = String(data: data, encoding: .utf8) else { return "\"\"" }
@@ -367,6 +494,73 @@ private struct NetworkRow: Decodable {
     let startTime: Double
 }
 
+@MainActor
+final class DeveloperToolsDetachedWindowState: ObservableObject {
+    static let shared = DeveloperToolsDetachedWindowState()
+
+    @Published private(set) var model: DeveloperToolsModel?
+    @Published private(set) var webView: WKWebView?
+    @Published private(set) var tabID: UUID?
+    private var closeAction: (() -> Void)?
+
+    func configure(
+        model: DeveloperToolsModel,
+        webView: WKWebView?,
+        tabID: UUID?,
+        onClose: @escaping () -> Void
+    ) {
+        self.model = model
+        self.webView = webView
+        self.tabID = tabID
+        closeAction = onClose
+    }
+
+    func close() {
+        let action = closeAction
+        closeAction = nil
+        action?()
+    }
+}
+
+struct DeveloperToolsDetachedWindow: View {
+    @ObservedObject private var state = DeveloperToolsDetachedWindowState.shared
+    @AppStorage(DeveloperToolsPlacement.defaultsKey) private var placementRaw = DeveloperToolsPlacement.bottom.rawValue
+    @Environment(\.dismiss) private var dismiss
+
+    private var placement: DeveloperToolsPlacement {
+        DeveloperToolsPlacement(rawValue: placementRaw) ?? .bottom
+    }
+
+    var body: some View {
+        Group {
+            if let model = state.model {
+                DeveloperToolsView(
+                    model: model,
+                    webView: state.webView,
+                    tabID: state.tabID,
+                    onClose: close
+                )
+            } else {
+                ContentUnavailableView(
+                    "Developer Tools Unavailable",
+                    systemImage: "wrench.and.screwdriver",
+                    description: Text("Open Developer Tools from a browser window first.")
+                )
+            }
+        }
+        .frame(minWidth: 520, minHeight: 360)
+        .onDisappear {
+            if placement == .window { state.close() }
+        }
+    }
+
+    private func close() {
+        state.close()
+        dismiss()
+    }
+
+}
+
 struct DeveloperToolsCommandModifier: ViewModifier {
     @Binding var isPresented: Bool
     @ObservedObject var model: DeveloperToolsModel
@@ -380,8 +574,18 @@ struct DeveloperToolsCommandModifier: ViewModifier {
                 model.select(.console)
                 withAnimation(.easeInOut(duration: 0.16)) { isPresented = true }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .browserToggleDeveloperElementInspector)) { _ in
+                model.select(.elements)
+                withAnimation(.easeInOut(duration: 0.16)) { isPresented = true }
+                DispatchQueue.main.async {
+                    model.setInteractiveInspection(!model.isInteractiveInspection)
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .browserDeveloperConsoleMessage)) { note in
                 model.receiveConsoleMessage(note)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .browserDeveloperElementInspected)) { note in
+                model.receiveElementInspection(note)
             }
             .onReceive(NotificationCenter.default.publisher(for: .browserDeveloperPageDidLoad)) { note in
                 model.pageDidLoad(note)
@@ -395,6 +599,12 @@ struct DeveloperToolsView: View {
     let tabID: UUID?
     let onClose: () -> Void
     @State private var command = ""
+    @FocusState private var consoleSearchFocused: Bool
+    @AppStorage(DeveloperToolsPlacement.defaultsKey) private var placementRaw = DeveloperToolsPlacement.bottom.rawValue
+
+    private var placement: DeveloperToolsPlacement {
+        DeveloperToolsPlacement(rawValue: placementRaw) ?? .bottom
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -434,6 +644,28 @@ struct DeveloperToolsView: View {
                 .buttonStyle(.plain)
             }
             Spacer()
+            Button {
+                model.select(.console)
+                consoleSearchFocused = true
+            } label: {
+                Image(systemName: "magnifyingglass").frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .help("Search Console")
+            Menu {
+                Picker("Developer Tools location", selection: Binding(
+                    get: { placement },
+                    set: { placementRaw = $0.rawValue }
+                )) {
+                    ForEach(DeveloperToolsPlacement.allCases) { placement in
+                        Label(placement.title, systemImage: placement.symbol).tag(placement)
+                    }
+                }
+            } label: {
+                Image(systemName: "rectangle.split.3x1").frame(width: 28, height: 28)
+            }
+            .menuStyle(.borderlessButton)
+            .help("Developer Tools location")
             Button { model.refreshSelectedSurface() } label: {
                 Image(systemName: "arrow.clockwise").frame(width: 28, height: 28)
             }
@@ -455,9 +687,10 @@ struct DeveloperToolsView: View {
             HStack(spacing: 8) {
                 Button { model.clearConsole() } label: { Image(systemName: "clear") }
                     .buttonStyle(.plain).help("Clear console")
-                TextField("Filter", text: $model.consoleFilter)
+                TextField("Search Console", text: $model.consoleFilter)
                     .textFieldStyle(.plain)
                     .font(.system(size: 11))
+                    .focused($consoleSearchFocused)
                 Toggle("Preserve log", isOn: $model.preserveLog)
                     .toggleStyle(.checkbox).font(.system(size: 11))
             }
@@ -510,17 +743,61 @@ struct DeveloperToolsView: View {
     }
 
     private var elementsView: some View {
-        Group {
+        VStack(spacing: 0) {
+            VStack(spacing: 2) {
+                HStack(spacing: 8) {
+                    Button {
+                        model.setInteractiveInspection(!model.isInteractiveInspection)
+                    } label: {
+                        Label(
+                            model.isInteractiveInspection ? "Inspecting" : "Inspect",
+                            systemImage: "cursorarrow.rays"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(model.isInteractiveInspection ? .accentColor : .secondary)
+                    .help("Pick an element from the page (⌘⌥C)")
+
+                    TextField("Filter elements", text: $model.elementsFilter)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 11))
+
+                    Text("\(model.filteredElements.count) nodes")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                if let description = model.selectedElementDescription {
+                    HStack(spacing: 5) {
+                        Image(systemName: "cursorarrow.rays")
+                        Text(description).lineLimit(1)
+                    }
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            Divider()
+
             if model.isLoadingElements && model.elements.isEmpty {
-                ProgressView().controlSize(.small)
+                Spacer(); ProgressView().controlSize(.small); Spacer()
             } else if model.elements.isEmpty {
                 ContentUnavailableView("No document", systemImage: "chevron.left.forwardslash.chevron.right")
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(model.elements) { row in
-                            elementRow(row)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(model.filteredElements) { row in
+                                elementRow(row).id(row.id)
+                            }
                         }
+                    }
+                    .onChange(of: model.selectedElementPath) { _, path in
+                        if let path { proxy.scrollTo(path, anchor: .center) }
+                    }
+                    .onAppear {
+                        if let path = model.selectedElementPath { proxy.scrollTo(path, anchor: .center) }
                     }
                 }
                 .onHover { hovering in if !hovering { model.removeHighlight() } }
@@ -554,7 +831,9 @@ struct DeveloperToolsView: View {
         .font(.system(size: 11, design: .monospaced))
         .lineLimit(1)
         .padding(.vertical, 2).padding(.horizontal, 5)
+        .background(model.selectedElementPath == row.id ? Color.accentColor.opacity(0.18) : .clear)
         .contentShape(Rectangle())
+        .onTapGesture { model.selectElement(row) }
         .onHover { hovering in
             if hovering { model.highlight(row.id) }
         }
@@ -562,9 +841,20 @@ struct DeveloperToolsView: View {
 
     private var networkView: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: 8) {
                 Circle().fill(Color.red).frame(width: 9, height: 9)
-                TextField("Filter", text: $model.networkFilter).textFieldStyle(.plain).font(.system(size: 11))
+                TextField("Filter requests", text: $model.networkFilter).textFieldStyle(.plain).font(.system(size: 11))
+                Menu {
+                    Picker("Request type", selection: $model.networkCategory) {
+                        ForEach(DeveloperNetworkCategory.allCases) { category in
+                            Text(category.title).tag(category)
+                        }
+                    }
+                } label: {
+                    Label(model.networkCategory.title, systemImage: "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 11))
+                }
+                .menuStyle(.borderlessButton)
                 Text("\(model.filteredNetworkEntries.count) requests")
                     .font(.system(size: 10)).foregroundStyle(.secondary)
             }

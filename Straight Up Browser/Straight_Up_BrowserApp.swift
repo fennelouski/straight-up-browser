@@ -327,6 +327,13 @@ struct Straight_Up_BrowserApp: App {
         .defaultSize(width: 780, height: 560)
         .windowResizability(.contentSize)
 
+        Window("Developer Tools", id: "developer-tools") {
+            DeveloperToolsDetachedWindow()
+        }
+        .windowStyle(.automatic)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 760, height: 560)
+
         Window("Downloads", id: "downloads") {
             FilesWindow()
         }
@@ -536,6 +543,11 @@ struct Straight_Up_BrowserApp: App {
                     NotificationCenter.default.post(name: .browserShowDeveloperConsole, object: nil)
                 }
                 .keyboardShortcut("j", modifiers: [.command, .option])
+
+                Button("Select Page Element") {
+                    NotificationCenter.default.post(name: .browserToggleDeveloperElementInspector, object: nil)
+                }
+                .keyboardShortcut("c", modifiers: [.command, .option])
 
                 Button("Snap Window to Size") {
                     if let window = NSApp.keyWindow ?? NSApp.mainWindow {

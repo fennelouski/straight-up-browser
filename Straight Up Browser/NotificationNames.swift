@@ -34,7 +34,9 @@ extension Notification.Name {
     static let browserAgentLassoSelected = Notification.Name("browserAgentLassoSelected")
     static let browserToggleDeveloperTools = Notification.Name("browserToggleDeveloperTools")
     static let browserShowDeveloperConsole = Notification.Name("browserShowDeveloperConsole")
+    static let browserToggleDeveloperElementInspector = Notification.Name("browserToggleDeveloperElementInspector")
     static let browserDeveloperConsoleMessage = Notification.Name("browserDeveloperConsoleMessage")
+    static let browserDeveloperElementInspected = Notification.Name("browserDeveloperElementInspected")
     static let browserDeveloperPageDidLoad = Notification.Name("browserDeveloperPageDidLoad")
 
     // Edit menu

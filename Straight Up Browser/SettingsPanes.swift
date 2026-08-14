@@ -1083,6 +1083,9 @@ struct AppearanceSettingsView: View {
     @AppStorage("showTraditionalTopTabs") private var showTraditionalTopTabs = false
     @AppStorage("topTabsAutoHide") private var topTabsAutoHide = true
     @AppStorage("adaptiveLargeSidebarTabs") private var adaptiveLargeSidebarTabs = true
+    #if os(macOS)
+    @AppStorage(DeveloperToolsPlacement.defaultsKey) private var developerToolsPlacementRaw = DeveloperToolsPlacement.bottom.rawValue
+    #endif
 
     // Flicker control.
     @AppStorage("fadeInPages") private var fadeInPages = true
@@ -1120,6 +1123,20 @@ struct AppearanceSettingsView: View {
             } header: {
                 SettingsLabel("Tabs", systemImage: "rectangle.topthird.inset.filled", tint: SettingsTint.appearance)
             }
+
+            #if os(macOS)
+                Section {
+                    Picker("Open Developer Tools", selection: $developerToolsPlacementRaw) {
+                        ForEach(DeveloperToolsPlacement.allCases) { placement in
+                            Label(placement.title, systemImage: placement.symbol).tag(placement.rawValue)
+                        }
+                    }
+                    Text("Choose a bottom, left, or right dock, or keep Developer Tools in its own window.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } header: {
+                    SettingsLabel("Developer Tools", systemImage: "wrench.and.screwdriver", tint: SettingsTint.appearance)
+                }
+            #endif
 
             Section {
                 Toggle("Place the window on launch", isOn: $launchLayoutEnabled)
