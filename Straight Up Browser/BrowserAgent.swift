@@ -947,7 +947,12 @@ enum AgentRunStoreRegistry {
 enum BrowserAgentKeychain {
     private static let service = "com.nathanfennel.Straight-Up-Browser.agent"
 
+    static func permitsAccess(arguments: [String] = ProcessInfo.processInfo.arguments) -> Bool {
+        !arguments.contains("-uiTesting")
+    }
+
     static func read(provider: BrowserAgentProvider) -> String {
+        guard permitsAccess() else { return "" }
         // Apple Intelligence and local servers never use an API-key item.
         // Avoiding this lookup is important: macOS may otherwise ask for
         // Keychain authorization merely when the Agent panel appears.
@@ -966,6 +971,7 @@ enum BrowserAgentKeychain {
     }
 
     static func write(_ value: String, provider: BrowserAgentProvider) {
+        guard permitsAccess() else { return }
         guard provider.needsAPIKey else { return }
         let identity: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
