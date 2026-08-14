@@ -18,6 +18,7 @@ struct AgentSettingsTests {
             "browserAgentProvider",
             "browserAgentEndpoint",
             "browserAgentModel",
+            "browserAgentAdjustsPageLayout",
             "agentWebKitConsoleCaptureEnabled",
             "agentWebKitDiagnosticContentEnabled",
             "agent.memory.enabled",
@@ -52,7 +53,7 @@ struct AgentSettingsTests {
         ]
 
         #expect(AgentSettingsRuntimeKey.allDefaultsKeys == expected)
-        #expect(AgentSettingsRuntimeKey.allDefaultsKeys.count == 34)
+        #expect(AgentSettingsRuntimeKey.allDefaultsKeys.count == 35)
         #expect(AgentProviderPricingSettings.Key.all.isSubset(
             of: AgentSettingsRuntimeKey.allDefaultsKeys
         ))
