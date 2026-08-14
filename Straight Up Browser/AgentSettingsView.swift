@@ -22,6 +22,8 @@ enum AgentSettingsRuntimeKey {
     static let webKitConsoleCapture = "agentWebKitConsoleCaptureEnabled"
     static let webKitDiagnosticContent = "agentWebKitDiagnosticContentEnabled"
     static let adjustsPageLayout = "browserAgentAdjustsPageLayout"
+    static let loadsMorePageContent = AgentPageExpansionSettings.Key.enabled
+    static let panelSide = BrowserChromePlacementSettings.Key.agentPanelSide
 
     static let allDefaultsKeys: Set<String> = [
         provider,
@@ -30,6 +32,8 @@ enum AgentSettingsRuntimeKey {
         webKitConsoleCapture,
         webKitDiagnosticContent,
         adjustsPageLayout,
+        loadsMorePageContent,
+        panelSide,
         AgentMemorySettings.Key.enabled,
         AgentMemorySettings.Key.allowSensitiveProposals,
         AgentMemorySettings.Key.maximumRetrievedEntries,
@@ -67,6 +71,10 @@ struct AgentSettingsView: View {
     private var providerRaw = BrowserAgentProvider.appleIntelligence.rawValue
     @AppStorage(AgentSettingsRuntimeKey.adjustsPageLayout)
     private var adjustsPageLayout = false
+    @AppStorage(AgentSettingsRuntimeKey.loadsMorePageContent)
+    private var loadsMorePageContent = true
+    @AppStorage(AgentSettingsRuntimeKey.panelSide)
+    private var panelSideRaw = BrowserChromeSide.left.rawValue
     @AppStorage(AgentSettingsRuntimeKey.endpoint)
     private var customEndpoint = ""
     @AppStorage(AgentSettingsRuntimeKey.model)
@@ -290,12 +298,22 @@ struct AgentSettingsView: View {
 
     private var interfaceSection: some View {
         Section {
+            Picker("Panel side", selection: $panelSideRaw) {
+                ForEach(BrowserChromeSide.allCases) { side in
+                    Label(side.title, systemImage: side.systemImage).tag(side.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
             Toggle("Resize the page when the Agent is open", isOn: $adjustsPageLayout)
-            Text("Off keeps the Agent floating over the right edge. On gives it dedicated space and narrows the page and any Split panes.")
+            Text("Off keeps the Agent floating over its chosen edge. On gives it dedicated space and narrows the page and any Split panes.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Toggle("Load more of the page before answering", isOn: $loadsMorePageContent)
+            Text("On lets the Agent briefly scroll through lazy-loaded pages and feeds behind a frozen view, then restores your exact position. Work is bounded, so endless feeds stop after a few seconds.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } header: {
-            SettingsLabel("Agent Panel", systemImage: "sidebar.right", tint: SettingsTint.agent)
+            SettingsLabel("Agent Panel", systemImage: "sidebar.left", tint: SettingsTint.agent)
         }
     }
 
