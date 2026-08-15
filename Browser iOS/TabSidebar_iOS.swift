@@ -30,6 +30,7 @@ struct TabSidebar_iOS: View {
     let onMoveTab: (Tab, UUID?) -> Void
     let onSaveWorkspace: () -> Void
     let onLibrary: () -> Void
+    let onScratchPad: () -> Void
     let onDownloads: () -> Void
     let onSettings: () -> Void
     let onShortcuts: () -> Void
@@ -90,6 +91,7 @@ struct TabSidebar_iOS: View {
                     workspaceMenu
                     Divider()
                     Button(action: onLibrary) { Label("Library", systemImage: "books.vertical") }
+                    Button(action: onScratchPad) { Label("Scratch Pad", systemImage: "note.text") }
                     Button(action: onDownloads) {
                         Label("Downloads", systemImage: "arrow.down.circle")
                     }

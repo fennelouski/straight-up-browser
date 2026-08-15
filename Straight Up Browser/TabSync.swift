@@ -36,6 +36,7 @@ enum SyncedDataCategory: String, CaseIterable {
     case browserSessions
     case autofillProfiles
     case newspaper
+    case scratchPad
 
     var label: String {
         switch self {
@@ -51,6 +52,8 @@ enum SyncedDataCategory: String, CaseIterable {
             return String(localized: "Autofill profiles: names, contact details, and addresses (no cards or passwords)")
         case .newspaper:
             return String(localized: "Newspaper: saved article text, reading state, sections, and ratings")
+        case .scratchPad:
+            return String(localized: "Scratch Pad: notes, clipped text, links, images, and source attribution")
         }
     }
 
@@ -62,6 +65,7 @@ enum SyncedDataCategory: String, CaseIterable {
         case .browserSessions: return "person.crop.square"
         case .autofillProfiles: return "text.append"
         case .newspaper: return "newspaper"
+        case .scratchPad: return "note.text"
         }
     }
 }
@@ -83,7 +87,8 @@ enum TabSync {
         CloudBackedModelDescriptor(modelType: Bookmark.self, category: .bookmarks),
         CloudBackedModelDescriptor(modelType: BrowserSession.self, category: .browserSessions),
         CloudBackedModelDescriptor(modelType: AutofillProfile.self, category: .autofillProfiles),
-        CloudBackedModelDescriptor(modelType: NewspaperArticle.self, category: .newspaper)
+        CloudBackedModelDescriptor(modelType: NewspaperArticle.self, category: .newspaper),
+        CloudBackedModelDescriptor(modelType: ScratchPadItem.self, category: .scratchPad)
     ]
 
     static var cloudBackedModelTypes: [any PersistentModel.Type] {

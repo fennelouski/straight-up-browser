@@ -100,6 +100,7 @@ struct BrowserView_iOS: View {
     @State private var showSettings = false
     @State private var showLibrary = false
     @State private var showNewspaper = false
+    @State private var showScratchPad = false
     @State private var showDownloads = false
     @State private var librarySection = BrowserLibrarySection.bookmarks
     @State private var downloadFailureMessage: String?
@@ -464,6 +465,11 @@ struct BrowserView_iOS: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showScratchPad) {
+            ScratchPad_iOS(pageTitle: currentTitle, pageURL: activeTab?.url)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
     }
 
     private var eventContent: some View {
@@ -678,6 +684,10 @@ struct BrowserView_iOS: View {
                 onMoveTab: { $0.groupId = $1 },
                 onSaveWorkspace: { workspaceName = ""; showSaveWorkspace = true },
                 onLibrary: { presentLibrary(.bookmarks) },
+                onScratchPad: {
+                    withAnimation { showSidebar = false }
+                    showScratchPad = true
+                },
                 onDownloads: { showDownloads = true },
                 onSettings: { showSettings = true },
                 onShortcuts: { showShortcutSheet = true },

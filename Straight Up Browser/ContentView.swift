@@ -2145,6 +2145,7 @@ struct ContentView: View {
             onClose: { showAgentPanel = false },
             onStartLasso: startAgentLasso,
             onClearLasso: { agentLassoSelection = nil },
+            onAddSourceToNewspaper: addScratchSourceToNewspaper,
             onAISearch: performAgentAISearch,
             onPrepareLocalContext: prepareAgentLocalContext,
             resolvePageAuthority: { pageIDs in
@@ -3362,6 +3363,37 @@ struct ContentView: View {
             expectedURL: url,
             store: store
         )
+    }
+
+    /// Scratch clips keep source attribution, but they do not pretend that a
+    /// quote or thumbnail is the whole article. Open (or reuse) the ordinary
+    /// source Tab and pass its real WebKit document through Newspaper's normal
+    /// capture path.
+    private func addScratchSourceToNewspaper(_ url: URL, _ title: String) {
+        let key = NewspaperStore.sourceKey(for: url)
+        let sourceTab = allTabs.first { tab in
+            guard tab.sessionKind != .incognito, let tabURL = tab.url else { return false }
+            return NewspaperStore.sourceKey(for: tabURL) == key
+        } ?? tabManager.createNewTab(url: url)
+
+        tabManager.selectedTabId = sourceTab.id
+        if sourceTab.title == String(localized: "New Tab"), !title.isEmpty {
+            sourceTab.title = title
+        }
+
+        Task { @MainActor in
+            // A newly-created Tab receives its WKWebView on the next layout.
+            // Once it exists, NewspaperCaptureCoordinator owns load waiting,
+            // document binding, retries, and failure reporting.
+            for _ in 0..<20 {
+                if webViewManager?.existingWebView(for: sourceTab.id) != nil {
+                    addTabToNewspaper(sourceTab)
+                    openWindow(id: "newspaper")
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
     }
 
     private func presentImportBookmarksDialog() {

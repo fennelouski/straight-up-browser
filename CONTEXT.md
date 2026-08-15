@@ -57,6 +57,10 @@ _Avoid_: issue entity, tab collection
 An editorial label that groups **Saved Articles**, derived from publisher metadata or chosen by the reader.
 _Avoid_: `TabGroup`, split group
 
+**Scratch Item**:
+A user-authored note or clipped piece of text, link, or image with optional source attribution. Scratch Items are portable, private artifacts: they sync with browser data and can be dragged elsewhere, but are not Agent messages, scoped memory, bookmarks, or Saved Articles.
+_Avoid_: memory, chat attachment (until explicitly attached), Saved Article
+
 ## Relationships
 
 - A **Split** displays 2–4 **Tabs**; exactly one of them is the **Focused tab**
@@ -82,6 +86,9 @@ _Avoid_: `TabGroup`, split group
 - A **Section** groups **Saved Articles**, never **Tabs**, and is not a `TabGroup` or **Split**
 - Opening a Saved Article's source creates or focuses an ordinary **Tab**; the Saved Article itself is neither a Tab nor a bookmark
 - Incognito pages do not create durable **Saved Articles** by default
+- A **Scratch Item** is never sent to the Agent automatically; “Ask Agent” explicitly copies its bounded text and source attribution into the prompt composer
+- A **Scratch Item** with a web source can promote that source through Newspaper's ordinary page-capture path; the clip itself never substitutes for the source's complete Article Document
+- Scratch Item drag export uses standard text, URL, and image representations so the artifact can leave the browser without coupling destination sites or apps to browser internals
 
 ## Example dialogue
 
