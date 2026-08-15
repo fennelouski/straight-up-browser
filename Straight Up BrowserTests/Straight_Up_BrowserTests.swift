@@ -1826,7 +1826,8 @@ struct TabSyncDisclosureTests {
             "Bookmark",
             "BrowserSession",
             "AutofillProfile",
-            "NewspaperArticle"
+            "NewspaperArticle",
+            "ScratchPadItem"
         ])
         #expect(TabSync.syncedDataCategories == [
             .tabs,
@@ -1834,7 +1835,8 @@ struct TabSyncDisclosureTests {
             .bookmarks,
             .browserSessions,
             .autofillProfiles,
-            .newspaper
+            .newspaper,
+            .scratchPad
         ])
     }
 

@@ -5410,6 +5410,7 @@ struct BrowserAgentPanel: View {
     let onClose: () -> Void
     let onStartLasso: () -> Void
     let onClearLasso: () -> Void
+    let onAddSourceToNewspaper: (URL, String) -> Void
     let onAISearch: (_ query: String) async -> Bool
     let onPrepareLocalContext: (_ prompt: String) async -> AgentLocalPageContext
     let resolvePageAuthority: (
@@ -5432,6 +5433,7 @@ struct BrowserAgentPanel: View {
         onClose: @escaping () -> Void,
         onStartLasso: @escaping () -> Void = {},
         onClearLasso: @escaping () -> Void = {},
+        onAddSourceToNewspaper: @escaping (URL, String) -> Void = { _, _ in },
         onAISearch: @escaping (_ query: String) async -> Bool = { _ in false },
         onPrepareLocalContext: @escaping (_ prompt: String) async -> AgentLocalPageContext = { _ in
             AgentLocalPageContext(command: .none, content: "")
@@ -5453,6 +5455,7 @@ struct BrowserAgentPanel: View {
         self.onClose = onClose
         self.onStartLasso = onStartLasso
         self.onClearLasso = onClearLasso
+        self.onAddSourceToNewspaper = onAddSourceToNewspaper
         self.onAISearch = onAISearch
         self.onPrepareLocalContext = onPrepareLocalContext
         self.resolvePageAuthority = resolvePageAuthority
@@ -5466,6 +5469,7 @@ struct BrowserAgentPanel: View {
     @State private var prompt = ""
     @State private var showingConfiguration = false
     @State private var showingHistory = false
+    @State private var showingScratchPad = false
     @State private var aiSearchEnabled = false
     @State private var aiSearchStatus: String?
     @State private var isPreparingLocalContext = false
@@ -5575,6 +5579,11 @@ struct BrowserAgentPanel: View {
                     .help("Conversation history")
                     .accessibilityIdentifier("agent-history")
                     .popover(isPresented: $showingHistory) { historyView }
+                Button { showingScratchPad = true } label: { Image(systemName: "note.text") }
+                    .buttonStyle(.plain)
+                    .help("Scratch Pad")
+                    .accessibilityLabel("Open Scratch Pad")
+                    .accessibilityIdentifier("agent-scratch-pad")
                 Button { showingConfiguration.toggle() } label: { Image(systemName: "slider.horizontal.3") }
                     .buttonStyle(.plain)
                     .help("Model settings")
@@ -5709,6 +5718,25 @@ struct BrowserAgentPanel: View {
             Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1)
         }
         .shadow(color: .black.opacity(0.2), radius: 16, x: side == .left ? 4 : -4)
+        .overlay {
+            if showingScratchPad {
+                ScratchPadView(
+                    pageTitle: pageTitle,
+                    pageURL: URL(string: pageURL),
+                    onAskAgent: { item in
+                        let context = item.agentContext
+                        prompt = prompt.isEmpty
+                            ? "Help me with this scratch-pad item:\n\n\(context)"
+                            : "\(prompt)\n\nScratch-pad item:\n\(context)"
+                        showingScratchPad = false
+                        DispatchQueue.main.async { promptFocused = true }
+                    },
+                    onAddSourceToNewspaper: onAddSourceToNewspaper,
+                    onClose: { showingScratchPad = false }
+                )
+                .transition(.opacity)
+            }
+        }
         .onAppear {
             previousFirstResponder = NSApp.keyWindow?.firstResponder
             apiKey = BrowserAgentKeychain.read(provider: provider)
