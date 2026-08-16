@@ -657,11 +657,11 @@ struct WebView: NSViewRepresentable {
 
                 // Cmd+click: open in a new tab (background; add Shift to focus it)
                 if mods.contains(.command) {
-                    let session = parent.webViewManager?.tabId(for: webView)
-                        .map { parent.webViewManager?.session(for: $0) ?? (.normal, nil) }
-                        ?? (.normal, nil)
+                    let context = parent.webViewManager?.tabId(for: webView)
+                        .flatMap { id in tabs?.first(where: { $0.id == id })?.browsingContext }
+                        ?? .normalWebKit
                     _ = tabManager?.createTab(
-                        inheriting: session,
+                        inheriting: context,
                         url: url,
                         select: mods.contains(.shift)
                     )
@@ -1074,15 +1074,17 @@ struct WebView: NSViewRepresentable {
             // shares the opener's data store — keep the tab in the same session too, so
             // an incognito/container popup doesn't leak out into a normal persisted tab.
             let popupWebView = WKWebView(frame: .zero, configuration: configuration)
-            let openerSession = webViewManager.tabId(for: webView).map { webViewManager.session(for: $0) } ?? (.normal, nil)
+            let sourceTabId = webViewManager.tabId(for: webView)
+            let openerContext = sourceTabId
+                .flatMap { id in tabs?.first(where: { $0.id == id })?.browsingContext }
+                ?? .normalWebKit
             // A clicked target="_blank" link (.linkActivated) is a plain "open in a new
             // tab" — the vast majority of these — so give it a normal foreground tab.
             // Only a JS window.open() popup (.other: OAuth consent, a payment sheet)
             // joins the opener in a split: a popup that hides the page that opened it
             // reads as "nothing happened", so opener and popup both stay on screen.
             let isPopup = navigationAction.navigationType != .linkActivated
-            let sourceTabId = webViewManager.tabId(for: webView)
-            let newTab = tabManager.createTab(inheriting: openerSession, select: false)
+            let newTab = tabManager.createTab(inheriting: openerContext, select: false)
             webViewManager.adoptWebView(
                 popupWebView,
                 for: newTab.id,

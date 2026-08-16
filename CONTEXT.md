@@ -18,6 +18,9 @@ _Avoid_: active tab when ambiguity with "displayed" matters
 **Displayed tabs**:
 The tabs currently visible in the window — one normally, 2–4 in a split. The focused tab is always one of them.
 
+**Preferred engine**:
+The rendering engine a tab asks to use (`webKit` or `chromium`). It is persistent tab data so a Mac can restore the choice. The **effective engine** is the preferred engine only when the current binary supports it; otherwise it is WebKit. Every mobile build is permanently WebKit-only, but preserves a synced preference rather than erasing it.
+
 **Fast Forward**:
 When a search query means a _destination_ ("download slack") rather than a _question_ ("is slack down"), Fast Forward opens the resolved destination as a second pane beside the search results, scrolled to and pulsing on the thing the query wanted. The results pane is never touched, so a wrong guess costs a pane, not an outcome. A fast-forwarded pane is an ordinary **Tab** in an ordinary **Split** — nothing about it is special except how it was created. Closing it is the "no thanks" and teaches Fast Forward to stop guessing that query (`FastForwardMemory`, local JSON).
 _Avoid_: redirect (Fast Forward never replaces the results), recommendation (it acts, it doesn't list)
@@ -73,6 +76,8 @@ _Avoid_: memory, chat attachment (until explicitly attached), Saved Article
 - Memory saver must exempt all **Displayed tabs**, not just the **Focused tab**
 - The **Split** arrangement (ordered member IDs + focused ID) persists in UserDefaults; on launch, unresolved IDs are dropped, and fewer than 2 survivors means a plain single view
 - Incognito tabs may join a **Split** (isolation is per-tab at the data-store level); they never survive relaunch, handled by the drop-unresolved rule
+- Engine and session identity travel together in a tab's `BrowsingContext`, so duplicates, child tabs, popups, containers, and incognito tabs cannot silently cross either boundary
+- Chromium availability is compile-time and macOS-only; the ordinary Mac artifact and every mobile artifact support only WebKit
 - **Fast Forward** only ever _opens_ a **Split** from a single-view search; it never touches a Split the user built, and never resolves or records for incognito tabs
 - Every agent action addresses an exact **PageHandle** and re-resolves its origin, document generation, and `BrowserSession` before policy evaluation and execution
 - All entry points record the same **AgentRun** and **AgentStep** lifecycle; provider output, page/file content, and MCP metadata are observations, never authority

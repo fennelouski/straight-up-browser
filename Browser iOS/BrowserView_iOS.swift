@@ -1060,10 +1060,10 @@ struct BrowserView_iOS: View {
         tabManager.convertToIncognito(activeTab)
     }
 
-    // The active tab's session, so a new tab (⌘T / +) stays in the same container.
-    private func activeSession() -> (kind: SessionKind, sessionId: UUID?) {
-        guard let active = activeTab else { return (.normal, nil) }
-        return (active.sessionKind, active.sessionId)
+    // Mobile always renders with WebKit, but retaining the preferred engine in
+    // inherited context avoids erasing a synced Mac tab's engine identity.
+    private func activeSession() -> BrowsingContext {
+        activeTab?.browsingContext ?? .normalWebKit
     }
 
     private func closeActiveTab() { if let t = activeTab { tabManager.closeTab(t, tabs: visibleTabs) } }

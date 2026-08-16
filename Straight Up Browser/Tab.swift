@@ -102,6 +102,27 @@ final class Tab {
         set { sessionKindRaw = newValue == .normal ? nil : newValue.rawValue }
     }
 
+    // The engine this tab should use where available. Existing rows, unknown
+    // future values, and all newly-created tabs default to WebKit. Keep the raw
+    // preference even on a WebKit-only device so CloudKit round-trips do not
+    // erase a Mac tab's Chromium choice.
+    var preferredEngine: BrowserEngine {
+        get { browserEngineRaw.flatMap(BrowserEngine.init(rawValue:)) ?? .webKit }
+        set { browserEngineRaw = newValue == .webKit ? nil : newValue.rawValue }
+    }
+
+    var effectiveEngine: BrowserEngine {
+        BrowserEngineAvailability.effectiveEngine(for: preferredEngine)
+    }
+
+    var browsingContext: BrowsingContext {
+        BrowsingContext(
+            sessionKind: sessionKind,
+            sessionId: sessionId,
+            preferredEngine: preferredEngine
+        )
+    }
+
     // Additional tab properties
     var isPinned: Bool = false
     var isMuted: Bool = false
@@ -132,6 +153,9 @@ final class Tab {
     // identifies which ephemeral store its tabs share (the tab itself lives in memory only).
     var sessionId: UUID? = nil
     var sessionKindRaw: String? = nil   // optional String for clean SwiftData migration (see memoryPolicyRaw)
+    // nil means WebKit. Optional raw storage lets existing SwiftData/CloudKit
+    // rows migrate cleanly and lets mobile preserve an unavailable Mac engine.
+    var browserEngineRaw: String? = nil
 
     init(title: String = String(localized: "New Tab"), url: URL? = nil, isActive: Bool = false) {
         self.id = UUID()

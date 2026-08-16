@@ -452,11 +452,11 @@ struct TabWebView: UIViewRepresentable {
                 let mods = navigationAction.modifierFlags
                 // ⌘-click: open in a new tab; add Shift to focus it.
                 if mods.contains(.command) {
-                    let session = parent.webViewManager?.tabId(for: webView)
-                        .map { parent.webViewManager?.session(for: $0) ?? (.normal, nil) }
-                        ?? (.normal, nil)
+                    let context = parent.webViewManager?.tabId(for: webView)
+                        .flatMap { id in tabs?.first(where: { $0.id == id })?.browsingContext }
+                        ?? .normalWebKit
                     _ = tabManager?.createTab(
-                        inheriting: session,
+                        inheriting: context,
                         url: url,
                         select: mods.contains(.shift)
                     )
@@ -632,12 +632,12 @@ struct TabWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
             guard let tabManager = tabManager, let webViewManager = parent.webViewManager else { return nil }
             let popupWebView = WKWebView(frame: .zero, configuration: configuration)
-            let openerSession = webViewManager.tabId(for: webView)
-                .map { webViewManager.session(for: $0) }
-                ?? (.normal, nil)
+            let openerContext = webViewManager.tabId(for: webView)
+                .flatMap { id in tabs?.first(where: { $0.id == id })?.browsingContext }
+                ?? .normalWebKit
             let isPopup = navigationAction.navigationType != .linkActivated
             let newTab = tabManager.createTab(
-                inheriting: openerSession,
+                inheriting: openerContext,
                 select: !isPopup
             )
             webViewManager.adoptWebView(

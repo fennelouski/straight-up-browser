@@ -31,6 +31,24 @@ struct ClosedTabSnapshot: Codable {
     // inheritance was preserved.
     let sessionKind: SessionKind?
     let sessionId: UUID?
+    // Optional so snapshots written by WebKit-only releases still decode.
+    let preferredEngine: BrowserEngine?
+
+    init(
+        title: String,
+        url: URL?,
+        historyStrings: [String],
+        sessionKind: SessionKind?,
+        sessionId: UUID?,
+        preferredEngine: BrowserEngine? = nil
+    ) {
+        self.title = title
+        self.url = url
+        self.historyStrings = historyStrings
+        self.sessionKind = sessionKind
+        self.sessionId = sessionId
+        self.preferredEngine = preferredEngine
+    }
 }
 
 /// One short-lived visual event shared by the source and child rows when a
@@ -163,11 +181,16 @@ class TabManager: NSObject, ObservableObject {
     }
 
     @discardableResult
-    func createNewTab(url: URL? = nil, select: Bool = true) -> Tab {
+    func createNewTab(
+        url: URL? = nil,
+        select: Bool = true,
+        preferredEngine: BrowserEngine = .webKit
+    ) -> Tab {
         #if os(macOS)
         if DefaultBrowser.shouldOffer { offerDefaultBrowser = true }
         #endif
         let newTab = Tab(title: String(localized: "New Tab"), url: url, isActive: false)
+        newTab.preferredEngine = preferredEngine
         newTab.openerId = selectedTabId
         newTab.memoryPolicy = MemoryPolicy(rawValue:
             UserDefaults.standard.string(forKey: "memorySaverDefaultPolicy") ?? "") ?? .whenNeeded
@@ -206,8 +229,13 @@ class TabManager: NSObject, ObservableObject {
     // Open an incognito tab. Pass an existing sessionId to join that private session
     // (shares its ephemeral cookie jar); omit it for a fresh, isolated one.
     @discardableResult
-    func createIncognitoTab(sessionId: UUID? = nil, select: Bool = true) -> Tab {
+    func createIncognitoTab(
+        sessionId: UUID? = nil,
+        select: Bool = true,
+        preferredEngine: BrowserEngine = .webKit
+    ) -> Tab {
         let tab = Tab(title: String(localized: "New Tab"), url: nil, isActive: false)
+        tab.preferredEngine = preferredEngine
         tab.sessionKind = .incognito
         tab.sessionId = sessionId ?? UUID()
         tab.openerId = selectedTabId
@@ -223,21 +251,55 @@ class TabManager: NSObject, ObservableObject {
     // Create a tab in the given session, so a new tab (Cmd+T) or a window.open popup
     // stays in the current container/incognito. Normal falls through to createNewTab.
     @discardableResult
-    func createTab(inheriting session: (kind: SessionKind, sessionId: UUID?), url: URL? = nil, select: Bool = true) -> Tab {
-        switch session.kind {
+    func createTab(
+        inheriting context: BrowsingContext,
+        url: URL? = nil,
+        select: Bool = true
+    ) -> Tab {
+        switch context.sessionKind {
         case .normal:
-            return createNewTab(url: url, select: select)
+            return createNewTab(
+                url: url,
+                select: select,
+                preferredEngine: context.preferredEngine
+            )
         case .incognito:
-            let tab = createIncognitoTab(sessionId: session.sessionId, select: select)
+            let tab = createIncognitoTab(
+                sessionId: context.sessionId,
+                select: select,
+                preferredEngine: context.preferredEngine
+            )
             if let url { tab.navigateTo(url); tab.updateTitleFromURL() }
             return tab
         case .container:
-            let tab = createNewTab(url: url, select: select)
+            let tab = createNewTab(
+                url: url,
+                select: select,
+                preferredEngine: context.preferredEngine
+            )
             tab.sessionKind = .container
-            tab.sessionId = session.sessionId
-            webViewManager?.registerSession(for: tab.id, kind: .container, sessionId: session.sessionId)
+            tab.sessionId = context.sessionId
+            webViewManager?.registerSession(for: tab.id, kind: .container, sessionId: context.sessionId)
             return tab
         }
+    }
+
+    // Compatibility convenience for call sites that intentionally create a
+    // fresh WebKit tab in a particular cookie/session jar.
+    func createTab(
+        inheriting session: (kind: SessionKind, sessionId: UUID?),
+        url: URL? = nil,
+        select: Bool = true
+    ) -> Tab {
+        createTab(
+            inheriting: BrowsingContext(
+                sessionKind: session.kind,
+                sessionId: session.sessionId,
+                preferredEngine: .webKit
+            ),
+            url: url,
+            select: select
+        )
     }
 
     // The ⌘T/+ entry point: if we're still looking at the blank tab the last
@@ -246,7 +308,7 @@ class TabManager: NSObject, ObservableObject {
     // nil on undo (nothing new to show) so callers can skip e.g. opening the
     // omnibar.
     @discardableResult
-    func newTabOrUndo(tabs: [Tab], inheriting session: (kind: SessionKind, sessionId: UUID?)) -> Tab? {
+    func newTabOrUndo(tabs: [Tab], inheriting context: BrowsingContext) -> Tab? {
         if closePendingNewTab(tabs: tabs) { return nil }
 
         // Stray blank tabs (e.g. the one launch starts with) shouldn't pile up
@@ -256,7 +318,7 @@ class TabManager: NSObject, ObservableObject {
         }
 
         tabIdBeforePendingNewTab = selectedTabId
-        let newTab = createTab(inheriting: session)
+        let newTab = createTab(inheriting: context)
         pendingNewTabId = newTab.id
         return newTab
     }
@@ -302,7 +364,10 @@ class TabManager: NSObject, ObservableObject {
         let sessionId = UUID()
         webViewManager.prepareIncognitoStore(sessionId: sessionId, copyingCookiesFromTab: tab.id) { [weak self] in
             guard let self else { return }
-            let newTab = self.createIncognitoTab(sessionId: sessionId)
+            let newTab = self.createIncognitoTab(
+                sessionId: sessionId,
+                preferredEngine: tab.preferredEngine
+            )
             if let url {
                 newTab.navigateTo(url)
                 newTab.updateTitleFromURL()
@@ -317,7 +382,7 @@ class TabManager: NSObject, ObservableObject {
     // public shouldn't silently persist what the incognito session held.
     func convertToNormal(_ tab: Tab) {
         guard tab.sessionKind == .incognito else { return }
-        let newTab = createNewTab(url: tab.url)
+        let newTab = createNewTab(url: tab.url, preferredEngine: tab.preferredEngine)
         webViewManager?.removeWebView(for: tab.id)
         incognitoTabs.removeAll { $0.id == tab.id }
         if let sessionId = tab.sessionId, !incognitoTabs.contains(where: { $0.sessionId == sessionId }) {
@@ -503,7 +568,8 @@ class TabManager: NSObject, ObservableObject {
             url: tab.url,
             historyStrings: tab.historyStrings,
             sessionKind: tab.sessionKind,
-            sessionId: tab.sessionId
+            sessionId: tab.sessionId,
+            preferredEngine: tab.preferredEngine
         ))
 
         // Clean up the web view for this tab
@@ -539,7 +605,7 @@ class TabManager: NSObject, ObservableObject {
 
     func duplicateTab(_ tab: Tab) -> Tab {
         let newTab = createTab(
-            inheriting: (tab.sessionKind, tab.sessionId),
+            inheriting: tab.browsingContext,
             url: tab.url
         )
         newTab.memoryPolicy = tab.memoryPolicy
@@ -596,7 +662,11 @@ class TabManager: NSObject, ObservableObject {
         // are never snapshotted; if one is encountered, createTab still keeps it
         // memory-only rather than persisting its URL.
         let newTab = createTab(
-            inheriting: (snapshot.sessionKind ?? .normal, snapshot.sessionId),
+            inheriting: BrowsingContext(
+                sessionKind: snapshot.sessionKind ?? .normal,
+                sessionId: snapshot.sessionId,
+                preferredEngine: snapshot.preferredEngine ?? .webKit
+            ),
             url: snapshot.url
         )
         newTab.historyStrings = snapshot.historyStrings

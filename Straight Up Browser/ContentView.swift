@@ -2925,10 +2925,11 @@ struct ContentView: View {
         webViewManager.extensionTabCreationHandler = {
             [weak tabManager, weak webViewManager] url, shouldActivate in
             guard let tabManager, let webViewManager else { return nil }
-            let session = webViewManager.activeTabId
-                .map(webViewManager.session(for:)) ?? (.normal, nil)
+            let context = webViewManager.activeTabId
+                .flatMap { id in self.allTabs.first(where: { $0.id == id })?.browsingContext }
+                ?? .normalWebKit
             let tab = tabManager.createTab(
-                inheriting: session,
+                inheriting: context,
                 url: url,
                 select: shouldActivate
             )
@@ -3006,11 +3007,11 @@ struct ContentView: View {
         }
     }
 
-    // The active tab's session, so a new tab (Cmd+T / +) stays in the same
-    // container/incognito.
-    private func activeSession() -> (kind: SessionKind, sessionId: UUID?) {
-        guard let active = tabManager.getActiveTab(from: allTabs) else { return (.normal, nil) }
-        return (active.sessionKind, active.sessionId)
+    // New tabs inherit both storage isolation and engine identity. In this
+    // WebKit-only build the effective engine is unchanged; a future enhanced
+    // Mac build can keep Chromium tab families together.
+    private func activeSession() -> BrowsingContext {
+        tabManager.getActiveTab(from: allTabs)?.browsingContext ?? .normalWebKit
     }
 
     // WebKit deletes are irreversible, so warn before any destructive clear.

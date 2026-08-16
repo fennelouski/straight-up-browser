@@ -562,6 +562,26 @@ struct FindBarTests {
 @Suite(.serialized)
 struct SessionIsolationTests {
 
+    @Test func browserEnginePreferenceIsBackwardCompatibleAndCapabilityGated() {
+        let tab = Tab()
+        #expect(tab.preferredEngine == .webKit)
+        #expect(tab.browserEngineRaw == nil)
+
+        tab.preferredEngine = .chromium
+        #expect(tab.browserEngineRaw == "chromium")
+        #if os(macOS) && CHROMIUM_ENABLED
+        #expect(tab.effectiveEngine == .chromium)
+        #else
+        #expect(tab.effectiveEngine == .webKit)
+        #expect(!BrowserEngineAvailability.isChromiumAvailable)
+        #endif
+
+        // A value written by a newer build must fail safely on an older one.
+        tab.browserEngineRaw = "future-engine"
+        #expect(tab.preferredEngine == .webKit)
+        #expect(tab.effectiveEngine == .webKit)
+    }
+
     @Test func sessionKindAccessorRoundTrips() {
         let tab = Tab()
         #expect(tab.sessionKind == .normal)
@@ -626,6 +646,27 @@ struct SessionIsolationTests {
         #expect(norm.sessionKind == .normal && norm.sessionId == nil)
     }
 
+    @Test func browsingContextKeepsEngineAndSessionIdentityTogether() {
+        let manager = TabManager()
+        let sessionId = UUID()
+        let context = BrowsingContext(
+            sessionKind: .incognito,
+            sessionId: sessionId,
+            preferredEngine: .chromium
+        )
+
+        let tab = manager.createTab(inheriting: context)
+
+        #expect(tab.sessionKind == .incognito)
+        #expect(tab.sessionId == sessionId)
+        #expect(tab.preferredEngine == .chromium)
+        // This ordinary build has no Chromium runtime, so preference never
+        // causes an unsupported engine to be instantiated.
+        #if !os(macOS) || !CHROMIUM_ENABLED
+        #expect(tab.effectiveEngine == .webKit)
+        #endif
+    }
+
     @Test @MainActor func duplicateAndReopenPreserveSessionIdentity() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: Browser.Tab.self, configurations: configuration)
@@ -643,17 +684,23 @@ struct SessionIsolationTests {
 
         let containerSession = UUID()
         let containerTab = manager.createTab(
-            inheriting: (.container, containerSession),
+            inheriting: BrowsingContext(
+                sessionKind: .container,
+                sessionId: containerSession,
+                preferredEngine: .chromium
+            ),
             url: URL(string: "https://work.example")
         )
         let containerCopy = manager.duplicateTab(containerTab)
         #expect(containerCopy.sessionKind == .container)
         #expect(containerCopy.sessionId == containerSession)
+        #expect(containerCopy.preferredEngine == .chromium)
 
         manager.closeTab(containerTab, tabs: [containerTab, containerCopy])
         let reopened = try #require(manager.reopenLastClosedTab())
         #expect(reopened.sessionKind == .container)
         #expect(reopened.sessionId == containerSession)
+        #expect(reopened.preferredEngine == .chromium)
     }
 
     @Test func incognitoColorIsStablePerSession() {
@@ -682,6 +729,7 @@ struct SessionIsolationTests {
         let tab = Tab()
         tab.sessionKind = .container
         tab.sessionId = session.id
+        tab.preferredEngine = .chromium
         ctx.insert(tab)
         try ctx.save()
 
@@ -689,6 +737,7 @@ struct SessionIsolationTests {
         let stored = try ctx.fetch(FetchDescriptor<Browser.Tab>()).first
         #expect(stored?.sessionKind == .container)
         #expect(stored?.sessionId == session.id)
+        #expect(stored?.preferredEngine == .chromium)
     }
 }
 
