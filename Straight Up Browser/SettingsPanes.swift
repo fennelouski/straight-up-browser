@@ -558,7 +558,6 @@ struct ContentSettingsView: View {
 struct DownloadsSettingsView: View {
     @AppStorage("downloadsFolder") private var downloadsFolder = ""
     @AppStorage("optionClickDownloadEnabled") private var optionClickDownloadEnabled = true
-    @AppStorage("optionClickDownloadLinks") private var optionClickDownloadLinks = true
     @AppStorage("optionClickDownloadImages") private var optionClickDownloadImages = true
     @AppStorage("optionClickFileTypes") private var optionClickFileTypes = ""
     @AppStorage("optionClickAlwaysDomains") private var optionClickAlwaysDomains = ""
@@ -568,11 +567,10 @@ struct DownloadsSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Option-click downloads the linked file", isOn: $optionClickDownloadEnabled)
+                Toggle("Option-click downloads images", isOn: $optionClickDownloadEnabled)
 
                 if optionClickDownloadEnabled {
-                    Toggle("Apply to links", isOn: $optionClickDownloadLinks)
-                    Toggle("Apply to images", isOn: $optionClickDownloadImages)
+                    Toggle("Download bare images", isOn: $optionClickDownloadImages)
 
                     LabeledContent("File types") {
                         TokenField(text: $optionClickFileTypes, placeholder: String(localized: "jpg  png  pdf — empty means all"))
@@ -586,13 +584,13 @@ struct DownloadsSettingsView: View {
                 }
 
                 SettingCaptionRow(
-                    caption: "Hold ⌥ and click to save instead of open. Type each entry, or paste a list.",
-                    title: "Option-Click Downloads",
-                    explanation: "With this on, ⌥-clicking a link or image saves it rather than opening it. The rules narrow it down: Never-on domains always open, the per-kind toggles decide links vs images, Always-on domains always download, and file types limit it to the extensions you list (empty means every type). The demo runs your live rules against a sample URL.",
+                    caption: "Hold ⌥ over a bare image to save it; ⌥-clicking a link opens it in a split pane.",
+                    title: "Option-Click Image Downloads",
+                    explanation: "With this on, ⌥-clicking an image that is not itself a link saves it. Never-on and Always-on domains refine the behavior, and file types limit it to the extensions you list (empty means every image type). Linked targets always use the browser's split-pane gesture.",
                     value: .constant(0)
                 ) { _ in DownloadRuleDemo() }
             } header: {
-                SettingsLabel("Option-Click Downloads", systemImage: "arrow.down.circle", tint: SettingsTint.downloads)
+                SettingsLabel("Option-Click Image Downloads", systemImage: "arrow.down.circle", tint: SettingsTint.downloads)
             }
 
             Section {
@@ -1083,6 +1081,12 @@ struct AppearanceSettingsView: View {
     @AppStorage("showTraditionalTopTabs") private var showTraditionalTopTabs = false
     @AppStorage("topTabsAutoHide") private var topTabsAutoHide = true
     @AppStorage("adaptiveLargeSidebarTabs") private var adaptiveLargeSidebarTabs = true
+    @AppStorage(VisualTabPreferences.aspectRatioKey)
+    private var visualTabAspectRatio = VisualTabPreferences.defaultAspectRatio
+    @AppStorage(VisualTabPreferences.columnCountKey)
+    private var visualTabColumnCount = VisualTabPreferences.defaultColumnCount
+    @AppStorage(VisualTabPreferences.livePreviewsKey)
+    private var visualTabLivePreviews = true
     @AppStorage(BrowserChromePlacementSettings.Key.tabSidebarSide)
     private var tabSidebarSideRaw = BrowserChromeSide.left.rawValue
     #if os(macOS)
@@ -1127,6 +1131,17 @@ struct AppearanceSettingsView: View {
                     .disabled(!showTraditionalTopTabs)
                 Toggle("Use adaptive preview cards in the widest sidebar", isOn: $adaptiveLargeSidebarTabs)
                 Text("Preview cards grow into spare vertical space when only a few tabs are open, then compress automatically as the tab count increases.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Picker("Visual tab shape", selection: $visualTabAspectRatio) {
+                    Text("Square").tag(1.0)
+                    Text("4:3").tag(4.0 / 3.0)
+                    Text("16:10").tag(1.6)
+                    Text("16:9").tag(16.0 / 9.0)
+                    Text("2:1").tag(2.0)
+                }
+                Stepper("Visual tab columns: \(visualTabColumnCount)", value: $visualTabColumnCount, in: 1...6)
+                Toggle("Keep visual tab previews live", isOn: $visualTabLivePreviews)
+                Text("Compact and wide sidebars always show visual cards. Live previews refresh visible pages while visual tabs are on screen.")
                     .font(.caption).foregroundStyle(.secondary)
             } header: {
                 SettingsLabel("Tabs", systemImage: "rectangle.topthird.inset.filled", tint: SettingsTint.appearance)

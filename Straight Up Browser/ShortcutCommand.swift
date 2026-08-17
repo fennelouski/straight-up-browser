@@ -190,11 +190,11 @@ extension ShortcutCommand {
     static let reopenTab    = Self("reopenTab", "Reopen Last Closed Tab", .tabs, Shortcut(key: "t", command: true, shift: true))
     static let nextTab      = Self("nextTab", "Next Tab", .tabs, Shortcut(key: "\t", control: true))
     static let previousTab  = Self("previousTab", "Previous Tab", .tabs, Shortcut(key: "\t", shift: true, control: true))
-    static let newIncognitoTab = Self("newIncognitoTab", "New Incognito Tab", .tabs, Shortcut(key: "n", command: true, shift: true))
+    static let newIncognitoTab = Self("newIncognitoTab", "New Incognito Tab", .tabs, Shortcut(key: "n", command: true, shift: true, option: true))
 
     // Privacy
     static let clearSiteData = Self("clearSiteData", "Clear This Site's Data", .privacy, Shortcut(key: "e", command: true, shift: true))
-    static let convertToIncognito = Self("convertToIncognito", "Switch Tab to Incognito", .privacy, Shortcut(key: "n", command: true, shift: true, option: true))
+    static let convertToIncognito = Self("convertToIncognito", "Switch Tab to Incognito", .privacy, Shortcut(key: "i", command: true, shift: true, option: true))
 
     // Navigation
     static let openLocation = Self("openLocation", "Open Location", .navigation, Shortcut(key: "l", command: true))

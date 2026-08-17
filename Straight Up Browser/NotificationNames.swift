@@ -26,6 +26,7 @@ extension Notification.Name {
     static let browserCloseTab = Notification.Name("browserCloseTab")
     static let browserCloseTabSet = Notification.Name("browserCloseTabSet")
     static let browserNewTab = Notification.Name("browserNewTab")
+    static let browserForceNewTab = Notification.Name("browserForceNewTab")
     static let reopenLastClosedTab = Notification.Name("reopenLastClosedTab")
     static let showOmnibar = Notification.Name("showOmnibar")
     static let browserListTabs = Notification.Name("browserListTabs")

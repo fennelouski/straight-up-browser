@@ -645,6 +645,7 @@ struct Straight_Up_BrowserApp: App {
                         object: keyWindow
                     )
                 }
+                .keyboardShortcut("n", modifiers: [.command, .option])
 
                 Divider()
 

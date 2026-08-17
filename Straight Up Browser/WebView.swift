@@ -31,6 +31,7 @@ struct WebView: NSViewRepresentable {
     // Split view: all tabs shown as panes (ordered). Normally just [activeTabId].
     var displayedTabIds: [UUID] = []
     var onURLChange: ((URL?) -> Void)?
+    var onSaveLinkToNewspaper: ((URL, WKWebView) -> Void)?
 
     // Trackpad pinch + two-finger double-tap smart zoom. @AppStorage here so
     // flipping the setting re-runs updateNSView and applies it live.
@@ -59,7 +60,8 @@ struct WebView: NSViewRepresentable {
          tabs: [Tab]?,
          activeTabId: UUID?,
          displayedTabIds: [UUID] = [],
-         onURLChange: ((URL?) -> Void)?) {
+         onURLChange: ((URL?) -> Void)?,
+         onSaveLinkToNewspaper: ((URL, WKWebView) -> Void)? = nil) {
         self._url = url
         self._canGoBack = canGoBack
         self._canGoForward = canGoForward
@@ -75,6 +77,7 @@ struct WebView: NSViewRepresentable {
         self.activeTabId = activeTabId
         self.displayedTabIds = displayedTabIds.isEmpty ? [activeTabId].compactMap { $0 } : displayedTabIds
         self.onURLChange = onURLChange
+        self.onSaveLinkToNewspaper = onSaveLinkToNewspaper
 
         Logger.log("WebView init: activeTabId=\(activeTabId?.uuidString ?? "nil")", type: "WebView")
     }
@@ -655,6 +658,35 @@ struct WebView: NSViewRepresentable {
             if navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url {
                 let mods = navigationAction.modifierFlags
 
+                // Shift+click files the destination in Newspaper without
+                // navigating away. The owning ContentView performs capture in
+                // the source tab's browsing context and supplies the flight cue.
+                if mods.intersection([.command, .shift, .option, .control]) == .shift {
+                    parent.onSaveLinkToNewspaper?(url, webView)
+                    decisionHandler(.cancel, preferences)
+                    return
+                }
+
+                // Option+click opens beside the source. This replaces the old
+                // option-download default; explicit download links and the
+                // context menu continue to use WebKit's download path.
+                if mods.intersection([.command, .shift, .option, .control]) == .option {
+                    let sourceTabId = parent.webViewManager?.tabId(for: webView)
+                    let context = sourceTabId
+                        .flatMap { id in tabs?.first(where: { $0.id == id })?.browsingContext }
+                        ?? .normalWebKit
+                    if let newTab = tabManager?.createTab(inheriting: context, url: url, select: false) {
+                        if let sourceTabId { tabManager?.selectedTabId = sourceTabId }
+                        if (tabManager?.splitTabIds.count ?? 0) < TabManager.maxSplitTabs {
+                            tabManager?.toggleSplitMembership(newTab, tabs: (tabs ?? []) + [newTab])
+                        } else {
+                            tabManager?.selectedTabId = newTab.id
+                        }
+                    }
+                    decisionHandler(.cancel, preferences)
+                    return
+                }
+
                 // Cmd+click: open in a new tab (background; add Shift to focus it)
                 if mods.contains(.command) {
                     let context = parent.webViewManager?.tabId(for: webView)
@@ -669,11 +701,6 @@ struct WebView: NSViewRepresentable {
                     return
                 }
 
-                // Option+click: download the link target (settings-gated)
-                if mods.contains(.option), SettingsManager.shared.optionClickShouldDownload(url, isImage: false) {
-                    decisionHandler(.download, preferences)
-                    return
-                }
             }
 
             // Settings toggle; unset means enabled. Per-navigation is the path

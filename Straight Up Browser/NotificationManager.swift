@@ -138,6 +138,7 @@ class NotificationManager {
     private var closeTabAction: (Tab, [Tab]) -> Void
     private var closeTabSetAction: () -> Void
     private var createNewTabAction: () -> Void
+    private var forceNewTabAction: () -> Void
     private var setTabBarWidth: (Double) -> Void
     private var switchToTabAction: (Int) -> Void
     private var switchToNextTabAction: () -> Void
@@ -163,6 +164,7 @@ class NotificationManager {
         closeTabAction: @escaping (Tab, [Tab]) -> Void,
         closeTabSetAction: @escaping () -> Void,
         createNewTabAction: @escaping () -> Void,
+        forceNewTabAction: @escaping () -> Void,
         setTabBarWidth: @escaping (Double) -> Void,
         switchToTabAction: @escaping (Int) -> Void,
         switchToNextTabAction: @escaping () -> Void,
@@ -182,6 +184,7 @@ class NotificationManager {
         self.closeTabAction = closeTabAction
         self.closeTabSetAction = closeTabSetAction
         self.createNewTabAction = createNewTabAction
+        self.forceNewTabAction = forceNewTabAction
         self.setTabBarWidth = setTabBarWidth
         self.switchToTabAction = switchToTabAction
         self.switchToNextTabAction = switchToNextTabAction
@@ -251,6 +254,19 @@ class NotificationManager {
             self?.createNewTabAction()
         }
         observers.append(newTabObserver)
+
+        let forceNewTabObserver = NotificationCenter.default.addMainActorObserver(
+            forName: .browserForceNewTab,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self, BrowserWindowCommandRouting.matches(
+                target: notification.object as AnyObject?,
+                recipient: self.webViewManager.activeWebView?.window
+            ) else { return }
+            self.forceNewTabAction()
+        }
+        observers.append(forceNewTabObserver)
 
 
         let reopenLastClosedTabObserver = NotificationCenter.default.addMainActorObserver(

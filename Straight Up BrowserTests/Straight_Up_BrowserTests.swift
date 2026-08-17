@@ -646,6 +646,23 @@ struct SessionIsolationTests {
         #expect(norm.sessionKind == .normal && norm.sessionId == nil)
     }
 
+    @Test func forceNewTabAlwaysCreatesANewTab() {
+        let manager = TabManager(terminateApplication: {})
+        let sessionId = UUID()
+        let context = BrowsingContext(
+            sessionKind: .incognito,
+            sessionId: sessionId,
+            preferredEngine: .webKit
+        )
+
+        let first = manager.forceNewTab(tabs: manager.incognitoTabs, inheriting: context)
+        let second = manager.forceNewTab(tabs: manager.incognitoTabs, inheriting: context)
+
+        #expect(first.id != second.id)
+        #expect(manager.selectedTabId == second.id)
+        #expect(manager.incognitoTabs.map(\.id) == [second.id])
+    }
+
     @Test func browsingContextKeepsEngineAndSessionIdentityTogether() {
         let manager = TabManager()
         let sessionId = UUID()
@@ -895,6 +912,7 @@ struct ShortcutTests {
         #expect(ShortcutCommand.omnibar.defaultShortcut.displayString == "⌃Space")
         #if os(macOS)
         #expect(ShortcutCommand.showDownloads.defaultShortcut.displayString == "⇧⌘J")
+        #expect(ShortcutCommand.newIncognitoTab.defaultShortcut.displayString == "⌥⇧⌘N")
         #endif
 
         // No two defaults collide.

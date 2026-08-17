@@ -587,7 +587,13 @@ struct ContentView: View {
     @AppStorage("showTraditionalTopTabs") private var showTraditionalTopTabs = false
     @AppStorage("topTabsAutoHide") private var topTabsAutoHide = true
     @AppStorage("adaptiveLargeSidebarTabs") private var adaptiveLargeSidebarTabs = true
+    @AppStorage(VisualTabPreferences.aspectRatioKey)
+    private var visualTabAspectRatio = VisualTabPreferences.defaultAspectRatio
+    @AppStorage(VisualTabPreferences.livePreviewsKey)
+    private var visualTabLivePreviews = true
     @State private var topTabsRevealed = false
+    @State private var visualPreviewRefresh = UUID()
+    @State private var newspaperSaveFlightToken: UUID?
 
     // Force view updates when tab selection changes
     @State private var tabSelectionRefreshTrigger = UUID()
@@ -905,6 +911,19 @@ struct ContentView: View {
             .help("New Tab")
             .accessibilityLabel("New Tab")
 
+            Button {
+                webViewManager?.captureThumbnail(for: tabManager.selectedTabId)
+                showTabGrid = true
+            } label: {
+                Image(systemName: "rectangle.grid.2x2")
+                    .font(.system(size: 12))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Visual Tabs")
+            .accessibilityLabel("Visual Tabs")
+
             Button(action: { showAgentPanel.toggle() }) {
                 Image(systemName: "sparkles")
                     .font(.system(size: 12))
@@ -1045,6 +1064,8 @@ struct ContentView: View {
     private func tabListView(geometry: GeometryProxy) -> some View {
         let adaptiveHeight: CGFloat? = if adaptiveLargeSidebarTabs && tabBarWidth >= 300 && !allTabs.isEmpty {
             min(140, max(36, (geometry.size.height - 52) / CGFloat(allTabs.count)))
+        } else if tabBarWidth >= 120 {
+            min(160, max(64, (geometry.size.width - 12) / CGFloat(max(0.75, visualTabAspectRatio))))
         } else {
             nil
         }
@@ -1055,6 +1076,7 @@ struct ContentView: View {
                 // Force refresh when tab selection or title display mode changes
                 let _ = tabSelectionRefreshTrigger
                 let _ = tabTitleDisplayRefreshTrigger
+                let _ = visualPreviewRefresh
                 ForEach(groupedTabs, id: \.group?.id) { groupSection in
                     if let group = groupSection.group {
                         groupHeaderView(for: group)
@@ -1191,7 +1213,7 @@ struct ContentView: View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
                 // Tab bar header with buttons - only show when not in minimal mode
-                if tabBarWidth > 30 {
+                if tabBarWidth >= 120 {
                     tabBarHeaderButtons
                 }
 
@@ -1252,7 +1274,8 @@ struct ContentView: View {
                         tabs: allTabs,
                         activeTabId: tabManager.selectedTabId,
                         displayedTabIds: displayedTabIds,
-                        onURLChange: { _ in })
+                        onURLChange: { _ in },
+                        onSaveLinkToNewspaper: saveLinkToNewspaper)
                         .allowsHitTesting(true)
                         .focusable(true)
             } else {
@@ -2347,7 +2370,8 @@ struct ContentView: View {
                     tabs: allTabs,
                     selectedTabId: tabManager.selectedTabId,
                     thumbnail: { webViewManager?.thumbnail(for: $0) },
-                    onSelect: { tabManager.selectedTabId = $0 }
+                    onSelect: { tabManager.selectedTabId = $0 },
+                    refreshLivePreviews: refreshVisualTabPreviews
                 )
             }
         }
@@ -2503,7 +2527,7 @@ struct ContentView: View {
     private var tabSidebarResizeOverlay: some View {
         VStack(spacing: 0) {
             Color.clear
-                .frame(height: tabBarWidth <= 30 ? 0 : 38)
+                .frame(height: tabBarWidth < 120 ? 0 : 38)
                 .allowsHitTesting(false)
             HStack(spacing: 0) {
                 if tabSidebarSide == .right {
@@ -2551,6 +2575,10 @@ struct ContentView: View {
         .ignoresSafeArea(.all) // Ignore safe areas to extend to edges
         .background(Color(.windowBackgroundColor)) // Set explicit background
         .overlay(screenshotFlashOverlay)
+        .overlay(NewspaperSaveFlight(
+            token: newspaperSaveFlightToken,
+            destinationSide: tabSidebarSide
+        ))
         .overlay(autofillSuggestionOverlay)
         // The autofill menus live in two places that can't share a @Query — the
         // sidebar header and the menu bar, which never sees the model container.
@@ -2884,6 +2912,13 @@ struct ContentView: View {
                 }
             }
         }
+        .task(id: visualTabLivePreviews && tabBarWidth >= 120) {
+            guard visualTabLivePreviews, tabBarWidth >= 120 else { return }
+            while !Task.isCancelled {
+                refreshVisualTabPreviews()
+                try? await Task.sleep(for: .seconds(1.5))
+            }
+        }
         .onChange(of: tabs) { oldTabs, newTabs in
             // Keep container-tab sessions registered, and keep a valid selection across
             // the merged working set (incognito tabs included).
@@ -2993,6 +3028,7 @@ struct ContentView: View {
                     self.showOmnibar = true
                 }
             },
+            forceNewTabAction: { self.forceCreateNewTab() },
             setTabBarWidth: { width in
                 self.tabBarWidth = width
                 UserDefaults.standard.set(width, forKey: "tabBarWidth")
@@ -3023,6 +3059,11 @@ struct ContentView: View {
         if tabManager.newTabOrUndo(tabs: allTabs, inheriting: activeSession()) != nil {
             showOmnibar = true
         }
+    }
+
+    private func forceCreateNewTab() {
+        _ = tabManager.forceNewTab(tabs: allTabs, inheriting: activeSession())
+        showOmnibar = true
     }
 
     // New tabs inherit both storage isolation and engine identity. In this
@@ -3376,12 +3417,64 @@ struct ContentView: View {
 
         let store = NewspaperStore(modelContext: modelContext)
         let result = store.enqueue(url: url, title: tab.title)
+        playNewspaperSaveFlight()
         NewspaperCaptureCoordinator.capture(
             result.article,
             from: webView,
             expectedURL: url,
             store: store
         )
+    }
+
+    private func saveLinkToNewspaper(_ url: URL, sourceWebView: WKWebView) {
+        let sourceTab = webViewManager?.tabId(for: sourceWebView)
+            .flatMap { id in allTabs.first(where: { $0.id == id }) }
+        guard sourceTab?.sessionKind != .incognito,
+              url.scheme == "http" || url.scheme == "https" else { return }
+
+        let store = NewspaperStore(modelContext: modelContext)
+        let result = store.enqueue(
+            url: url,
+            title: url.host ?? String(localized: "Saved Link")
+        )
+        playNewspaperSaveFlight()
+
+        // Render off-screen in the source's exact cookie/container context. It
+        // never becomes a user tab or a synced tab record.
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = sourceWebView.configuration.websiteDataStore
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        let captureWebView = WKWebView(frame: .zero, configuration: configuration)
+        captureWebView.loadURL(url)
+        NewspaperCaptureCoordinator.capture(
+            result.article,
+            from: captureWebView,
+            expectedURL: url,
+            store: store
+        )
+        Task { @MainActor in
+            for _ in 0..<240 {
+                guard result.article.captureState == .capturing else { break }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            // Retaining the local through this task keeps the off-screen page
+            // alive until capture has either completed or timed out.
+            _ = captureWebView.url
+        }
+    }
+
+    private func playNewspaperSaveFlight() {
+        newspaperSaveFlightToken = UUID()
+    }
+
+    private func refreshVisualTabPreviews() {
+        guard visualTabLivePreviews else { return }
+        for tabId in displayedTabIds {
+            webViewManager?.captureThumbnail(for: tabId)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            visualPreviewRefresh = UUID()
+        }
     }
 
     /// Scratch clips keep source attribution, but they do not pretend that a

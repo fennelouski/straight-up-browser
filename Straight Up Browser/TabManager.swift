@@ -323,6 +323,20 @@ class TabManager: NSObject, ObservableObject {
         return newTab
     }
 
+    /// The fixed ⌘N path. Unlike ⌘T it never interprets a second press as
+    /// undo, and it never resolves an omnibar query to an existing tab.
+    @discardableResult
+    func forceNewTab(tabs: [Tab], inheriting context: BrowsingContext) -> Tab {
+        _ = closePendingNewTab(tabs: tabs)
+        for tab in tabs where tab.url == nil && tab.id != selectedTabId {
+            closeTab(tab, tabs: tabs)
+        }
+        tabIdBeforePendingNewTab = selectedTabId
+        let newTab = createTab(inheriting: context)
+        pendingNewTabId = newTab.id
+        return newTab
+    }
+
     // Undo the last new-tab command if we're still sitting on the blank tab it
     // created: close it and go back to what was showing before. Returns whether
     // it did anything.

@@ -108,8 +108,9 @@ are the defaults:
 | `⌃Space` | Show omnibar |
 | `⌥Space` | Global omnibar from any app (macOS) |
 | `⌘L` / `⌘K` | Open location / quick open |
-| `⌘T` / `⌘N` | New tab |
-| `⌘⇧N` | New incognito tab |
+| `⌘T` / `⌘N` | New tab (`⌘N` always creates a fresh tab) |
+| `⌘⌥N` / `⌘⇧N` | Save the current page to Newspaper |
+| `⌘⌥⇧N` | New incognito tab |
 | `⌘W` | Close current tab |
 | `⌘⇧T` | Reopen last closed tab |
 | `⌘R` / `⌘⇧R` | Reload / hard reload |

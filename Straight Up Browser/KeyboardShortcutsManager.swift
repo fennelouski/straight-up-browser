@@ -121,17 +121,32 @@ class KeyboardShortcutsManager {
                 return nil
             }
 
-            // While the omnibar is open, every other key passes through so
-            // editing shortcuts work in the text field
-            if self.showOmnibar.wrappedValue {
-                return event
+            // Fixed Mac aliases are handled before the omnibar pass-through.
+            // ⌘N deliberately creates a fresh blank tab even when an omnibar
+            // query matches an existing tab; ⌘T keeps its undo/reuse behavior.
+            if mods == .command && event.charactersIgnoringModifiers == "n" {
+                NotificationCenter.default.post(
+                    name: .browserForceNewTab,
+                    object: self.webViewManager?.activeWebView?.window
+                )
+                return nil
+            }
+            // Both newspaper chords save the page behind the omnibar as well as
+            // the ordinarily focused page. They are fixed so websites cannot
+            // claim them and so the two aliases stay equivalent.
+            if (mods == [.command, .option] || mods == [.command, .shift]),
+               event.charactersIgnoringModifiers == "n" {
+                NotificationCenter.default.post(
+                    name: .browserAddToNewspaper,
+                    object: self.webViewManager?.activeWebView?.window
+                )
+                return nil
             }
 
-            // ponytail: ⌘N stays a fixed second New Tab alias; only the primary
-            // (⌘T) is rebindable, via the menu item.
-            if mods == .command && event.charactersIgnoringModifiers == "n" {
-                NotificationCenter.default.post(name: .browserNewTab, object: nil)
-                return nil
+            // While the omnibar is open, every other key passes through so
+            // editing shortcuts work in the text field.
+            if self.showOmnibar.wrappedValue {
+                return event
             }
             // Settings > General > "⌘P and ⌘\ navigate": frees the everyday
             // print chord for navigation instead. Fixed aliases, not rebindable
