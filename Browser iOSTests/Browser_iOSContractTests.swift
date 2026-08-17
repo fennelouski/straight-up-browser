@@ -22,6 +22,46 @@ struct BrowserIOSContractTests {
         )
     }
 
+    @Test("Touch bar placement supports global and per-site choices")
+    func touchBarPlacementResolvesSiteOverrideBeforeGlobal() throws {
+        let url = try #require(URL(string: "https://News.Example/article"))
+        let empty = Data()
+
+        #expect(
+            MobileBrowserControlPlacementSettings_iOS.placement(
+                for: url,
+                siteOverridesData: empty,
+                global: .left
+            ) == .left
+        )
+
+        let overridden = MobileBrowserControlPlacementSettings_iOS.settingOverride(
+            .top,
+            for: url,
+            in: empty
+        )
+        #expect(
+            MobileBrowserControlPlacementSettings_iOS.placement(
+                for: URL(string: "https://news.example/another"),
+                siteOverridesData: overridden,
+                global: .left
+            ) == .top
+        )
+
+        let restored = MobileBrowserControlPlacementSettings_iOS.settingOverride(
+            nil,
+            for: url,
+            in: overridden
+        )
+        #expect(
+            MobileBrowserControlPlacementSettings_iOS.placement(
+                for: url,
+                siteOverridesData: restored,
+                global: .right
+            ) == .right
+        )
+    }
+
     @MainActor
     @Test("Incognito visits never enter mobile browsing history")
     func incognitoHistoryStaysOutOfMemoryAndDisk() {

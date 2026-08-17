@@ -14,6 +14,7 @@ final class Browser_iOSUITests: XCTestCase {
     func testBrowserControlsOpenTheAddressBar() throws {
         let app = configuredApplication()
         app.launch()
+        dismissInitialOmnibarIfNeeded(in: app)
 
         let browserControls = app.descendants(matching: .any)["Browser Controls"]
         XCTAssertTrue(browserControls.waitForExistence(timeout: 10))
@@ -26,6 +27,7 @@ final class Browser_iOSUITests: XCTestCase {
     func testTopBrowserMenusAreDiscoverable() throws {
         let app = configuredApplication()
         app.launch()
+        dismissInitialOmnibarIfNeeded(in: app)
 
         XCTAssertTrue(app.buttons["Tabs Menu"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Page Menu"].exists)
@@ -100,5 +102,12 @@ final class Browser_iOSUITests: XCTestCase {
             "-hasSeenGestureGuide", "YES",
         ]
         return app
+    }
+
+    @MainActor
+    private func dismissInitialOmnibarIfNeeded(in app: XCUIApplication) {
+        let omnibar = app.textFields["browser.omnibar"]
+        guard omnibar.waitForExistence(timeout: 2) else { return }
+        app.buttons["Close Address and Search"].tap()
     }
 }

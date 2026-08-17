@@ -59,6 +59,7 @@ struct BrowserControlActions_iOS {
     let showSettings: () -> Void
     let showShortcuts: () -> Void
     let showGestures: () -> Void
+    let setTouchBarPlacementForSite: (MobileBrowserControlPlacement_iOS?) -> Void
 }
 
 struct TopBrowserControls_iOS: View {
@@ -94,8 +95,8 @@ struct TopBrowserControls_iOS: View {
             Spacer(minLength: 96)
             pageMenu
         }
-        .padding(.horizontal, 7)
-        .padding(.top, 3)
+        .padding(.horizontal, 39)
+        .padding(.top, 11)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .ignoresSafeArea(edges: .top)
     }
@@ -270,6 +271,19 @@ struct TopBrowserControls_iOS: View {
                 Button("Clear All Browsing Data…", systemImage: "trash.fill", role: .destructive, action: actions.clearAllData)
             }
             orientationMenu
+            if activeTab?.url?.host != nil {
+                Menu("Touch Bar for This Site", systemImage: "capsule") {
+                    Button("Use App Setting", action: { actions.setTouchBarPlacementForSite(nil) })
+                    Divider()
+                    ForEach(MobileBrowserControlPlacement_iOS.allCases) { placement in
+                        Button {
+                            actions.setTouchBarPlacementForSite(placement)
+                        } label: {
+                            Label(placement.title, systemImage: placement.systemImage)
+                        }
+                    }
+                }
+            }
             Divider()
             Button(action: actions.showShortcuts) {
                 Label("Keyboard Shortcuts", systemImage: "keyboard")

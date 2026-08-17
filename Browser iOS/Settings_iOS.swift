@@ -53,6 +53,8 @@ struct Settings_iOS: View {
     @AppStorage("iPadTabRailVisibility") private var tabRailVisibility = TabRailVisibility_iOS.off.rawValue
     @AppStorage("iPadTabRailPortraitEdge") private var tabRailPortraitEdge = PortraitTabRailEdge_iOS.top.rawValue
     @AppStorage("iPadTabRailLandscapeEdge") private var tabRailLandscapeEdge = LandscapeTabRailEdge_iOS.left.rawValue
+    @AppStorage(MobileBrowserControlPlacementSettings_iOS.Key.global)
+    private var browserControlPlacement = MobileBrowserControlPlacement_iOS.bottom.rawValue
 
     @State private var showClearConfirm = false
     @State private var showCookieManager = false
@@ -183,6 +185,12 @@ struct Settings_iOS: View {
                     Toggle("Progress bar: left", isOn: $progressBarLeft)
                     Toggle("Progress bar: right", isOn: $progressBarRight)
                     Toggle("Ring around the favicon", isOn: $progressFaviconRing)
+                    Picker("Touch bar location", selection: $browserControlPlacement) {
+                        ForEach(MobileBrowserControlPlacement_iOS.allCases) { placement in
+                            Label(placement.title, systemImage: placement.systemImage)
+                                .tag(placement.rawValue)
+                        }
+                    }
                 }
 
                 if UIDevice.current.userInterfaceIdiom == .pad {

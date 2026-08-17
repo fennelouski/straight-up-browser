@@ -90,6 +90,8 @@ struct BrowserView_iOS: View {
 
     // Omnibar
     @State private var omnibarText = ""
+    @State private var omnibarSelection: TextSelection?
+    @State private var omnibarHasUserEdited = false
     @State private var selectedSuggestion = -1
     @FocusState private var omnibarFocused: Bool
     @State private var showOmnibar = false
@@ -134,6 +136,10 @@ struct BrowserView_iOS: View {
     @AppStorage("iPadTabRailVisibility") private var tabRailVisibility = TabRailVisibility_iOS.off.rawValue
     @AppStorage("iPadTabRailPortraitEdge") private var tabRailPortraitEdge = PortraitTabRailEdge_iOS.top.rawValue
     @AppStorage("iPadTabRailLandscapeEdge") private var tabRailLandscapeEdge = LandscapeTabRailEdge_iOS.left.rawValue
+    @AppStorage(MobileBrowserControlPlacementSettings_iOS.Key.global)
+    private var browserControlPlacement = MobileBrowserControlPlacement_iOS.bottom.rawValue
+    @AppStorage(MobileBrowserControlPlacementSettings_iOS.Key.siteOverrides)
+    private var browserControlSiteOverrides = Data()
 
     // MARK: Derived
 
@@ -213,6 +219,24 @@ struct BrowserView_iOS: View {
         )
     }
 
+    private var matchingPaletteTabs: [Tab] {
+        let query = omnibarText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard omnibarHasUserEdited, !query.isEmpty else { return visibleTabOrder }
+        return visibleTabOrder.filter {
+            $0.title.lowercased().contains(query)
+                || ($0.url?.absoluteString.lowercased().contains(query) ?? false)
+                || ($0.url?.host?.lowercased().contains(query) ?? false)
+        }
+    }
+
+    private var effectiveBrowserControlPlacement: MobileBrowserControlPlacement_iOS {
+        MobileBrowserControlPlacementSettings_iOS.placement(
+            for: activeTab?.url,
+            siteOverridesData: browserControlSiteOverrides,
+            global: MobileBrowserControlPlacement_iOS(rawValue: browserControlPlacement) ?? .bottom
+        )
+    }
+
     private var colorScheme: ColorScheme? {
         switch theme { case "Light": return .light; case "Dark": return .dark; default: return nil }
     }
@@ -256,7 +280,10 @@ struct BrowserView_iOS: View {
                            splitTabIds: supportsSplitPanes ? tabManager.splitTabIds : [],
                            onURLChange: { _ in },
                            onPageFinished: { pageTranslator.maybeAutoTranslate(webView: $0) })
-                    .ignoresSafeArea()
+                    // Keep the page viewport below the top safe area. Sites that
+                    // use sticky headers can then occlude their own content instead
+                    // of letting scrolled text leak into the sensor/status strip.
+                    .ignoresSafeArea(edges: [.horizontal, .bottom])
                     .accessibilityHidden(
                         BrowserAccessibility.backgroundIsHidden(
                             sidebarPresented: showSidebar,
@@ -292,7 +319,7 @@ struct BrowserView_iOS: View {
             // Touch's stand-in for the keyboard (iPhone has no ⌘L / ⌘T). Hidden
             // whenever the omnibar or sidebar is already up.
             if managersInitialized && !showOmnibar && !showSidebar {
-                bottomGestureBar
+                browserGestureBar
             }
 
             // Slide-in tab sidebar (⇧⌘L), dim backdrop, tap-out to close.
@@ -621,7 +648,18 @@ struct BrowserView_iOS: View {
             clearAllData: { clearRequest = .all },
             showSettings: { showSettings = true },
             showShortcuts: { showShortcutSheet = true },
-            showGestures: { showGestureGuide = true }
+            showGestures: { showGestureGuide = true },
+            setTouchBarPlacementForSite: setTouchBarPlacementForCurrentSite
+        )
+    }
+
+    private func setTouchBarPlacementForCurrentSite(
+        _ placement: MobileBrowserControlPlacement_iOS?
+    ) {
+        browserControlSiteOverrides = MobileBrowserControlPlacementSettings_iOS.settingOverride(
+            placement,
+            for: activeTab?.url,
+            in: browserControlSiteOverrides
         )
     }
 
@@ -724,12 +762,7 @@ struct BrowserView_iOS: View {
                 .accessibilityHidden(true)
             VStack(spacing: 8) {
                 omnibarCard
-                if !suggestions.isEmpty {
-                    SuggestionsPanel(suggestions: suggestions, selectedIndex: selectedSuggestion) { pick in
-                        omnibarText = pick.url.absoluteString
-                        navigateFromOmnibar()
-                    }
-                }
+                omnibarResults
             }
             .frame(maxWidth: 640)
             .padding(.horizontal, 16)
@@ -745,20 +778,65 @@ struct BrowserView_iOS: View {
     }
 
     private var omnibarCard: some View {
-        HStack(spacing: 10) {
-            Button { dismissOmnibar(); withAnimation { showSidebar = true } } label: {
-                Image(systemName: "square.stack").foregroundStyle(.secondary)
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                omnibarControlButton("Show Tabs", systemImage: "square.stack") {
+                    dismissOmnibar()
+                    withAnimation { showSidebar = true }
+                }
+                omnibarControlButton("Back", systemImage: "chevron.backward", disabled: !canGoBack) {
+                    webViewManager?.goBack()
+                    dismissOmnibar()
+                }
+                omnibarControlButton("Forward", systemImage: "chevron.forward", disabled: !canGoForward) {
+                    webViewManager?.goForward()
+                    dismissOmnibar()
+                }
+                omnibarControlButton(
+                    isLoading ? "Stop Loading" : "Reload",
+                    systemImage: isLoading ? "xmark" : "arrow.clockwise"
+                ) {
+                    reloadOrStop()
+                    dismissOmnibar()
+                }
+                Spacer(minLength: 0)
+                if activeTab?.url != nil, activeTab?.sessionKind != .incognito {
+                    omnibarControlButton(
+                        isCurrentInNewspaper ? "Refresh Saved Article" : "Add to Newspaper",
+                        systemImage: isCurrentInNewspaper ? "newspaper.fill" : "newspaper"
+                    ) {
+                        addCurrentPageToNewspaper()
+                    }
+                }
+                if activeTab?.url != nil {
+                    omnibarControlButton(
+                        isCurrentBookmarked ? "Remove Bookmark" : "Add Bookmark",
+                        systemImage: isCurrentBookmarked ? "star.fill" : "star"
+                    ) {
+                        toggleBookmark()
+                    }
+                }
+                omnibarControlButton(
+                    "Close Address and Search",
+                    systemImage: "xmark"
+                ) {
+                    dismissOmnibar()
+                }
             }
-            .buttonStyle(.plain)
-            .frame(minWidth: 44, minHeight: 44)
-            .accessibilityLabel("Show Tabs")
-            if let pageProtectionSummary {
-                PageProtectionButton(summary: pageProtectionSummary)
-            }
-            Image(systemName: isLoading ? "arrow.triangle.2.circlepath" : "magnifyingglass")
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            TextField("Search or enter address", text: $omnibarText)
+            .padding(.horizontal, 8)
+
+            HStack(spacing: 10) {
+                if let pageProtectionSummary {
+                    PageProtectionButton(summary: pageProtectionSummary)
+                }
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                TextField(
+                    "Search or enter address",
+                    text: $omnibarText,
+                    selection: $omnibarSelection
+                )
                 .accessibilityIdentifier("browser.omnibar")
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -775,28 +853,136 @@ struct BrowserView_iOS: View {
                     return .ignored
                 }
                 .onKeyPress(.escape) { dismissOmnibar(); return .handled }
-            if activeTab?.url != nil {
-                Button(action: toggleBookmark) {
-                    Image(systemName: isCurrentBookmarked ? "star.fill" : "star")
-                        .foregroundStyle(isCurrentBookmarked ? Color.accentColor : .secondary)
-                }
-                .buttonStyle(.plain)
-                .frame(minWidth: 44, minHeight: 44)
-                .accessibilityLabel(isCurrentBookmarked ? "Remove Bookmark" : "Add Bookmark")
-                .accessibilityHint("Change the bookmark for the current page")
             }
+            .padding(.horizontal, 16)
+            .frame(minHeight: 52)
+            .background(Color.primary.opacity(0.055), in: Capsule())
         }
         .font(.body)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().stroke(Color.primary.opacity(0.08)))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color.primary.opacity(0.08)))
         .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
-        .onChange(of: omnibarText) { _, _ in selectedSuggestion = -1 }
+        .onChange(of: omnibarText) { _, _ in
+            selectedSuggestion = -1
+            omnibarHasUserEdited = true
+        }
         .accessibilityFocused(
             $accessibilityFocus,
             equals: .omnibar
         )
+    }
+
+    private func omnibarControlButton(
+        _ title: String,
+        systemImage: String,
+        disabled: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .frame(width: 40, height: 40)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(disabled ? Color.secondary.opacity(0.45) : Color.secondary)
+        .disabled(disabled)
+        .accessibilityLabel(title)
+    }
+
+    private var omnibarResults: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 8) {
+                if !matchingPaletteTabs.isEmpty {
+                    paletteSectionTitle(omnibarText.isEmpty ? "Open Tabs" : "Matching Tabs")
+                    ForEach(matchingPaletteTabs.prefix(12)) { tab in
+                        Button {
+                            tabManager.selectedTabId = tab.id
+                            dismissOmnibar()
+                        } label: {
+                            HStack(spacing: 10) {
+                                TabFaviconView(tab: tab)
+                                    .frame(width: 24, height: 24)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(tab.title.isEmpty ? (tab.url?.host ?? String(localized: "New Tab")) : tab.title)
+                                        .lineLimit(1)
+                                    Text(tab.url?.absoluteString ?? String(localized: "Ready to search"))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                if !suggestions.isEmpty {
+                    paletteSectionTitle("Places")
+                    SuggestionsPanel(suggestions: suggestions, selectedIndex: selectedSuggestion) { pick in
+                        omnibarText = pick.url.absoluteString
+                        navigateFromOmnibar()
+                    }
+                }
+
+                if !omnibarHasUserEdited
+                    || omnibarText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    paletteSectionTitle("Suggested Actions")
+                    paletteAction("New Tab", detail: "Start another page", systemImage: "plus.square", action: createNewTab)
+                    paletteAction("Open Newspaper", detail: "Read your saved articles", systemImage: "newspaper", action: presentNewspaper)
+                    paletteAction("Bookmarks", detail: "Return to a saved page", systemImage: "star", action: { presentLibrary(.bookmarks) })
+                    paletteAction("History", detail: "Find a page you visited", systemImage: "clock", action: { presentLibrary(.history) })
+                }
+            }
+            .padding(8)
+        }
+        .frame(maxHeight: 420)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.primary.opacity(0.08)))
+        .shadow(color: .black.opacity(0.14), radius: 12, y: 6)
+    }
+
+    private func paletteSectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .padding(.horizontal, 8)
+            .padding(.top, 4)
+    }
+
+    private func paletteAction(
+        _ title: String,
+        detail: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            dismissOmnibar()
+            action()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .frame(width: 24)
+                    .foregroundStyle(Color.accentColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                    Text(detail).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Bottom gesture bar (touch's stand-in for the keyboard)
@@ -807,14 +993,16 @@ struct BrowserView_iOS: View {
     // WebKit's native edge-swipe; reload is pull-to-refresh (see WebView_iOS).
     // ponytail: always visible; auto-hide on scroll-down is the upgrade path if it
     // reads as too much chrome.
-    private var bottomGestureBar: some View {
-        VStack {
-            Spacer()
+    private var browserGestureBar: some View {
+        GeometryReader { geometry in
+            let placement = effectiveBrowserControlPlacement
             Capsule()
                 .fill(Color.secondary.opacity(0.5))
-                .frame(width: 140, height: 5)
-                .padding(.vertical, 20)      // at least a 44-point touch target
-                .padding(.horizontal, 40)
+                .frame(
+                    width: placement == .left || placement == .right ? 5 : 140,
+                    height: placement == .left || placement == .right ? 140 : 5
+                )
+                .padding(20)      // at least a 44-point touch target
                 .contentShape(Rectangle())
                 .onTapGesture { focusOmnibar() }
                 .onLongPressGesture(minimumDuration: 0.4) { createNewTab() }
@@ -844,10 +1032,39 @@ struct BrowserView_iOS: View {
                         break
                     }
                 }
-                .padding(.bottom, 6)
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: browserControlAlignment(placement)
+                )
+                .padding(browserControlInsets(placement, safeArea: geometry.safeAreaInsets))
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .transition(.opacity)
+    }
+
+    private func browserControlAlignment(_ placement: MobileBrowserControlPlacement_iOS) -> Alignment {
+        switch placement {
+        case .bottom: .bottom
+        case .top: .top
+        case .left: .leading
+        case .right: .trailing
+        }
+    }
+
+    private func browserControlInsets(
+        _ placement: MobileBrowserControlPlacement_iOS,
+        safeArea: EdgeInsets
+    ) -> EdgeInsets {
+        switch placement {
+        case .bottom:
+            EdgeInsets(top: 0, leading: 0, bottom: max(6, safeArea.bottom), trailing: 0)
+        case .top:
+            EdgeInsets(top: safeArea.top + 48, leading: 0, bottom: 0, trailing: 0)
+        case .left:
+            EdgeInsets(top: 0, leading: max(6, safeArea.leading), bottom: 0, trailing: 0)
+        case .right:
+            EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: max(6, safeArea.trailing))
+        }
     }
 
     // Dominant axis wins; the thresholds keep a near-still tap from reading as a
@@ -1195,9 +1412,16 @@ struct BrowserView_iOS: View {
 
     private func focusOmnibar() {
         omnibarText = activeTab?.url?.absoluteString ?? ""
+        omnibarHasUserEdited = false
         selectedSuggestion = -1
         withAnimation(.easeOut(duration: 0.15)) { showOmnibar = true }
-        DispatchQueue.main.async { omnibarFocused = true }
+        DispatchQueue.main.async {
+            omnibarFocused = true
+            omnibarSelection = TextSelection(
+                range: omnibarText.startIndex..<omnibarText.endIndex
+            )
+            omnibarHasUserEdited = false
+        }
     }
 
     private func dismissOmnibar() {
