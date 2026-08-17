@@ -94,6 +94,8 @@ struct ScratchPadView: View {
     @State private var note = ""
     @State private var isDropTargeted = false
     @State private var status: String?
+    @State private var selectedItemID: UUID?
+    @State private var keyEventMonitor: Any?
     @FocusState private var noteFocused: Bool
 
     var body: some View {
@@ -105,22 +107,31 @@ struct ScratchPadView: View {
             if items.isEmpty {
                 emptyState
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 10) {
-                        ForEach(items) { item in
-                            ScratchPadItemRow(
-                                item: item,
-                                onAskAgent: { onAskAgent(item) },
-                                onAddToNewspaper: {
-                                    guard let url = item.sourceURL else { return }
-                                    onAddSourceToNewspaper(url, item.sourceTitle)
-                                    status = "Opening the source and adding it to Newspaper…"
-                                },
-                                onDelete: { delete(item) }
-                            )
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 10) {
+                            ForEach(items) { item in
+                                ScratchPadItemRow(
+                                    item: item,
+                                    isSelected: selectedItemID == item.id,
+                                    onSelect: { selectedItemID = item.id },
+                                    onAskAgent: { onAskAgent(item) },
+                                    onAddToNewspaper: {
+                                        guard let url = item.sourceURL else { return }
+                                        onAddSourceToNewspaper(url, item.sourceTitle)
+                                        status = "Opening the source and adding it to Newspaper…"
+                                    },
+                                    onDelete: { delete(item) }
+                                )
+                                .id(item.id)
+                            }
                         }
+                        .padding(12)
                     }
-                    .padding(12)
+                    .onChange(of: selectedItemID) { _, id in
+                        guard let id else { return }
+                        withAnimation { proxy.scrollTo(id, anchor: .center) }
+                    }
                 }
             }
             if let status {
@@ -146,7 +157,17 @@ struct ScratchPadView: View {
                     .allowsHitTesting(false)
             }
         }
-        .onAppear { DispatchQueue.main.async { noteFocused = true } }
+        .onAppear {
+            selectedItemID = selectedItemID ?? items.first?.id
+            installKeyEventMonitor()
+            DispatchQueue.main.async { noteFocused = true }
+        }
+        .onDisappear(perform: removeKeyEventMonitor)
+        .onChange(of: items.map(\.id)) { _, ids in
+            if selectedItemID == nil || !ids.contains(selectedItemID!) {
+                selectedItemID = ids.first
+            }
+        }
     }
 
     private var header: some View {
@@ -160,6 +181,22 @@ struct ScratchPadView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            Menu {
+                Text("⌥⌘N  Toggle Scratch Pad")
+                Text("⌘↩  Save note")
+                Text("⇧⌘D  Clip page")
+                Text("⌥↑ / ⌥↓  Select clip")
+                Text("⇧⌘↩  Ask Agent")
+                Text("⌥⌘↩  Add to Newspaper")
+                Text("⇧⌘C  Copy clip")
+                Text("⌥⌘O  Open source")
+                Text("⌘⌫  Delete clip")
+                Text("Esc  Back to Agent")
+            } label: {
+                Image(systemName: "keyboard")
+            }
+            .menuStyle(.borderlessButton)
+            .help("Scratch Pad keyboard commands")
             Button(action: onClose) { Image(systemName: "sparkles") }
                 .buttonStyle(.plain)
                 .help("Back to Agent")
@@ -240,6 +277,113 @@ struct ScratchPadView: View {
         try? modelContext.save()
     }
 
+    private var selectedItem: ScratchPadItem? {
+        items.first { $0.id == selectedItemID }
+    }
+
+    private func moveSelection(by offset: Int) {
+        guard !items.isEmpty else { return }
+        let current = selectedItemID.flatMap { id in items.firstIndex { $0.id == id } } ?? 0
+        selectedItemID = items[min(max(current + offset, 0), items.count - 1)].id
+        noteFocused = false
+    }
+
+    private func askAgentAboutSelection() {
+        guard let selectedItem else { return }
+        onAskAgent(selectedItem)
+    }
+
+    private func addSelectionToNewspaper() {
+        guard let selectedItem, let url = selectedItem.sourceURL,
+              url.scheme == "http" || url.scheme == "https" else { return }
+        onAddSourceToNewspaper(url, selectedItem.sourceTitle)
+        status = "Opening the source and adding it to Newspaper…"
+    }
+
+    private func copySelection() {
+        guard let selectedItem else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        if selectedItem.kind == .image,
+           let data = selectedItem.imageData,
+           let image = NSImage(data: data) {
+            pasteboard.writeObjects([image])
+        } else {
+            pasteboard.setString(selectedItem.agentContext, forType: .string)
+        }
+        status = "Copied selected clip"
+    }
+
+    private func openSelectedSource() {
+        guard let url = selectedItem?.sourceURL else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func deleteSelection() {
+        guard let selectedItem,
+              let index = items.firstIndex(where: { $0.id == selectedItem.id }) else { return }
+        let nextID = items.indices.contains(index + 1)
+            ? items[index + 1].id
+            : (index > 0 ? items[index - 1].id : nil)
+        delete(selectedItem)
+        selectedItemID = nextID
+    }
+
+    private func installKeyEventMonitor() {
+        guard keyEventMonitor == nil else { return }
+        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+            let key = event.charactersIgnoringModifiers?.lowercased()
+            if event.keyCode == 53 {
+                onClose()
+                return nil
+            }
+            if modifiers == [.option], event.keyCode == 126 {
+                moveSelection(by: -1)
+                return nil
+            }
+            if modifiers == [.option], event.keyCode == 125 {
+                moveSelection(by: 1)
+                return nil
+            }
+            if modifiers == [.command], event.keyCode == 36 {
+                saveNote()
+                return nil
+            }
+            if modifiers == [.command, .shift], key == "d" {
+                clipCurrentPage()
+                return nil
+            }
+            if modifiers == [.command, .shift], event.keyCode == 36 {
+                askAgentAboutSelection()
+                return nil
+            }
+            if modifiers == [.command, .option], event.keyCode == 36 {
+                addSelectionToNewspaper()
+                return nil
+            }
+            if modifiers == [.command, .shift], key == "c" {
+                copySelection()
+                return nil
+            }
+            if modifiers == [.command, .option], key == "o" {
+                openSelectedSource()
+                return nil
+            }
+            if modifiers == [.command], event.keyCode == 51 {
+                deleteSelection()
+                return nil
+            }
+            return event
+        }
+    }
+
+    private func removeKeyEventMonitor() {
+        guard let keyEventMonitor else { return }
+        NSEvent.removeMonitor(keyEventMonitor)
+        self.keyEventMonitor = nil
+    }
+
     private func importDrop(_ providers: [NSItemProvider]) {
         // Prefer the richest representation and create one clip per drag item.
         for provider in providers {
@@ -308,6 +452,8 @@ struct ScratchPadView: View {
 private struct ScratchPadItemRow: View {
     @Environment(\.modelContext) private var modelContext
     @Bindable var item: ScratchPadItem
+    let isSelected: Bool
+    let onSelect: () -> Void
     let onAskAgent: () -> Void
     let onAddToNewspaper: () -> Void
     let onDelete: () -> Void
@@ -380,6 +526,12 @@ private struct ScratchPadItemRow: View {
         }
         .padding(11)
         .background(Color.primary.opacity(0.065), in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isSelected ? Color.accentColor : .clear, lineWidth: 2)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
         .onDrag { item.itemProvider }
         .contextMenu {
             Button("Ask Agent", action: onAskAgent)

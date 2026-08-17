@@ -565,6 +565,7 @@ struct BrowserView_iOS: View {
         case .showBookmarks: presentLibrary(.bookmarks)
         case .showHistory: presentLibrary(.history)
         case .showDownloads: showDownloads = true
+        case .scratchPad: showScratchPad.toggle()
         case .clearSiteData: requestClearSiteData()
         case .convertToIncognito: convertActiveToIncognito()
         case .showAllTabs:

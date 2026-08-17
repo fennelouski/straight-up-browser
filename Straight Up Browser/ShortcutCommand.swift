@@ -249,6 +249,7 @@ extension ShortcutCommand {
     static let settings     = Self("settings", "Settings", .app, Shortcut(key: ",", command: true))
     static let help         = Self("help", "Help", .app, Shortcut(key: "?", command: true))
     static let extensionPopup = Self("extensionPopup", "Open Extension Popup", .app, Shortcut(key: "e", command: true, option: true))
+    static let scratchPad = Self("scratchPad", "Scratch Pad", .app, Shortcut(key: "n", command: true, option: true))
     #if os(macOS)
     static let windowLayout = Self("windowLayout", "Snap Window to Size", .app, Shortcut(key: "f", command: true, shift: true))
     #endif
@@ -281,7 +282,7 @@ extension ShortcutCommand {
            toggleTranslation, translateInSplit, readerMode, toggleAutofill,
            toggleTabBar, hideTabBar, minimalTabBar, compactTabBar, wideTabBar,
            addBookmark, showBookmarks, showHistory, clearSiteData, convertToIncognito,
-           omnibar, quickOpen, quickOpenNewTab, tabGrid, shortcutOverlay, settings, help, extensionPopup]
+           omnibar, quickOpen, quickOpenNewTab, tabGrid, scratchPad, shortcutOverlay, settings, help, extensionPopup]
         + platformCommands
 
     static func by(id: String) -> ShortcutCommand? { all.first { $0.id == id } }
@@ -337,6 +338,7 @@ enum BrowserPlatformCommandAction: Hashable {
     case showBookmarks
     case showHistory
     case showDownloads
+    case scratchPad
     case clearSiteData
     case convertToIncognito
     case showAllTabs
@@ -384,6 +386,7 @@ struct BrowserPlatformCommandEntry: Identifiable {
         case .showBookmarks: .browserShowBookmarks
         case .showHistory: .browserShowHistory
         case .showDownloads: .browserShowDownloads
+        case .scratchPad: .browserToggleScratchPad
         case .clearSiteData: .browserClearSiteData
         case .convertToIncognito: .browserConvertTabToIncognito
         case .showAllTabs: .browserShowTabGrid
@@ -429,6 +432,7 @@ enum BrowserPlatformCommandRegistry {
 
     private static let iPadViewCommands: [BrowserPlatformCommandEntry] = [
         .init(group: .view, command: .toggleTabBar, action: .toggleSidebar),
+        .init(group: .view, command: .scratchPad, action: .scratchPad),
         .init(group: .view, command: .zoomIn, action: .zoomIn),
         .init(group: .view, command: .zoomOut, action: .zoomOut),
         .init(group: .view, command: .actualSize, action: .actualSize),

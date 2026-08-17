@@ -39,12 +39,14 @@ struct ScratchPad_iOS: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button(action: clipCurrentPage) {
                         Label("Clip Page", systemImage: "link.badge.plus")
                     }
                     .disabled(pageURL == nil)
+                    .keyboardShortcut("d", modifiers: [.command, .shift])
                 }
             }
             .sheet(isPresented: $isSharing) {
@@ -64,6 +66,7 @@ struct ScratchPad_iOS: View {
                 Image(systemName: "plus.circle.fill").font(.title2)
             }
             .disabled(note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .keyboardShortcut(.return, modifiers: [.command])
             .accessibilityLabel("Save note")
         }
         .padding()

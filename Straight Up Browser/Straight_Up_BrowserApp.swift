@@ -534,6 +534,11 @@ struct Straight_Up_BrowserApp: App {
                 }
                 .keyboardShortcut("a", modifiers: [.command, .shift])
 
+                Button("Scratch Pad") {
+                    NotificationCenter.default.post(name: .browserToggleScratchPad, object: nil)
+                }
+                .keyboardShortcut(sc(.scratchPad))
+
                 Button("Developer Tools") {
                     NotificationCenter.default.post(name: .browserToggleDeveloperTools, object: nil)
                 }
