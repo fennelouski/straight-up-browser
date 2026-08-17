@@ -5402,6 +5402,7 @@ struct BrowserAgentPanel: View {
     static let width: CGFloat = 380
 
     @ObservedObject var agent: BrowserAgent
+    @Binding var showingScratchPad: Bool
     let side: BrowserChromeSide
     let pageTitle: String
     let pageURL: String
@@ -5425,6 +5426,7 @@ struct BrowserAgentPanel: View {
 
     init(
         agent: BrowserAgent,
+        showingScratchPad: Binding<Bool> = .constant(false),
         side: BrowserChromeSide = .right,
         pageTitle: String,
         pageURL: String,
@@ -5447,6 +5449,7 @@ struct BrowserAgentPanel: View {
         ) async -> String
     ) {
         self.agent = agent
+        self._showingScratchPad = showingScratchPad
         self.side = side
         self.pageTitle = pageTitle
         self.pageURL = pageURL
@@ -5469,7 +5472,6 @@ struct BrowserAgentPanel: View {
     @State private var prompt = ""
     @State private var showingConfiguration = false
     @State private var showingHistory = false
-    @State private var showingScratchPad = false
     @State private var aiSearchEnabled = false
     @State private var aiSearchStatus: String?
     @State private var isPreparingLocalContext = false
@@ -6547,6 +6549,13 @@ struct BrowserAgentPanel: View {
         guard panelKeyEventMonitor == nil else { return }
         panelKeyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if showingScratchPad {
+                if event.keyCode == 53 {
+                    showingScratchPad = false
+                    return nil
+                }
+                return event
+            }
             if modifiers == [.control],
                event.charactersIgnoringModifiers?.lowercased() == "r" {
                 activatePromptHistorySearch()

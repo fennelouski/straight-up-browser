@@ -94,6 +94,7 @@ _Avoid_: memory, chat attachment (until explicitly attached), Saved Article
 - A **Scratch Item** is never sent to the Agent automatically; “Ask Agent” explicitly copies its bounded text and source attribution into the prompt composer
 - A **Scratch Item** with a web source can promote that source through Newspaper's ordinary page-capture path; the clip itself never substitutes for the source's complete Article Document
 - Scratch Item drag export uses standard text, URL, and image representations so the artifact can leave the browser without coupling destination sites or apps to browser internals
+- Browser chrome is keyboard-first: every user-facing surface needs a discoverable key command for opening it, and every primary action within that surface must be reachable without a pointer; pointer controls are alternate affordances, not the only path
 
 ## Example dialogue
 

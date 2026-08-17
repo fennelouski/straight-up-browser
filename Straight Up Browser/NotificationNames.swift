@@ -31,6 +31,7 @@ extension Notification.Name {
     static let browserListTabs = Notification.Name("browserListTabs")
     static let browserShowTabGrid = Notification.Name("browserShowTabGrid")
     static let browserToggleAgent = Notification.Name("browserToggleAgent")
+    static let browserToggleScratchPad = Notification.Name("browserToggleScratchPad")
     static let browserAgentLassoSelected = Notification.Name("browserAgentLassoSelected")
     static let browserToggleDeveloperTools = Notification.Name("browserToggleDeveloperTools")
     static let browserShowDeveloperConsole = Notification.Name("browserShowDeveloperConsole")

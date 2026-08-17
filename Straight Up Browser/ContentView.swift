@@ -548,6 +548,7 @@ struct ContentView: View {
     @State private var showOmnibar = false
     @State private var showTabGrid = false
     @State private var showAgentPanel = false
+    @State private var showScratchPad = false
     @AppStorage(AgentSettingsRuntimeKey.adjustsPageLayout) private var agentAdjustsPageLayout = false
     @AppStorage(AgentSettingsRuntimeKey.loadsMorePageContent) private var agentLoadsMorePageContent = true
     @AppStorage(AgentSettingsRuntimeKey.panelSide) private var agentPanelSideRaw = BrowserChromeSide.left.rawValue
@@ -2137,6 +2138,7 @@ struct ContentView: View {
     private var agentPanelView: some View {
         BrowserAgentPanel(
             agent: browserAgent,
+            showingScratchPad: $showScratchPad,
             side: agentPanelSide,
             pageTitle: currentTitle,
             pageURL: currentURL?.absoluteString ?? "",
@@ -2682,6 +2684,22 @@ struct ContentView: View {
                     queue: .main
                 ) { [self] _ in
                     withAnimation(.easeInOut(duration: 0.2)) { showAgentPanel.toggle() }
+                }
+
+                NotificationCenter.default.addMainActorObserver(
+                    forName: .browserToggleScratchPad,
+                    object: nil,
+                    queue: .main
+                ) { [self] _ in
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        if showAgentPanel && showScratchPad {
+                            showScratchPad = false
+                            showAgentPanel = false
+                        } else {
+                            showScratchPad = true
+                            showAgentPanel = true
+                        }
+                    }
                 }
 
                 // Toggle tab bar between hidden and last visible width (Cmd+Shift+L)

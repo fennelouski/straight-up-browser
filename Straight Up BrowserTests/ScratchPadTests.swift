@@ -45,4 +45,17 @@ struct ScratchPadTests {
         #expect(item.agentContext.contains("[Clipped image]"))
         #expect(item.agentContext.contains("https://example.com/gallery"))
     }
+
+    @Test func scratchPadHasARebindableCrossPlatformShortcut() {
+        #expect(ShortcutCommand.scratchPad.defaultShortcut == Shortcut(
+            key: "n",
+            command: true,
+            option: true
+        ))
+        #expect(ShortcutCommand.all.contains(.scratchPad))
+        #expect(BrowserPlatformCommandRegistry.iPad.contains {
+            $0.command == .scratchPad
+                && $0.notification == .browserToggleScratchPad
+        })
+    }
 }
