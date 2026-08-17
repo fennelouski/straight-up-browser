@@ -196,10 +196,10 @@ struct ScratchPadView: View {
                 Image(systemName: "keyboard")
             }
             .menuStyle(.borderlessButton)
-            .help("Scratch Pad keyboard commands")
+            .delayedHelp("Scratch Pad keyboard commands")
             Button(action: onClose) { Image(systemName: "sparkles") }
                 .buttonStyle(.plain)
-                .help("Back to Agent")
+                .delayedHelp("Back to Agent")
                 .accessibilityLabel("Back to Agent")
         }
         .padding(12)

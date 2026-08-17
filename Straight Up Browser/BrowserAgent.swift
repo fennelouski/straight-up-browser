@@ -5553,7 +5553,7 @@ struct BrowserAgentPanel: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
-                .help("Choose a continuous or site-specific chat")
+                .delayedHelp("Choose a continuous or site-specific chat")
                 .accessibilityIdentifier("agent-chat-scope")
                 if agent.isRunning, let model = agent.activeModelLabel {
                     HStack(spacing: 4) {
@@ -5564,7 +5564,7 @@ struct BrowserAgentPanel: View {
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .help("\(model) is processing this request")
+                    .delayedHelp("\(model) is processing this request")
                     .accessibilityLabel("\(model) is thinking")
                     .accessibilityIdentifier("agent-model-activity")
                 } else if let tool = agent.currentTool {
@@ -5578,29 +5578,29 @@ struct BrowserAgentPanel: View {
                 Spacer()
                 Button { showingHistory.toggle() } label: { Image(systemName: "clock") }
                     .buttonStyle(.plain)
-                    .help("Conversation history")
+                    .delayedHelp("Conversation history")
                     .accessibilityIdentifier("agent-history")
                     .popover(isPresented: $showingHistory) { historyView }
                 Button { showingScratchPad = true } label: { Image(systemName: "note.text") }
                     .buttonStyle(.plain)
-                    .help("Scratch Pad")
+                    .delayedHelp("Scratch Pad")
                     .accessibilityLabel("Open Scratch Pad")
                     .accessibilityIdentifier("agent-scratch-pad")
                 Button { showingConfiguration.toggle() } label: { Image(systemName: "slider.horizontal.3") }
                     .buttonStyle(.plain)
-                    .help("Model settings")
+                    .delayedHelp("Model settings")
                 Button(action: onStartLasso) { Image(systemName: "lasso") }
                     .buttonStyle(.plain)
-                    .help("Circle something on the page")
+                    .delayedHelp("Circle something on the page")
                 Button { openWindow(id: "agent-tasks") } label: { Image(systemName: "clock.arrow.circlepath") }
                     .buttonStyle(.plain)
-                    .help("Scheduled Agent Tasks")
+                    .delayedHelp("Scheduled Agent Tasks")
                 Button { openWindow(id: "agent-audit") } label: { Image(systemName: "play.rectangle.on.rectangle") }
                     .buttonStyle(.plain)
-                    .help("Agent Audit & Replay")
+                    .delayedHelp("Agent Audit & Replay")
                 Button(action: onClose) { Image(systemName: "xmark") }
                     .buttonStyle(.plain)
-                    .help("Close Agent")
+                    .delayedHelp("Close Agent")
             }
             .padding(12)
 
@@ -5689,7 +5689,7 @@ struct BrowserAgentPanel: View {
                 }
                     .buttonStyle(.borderless)
                     .accessibilityLabel(aiSearchEnabled ? "Disable AI Search" : "Enable AI Search")
-                    .help("Use semantic fuzzy search on this page")
+                    .delayedHelp("Use semantic fuzzy search on this page")
                 TextField(aiSearchEnabled ? "Describe what to find…" : "Ask the agent…", text: $prompt, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...6)
@@ -5702,13 +5702,13 @@ struct BrowserAgentPanel: View {
                 if agent.isRunning {
                     Button(action: agent.cancel) { Image(systemName: "stop.fill") }
                         .buttonStyle(.borderless)
-                        .help("Stop")
+                        .delayedHelp("Stop")
                         .accessibilityIdentifier("agent-stop")
                 } else {
                     Button(action: submit) { Image(systemName: "arrow.up.circle.fill").font(.title2) }
                         .buttonStyle(.borderless)
                     .disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isPreparingLocalContext)
-                        .help("Send")
+                        .delayedHelp("Send")
                 }
             }
             .padding(12)
@@ -6214,7 +6214,7 @@ struct BrowserAgentPanel: View {
                                     .font(.caption2)
                             }
                             .buttonStyle(.borderless)
-                            .help("Copy to Continuous chat · keyboard: /promote")
+                            .delayedHelp("Copy to Continuous chat · keyboard: /promote")
                             .accessibilityLabel("Copy this answer to Continuous chat")
                         }
                     }
@@ -9453,7 +9453,7 @@ struct BrowserAgentAuditView: View {
                 Image(systemName: newestFirst ? "arrow.down" : "arrow.up")
             }
             .buttonStyle(.plain)
-            .help(newestFirst ? "Show oldest activity first" : "Show newest activity first")
+            .delayedHelp(newestFirst ? "Show oldest activity first" : "Show newest activity first")
             .accessibilityLabel(newestFirst ? "Show oldest activity first" : "Show newest activity first")
             .accessibilityIdentifier("agent-timeline-order")
             Menu {

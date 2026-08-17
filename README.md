@@ -108,6 +108,8 @@ are the defaults:
 | `⌃Space` | Show omnibar |
 | `⌥Space` | Global omnibar from any app (macOS) |
 | `⌘L` / `⌘K` | Open location / quick open |
+| `⌘⌥K` | Open a fresh tab from Quick Open |
+| `⌘⇧H` / `⌘⇧K` | Show keyboard shortcuts |
 | `⌘T` / `⌘N` | New tab (`⌘N` always creates a fresh tab) |
 | `⌘⌥N` / `⌘⇧N` | Save the current page to Newspaper |
 | `⌘⌥⇧N` | New incognito tab |
@@ -130,6 +132,7 @@ are the defaults:
 | `⌘⇧L` | Toggle the tab sidebar |
 | `⌘⌥\`` / `⌘⌥1` / `⌘⌥2` / `⌘⌥3` | Hidden / minimal / compact / wide sidebar |
 | `⌘,` | Settings |
+| `⌥Click` / `⇧Click` a link | Open in a split pane / save to Newspaper |
 
 Back and forward also use the standard trackpad or screen-edge gestures.
 

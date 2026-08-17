@@ -913,6 +913,7 @@ struct ShortcutTests {
         #if os(macOS)
         #expect(ShortcutCommand.showDownloads.defaultShortcut.displayString == "⇧⌘J")
         #expect(ShortcutCommand.newIncognitoTab.defaultShortcut.displayString == "⌥⇧⌘N")
+        #expect(ShortcutCommand.quickOpenNewTab.defaultShortcut.displayString == "⌥⌘K")
         #endif
 
         // No two defaults collide.
@@ -928,6 +929,22 @@ struct ShortcutTests {
             ].joined(separator: "|")
             #expect(seen.insert(signature).inserted, "duplicate default for \(command.id)")
         }
+    }
+
+    @Test func shortcutOverlayFuzzyMatchingAndAliases() {
+        #expect(ShortcutSearchMatcher.matchIndices(query: "nwp", in: "Add Link to Newspaper") != nil)
+        #expect(ShortcutSearchMatcher.matchIndices(query: "KBS", in: "Keyboard Shortcuts") != nil)
+        #expect(ShortcutSearchMatcher.matchIndices(query: "xyz", in: "Keyboard Shortcuts") == nil)
+
+        #if os(macOS)
+        let appRows = ShortcutStore.shared.cheatRows(for: .app)
+        let shortcutRow = appRows.first { $0.id == ShortcutCommand.shortcutOverlay.id }
+        #expect(shortcutRow?.keys.contains("⇧⌘K") == true)
+
+        let tabRows = ShortcutStore.shared.cheatRows(for: .tabs)
+        #expect(tabRows.first { $0.id == "splitPane" }?.keys == "⌥Click")
+        #expect(tabRows.first { $0.id == "newspaperLink" }?.keys == "⇧Click")
+        #endif
     }
 
     @Test func shortcutStoreRebindResetAndConflicts() {

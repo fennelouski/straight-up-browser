@@ -322,17 +322,17 @@ struct ShortcutsSettingsView: View {
                     Image(systemName: "arrow.uturn.backward").font(.caption)
                 }
                 .buttonStyle(.borderless)
-                .help(String(localized: "Reset to default"))
+                .delayedHelp(String(localized: "Reset to default"))
             }
             Spacer(minLength: 12)
             if conflicting {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-                    .help(String(localized: "This shortcut is used by more than one command"))
+                    .delayedHelp(String(localized: "This shortcut is used by more than one command"))
             } else if let systemName = store.systemConflict(store.shortcut(for: command)) {
                 Image(systemName: "exclamationmark.triangle")
                     .foregroundStyle(.yellow)
-                    .help(String(localized: "May conflict with the macOS \(systemName) shortcut"))
+                    .delayedHelp(String(localized: "May conflict with the macOS \(systemName) shortcut"))
             }
             ShortcutRecorder(command: command)
         }

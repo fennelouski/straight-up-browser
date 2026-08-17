@@ -114,6 +114,18 @@ class KeyboardShortcutsManager {
                 return nil
             }
 
+            // A fixed second way into the shortcut sheet. ⇧⌘H remains the
+            // customizable menu binding; ⇧⌘K is deliberately stable and is
+            // handled before Quick Open so a website or old binding cannot win.
+            if mods == [.command, .shift],
+               event.charactersIgnoringModifiers?.lowercased() == "k" {
+                NotificationCenter.default.post(
+                    name: .browserToggleShortcutOverlay,
+                    object: self.webViewManager?.activeWebView?.window
+                )
+                return nil
+            }
+
             // Websites commonly bind ⌘K themselves. This opt-in route consumes
             // the configured Quick Open chord before WKWebView can deliver it
             // to page JavaScript.

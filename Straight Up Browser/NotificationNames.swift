@@ -94,7 +94,7 @@ extension Notification.Name {
     static let javaScriptChanged = Notification.Name("javaScriptChanged")
     // System memory pressure (userInfo["critical"]: Bool)
     static let memoryPressure = Notification.Name("memoryPressure")
-    // Cmd+Shift+H shortcut cheat-sheet overlay
+    // ⇧⌘H / ⇧⌘K shortcut cheat-sheet overlay
     static let browserToggleShortcutOverlay = Notification.Name("browserToggleShortcutOverlay")
     static let browserToggleTabBar = Notification.Name("browserToggleTabBar")
     static let browserHideTabBar = Notification.Name("browserHideTabBar")

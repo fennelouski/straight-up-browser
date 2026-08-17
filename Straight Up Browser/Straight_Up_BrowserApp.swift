@@ -701,8 +701,8 @@ struct Straight_Up_BrowserApp: App {
                 }
                 .keyboardShortcut(sc(.quickOpen))
 
-                // Cmd+K/Cmd+N are an easy mistype of each other; Cmd+Shift+K
-                // covers the slip by opening a new tab too.
+                // A nearby Quick Open alternate that doesn't collide with the
+                // fixed ⇧⌘K shortcut-reference alias.
                 Button("New Tab (Quick Open Alt)") {
                     NotificationCenter.default.post(name: .browserNewTab, object: nil)
                 }

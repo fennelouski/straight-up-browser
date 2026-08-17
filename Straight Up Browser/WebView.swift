@@ -210,6 +210,7 @@ struct WebView: NSViewRepresentable {
         private var certificateOverrideWebViews: Set<ObjectIdentifier> = []
         private var agentNavigationObservationIDs: [ObjectIdentifier: UUID] = [:]
         private var agentLastNavigationURLs: [ObjectIdentifier: URL] = [:]
+        private weak var contextMenuWebView: WKWebView?
 
         // One guard per WKWebView: background tabs and split panes must not
         // contribute to each other's redirect counts.
@@ -1149,14 +1150,80 @@ struct WebView: NSViewRepresentable {
             tabManager.closeTab(tab, tabs: tabs ?? [])
         }
 
-        // WebKit's native right-click menu offers "Open Link in New Window" -
-        // we don't support multiple windows, and createWebViewWith above
-        // actually opens that link in a new tab. Relabel the item so it says
-        // what it does instead of advertising a window we never open.
+        // Keep WebKit's comprehensive native menu, then add Browser's own link
+        // action and SF Symbols. The page-world context listener in
+        // WebViewManager records the clicked href before this delegate fires.
         func webView(_ webView: WKWebView, willOpenMenu menu: NSMenu, with event: NSEvent) {
             for item in menu.items where item.title == "Open Link in New Window" {
                 item.title = "Open Link in New Tab"
             }
+
+            if let url = parent.webViewManager?.contextMenuLink(for: webView),
+               !menu.items.contains(where: { $0.action == #selector(addContextLinkToNewspaper(_:)) }) {
+                contextMenuWebView = webView
+                let newspaperItem = NSMenuItem(
+                    title: "Add Link to Newspaper",
+                    action: #selector(addContextLinkToNewspaper(_:)),
+                    keyEquivalent: ""
+                )
+                newspaperItem.target = self
+                newspaperItem.representedObject = url
+                newspaperItem.image = menuImage(named: "newspaper", description: newspaperItem.title)
+                newspaperItem.isEnabled = tab(for: webView)?.sessionKind != .incognito
+
+                let lastOpenLinkIndex = menu.items.lastIndex {
+                    $0.title.localizedCaseInsensitiveContains("open link")
+                }
+                let insertionIndex = min((lastOpenLinkIndex.map { $0 + 1 } ?? 0), menu.items.count)
+                menu.insertItem(newspaperItem, at: insertionIndex)
+            }
+
+            decorateMenu(menu)
+        }
+
+        @objc private func addContextLinkToNewspaper(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL,
+                  let webView = contextMenuWebView else { return }
+            parent.onSaveLinkToNewspaper?(url, webView)
+        }
+
+        private func decorateMenu(_ menu: NSMenu) {
+            for item in menu.items where !item.isSeparatorItem {
+                if item.image == nil {
+                    item.image = menuImage(
+                        named: menuSymbolName(for: item.title),
+                        description: item.title
+                    )
+                }
+                if let submenu = item.submenu { decorateMenu(submenu) }
+            }
+        }
+
+        private func menuImage(named name: String, description: String) -> NSImage? {
+            let image = NSImage(systemSymbolName: name, accessibilityDescription: description)
+            image?.isTemplate = true
+            return image
+        }
+
+        private func menuSymbolName(for title: String) -> String {
+            let title = title.lowercased()
+            if title.contains("newspaper") { return "newspaper" }
+            if title.contains("new tab") || title.contains("open link") { return "plus.square.on.square" }
+            if title.contains("new window") { return "macwindow.badge.plus" }
+            if title.contains("download") { return "arrow.down.circle" }
+            if title.contains("copy") { return "doc.on.doc" }
+            if title.contains("share") { return "square.and.arrow.up" }
+            if title.contains("image") { return "photo" }
+            if title.contains("search") || title.contains("find") { return "magnifyingglass" }
+            if title.contains("look up") || title.contains("dictionary") { return "book" }
+            if title.contains("inspect") { return "cursorarrow.rays" }
+            if title.contains("reload") { return "arrow.clockwise" }
+            if title.contains("back") { return "chevron.backward" }
+            if title.contains("forward") { return "chevron.forward" }
+            if title.contains("print") { return "printer" }
+            if title.contains("save") { return "square.and.arrow.down" }
+            if title.contains("open") { return "arrow.up.forward.square" }
+            return "ellipsis.circle"
         }
 
         // MARK: - JS dialogs and file uploads

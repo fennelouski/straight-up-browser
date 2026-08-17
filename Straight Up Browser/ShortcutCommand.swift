@@ -243,7 +243,7 @@ extension ShortcutCommand {
     // App
     static let omnibar      = Self("omnibar", "Omnibar", .app, Shortcut(key: " ", control: true))
     static let quickOpen    = Self("quickOpen", "Quick Open", .app, Shortcut(key: "k", command: true))
-    static let quickOpenNewTab = Self("quickOpenNewTab", "New Tab (Quick Open Alt)", .app, Shortcut(key: "k", command: true, shift: true))
+    static let quickOpenNewTab = Self("quickOpenNewTab", "New Tab (Quick Open Alt)", .app, Shortcut(key: "k", command: true, option: true))
     static let tabGrid      = Self("tabGrid", "Show All Tabs", .tabs, Shortcut(key: "o", command: true))
     static let shortcutOverlay = Self("shortcutOverlay", "Keyboard Shortcuts", .app, Shortcut(key: "h", command: true, shift: true))
     static let settings     = Self("settings", "Settings", .app, Shortcut(key: ",", command: true))
@@ -751,11 +751,15 @@ extension ShortcutStore {
             let s = shortcut(for: command)
             var keys = s.displayString
             if let alt = alternate(for: command) { keys += " / \(alt.displayString)" }
+            #if os(macOS)
+            if command == .shortcutOverlay { keys += " / ⇧⌘K" }
+            #endif
             rows.append(CheatRow(id: command.id, title: command.title, keys: keys, shortcut: s))
         }
         if section == .tabs {
             // Not a rebindable command — a mouse gesture, documented here so it's discoverable
-            rows.append(CheatRow(id: "splitPane", title: "Add/Remove Split Pane", keys: "⇧Click", shortcut: nil))
+            rows.append(CheatRow(id: "splitPane", title: "Open Link in Split Pane", keys: "⌥Click", shortcut: nil))
+            rows.append(CheatRow(id: "newspaperLink", title: "Add Link to Newspaper", keys: "⇧Click", shortcut: nil))
         }
         return rows
     }

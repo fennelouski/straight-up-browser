@@ -626,7 +626,7 @@ struct ContentView: View {
     @State private var quitHoldProgress: Double = 0
     @State private var quitHoldActive = false
 
-    // Cmd+Shift+H shortcut cheat sheet
+    // ⇧⌘H / ⇧⌘K shortcut cheat sheet
     @State private var showShortcutCheatSheet = false
 
     // Favicon peek shown when the active tab changes while the tab bar is hidden.
@@ -908,7 +908,7 @@ struct ContentView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("New Tab")
+            .delayedHelp("New Tab · ⌘T")
             .accessibilityLabel("New Tab")
 
             Button {
@@ -921,7 +921,7 @@ struct ContentView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Visual Tabs")
+            .delayedHelp("Visual Tabs · ⌘O")
             .accessibilityLabel("Visual Tabs")
 
             Button(action: { showAgentPanel.toggle() }) {
@@ -931,7 +931,7 @@ struct ContentView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("AI Agent")
+            .delayedHelp("AI Agent · ⇧⌘A")
             .accessibilityLabel("AI Agent")
 
             Button(action: { showCreateGroupDialog = true }) {
@@ -941,7 +941,7 @@ struct ContentView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("New Group")
+            .delayedHelp("New Group")
             .accessibilityLabel("New Group")
 
             Menu {
@@ -963,7 +963,7 @@ struct ContentView: View {
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
-            .help("Workspaces")
+            .delayedHelp("Workspaces")
             .accessibilityLabel("Workspaces")
 
             Menu {
@@ -980,7 +980,7 @@ struct ContentView: View {
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
-            .help("Newspaper")
+            .delayedHelp("Newspaper · add page with ⌥⌘N or ⇧⌘N")
             .accessibilityLabel("Newspaper")
 
             Menu {
@@ -1009,7 +1009,7 @@ struct ContentView: View {
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
-            .help("Containers & Incognito")
+            .delayedHelp("Containers & Incognito")
             .accessibilityLabel("Containers and Incognito")
 
             // Same items as the menu bar's Autofill submenu — see AutofillMenu.swift.
@@ -1024,7 +1024,7 @@ struct ContentView: View {
             }
             .menuStyle(.borderlessButton)
             .opacity(AutofillPreferences.shared.isEnabled ? 1 : 0.4)
-            .help(AutofillPreferences.shared.isEnabled ? "Autofill" : "Autofill (off)")
+            .delayedHelp(AutofillPreferences.shared.isEnabled ? "Autofill · ⌥⌘A" : "Autofill (off) · ⌥⌘A")
             .accessibilityLabel("Autofill")
 
             Spacer(minLength: 0)
@@ -1051,7 +1051,7 @@ struct ContentView: View {
                         .foregroundColor(.secondary.opacity(0.7))
                 }
                 .buttonStyle(.plain)
-                .help("Delete Group")
+                .delayedHelp("Delete Group")
                 .accessibilityLabel("Delete \(group.name) group")
             }
             .padding(.horizontal, 8)
@@ -1495,21 +1495,21 @@ struct ContentView: View {
                 Image(systemName: "chevron.up")
             }
             .buttonStyle(.plain)
-            .help("Previous Match")
+            .delayedHelp("Previous Match")
             .accessibilityLabel("Previous Match")
 
             Button(action: { performFind() }) {
                 Image(systemName: "chevron.down")
             }
             .buttonStyle(.plain)
-            .help("Next Match")
+            .delayedHelp("Next Match")
             .accessibilityLabel("Next Match")
 
             Button(action: { closeFindBar() }) {
                 Image(systemName: "xmark")
             }
             .buttonStyle(.plain)
-            .help("Close")
+            .delayedHelp("Close")
             .accessibilityLabel("Close Find Bar")
         }
         .padding(.horizontal, 10)
@@ -2377,48 +2377,11 @@ struct ContentView: View {
         }
     }
 
-    // Full shortcut reference, toggled with Cmd+Shift+H (or Esc/click to close)
+    // Full shortcut reference, toggled with ⇧⌘H or ⇧⌘K (Esc/click closes).
     private var shortcutCheatSheetOverlay: some View {
         Group {
             if showShortcutCheatSheet {
-                ZStack {
-                    Color.black.opacity(0.25)
-                        .contentShape(Rectangle())
-                        .onTapGesture { showShortcutCheatSheet = false }
-
-                    HStack(alignment: .top, spacing: 28) {
-                        let sections = ShortcutSection.allCases
-                        let mid = (sections.count + 1) / 2
-                        ForEach([Array(sections.prefix(mid)), Array(sections.suffix(from: mid))], id: \.first) { column in
-                            VStack(alignment: .leading, spacing: 16) {
-                                ForEach(column, id: \.self) { section in
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text(section.title)
-                                            .font(.system(size: 11, weight: .semibold))
-                                            .foregroundStyle(.secondary)
-                                            .textCase(.uppercase)
-                                        Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 3) {
-                                            ForEach(ShortcutStore.shared.cheatRows(for: section)) { row in
-                                                GridRow {
-                                                    CheatSheetTitleCell(row: row)
-                                                    CheatSheetKeysCell(row: row)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            .frame(width: 290, alignment: .topLeading)
-                        }
-                    }
-                    .padding(24)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    .shadow(radius: 14)
-                }
-                .transition(.opacity)
-                .onExitCommand { showShortcutCheatSheet = false }
-                .onAppear { LiveKeyState.shared.activate() }
-                .onDisappear { LiveKeyState.shared.deactivate() }
+                ShortcutCheatSheetOverlay(isPresented: $showShortcutCheatSheet)
             }
         }
     }
@@ -2697,7 +2660,7 @@ struct ContentView: View {
                     withAnimation(.easeOut(duration: 0.22)) { flashOpacity = 0 }
                 }
 
-                // Cmd+Shift+H shortcut cheat sheet
+                // ⇧⌘H / ⇧⌘K shortcut cheat sheet
                 NotificationCenter.default.addMainActorObserver(
                     forName: .browserToggleShortcutOverlay,
                     object: nil,

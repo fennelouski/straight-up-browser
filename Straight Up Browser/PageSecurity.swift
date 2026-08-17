@@ -137,7 +137,7 @@ struct PageProtectionButton: View {
                 .foregroundStyle(summary.tint)
         }
         .buttonStyle(.plain)
-        .help(summary.title)
+        .delayedHelp(summary.title)
         .accessibilityLabel(summary.title)
         .popover(isPresented: $showingDetails) {
             VStack(alignment: .leading, spacing: 12) {

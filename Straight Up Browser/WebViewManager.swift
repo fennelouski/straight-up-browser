@@ -372,6 +372,24 @@ class WebViewManager: NSObject, ObservableObject {
     })();
     """
 
+    // Remember the link under a native context menu before WebKit constructs
+    // that menu. WKUIDelegate exposes the finished NSMenu on macOS, but not the
+    // clicked element, so this tiny page-world bridge supplies the missing URL.
+    // It runs in every frame so links inside embeds receive the same menu.
+    private static let contextMenuScript = """
+    (function() {
+        document.addEventListener('contextmenu', function(event) {
+            var target = event.target;
+            if (target && target.nodeType !== 1) target = target.parentElement;
+            var link = target && target.closest ? target.closest('a[href]') : null;
+            window.webkit.messageHandlers.sub.postMessage({
+                type: 'contextLink',
+                url: link && link.href ? link.href : null
+            });
+        }, true);
+    })();
+    """
+
     // On-device page translation (PageTranslator.swift is the Swift-side driver).
     // window.__subTranslate.sampleText() feeds language detection; .extract()
     // wraps visible text nodes in spans and returns {id, text} for translation;
@@ -476,6 +494,7 @@ class WebViewManager: NSObject, ObservableObject {
 
     // Store web views per tab ID
     private var webViews: [UUID: WKWebView] = [:]
+    private var contextMenuLinks: [ObjectIdentifier: URL] = [:]
     // Includes memory-unloaded tabs. Extensions still regard those as open,
     // and this ownership map keeps their window routing stable until real close.
     private var ownedTabIds: Set<UUID> = []
@@ -814,6 +833,7 @@ class WebViewManager: NSObject, ObservableObject {
                 contentWorld: .defaultClient
             )
             webView.removeFromSuperview()
+            contextMenuLinks.removeValue(forKey: ObjectIdentifier(webView))
 
             // Remove from storage
             webViews.removeValue(forKey: tabId)
@@ -1026,6 +1046,9 @@ class WebViewManager: NSObject, ObservableObject {
             WKUserScript(source: Self.pageScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         )
         configuration.userContentController.addUserScript(
+            WKUserScript(source: Self.contextMenuScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        )
+        configuration.userContentController.addUserScript(
             WKUserScript(source: Self.developerToolsScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
         )
         configuration.userContentController.addUserScript(
@@ -1072,6 +1095,10 @@ class WebViewManager: NSObject, ObservableObject {
         #if os(macOS)
         if #available(macOS 12.0, *) { webView.underPageBackgroundColor = .windowBackgroundColor }
         #endif
+    }
+
+    func contextMenuLink(for webView: WKWebView) -> URL? {
+        contextMenuLinks[ObjectIdentifier(webView)]
     }
 
     // MARK: - Fade in on first paint
@@ -1375,6 +1402,16 @@ extension WebViewManager: WKScriptMessageHandler {
         guard let type = body["type"] as? String else { return }
 
         switch type {
+        case "contextLink":
+            guard let webView = message.webView else { return }
+            let key = ObjectIdentifier(webView)
+            if let urlString = body["url"] as? String,
+               let url = URL(string: urlString),
+               ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+                contextMenuLinks[key] = url
+            } else {
+                contextMenuLinks.removeValue(forKey: key)
+            }
         case "downloadImage":
             if let urlString = body["url"] as? String,
                let url = URL(string: urlString),

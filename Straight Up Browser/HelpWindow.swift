@@ -178,17 +178,215 @@ struct CheatSheetKeysCell: View {
 
 struct CheatSheetTitleCell: View {
     let row: CheatRow
+    var searchQuery = ""
+    var searchOpacity = 1.0
     private var live: LiveKeyState { .shared }
 
     var body: some View {
         let held = row.shortcut.map { live.isActive && live.fullyHeld($0) } ?? false
-        Text(row.title)
+        let title = String(localized: row.title)
+        let matches = ShortcutSearchMatcher.matchIndices(query: searchQuery, in: title)
+        HStack(spacing: 0) {
+            ForEach(Array(title.enumerated()), id: \.offset) { index, character in
+                Text(String(character))
+                    .fontWeight(held || matches?.contains(index) == true ? .semibold : .regular)
+                    .foregroundStyle(
+                        held || matches?.contains(index) == true ? Color.accentColor : Color.primary
+                    )
+            }
+        }
             .font(.system(size: 12))
-            .fontWeight(held ? .semibold : .regular)
-            .foregroundStyle(held ? Color.accentColor : Color.primary)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 3)
+            .padding(.vertical, 1)
+            .background {
+                if matches != nil && !searchQuery.isEmpty {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.accentColor.opacity(0.12 * searchOpacity))
+                }
+            }
+            .opacity(!searchQuery.isEmpty && matches == nil ? max(0.38, searchOpacity) : 1)
     }
 }
+
+enum ShortcutSearchMatcher {
+    /// Returns the character offsets that form an ordered fuzzy match.
+    static func matchIndices(query: String, in candidate: String) -> Set<Int>? {
+        let needle = Array(query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current))
+        guard !needle.isEmpty else { return nil }
+        let haystack = Array(candidate.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current))
+        var result = Set<Int>()
+        var needleIndex = 0
+        for (index, character) in haystack.enumerated() where needleIndex < needle.count {
+            if character == needle[needleIndex] {
+                result.insert(index)
+                needleIndex += 1
+            }
+        }
+        return needleIndex == needle.count ? result : nil
+    }
+}
+
+#if os(macOS)
+struct ShortcutCheatSheetOverlay: View {
+    @Binding var isPresented: Bool
+
+    @State private var query = ""
+    @State private var candidate = ""
+    @State private var candidateStartedAt: TimeInterval?
+    @State private var lastCharacterAt: TimeInterval?
+    @State private var forceNewWord = false
+    @State private var hasActivatedSearch = false
+    @State private var searchOpacity = 1.0
+    @State private var keyMonitor: Any?
+    @State private var clearTask: Task<Void, Never>?
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.25)
+                .contentShape(Rectangle())
+                .onTapGesture { isPresented = false }
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 8) {
+                    Label("Keyboard Shortcuts", systemImage: "keyboard")
+                        .font(.headline)
+                    Spacer()
+                    if !query.isEmpty {
+                        Label(query, systemImage: "text.magnifyingglass")
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(Color.accentColor)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(Color.accentColor.opacity(0.12), in: Capsule())
+                            .opacity(searchOpacity)
+                            .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                    }
+                }
+
+                HStack(alignment: .top, spacing: 28) {
+                    let sections = ShortcutSection.allCases
+                    let mid = (sections.count + 1) / 2
+                    ForEach([Array(sections.prefix(mid)), Array(sections.suffix(from: mid))], id: \.first) { column in
+                        VStack(alignment: .leading, spacing: 16) {
+                            ForEach(column, id: \.self) { section in
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(section.title)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                        .textCase(.uppercase)
+                                    Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 3) {
+                                        ForEach(ShortcutStore.shared.cheatRows(for: section)) { row in
+                                            GridRow {
+                                                CheatSheetTitleCell(
+                                                    row: row,
+                                                    searchQuery: query,
+                                                    searchOpacity: searchOpacity
+                                                )
+                                                CheatSheetKeysCell(row: row)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        .frame(width: 290, alignment: .topLeading)
+                    }
+                }
+            }
+            .padding(24)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .shadow(radius: 14)
+        }
+        .transition(.opacity)
+        .onExitCommand { isPresented = false }
+        .onAppear {
+            LiveKeyState.shared.activate()
+            installKeyMonitor()
+        }
+        .onDisappear {
+            LiveKeyState.shared.deactivate()
+            removeKeyMonitor()
+        }
+    }
+
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 {
+                isPresented = false
+                return nil
+            }
+
+            let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+            guard modifiers.isEmpty,
+                  !event.isARepeat,
+                  let characters = event.charactersIgnoringModifiers,
+                  characters.count == 1,
+                  let character = characters.first else { return event }
+
+            if character.isWhitespace {
+                forceNewWord = true
+                return nil
+            }
+            guard character.isLetter || character.isNumber else { return event }
+
+            accept(character: String(character).lowercased(), at: event.timestamp)
+            return nil
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
+        clearTask?.cancel()
+        clearTask = nil
+    }
+
+    private func accept(character: String, at timestamp: TimeInterval) {
+        let gap = lastCharacterAt.map { timestamp - $0 } ?? .infinity
+        let startsNewWord = forceNewWord || gap >= 1.0
+        forceNewWord = false
+
+        if startsNewWord {
+            candidate = character
+            candidateStartedAt = timestamp
+            if startsNewWord && hasActivatedSearch {
+                query = character
+                searchOpacity = 1
+            } else {
+                query = ""
+            }
+        } else {
+            candidate += character
+            let duration = max(timestamp - (candidateStartedAt ?? timestamp), 0.001)
+            let charactersPerSecond = Double(max(candidate.count - 1, 0)) / duration
+            if charactersPerSecond >= 5 {
+                query = candidate
+                searchOpacity = 1
+                hasActivatedSearch = true
+            }
+        }
+        lastCharacterAt = timestamp
+        scheduleFade()
+    }
+
+    private func scheduleFade() {
+        clearTask?.cancel()
+        clearTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.28)) { searchOpacity = 0 }
+            try? await Task.sleep(for: .seconds(0.28))
+            guard !Task.isCancelled else { return }
+            query = ""
+            candidate = ""
+            candidateStartedAt = nil
+            searchOpacity = 1
+        }
+    }
+}
+#endif
 
 // MARK: - Tips & CLI
 private struct CLIHelpView: View {

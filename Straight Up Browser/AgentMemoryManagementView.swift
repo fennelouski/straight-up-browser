@@ -149,7 +149,7 @@ struct AgentMemoryManagementView: View {
                 )
             )
             .labelsHidden()
-            .help(entry.isEnabled ? "Disable this memory" : "Enable this memory")
+            .delayedHelp(entry.isEnabled ? "Disable this memory" : "Enable this memory")
 
             Button {
                 editingEntry = entry
@@ -157,7 +157,7 @@ struct AgentMemoryManagementView: View {
                 Image(systemName: "pencil")
             }
             .buttonStyle(.borderless)
-            .help("Edit memory")
+            .delayedHelp("Edit memory")
 
             Button(role: .destructive) {
                 Task { await controller.delete(id: entry.id) }
@@ -165,7 +165,7 @@ struct AgentMemoryManagementView: View {
                 Image(systemName: "trash")
             }
             .buttonStyle(.borderless)
-            .help("Forget memory")
+            .delayedHelp("Forget memory")
         }
         .padding(.vertical, 5)
     }

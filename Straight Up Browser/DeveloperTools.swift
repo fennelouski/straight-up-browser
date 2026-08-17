@@ -651,7 +651,7 @@ struct DeveloperToolsView: View {
                 Image(systemName: "magnifyingglass").frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
-            .help("Search Console")
+            .delayedHelp("Search Console")
             Menu {
                 Picker("Developer Tools location", selection: Binding(
                     get: { placement },
@@ -665,18 +665,18 @@ struct DeveloperToolsView: View {
                 Image(systemName: "rectangle.split.3x1").frame(width: 28, height: 28)
             }
             .menuStyle(.borderlessButton)
-            .help("Developer Tools location")
+            .delayedHelp("Developer Tools location")
             Button { model.refreshSelectedSurface() } label: {
                 Image(systemName: "arrow.clockwise").frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
-            .help("Refresh")
+            .delayedHelp("Refresh")
             .disabled(model.selectedTab == .console)
             Button(action: onClose) {
                 Image(systemName: "xmark").frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
-            .help("Close Developer Tools")
+            .delayedHelp("Close Developer Tools")
         }
         .frame(height: 30)
         .background(Color(nsColor: .controlBackgroundColor))
@@ -686,7 +686,7 @@ struct DeveloperToolsView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Button { model.clearConsole() } label: { Image(systemName: "clear") }
-                    .buttonStyle(.plain).help("Clear console")
+                    .buttonStyle(.plain).delayedHelp("Clear console")
                 TextField("Search Console", text: $model.consoleFilter)
                     .textFieldStyle(.plain)
                     .font(.system(size: 11))
@@ -756,7 +756,7 @@ struct DeveloperToolsView: View {
                     }
                     .buttonStyle(.bordered)
                     .tint(model.isInteractiveInspection ? .accentColor : .secondary)
-                    .help("Pick an element from the page (⌘⌥C)")
+                    .delayedHelp("Pick an element from the page (⌘⌥C)")
 
                     TextField("Filter elements", text: $model.elementsFilter)
                         .textFieldStyle(.plain)
@@ -879,7 +879,7 @@ struct DeveloperToolsView: View {
                             HStack(spacing: 0) {
                                 HStack(spacing: 6) {
                                     Image(systemName: icon(for: entry.type)).foregroundStyle(color(for: entry.type)).frame(width: 13)
-                                    Text(entry.name).lineLimit(1).help(entry.url)
+                                    Text(entry.name).lineLimit(1).delayedHelp(entry.url)
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                                 Text(entry.status).frame(width: 58, alignment: .leading)
                                 Text(entry.type).frame(width: 72, alignment: .leading).foregroundStyle(.secondary)

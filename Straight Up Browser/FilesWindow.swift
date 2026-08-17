@@ -187,11 +187,11 @@ struct FilesWindow: View {
             }
             ToolbarItem {
                 Button { refresh() } label: { Image(systemName: "arrow.clockwise") }
-                    .help("Refresh")
+                    .delayedHelp("Refresh")
             }
             ToolbarItem {
                 Button(role: .destructive) { showClearConfirm = true } label: { Image(systemName: "trash") }
-                    .help("Clear history")
+                    .delayedHelp("Clear history")
                     .disabled(manager.records.isEmpty)
             }
         }
@@ -351,7 +351,7 @@ private struct ActiveDownloadRow: View {
                     Image(systemName: "pause.fill")
                 }
                 .buttonStyle(.borderless)
-                .help("Pause")
+                .delayedHelp("Pause")
             case .pausing:
                 ProgressView().controlSize(.small)
             case .paused, .failed:
@@ -359,12 +359,12 @@ private struct ActiveDownloadRow: View {
                     Image(systemName: "arrow.clockwise")
                 }
                 .buttonStyle(.borderless)
-                .help("Restart")
+                .delayedHelp("Restart")
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
                 }
                 .buttonStyle(.borderless)
-                .help("Remove from List")
+                .delayedHelp("Remove from List")
             }
         }
         .padding(.vertical, 5)
