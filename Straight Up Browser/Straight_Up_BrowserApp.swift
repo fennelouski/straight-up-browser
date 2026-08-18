@@ -34,6 +34,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ScreenshotSettings.selfCheck()
         #endif
 
+        NewTabButtonVisibility.noteLaunch()
+
         // Disable automatic window tabbing
         NSWindow.allowsAutomaticWindowTabbing = false
 
@@ -267,6 +269,7 @@ struct Straight_Up_BrowserApp: App {
     // its key equivalents whenever a shortcut is rebound — same invalidation the
     // cmdPExportsPDF toggle relies on.
     @AppStorage(ShortcutStore.revisionKey) private var shortcutsRevision = 0
+    @AppStorage(SettingsManager.aiFeaturesKey) private var aiFeaturesEnabled = true
     @State private var showStartupRecoveryNotice = true
     @Environment(\.openWindow) private var openWindow
     private var colorScheme: ColorScheme? {
@@ -529,10 +532,12 @@ struct Straight_Up_BrowserApp: App {
                 }
                 .keyboardShortcut(sc(.reopenTab))
 
-                Button("AI Agent") {
-                    NotificationCenter.default.post(name: .browserToggleAgent, object: nil)
+                if aiFeaturesEnabled {
+                    Button("AI Agent") {
+                        NotificationCenter.default.post(name: .browserToggleAgent, object: nil)
+                    }
+                    .keyboardShortcut(sc(.agentPanel))
                 }
-                .keyboardShortcut("a", modifiers: [.command, .shift])
 
                 Button("Scratch Pad") {
                     NotificationCenter.default.post(name: .browserToggleScratchPad, object: nil)

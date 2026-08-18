@@ -97,6 +97,7 @@ struct ScratchPadView: View {
     @State private var selectedItemID: UUID?
     @State private var keyEventMonitor: Any?
     @FocusState private var noteFocused: Bool
+    @AppStorage(SettingsManager.aiFeaturesKey) private var aiFeaturesEnabled = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -186,21 +187,23 @@ struct ScratchPadView: View {
                 Text("⌘↩  Save note")
                 Text("⇧⌘D  Clip page")
                 Text("⌥↑ / ⌥↓  Select clip")
-                Text("⇧⌘↩  Ask Agent")
+                if aiFeaturesEnabled { Text("⇧⌘↩  Ask Agent") }
                 Text("⌥⌘↩  Add to Newspaper")
                 Text("⇧⌘C  Copy clip")
                 Text("⌥⌘O  Open source")
                 Text("⌘⌫  Delete clip")
-                Text("Esc  Back to Agent")
+                Text(aiFeaturesEnabled ? "Esc  Back to Agent" : "Esc  Close")
             } label: {
                 Image(systemName: "keyboard")
             }
             .menuStyle(.borderlessButton)
             .delayedHelp("Scratch Pad keyboard commands")
-            Button(action: onClose) { Image(systemName: "sparkles") }
+            Button(action: onClose) {
+                Image(systemName: aiFeaturesEnabled ? "sparkles" : "xmark")
+            }
                 .buttonStyle(.plain)
-                .delayedHelp("Back to Agent")
-                .accessibilityLabel("Back to Agent")
+                .delayedHelp(aiFeaturesEnabled ? "Back to Agent" : "Close")
+                .accessibilityLabel(aiFeaturesEnabled ? "Back to Agent" : "Close")
         }
         .padding(12)
     }
@@ -289,7 +292,7 @@ struct ScratchPadView: View {
     }
 
     private func askAgentAboutSelection() {
-        guard let selectedItem else { return }
+        guard aiFeaturesEnabled, let selectedItem else { return }
         onAskAgent(selectedItem)
     }
 
@@ -451,6 +454,7 @@ struct ScratchPadView: View {
 
 private struct ScratchPadItemRow: View {
     @Environment(\.modelContext) private var modelContext
+    @AppStorage(SettingsManager.aiFeaturesKey) private var aiFeaturesEnabled = true
     @Bindable var item: ScratchPadItem
     let isSelected: Bool
     let onSelect: () -> Void
@@ -504,11 +508,13 @@ private struct ScratchPadItemRow: View {
             }
 
             HStack(spacing: 12) {
-                Button(action: onAskAgent) {
-                    Label("Ask Agent", systemImage: "sparkles")
+                if aiFeaturesEnabled {
+                    Button(action: onAskAgent) {
+                        Label("Ask Agent", systemImage: "sparkles")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(item.agentContext.isEmpty)
                 }
-                .buttonStyle(.borderless)
-                .disabled(item.agentContext.isEmpty)
                 if item.sourceURL?.scheme == "http" || item.sourceURL?.scheme == "https" {
                     Button(action: onAddToNewspaper) {
                         Label("Newspaper", systemImage: "newspaper")
@@ -534,7 +540,7 @@ private struct ScratchPadItemRow: View {
         .onTapGesture(perform: onSelect)
         .onDrag { item.itemProvider }
         .contextMenu {
-            Button("Ask Agent", action: onAskAgent)
+            if aiFeaturesEnabled { Button("Ask Agent", action: onAskAgent) }
             if item.sourceURL?.scheme == "http" || item.sourceURL?.scheme == "https" {
                 Button("Add Source to Newspaper", action: onAddToNewspaper)
             }

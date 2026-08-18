@@ -536,14 +536,25 @@ class WebViewManager: NSObject, ObservableObject {
 
     func thumbnail(for tabId: UUID) -> WebViewThumbnail? { thumbnails[tabId] }
 
-    // ponytail: only a web view that's on screen can be snapshotted, so this
-    // captures the tab you're leaving (and, on demand, the one you're on). Tabs
-    // you haven't visited this session simply have no card.
-    func captureThumbnail(for tabId: UUID?) {
+    #if canImport(AppKit)
+    // Off-screen preview warm-up. Implementation in TabPreviewOven.swift.
+    var ovenQueue: [(id: UUID, url: URL?)] = []
+    var ovenBaking: UUID?
+    var ovenWindow: NSWindow?
+    #endif
+
+    // Only a web view that is in a window and not hidden actually paints, so
+    // this captures the tab you're leaving, the tab you're on, and whatever the
+    // oven has parked off screen. A hidden background tab snapshots blank, and
+    // a blank card is worse than a stale one — hence the isHidden guard.
+    func captureThumbnail(for tabId: UUID?, afterScreenUpdates: Bool = true) {
         guard let tabId, let webView = webViews[tabId],
-              webView.window != nil, webView.bounds.width > 0 else { return }
+              webView.window != nil, !webView.isHidden, webView.bounds.width > 0 else { return }
         let config = WKSnapshotConfiguration()
         config.snapshotWidth = 400
+        // Off screen there are no screen updates to wait for; the web content
+        // process renders the frame either way.
+        config.afterScreenUpdates = afterScreenUpdates
         webView.takeSnapshot(with: config) { [weak self] image, _ in
             guard let image else { return }
             self?.thumbnails[tabId] = image
@@ -863,6 +874,9 @@ class WebViewManager: NSObject, ObservableObject {
             ownedTabIds.remove(tabId)
             tabSessions.removeValue(forKey: tabId)
             thumbnails.removeValue(forKey: tabId)
+            #if canImport(AppKit)
+            ovenQueue.removeAll { $0.id == tabId }
+            #endif
             mediaSuspendedTabs.remove(tabId)
         }
     }

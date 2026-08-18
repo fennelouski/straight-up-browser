@@ -49,6 +49,9 @@ class KeyboardShortcutsManager {
         return max(quitHoldMinPercent, min(quitHoldMaxPercent, percent)) * quitHoldMaxDuration
     }
 
+    // Tracks Control across flagsChanged events so the release edge is visible.
+    private var controlWasDown = false
+
     private var quitHoldState: QuitHoldState = .inactive
     private var quitHoldTimer: Timer?
     private var quitHoldReleaseTimer: Timer?
@@ -92,6 +95,15 @@ class KeyboardShortcutsManager {
                 if self.quitHoldState != .inactive && !event.modifierFlags.contains(.command) {
                     self.terminateHoldBecauseModifierLost()
                 }
+                // Letting go of Control commits a ⌃Tab run, the same moment the
+                // macOS app switcher commits. Rebinding Next Tab to a chord
+                // without Control leaves the run open until the next ordinary
+                // tab selection closes it instead.
+                let controlDown = event.modifierFlags.contains(.control)
+                if self.controlWasDown && !controlDown {
+                    NotificationCenter.default.post(name: .browserEndTabCycle, object: nil)
+                }
+                self.controlWasDown = controlDown
                 return event
             default:
                 break

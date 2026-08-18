@@ -591,8 +591,16 @@ struct ContentView: View {
     private var visualTabAspectRatio = VisualTabPreferences.defaultAspectRatio
     @AppStorage(VisualTabPreferences.livePreviewsKey)
     private var visualTabLivePreviews = true
+    @AppStorage(VisualTabPreferences.switcherKey)
+    private var visualTabSwitcher = true
+    @AppStorage(SettingsManager.aiFeaturesKey) private var aiFeaturesEnabled = true
+    @AppStorage(NewTabButtonVisibility.visibleKey) private var showNewTabButton = true
     @State private var topTabsRevealed = false
     @State private var visualPreviewRefresh = UUID()
+    @State private var showTabSwitcher = false
+    @State private var tabSwitcherTask: Task<Void, Never>?
+    @State private var warmedTabIds: Set<UUID> = []
+    @StateObject private var tabCardNames = TabCardNames.shared
     @State private var newspaperSaveFlightToken: UUID?
 
     // Force view updates when tab selection changes
@@ -899,17 +907,25 @@ struct ContentView: View {
         return newspaperArticles.contains { $0.sourceKey == key }
     }
 
+    // Four buttons, and the first one is optional. Workspaces, containers, and
+    // incognito all live inside the groups menu now — they are all "put these
+    // tabs somewhere", and none of them earned a permanent glyph of its own.
     private var tabBarHeaderButtons: some View {
         HStack(spacing: 4) {
-            Button(action: createNewTab) {
-                Image(systemName: "plus")
-                    .font(.system(size: 12))
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
+            if showNewTabButton {
+                Button {
+                    NewTabButtonVisibility.noteUsed()
+                    createNewTab()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12))
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .delayedHelp("New Tab · ⌘T")
+                .accessibilityLabel("New Tab")
             }
-            .buttonStyle(.plain)
-            .delayedHelp("New Tab · ⌘T")
-            .accessibilityLabel("New Tab")
 
             Button {
                 webViewManager?.captureThumbnail(for: tabManager.selectedTabId)
@@ -924,47 +940,45 @@ struct ContentView: View {
             .delayedHelp("Visual Tabs · ⌘O")
             .accessibilityLabel("Visual Tabs")
 
-            Button(action: { showAgentPanel.toggle() }) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 12))
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .delayedHelp("AI Agent · ⇧⌘A")
-            .accessibilityLabel("AI Agent")
-
-            Button(action: { showCreateGroupDialog = true }) {
-                Image(systemName: "folder.badge.plus")
-                    .font(.system(size: 12))
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .delayedHelp("New Group")
-            .accessibilityLabel("New Group")
-
             Menu {
-                Button("Save Workspace", action: { showSaveWorkspaceDialog = true })
+                Button("New Group…", action: { showCreateGroupDialog = true })
+
                 Divider()
+
+                Button("New Incognito Tab") {
+                    _ = tabManager.createIncognitoTab()
+                    showOmnibar = true
+                }
+                ForEach(browserSessions) { session in
+                    Menu(session.name) {
+                        Button("Open Tab") {
+                            _ = tabManager.createTab(inheriting: (.container, session.id))
+                            showOmnibar = true
+                        }
+                        Button("Delete Container & Data", role: .destructive) {
+                            deleteContainer(session)
+                        }
+                    }
+                }
+                Button("New Container…") { showCreateContainerDialog = true }
+
+                Divider()
+
+                Button("Save Workspace…", action: { showSaveWorkspaceDialog = true })
                 ForEach(savedWorkspaces) { workspace in
                     Button(workspace.name) {
                         loadWorkspace(workspace)
                     }
                 }
-                if savedWorkspaces.isEmpty {
-                    Text("No saved workspaces")
-                        .foregroundColor(.secondary)
-                }
             } label: {
-                Image(systemName: "square.stack")
+                Image(systemName: "folder")
                     .font(.system(size: 12))
                     .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
-            .delayedHelp("Workspaces")
-            .accessibilityLabel("Workspaces")
+            .delayedHelp("Groups, containers, and workspaces")
+            .accessibilityLabel("Groups, Containers, and Workspaces")
 
             Menu {
                 Button("Open Newspaper") { openWindow(id: "newspaper") }
@@ -982,50 +996,6 @@ struct ContentView: View {
             .menuStyle(.borderlessButton)
             .delayedHelp("Newspaper · add page with ⌥⌘N or ⇧⌘N")
             .accessibilityLabel("Newspaper")
-
-            Menu {
-                Button("New Incognito Tab") {
-                    _ = tabManager.createIncognitoTab()
-                    showOmnibar = true
-                }
-                Divider()
-                ForEach(browserSessions) { session in
-                    Menu(session.name) {
-                        Button("Open Tab") {
-                            _ = tabManager.createTab(inheriting: (.container, session.id))
-                            showOmnibar = true
-                        }
-                        Button("Delete Container & Data", role: .destructive) {
-                            deleteContainer(session)
-                        }
-                    }
-                }
-                if !browserSessions.isEmpty { Divider() }
-                Button("New Container…") { showCreateContainerDialog = true }
-            } label: {
-                Image(systemName: "person.2")
-                    .font(.system(size: 12))
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
-            }
-            .menuStyle(.borderlessButton)
-            .delayedHelp("Containers & Incognito")
-            .accessibilityLabel("Containers and Incognito")
-
-            // Same items as the menu bar's Autofill submenu — see AutofillMenu.swift.
-            // The glyph dims when autofill is off so the state reads at a glance.
-            Menu {
-                AutofillMenuContent()
-            } label: {
-                Image(systemName: "text.append")
-                    .font(.system(size: 12))
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
-            }
-            .menuStyle(.borderlessButton)
-            .opacity(AutofillPreferences.shared.isEnabled ? 1 : 0.4)
-            .delayedHelp(AutofillPreferences.shared.isEnabled ? "Autofill · ⌥⌘A" : "Autofill (off) · ⌥⌘A")
-            .accessibilityLabel("Autofill")
 
             Spacer(minLength: 0)
         }
@@ -1114,7 +1084,9 @@ struct ContentView: View {
                             isDisplayedInSplit: tabManager.splitTabIds.contains(tab.id),
                             automaticLinkBirthCue: tabManager.automaticLinkBirthCue,
                             thumbnail: webViewManager?.thumbnail(for: tab.id),
-                            expandedHeight: adaptiveHeight
+                            expandedHeight: adaptiveHeight,
+                            cardLabels: adaptiveHeight != nil ? cardLabels(for: tab) : nil,
+                            onHover: { hoverPreview(tab) }
                         )
                         .contextMenu {
                             let webView = webViewManager?.existingWebView(for: tab.id)
@@ -2371,8 +2343,39 @@ struct ContentView: View {
                     selectedTabId: tabManager.selectedTabId,
                     thumbnail: { webViewManager?.thumbnail(for: $0) },
                     onSelect: { tabManager.selectedTabId = $0 },
-                    refreshLivePreviews: refreshVisualTabPreviews
+                    refreshLivePreviews: refreshVisualTabPreviews,
+                    labels: cardLabels,
+                    onHover: hoverPreview
                 )
+            }
+        }
+    }
+
+    private var agentPanelOverlay: some View {
+        Group {
+            // The Scratch Pad is drawn as an overlay on the agent panel, so with
+            // AI off the panel still hosts it — nothing of the agent shows.
+            if showAgentPanel && (aiFeaturesEnabled || showScratchPad) {
+                agentPanelView
+                    .transition(.move(edge: agentPanelSide.edge).combined(with: .opacity))
+                    .zIndex(20)
+            }
+        }
+        .contentViewTypeErased()
+    }
+
+    // Thumbnails of every tab while ⌃Tab cycles through them.
+    private var tabSwitcherOverlay: some View {
+        Group {
+            if showTabSwitcher {
+                TabSwitcherStrip(
+                    tabs: visibleTabOrder,
+                    selectedTabId: tabManager.selectedTabId,
+                    thumbnail: { webViewManager?.thumbnail(for: $0) },
+                    labels: cardLabels
+                )
+                .padding(.horizontal, 24)
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
         }
     }
@@ -2459,8 +2462,14 @@ struct ContentView: View {
                 }
                 UserDefaults.standard.set(tabBarWidth, forKey: "tabBarWidth")
             }
+            // Global coordinate space, not the grip's own: the grip rides the
+            // edge it's resizing, so a local translation is measured against a
+            // view that just moved by that translation — the sidebar chased its
+            // own tail and flickered between layouts. Also no explicit defaults
+            // write per frame; @AppStorage already persists, and writing twice a
+            // frame invalidated every other @AppStorage reader mid-drag.
             .gesture(
-                DragGesture()
+                DragGesture(minimumDistance: 0, coordinateSpace: .global)
                     .onChanged { value in
                         let startWidth = tabBarResizeStartWidth ?? tabBarWidth
                         if tabBarResizeStartWidth == nil {
@@ -2471,8 +2480,8 @@ struct ContentView: View {
                             translationX: value.translation.width,
                             side: tabSidebarSide
                         )
+                        guard newWidth != tabBarWidth else { return }
                         tabBarWidth = newWidth
-                        UserDefaults.standard.set(newWidth, forKey: "tabBarWidth")
                     }
                     .onEnded { _ in
                         tabBarResizeStartWidth = nil
@@ -2508,7 +2517,9 @@ struct ContentView: View {
         .frame(width: effectiveTabSidebarWidth)
     }
 
-    var body: some View {
+    // The page, the sidebar, and its resize grip. Split out of `body` purely to
+    // keep the modifier chain inside the type checker's budget.
+    private var windowChrome: some View {
         ZStack {
             HStack(spacing: 0) {
                 Spacer().frame(width: reservedChromeWidth(on: .left))
@@ -2537,34 +2548,40 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.all) // Ignore safe areas to extend to edges
         .background(Color(.windowBackgroundColor)) // Set explicit background
-        .overlay(screenshotFlashOverlay)
-        .overlay(NewspaperSaveFlight(
-            token: newspaperSaveFlightToken,
-            destinationSide: tabSidebarSide
-        ))
-        .overlay(autofillSuggestionOverlay)
-        // The autofill menus live in two places that can't share a @Query — the
-        // sidebar header and the menu bar, which never sees the model container.
-        // This window owns the query and publishes a name-only projection.
-        .modifier(AutofillWindowBridge(
-            profiles: autofillProfileSummaries,
-            pageURL: currentURL,
-            onEnabledChange: showAutofillHUD(enabled:)
-        ))
-        .overlay { faviconPeekOverlay }
-        .overlay(alignment: agentPanelSide.alignment) {
-            if showAgentPanel {
-                agentPanelView
-                    .transition(.move(edge: agentPanelSide.edge).combined(with: .opacity))
-                    .zIndex(20)
-            }
-        }
-        // One session, serialized by pageTranslator's own queue: it advances
-        // `configuration` to the next pending request as each one finishes.
-        .translationTask(pageTranslator.configuration) { session in
-            await pageTranslator.perform(session: session)
-        }
         .contentViewTypeErased()
+    }
+
+    // Everything painted over the window. Split out of `body` for the same
+    // reason as windowChrome: one modifier chain, one type-checking budget.
+    private var windowOverlays: some View {
+        windowChrome
+            .overlay(tabSwitcherOverlay.zIndex(9))
+            .overlay(screenshotFlashOverlay)
+            .overlay(NewspaperSaveFlight(
+                token: newspaperSaveFlightToken,
+                destinationSide: tabSidebarSide
+            ))
+            .overlay(autofillSuggestionOverlay)
+            // The autofill menus live in two places that can't share a @Query — the
+            // sidebar header and the menu bar, which never sees the model container.
+            // This window owns the query and publishes a name-only projection.
+            .modifier(AutofillWindowBridge(
+                profiles: autofillProfileSummaries,
+                pageURL: currentURL,
+                onEnabledChange: showAutofillHUD(enabled:)
+            ))
+            .overlay { faviconPeekOverlay }
+            .overlay(alignment: agentPanelSide.alignment) { agentPanelOverlay }
+            // One session, serialized by pageTranslator's own queue: it advances
+            // `configuration` to the next pending request as each one finishes.
+            .translationTask(pageTranslator.configuration) { session in
+                await pageTranslator.perform(session: session)
+            }
+            .contentViewTypeErased()
+    }
+
+    var body: some View {
+        windowOverlays
         .onAppear {
             // One-time setup; onAppear can fire again (window reopen) and must
             // not recreate managers or stack observers
@@ -2674,7 +2691,16 @@ struct ContentView: View {
                     object: nil,
                     queue: .main
                 ) { [self] _ in
+                    guard aiFeaturesEnabled else { return }
                     withAnimation(.easeInOut(duration: 0.2)) { showAgentPanel.toggle() }
+                }
+
+                NotificationCenter.default.addMainActorObserver(
+                    forName: .browserEndTabCycle,
+                    object: nil,
+                    queue: .main
+                ) { [self] _ in
+                    tabManager.endRecentTabCycle()
                 }
 
                 NotificationCenter.default.addMainActorObserver(
@@ -2708,6 +2734,15 @@ struct ContentView: View {
                     }
                 }
 
+                // ⌃Tab and ⇧⌃Tab switch the tab elsewhere; this only raises the
+                // strip of thumbnails so you can see where you landed.
+                NotificationCenter.default.addMainActorObserver(forName: .browserNextTab, object: nil, queue: .main) { [self] _ in
+                    flashTabSwitcher()
+                }
+                NotificationCenter.default.addMainActorObserver(forName: .browserPreviousTab, object: nil, queue: .main) { [self] _ in
+                    flashTabSwitcher()
+                }
+
                 NotificationCenter.default.addMainActorObserver(forName: .browserShowTabGrid, object: nil, queue: .main) { [self] _ in
                     // Snapshot the tab you're on first; every other tab was captured
                     // when you switched away from it.
@@ -2725,9 +2760,7 @@ struct ContentView: View {
                     showOmnibar = true
                 }
                 NotificationCenter.default.addMainActorObserver(forName: .browserConvertTabToIncognito, object: nil, queue: .main) { [self] _ in
-                    if let tab = allTabs.first(where: { $0.id == tabManager.selectedTabId }) {
-                        tabManager.convertToIncognito(tab)
-                    }
+                    convertSelectedTabToIncognito()
                 }
                 NotificationCenter.default.addMainActorObserver(forName: .browserClearSiteData, object: nil, queue: .main) { [self] _ in
                     clearActiveSite()
@@ -2875,10 +2908,13 @@ struct ContentView: View {
                 }
             }
         }
-        .task(id: visualTabLivePreviews && tabBarWidth >= 120) {
-            guard visualTabLivePreviews, tabBarWidth >= 120 else { return }
+        // The card for the tab you're on stays current whether or not the sidebar
+        // is wide enough to show it — ⌘O and ⌃Tab read the same cache. Naming and
+        // cold-tab bakes ride this tick rather than each earning their own timer.
+        .task(id: visualTabLivePreviews) {
+            guard visualTabLivePreviews else { return }
             while !Task.isCancelled {
-                refreshVisualTabPreviews()
+                visualTabTick()
                 try? await Task.sleep(for: .seconds(1.5))
             }
         }
@@ -3430,13 +3466,92 @@ struct ContentView: View {
         newspaperSaveFlightToken = UUID()
     }
 
+    // One tick of visual-tab upkeep: re-capture what's on screen, name whatever
+    // the model hasn't named, bake a card for whatever has none.
+    private func visualTabTick() {
+        refreshVisualTabPreviews()
+        tabCardNames.requestMissing(for: allTabs)
+        warmBackgroundPreviews()
+    }
+
     private func refreshVisualTabPreviews() {
-        guard visualTabLivePreviews else { return }
+        // Only the tabs actually on screen can be re-snapshotted, and only while
+        // this app is the one being used — a background window has no free CPU
+        // cycles to spend on cards nobody is looking at.
+        guard visualTabLivePreviews, NSApp.isActive else { return }
         for tabId in displayedTabIds {
             webViewManager?.captureThumbnail(for: tabId)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             visualPreviewRefresh = UUID()
+        }
+    }
+
+    /// The tab under the pointer is the one whose card is about to be read.
+    /// A displayed tab can be re-snapshotted where it stands; anything else has
+    /// to go through the off-screen oven, which also covers tabs this session
+    /// has never opened.
+    private func hoverPreview(_ tab: BrowserTab) {
+        guard visualTabLivePreviews else { return }
+        if displayedTabIds.contains(tab.id) {
+            refreshVisualTabPreviews()
+        } else {
+            webViewManager?.warmThumbnails(for: [(id: tab.id, url: tab.url)])
+        }
+    }
+
+    /// Once the tab you're actually looking at has landed, walk the rest of the
+    /// session and give each one a card. Capped (see ovenLaunchLimit) so a big
+    /// restored session doesn't launch fifty content processes at once — the
+    /// remainder bake on hover.
+    private func warmBackgroundPreviews() {
+        guard visualTabLivePreviews, !isLoading else { return }
+        let displayed = displayedTabIds
+        let cold = allTabs.filter {
+            !displayed.contains($0.id) && $0.url != nil
+                && !warmedTabIds.contains($0.id)
+                && webViewManager?.thumbnail(for: $0.id) == nil
+        }
+        guard !cold.isEmpty else { return }
+        let batch = cold.prefix(WebViewManager.ovenLaunchLimit)
+        if cold.count > batch.count {
+            Logger.log("Preview warm-up: baking \(batch.count) of \(cold.count) cold tabs; the rest wait for hover",
+                       type: "ContentView")
+        }
+        // One automatic attempt each: a page that won't render (an error, a login
+        // wall) must not be reloaded every tick forever. Hover still forces one.
+        warmedTabIds.formUnion(batch.map(\.id))
+        webViewManager?.warmThumbnails(for: batch.map { (id: $0.id, url: $0.url) })
+    }
+
+    private func convertSelectedTabToIncognito() {
+        let working: [BrowserTab] = allTabs
+        let selected: UUID? = tabManager.selectedTabId
+        guard let tab = working.first(where: { $0.id == selected }) else { return }
+        tabManager.convertToIncognito(tab)
+    }
+
+    private func cardLabels(for tab: BrowserTab) -> (title: String, detail: String) {
+        tabCardNames.labels(for: tab, among: allTabs)
+    }
+
+    /// ⌃Tab already switched the tab; this puts the strip of cards up so you can
+    /// see where you are, and takes it down once Control is released.
+    private func flashTabSwitcher() {
+        guard visualTabSwitcher,
+              webViewManager?.activeWebView?.window?.isKeyWindow == true else { return }
+        webViewManager?.captureThumbnail(for: tabManager.selectedTabId)
+        tabSwitcherTask?.cancel()
+        withAnimation(.easeOut(duration: 0.14)) { showTabSwitcher = true }
+        tabSwitcherTask = Task { @MainActor in
+            // Held Control means you're still cycling. A single tap never
+            // registers as held, so the trailing linger covers that case too.
+            while !Task.isCancelled, NSEvent.modifierFlags.contains(.control) {
+                try? await Task.sleep(for: .milliseconds(80))
+            }
+            try? await Task.sleep(for: .milliseconds(550))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) { showTabSwitcher = false }
         }
     }
 

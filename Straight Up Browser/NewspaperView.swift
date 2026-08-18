@@ -739,6 +739,8 @@ private struct NewspaperArticleView: View {
     let onOpenOriginal: (URL) -> Void
     let onDelete: () -> Void
 
+    @AppStorage(SettingsManager.aiFeaturesKey) private var aiFeaturesEnabled = true
+
     @AppStorage(NewspaperPreferences.Key.photoLimit)
     private var photoLimit = NewspaperPreferences.defaultPhotoLimit
     @AppStorage(NewspaperPreferences.Key.targetWordCount)
@@ -1011,7 +1013,8 @@ private struct NewspaperArticleView: View {
             }
             .font(.callout)
             .foregroundStyle(.secondary)
-        } else if article.captureState == .ready,
+        } else if aiFeaturesEnabled,
+                  article.captureState == .ready,
                   article.originalPayloadData != nil,
                   sourceLengthForPreference > preferredTarget.maximum {
             VStack(alignment: .leading, spacing: 8) {

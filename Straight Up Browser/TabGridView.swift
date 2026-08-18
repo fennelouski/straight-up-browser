@@ -14,6 +14,7 @@ enum VisualTabPreferences {
     static let aspectRatioKey = "visualTabAspectRatio"
     static let columnCountKey = "visualTabColumnCount"
     static let livePreviewsKey = "visualTabLivePreviews"
+    static let switcherKey = "visualTabSwitcherStrip"
 
     static let defaultAspectRatio = 1.6
     static let defaultColumnCount = 4
@@ -73,6 +74,91 @@ struct NewspaperSaveFlight: View {
     }
 }
 
+/// ⌃Tab moves fast enough that the sidebar highlight is easy to lose. This is
+/// the same cards, laid out in one row across the middle of the window, up only
+/// while you're cycling. ponytail: the switch commits on every press (Chrome's
+/// behaviour, and it reuses the existing shortcut path) — the strip shows where
+/// you landed rather than where you're about to. Defer the commit to Control-up
+/// if hopping across a big tab set starts feeling expensive.
+struct TabSwitcherStrip: View {
+    let tabs: [Tab]
+    let selectedTabId: UUID?
+    var thumbnail: (UUID) -> NSImage?
+    var labels: ((Tab) -> (title: String, detail: String))? = nil
+
+    private static let cardWidth: CGFloat = 132
+    private static let cardHeight: CGFloat = 82
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(tabs) { tab in
+                        card(for: tab).id(tab.id)
+                    }
+                }
+                .padding(14)
+            }
+            .onAppear { scroll(proxy) }
+            .onChange(of: selectedTabId) { _, _ in scroll(proxy) }
+        }
+        .frame(maxWidth: 720)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.3), radius: 22, y: 8)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy) {
+        guard let selectedTabId else { return }
+        withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(selectedTabId, anchor: .center) }
+    }
+
+    private func card(for tab: Tab) -> some View {
+        let isCurrent = tab.id == selectedTabId
+        return VStack(alignment: .leading, spacing: 4) {
+            Group {
+                if let image = thumbnail(tab.id) {
+                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+                } else {
+                    Group {
+                        if let data = tab.favicon, let icon = NSImage(data: data) {
+                            Image(nsImage: icon).resizable().frame(width: 24, height: 24)
+                        } else {
+                            Image(systemName: "macwindow").font(.system(size: 18)).foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.gray.opacity(0.12))
+                }
+            }
+            .frame(width: Self.cardWidth, height: Self.cardHeight)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+
+            Text(labels?(tab).title ?? (tab.title.isEmpty ? Tab.extractDomain(from: tab.url) : tab.title))
+                .font(.system(size: 11, weight: isCurrent ? .semibold : .regular))
+                .foregroundStyle(isCurrent ? Color.primary : Color.secondary)
+                .lineLimit(1)
+                .frame(width: Self.cardWidth, alignment: .leading)
+        }
+        .padding(5)
+        .background(isCurrent ? Color.accentColor.opacity(0.22) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.accentColor, lineWidth: isCurrent ? 2 : 0)
+        )
+        .scaleEffect(isCurrent ? 1 : 0.94)
+        .animation(.spring(response: 0.24, dampingFraction: 0.8), value: isCurrent)
+    }
+}
+
 struct TabGridView: View {
     @Binding var isPresented: Bool
     let tabs: [Tab]
@@ -80,6 +166,8 @@ struct TabGridView: View {
     var thumbnail: (UUID) -> NSImage?
     var onSelect: (UUID) -> Void
     var refreshLivePreviews: (() -> Void)? = nil
+    var labels: ((Tab) -> (title: String, detail: String))? = nil
+    var onHover: ((Tab) -> Void)? = nil
 
     @State private var index = 0
     @State private var keyMonitor: Any?
@@ -113,6 +201,11 @@ struct TabGridView: View {
                             card(for: tab, isFocused: position == index)
                                 .id(tab.id)
                                 .onTapGesture { choose(tab.id) }
+                                .onHover { hovering in
+                                    guard hovering else { return }
+                                    index = position
+                                    onHover?(tab)
+                                }
                         }
                     }
                     .padding(24)
@@ -169,11 +262,12 @@ struct TabGridView: View {
             .frame(width: Self.cardWidth, height: cardHeight)
             .clipped()
 
+            let label = labels?(tab)
             VStack(alignment: .leading, spacing: 1) {
-                Text(tab.title.isEmpty ? (tab.url?.host ?? String(localized: "New Tab")) : tab.title)
+                Text(label?.title ?? (tab.title.isEmpty ? (tab.url?.host ?? String(localized: "New Tab")) : tab.title))
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
-                Text(tab.url?.host ?? "")
+                Text(label?.detail ?? tab.url?.host ?? "")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

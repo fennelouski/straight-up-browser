@@ -273,6 +273,7 @@ struct GeneralSettingsView: View {
 
 struct ShortcutsSettingsView: View {
     private var store: ShortcutStore { .shared }
+    @AppStorage(SettingsManager.recentTabCyclingKey) private var recentTabCycling = false
 
     var body: some View {
         // Commands sharing a chord get flagged; nothing collides by default, so
@@ -299,11 +300,19 @@ struct ShortcutsSettingsView: View {
                 SettingsLabel("Keyboard Shortcuts", systemImage: "keyboard", tint: SettingsTint.shortcuts)
             }
 
+            Section {
+                Toggle("⌃Tab cycles tabs in the order you used them", isOn: $recentTabCycling)
+                Text("Off, ⌃Tab steps down the sidebar. On, it works like ⌘Tab between apps: the tab you're on is first, the one you came from is second, and letting go of Control puts whatever you landed on back at the front.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                SettingsLabel("Tab Switching", systemImage: "arrow.left.arrow.right", tint: SettingsTint.shortcuts)
+            }
+
             WebsiteShortcutPriorityView()
 
             ForEach(ShortcutSection.allCases, id: \.self) { section in
                 Section {
-                    ForEach(ShortcutCommand.all.filter { $0.section == section }) { command in
+                    ForEach(ShortcutCommand.availableOnCurrentPlatform.filter { $0.section == section }) { command in
                         shortcutRow(command, conflicting: conflictIDs.contains(command.id))
                     }
                 } header: {
@@ -1087,6 +1096,12 @@ struct AppearanceSettingsView: View {
     private var visualTabColumnCount = VisualTabPreferences.defaultColumnCount
     @AppStorage(VisualTabPreferences.livePreviewsKey)
     private var visualTabLivePreviews = true
+    @AppStorage(VisualTabPreferences.switcherKey)
+    private var visualTabSwitcher = true
+    @AppStorage(TabCardNames.useAppleIntelligenceKey)
+    private var tabCardNamesUseAI = true
+    @AppStorage(NewTabButtonVisibility.visibleKey) private var showNewTabButton = true
+    @AppStorage(SettingsManager.aiFeaturesKey) private var aiFeaturesEnabled = true
     @AppStorage(BrowserChromePlacementSettings.Key.tabSidebarSide)
     private var tabSidebarSideRaw = BrowserChromeSide.left.rawValue
     #if os(macOS)
@@ -1141,7 +1156,14 @@ struct AppearanceSettingsView: View {
                 }
                 Stepper("Visual tab columns: \(visualTabColumnCount)", value: $visualTabColumnCount, in: 1...6)
                 Toggle("Keep visual tab previews live", isOn: $visualTabLivePreviews)
-                Text("Compact and wide sidebars always show visual cards. Live previews refresh visible pages while visual tabs are on screen.")
+                Text("Compact and wide sidebars always show visual cards. Live previews refresh the page you're on, load the rest in the background for their first card, and re-capture whichever tab you point at.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("Show tab thumbnails while switching with ⌃Tab", isOn: $visualTabSwitcher)
+                Toggle("Show the new tab button above the sidebar", isOn: $showNewTabButton)
+                Text("⌘T always opens a tab. The button retires itself if a week and ten launches go by without a click; this puts it back.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("Name visual tabs with Apple Intelligence", isOn: $tabCardNamesUseAI)
+                Text("Gives each card two different lines — the site and the page — and puts whichever one tells the tab apart from its neighbors on top. Off, cards fall back to the page title and domain.")
                     .font(.caption).foregroundStyle(.secondary)
             } header: {
                 SettingsLabel("Tabs", systemImage: "rectangle.topthird.inset.filled", tint: SettingsTint.appearance)
@@ -1198,13 +1220,15 @@ struct AppearanceSettingsView: View {
                 SettingsLabel("Theme", systemImage: "paintbrush", tint: SettingsTint.appearance)
             }
 
-            Section {
-                ColorPicker("Effect color", selection: aiSearchEffectColorBinding, supportsOpacity: false)
-                Text("Used for the sparkles when AI Search is enabled. Defaults to the app logo blue.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                SettingsLabel("AI Search", systemImage: "sparkles", tint: aiSearchEffectColor)
+            if aiFeaturesEnabled {
+                Section {
+                    ColorPicker("Effect color", selection: aiSearchEffectColorBinding, supportsOpacity: false)
+                    Text("Used for the sparkles when AI Search is enabled. Defaults to the app logo blue.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    SettingsLabel("AI Search", systemImage: "sparkles", tint: aiSearchEffectColor)
+                }
             }
 
             Section {

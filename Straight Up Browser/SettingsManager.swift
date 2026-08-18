@@ -137,6 +137,31 @@ class SettingsManager {
         userDefaults.bool(forKey: Self.automaticLinkSplitKey)
     }
 
+    // MARK: - AI Features
+
+    static let aiFeaturesKey = "aiFeaturesEnabled"
+
+    /// Master switch for every AI surface in the interface. Off hides the agent
+    /// panel, its menu item, its keyboard shortcut, and every other AI
+    /// affordance; only Settings > Agent keeps its AI wording so the feature can
+    /// be switched back on. On-device Apple Intelligence (visual tab names, site
+    /// nicknames) has no UI of its own and keeps its own toggles.
+    /// Defaults on when unset.
+    var aiFeaturesEnabled: Bool {
+        userDefaults.object(forKey: Self.aiFeaturesKey) == nil
+            || userDefaults.bool(forKey: Self.aiFeaturesKey)
+    }
+
+    // MARK: - Tab Cycling
+
+    static let recentTabCyclingKey = "tabCycleUsesRecentOrder"
+
+    /// When on, ⌃Tab walks the tabs in most-recently-used order the way ⌘Tab
+    /// walks apps, instead of stepping down the sidebar. Off by default.
+    var recentTabCycling: Bool {
+        userDefaults.bool(forKey: Self.recentTabCyclingKey)
+    }
+
     // MARK: - Option-Click Download
 
     /// Should an option-click on this URL trigger a download?
@@ -167,4 +192,46 @@ class SettingsManager {
         return types.contains(url.pathExtension.lowercased())
     }
 
+}
+
+/// The sidebar's "+" button retires itself: a week without a click that also
+/// spans ten launches hides it, and Appearance settings puts it back for good.
+/// ⌘T is unaffected — this is only about the button.
+enum NewTabButtonVisibility {
+    static let visibleKey = "showNewTabButton"      // absent = still deciding
+    static let lastUsedKey = "newTabButtonLastUsed"
+    static let launchCountKey = "appLaunchCount"
+    static let lastUsedLaunchKey = "newTabButtonLastUsedLaunch"
+
+    static let neglectInterval: TimeInterval = 7 * 24 * 60 * 60
+    static let neglectLaunches = 10
+
+    static func isVisible(_ defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: visibleKey) == nil || defaults.bool(forKey: visibleKey)
+    }
+
+    /// Clicking the button resets both counters.
+    static func noteUsed(now: Date = Date(), defaults: UserDefaults = .standard) {
+        defaults.set(now, forKey: lastUsedKey)
+        defaults.set(defaults.integer(forKey: launchCountKey), forKey: lastUsedLaunchKey)
+    }
+
+    /// Once per launch. Only decides anything while the user has no explicit
+    /// preference — the moment they set the toggle either way, this stops.
+    static func noteLaunch(now: Date = Date(), defaults: UserDefaults = .standard) {
+        let launch = defaults.integer(forKey: launchCountKey) + 1
+        defaults.set(launch, forKey: launchCountKey)
+        if defaults.object(forKey: lastUsedKey) == nil {
+            // Never clicked: the clock starts at the first launch that saw it.
+            defaults.set(now, forKey: lastUsedKey)
+            defaults.set(launch, forKey: lastUsedLaunchKey)
+        }
+        guard defaults.object(forKey: visibleKey) == nil else { return }
+        let lastUsed = defaults.object(forKey: lastUsedKey) as? Date ?? now
+        let staleByTime = now.timeIntervalSince(lastUsed) >= neglectInterval
+        let staleByLaunches = launch - defaults.integer(forKey: lastUsedLaunchKey) >= neglectLaunches
+        if staleByTime && staleByLaunches {
+            defaults.set(false, forKey: visibleKey)
+        }
+    }
 }

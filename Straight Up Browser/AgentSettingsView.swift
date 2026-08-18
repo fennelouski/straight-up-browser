@@ -75,6 +75,7 @@ struct AgentSettingsView: View {
     private var loadsMorePageContent = true
     @AppStorage(AgentSettingsRuntimeKey.panelSide)
     private var panelSideRaw = BrowserChromeSide.left.rawValue
+    @AppStorage(SettingsManager.aiFeaturesKey) private var aiFeaturesEnabled = true
     @AppStorage(AgentSettingsRuntimeKey.endpoint)
     private var customEndpoint = ""
     @AppStorage(AgentSettingsRuntimeKey.model)
@@ -202,16 +203,19 @@ struct AgentSettingsView: View {
 
     var body: some View {
         Form {
-            interfaceSection
-            providerSection
-            providerPricingSection
-            coworkSection
-            managementSection
-            safetySection
-            delegationSection
-            memorySection
-            diagnosticsSection
-            syncSection
+            availabilitySection
+            if aiFeaturesEnabled {
+                interfaceSection
+                providerSection
+                providerPricingSection
+                coworkSection
+                managementSection
+                safetySection
+                delegationSection
+                memorySection
+                diagnosticsSection
+                syncSection
+            }
         }
         .formStyle(.grouped)
         .onAppear {
@@ -293,6 +297,20 @@ struct AgentSettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This permanently deletes every saved conversation, Run, Step, approval record, retained artifact, replay frame, scheduler occurrence record, private Cowork transaction workspace, and retired legacy history source. Scheduled task definitions, committed Cowork files, scoped memory, local metrics, provider credentials, and app integrations are preserved.")
+        }
+    }
+
+    // The one place AI keeps its name when it's switched off — otherwise there
+    // would be no way back. On-device Apple Intelligence has no UI of its own
+    // and keeps its own toggles in General and Appearance.
+    private var availabilitySection: some View {
+        Section {
+            Toggle("Show AI features", isOn: $aiFeaturesEnabled)
+            Text("Off hides the Agent panel, its ⇧⌘A shortcut and keyboard-shortcut entry, AI Search, and every other AI affordance in the app. Nothing is deleted — your provider, keys, and history are still here when you switch it back on. Apple Intelligence features that run on your Mac (visual tab names, site nicknames) have no interface of their own and are switched separately.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } header: {
+            SettingsLabel("AI Features", systemImage: "sparkles", tint: SettingsTint.agent)
         }
     }
 

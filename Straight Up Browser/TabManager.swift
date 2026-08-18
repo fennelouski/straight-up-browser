@@ -66,6 +66,7 @@ class TabManager: NSObject, ObservableObject {
     // (see docs/adr/0001-split-is-view-state.md).
     @Published var selectedTabId: UUID? {
         didSet {
+            noteSelectionForRecentOrder()
             if !splitTabIds.isEmpty, let id = selectedTabId, !splitTabIds.contains(id) {
                 splitTabIds = []
             }
@@ -709,15 +710,83 @@ class TabManager: NSObject, ObservableObject {
     }
 
     func switchToNextTab(tabs: [Tab]) {
+        guard !SettingsManager.shared.recentTabCycling else { return cycleRecentTab(forward: true, tabs: tabs) }
         guard let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabId }) else { return }
         let nextIndex = (currentIndex + 1) % tabs.count
         selectedTabId = tabs[nextIndex].id
     }
 
     func switchToPreviousTab(tabs: [Tab]) {
+        guard !SettingsManager.shared.recentTabCycling else { return cycleRecentTab(forward: false, tabs: tabs) }
         guard let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabId }) else { return }
         let previousIndex = currentIndex == 0 ? tabs.count - 1 : currentIndex - 1
         selectedTabId = tabs[previousIndex].id
+    }
+
+    // MARK: - Most-recently-used cycling
+
+    // ⌘Tab semantics: the tab you're on is slot 0, the one you came from slot 1,
+    // and so on. The order is frozen for the length of one hold — otherwise the
+    // second press would bounce straight back to where the first press started —
+    // and only commits when the hold ends (endRecentTabCycle, driven by the
+    // Control key going up).
+    private(set) var recentTabIds: [UUID] = []
+    private var cycleSnapshot: [UUID]?
+    private var cycleIndex = 0
+
+    func cycleRecentTab(forward: Bool, tabs: [Tab]) {
+        guard !tabs.isEmpty else { return }
+        let order = cycleSnapshot ?? recentOrder(of: tabs)
+        guard !order.isEmpty else { return }
+        cycleSnapshot = order
+        let step = forward ? 1 : -1
+        cycleIndex = ((cycleIndex + step) % order.count + order.count) % order.count
+        selectedTabId = order[cycleIndex]
+    }
+
+    /// The hold ended: whatever you landed on becomes the new slot 0.
+    func endRecentTabCycle() {
+        guard cycleSnapshot != nil else { return }
+        cycleSnapshot = nil
+        cycleIndex = 0
+        if let id = selectedTabId { promoteRecentTab(id) }
+    }
+
+    private func noteSelectionForRecentOrder() {
+        guard let id = selectedTabId else { return }
+        guard let snapshot = cycleSnapshot else { return promoteRecentTab(id) }
+        // Still walking the frozen list — nothing to record yet.
+        if cycleIndex < snapshot.count, snapshot[cycleIndex] == id { return }
+        // A selection that didn't come from the cycle (a click, a close, a ⌘1)
+        // ends it, so the frozen order can never get stuck. The tab the cycle
+        // had reached still counts as visited, just less recently than this one.
+        let landed = cycleIndex < snapshot.count ? snapshot[cycleIndex] : nil
+        cycleSnapshot = nil
+        cycleIndex = 0
+        if let landed { promoteRecentTab(landed) }
+        promoteRecentTab(id)
+    }
+
+    private func promoteRecentTab(_ id: UUID) {
+        recentTabIds.removeAll { $0 == id }
+        recentTabIds.insert(id, at: 0)
+    }
+
+    // ponytail: linear scans over an open-tab list; nobody has thousands of tabs.
+    private func recentOrder(of tabs: [Tab]) -> [UUID] {
+        let live = Set(tabs.map(\.id))
+        var order = recentTabIds.filter { live.contains($0) }
+        let seen = Set(order)
+        // Tabs restored at launch have no recorded history yet, so fall back to
+        // the timestamp SwiftData already keeps.
+        order += tabs.filter { !seen.contains($0.id) }
+            .sorted { $0.lastAccessed > $1.lastAccessed }
+            .map(\.id)
+        if let current = selectedTabId, let index = order.firstIndex(of: current), index != 0 {
+            order.remove(at: index)
+            order.insert(current, at: 0)
+        }
+        return order
     }
 
     func switchToTab(at index: Int, tabs: [Tab]) {

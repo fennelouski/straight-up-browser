@@ -172,6 +172,10 @@ struct TabRowView: View {
     var automaticLinkBirthCue: AutomaticLinkBirthCue? = nil
     var thumbnail: NSImage? = nil
     var expandedHeight: CGFloat? = nil
+    // Two distinct lines for the preview card (see TabCardNames); nil keeps the
+    // plain title + host used everywhere else.
+    var cardLabels: (title: String, detail: String)? = nil
+    var onHover: (() -> Void)? = nil
 
     private var isSelected: Bool {
         selectedTabId == tab.id
@@ -291,16 +295,19 @@ struct TabRowView: View {
                             )
                         }
                         HStack(spacing: 8) {
+                            // No chip behind it: a favicon is already a shape,
+                            // and a plate sized for a 16pt glyph reads as a hole
+                            // punched in the page underneath.
                             faviconView(placeholderSize: 18)
-                                .padding(5)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 7))
+                                .shadow(color: .black.opacity(thumbnail == nil ? 0 : 0.55), radius: 3)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(displayTitle)
+                                Text(cardLabels?.title ?? displayTitle)
                                     .font(.system(size: 13, weight: .semibold))
                                     .foregroundStyle(thumbnail == nil ? Color.primary : Color.white)
                                     .lineLimit(2)
-                                if let host = tab.url?.host {
-                                    Text(host)
+                                let detail = cardLabels?.detail ?? tab.url?.host ?? ""
+                                if !detail.isEmpty {
+                                    Text(detail)
                                         .font(.caption2)
                                         .foregroundStyle(thumbnail == nil ? Color.secondary : Color.white.opacity(0.72))
                                         .lineLimit(1)
@@ -425,6 +432,8 @@ struct TabRowView: View {
             )
         )
         .contentShape(Rectangle()) // Make the entire area droppable
+        // The tab under the pointer is the one whose preview is about to matter.
+        .onHover { if $0 { onHover?() } }
         .automaticLinkMitosis(cue: automaticLinkBirthCue, tabId: tab.id)
         // The full action menu lives in ContentView (it needs webViewManager,
         // tabManager, and sibling tabs) — a second .contextMenu here would

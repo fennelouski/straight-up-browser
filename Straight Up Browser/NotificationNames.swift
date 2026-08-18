@@ -115,6 +115,8 @@ extension Notification.Name {
     // Window menu
     static let browserNextTab = Notification.Name("browserNextTab")
     static let browserPreviousTab = Notification.Name("browserPreviousTab")
+    // Control came back up: whatever ⌃Tab landed on is now the most recent tab.
+    static let browserEndTabCycle = Notification.Name("browserEndTabCycle")
     static let browserSwitchToTab1 = Notification.Name("browserSwitchToTab1")
     static let browserSwitchToTab2 = Notification.Name("browserSwitchToTab2")
     static let browserSwitchToTab3 = Notification.Name("browserSwitchToTab3")

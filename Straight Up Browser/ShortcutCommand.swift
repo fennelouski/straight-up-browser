@@ -250,6 +250,9 @@ extension ShortcutCommand {
     static let help         = Self("help", "Help", .app, Shortcut(key: "?", command: true))
     static let extensionPopup = Self("extensionPopup", "Open Extension Popup", .app, Shortcut(key: "e", command: true, option: true))
     static let scratchPad = Self("scratchPad", "Scratch Pad", .app, Shortcut(key: "n", command: true, option: true))
+    // Listed like any other command so it can be rebound — and so turning AI
+    // features off can take it out of the overview (see availableOnCurrentPlatform).
+    static let agentPanel = Self("agentPanel", "AI Agent", .app, Shortcut(key: "a", command: true, shift: true))
     #if os(macOS)
     static let windowLayout = Self("windowLayout", "Snap Window to Size", .app, Shortcut(key: "f", command: true, shift: true))
     #endif
@@ -282,17 +285,23 @@ extension ShortcutCommand {
            toggleTranslation, translateInSplit, readerMode, toggleAutofill,
            toggleTabBar, hideTabBar, minimalTabBar, compactTabBar, wideTabBar,
            addBookmark, showBookmarks, showHistory, clearSiteData, convertToIncognito,
-           omnibar, quickOpen, quickOpenNewTab, tabGrid, scratchPad, shortcutOverlay, settings, help, extensionPopup]
+           omnibar, quickOpen, quickOpenNewTab, tabGrid, scratchPad, agentPanel, shortcutOverlay, settings, help, extensionPopup]
         + platformCommands
 
     static func by(id: String) -> ShortcutCommand? { all.first { $0.id == id } }
 
+    // Commands that only exist because AI features do; Settings > AI Features
+    // takes them out of every list the user can see.
+    static let aiCommandIDs: Set<String> = [agentPanel.id]
+
     static var availableOnCurrentPlatform: [ShortcutCommand] {
         #if os(iOS)
-        BrowserPlatformCommandRegistry.iPad.map(\.command)
+        let commands = BrowserPlatformCommandRegistry.iPad.map(\.command)
         #else
-        all
+        let commands = all
         #endif
+        guard !SettingsManager.shared.aiFeaturesEnabled else { return commands }
+        return commands.filter { !aiCommandIDs.contains($0.id) }
     }
 }
 
