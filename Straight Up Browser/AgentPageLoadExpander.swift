@@ -30,11 +30,16 @@ struct AgentPageExpansionPolicy: Equatable, Sendable {
         cacheLifetimeMilliseconds: 120_000
     )
 
+    // Test-only. The settle window has to outlast a real rendering update:
+    // WebKit dispatches `scroll` on the next frame, and a WKWebView with no
+    // window gets those updates on a slow timer rather than a display link, so
+    // a 20ms wait declared the page stable before its lazy-load listener had
+    // ever run.
     static let test = AgentPageExpansionPolicy(
         maximumSteps: 24,
         maximumScrollRoots: 6,
-        maximumDurationMilliseconds: 2_000,
-        settleMilliseconds: 20,
+        maximumDurationMilliseconds: 5_000,
+        settleMilliseconds: 150,
         stablePassesRequired: 2,
         cacheLifetimeMilliseconds: 120_000
     )
