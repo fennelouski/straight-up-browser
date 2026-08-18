@@ -888,7 +888,13 @@ private struct AgentStatusShimmerModifier: ViewModifier {
 @MainActor
 enum AgentRunStoreRegistry {
     private static var stores: [String: AgentRunStore] = [:]
-    private static var recoveredStores: Set<ObjectIdentifier> = []
+    // The in-flight (or finished) recovery per store. It has to be the task
+    // rather than a "done" flag: recovery ends by deleting every conversation
+    // that has no runs yet, and a second caller that skipped ahead instead of
+    // awaiting could create a conversation into that window and lose it before
+    // its first run existed — the run then failed with "conversation … was not
+    // found". Submitting a prompt straight after launch did exactly that.
+    private static var recoveries: [ObjectIdentifier: Task<Void, Error>] = [:]
 
     static func store(baseDirectory: URL) throws -> AgentRunStore {
         let key = baseDirectory.standardizedFileURL.path
@@ -903,8 +909,10 @@ enum AgentRunStoreRegistry {
         baseDirectory: URL
     ) async throws {
         let identity = ObjectIdentifier(store)
-        guard recoveredStores.insert(identity).inserted else { return }
-        do {
+        if let existing = recoveries[identity] {
+            return try await existing.value
+        }
+        let recovery = Task {
             _ = await AgentLegacyMigrationCoordinator.migrate(
                 baseDirectory: baseDirectory,
                 into: store
@@ -918,8 +926,13 @@ enum AgentRunStoreRegistry {
                         .removeTransactionWorkspaces(for: runIDs)
                 }
             )
+        }
+        recoveries[identity] = recovery
+        do {
+            try await recovery.value
         } catch {
-            recoveredStores.remove(identity)
+            // Leave the door open for a later attempt to recover the store.
+            recoveries.removeValue(forKey: identity)
             throw error
         }
     }
