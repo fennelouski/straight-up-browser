@@ -2444,6 +2444,14 @@ struct ContentView: View {
         .frame(width: showProgressBar ? 1 : 0)
     }
 
+    // Read live rather than captured: the window can be resized between drags,
+    // and NotificationManager reads the key window the same way for ⌥⌘3.
+    private var maximumTabBarWidth: Double {
+        BrowserChromeLayout.maximumTabWidth(
+            windowWidth: NSApplication.shared.keyWindow?.frame.width
+        )
+    }
+
     private var tabSidebarResizeGrip: some View {
         Color.clear
             .frame(width: 5)
@@ -2454,7 +2462,7 @@ struct ContentView: View {
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .increment:
-                    tabBarWidth = min(400, tabBarWidth + 20)
+                    tabBarWidth = min(maximumTabBarWidth, tabBarWidth + 20)
                 case .decrement:
                     tabBarWidth = max(0, tabBarWidth - 20)
                 @unknown default:
@@ -2478,7 +2486,8 @@ struct ContentView: View {
                         let newWidth = BrowserChromeLayout.resizedTabWidth(
                             currentWidth: startWidth,
                             translationX: value.translation.width,
-                            side: tabSidebarSide
+                            side: tabSidebarSide,
+                            maximumWidth: maximumTabBarWidth
                         )
                         guard newWidth != tabBarWidth else { return }
                         tabBarWidth = newWidth

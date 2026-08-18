@@ -344,10 +344,12 @@ class NotificationManager {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            // Get window width for 20% calculation
+            // Wide is a fifth of the window, floored at a readable 200pt, and
+            // never past the sidebar's ceiling.
             let windowWidth = Double(NSApplication.shared.keyWindow?.frame.width ?? 1000)
             let wideWidth = max(windowWidth * 0.2, 200)
-            self?.setTabBarWidth(min(wideWidth, windowWidth * 0.8))
+            let ceiling = BrowserChromeLayout.maximumTabWidth(windowWidth: windowWidth)
+            self?.setTabBarWidth(min(wideWidth, ceiling))
         }
         observers.append(wideTabBarObserver)
 

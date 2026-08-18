@@ -56,12 +56,28 @@ enum BrowserChromeLayout {
         agentVisible ? agentWidth : 0
     }
 
+    /// How much of the window the tab sidebar may cover. Visual tab cards are
+    /// the reason it goes this far: browsing them wants close to the whole
+    /// window, and the page is one drag away from coming back.
+    static let maximumTabWidthFraction: CGFloat = 0.9
+
+    /// The widest the sidebar may be dragged. Passing no window width keeps the
+    /// old fixed ceiling, which is all a caller without a window can honestly do.
+    static func maximumTabWidth(windowWidth: CGFloat?) -> CGFloat {
+        guard let windowWidth, windowWidth > 0 else { return 400 }
+        return windowWidth * maximumTabWidthFraction
+    }
+
     static func resizedTabWidth(
         currentWidth: CGFloat,
         translationX: CGFloat,
-        side: BrowserChromeSide
+        side: BrowserChromeSide,
+        maximumWidth: CGFloat = 400
     ) -> CGFloat {
         let signedTranslation = side == .left ? translationX : -translationX
-        return max(0, min(400, currentWidth + signedTranslation))
+        // A sidebar already wider than the ceiling (a smaller display, or a
+        // window that shrank under it) may still be dragged narrower.
+        let ceiling = max(maximumWidth, currentWidth)
+        return max(0, min(ceiling, currentWidth + signedTranslation))
     }
 }

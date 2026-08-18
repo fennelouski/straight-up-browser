@@ -97,4 +97,29 @@ struct BrowserChromePlacementTests {
             side: .right
         ) == 230)
     }
+
+    @Test func theSidebarStopsAtNineTenthsOfTheWindow() {
+        // Visual tab cards want most of the window, so the ceiling follows the
+        // window instead of the old fixed 400pt.
+        #expect(BrowserChromeLayout.maximumTabWidth(windowWidth: 1600) == 1440)
+        // No window to measure: the fixed ceiling is all we can honestly do.
+        #expect(BrowserChromeLayout.maximumTabWidth(windowWidth: nil) == 400)
+        #expect(BrowserChromeLayout.maximumTabWidth(windowWidth: 0) == 400)
+
+        // Dragging wider stops at the ceiling…
+        #expect(BrowserChromeLayout.resizedTabWidth(
+            currentWidth: 1400,
+            translationX: 400,
+            side: .left,
+            maximumWidth: 1440
+        ) == 1440)
+        // …but a sidebar already past it (the window shrank under it) can still
+        // be dragged back in.
+        #expect(BrowserChromeLayout.resizedTabWidth(
+            currentWidth: 1400,
+            translationX: -200,
+            side: .left,
+            maximumWidth: 900
+        ) == 1200)
+    }
 }
