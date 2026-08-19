@@ -518,6 +518,8 @@ struct ContentView: View {
     @State private var showTranscriptPanel = false
     /// Phase 4: non-nil = the audit view is up for this document.
     @State private var auditDocumentId: UUID?
+    /// Phase 5: non-nil = the bibliography panel is up, with this query prefill.
+    @State private var bibliographyPrefill: String?
     @State private var seenBeforeNote: String?
     @State private var seenBeforeToken = UUID()
     @State private var workspaceName = ""
@@ -1661,6 +1663,16 @@ struct ContentView: View {
                     workspaceId: tabManager.activeWorkspaceId,
                     webView: activeTab.flatMap { webViewManager?.existingWebView(for: $0.id) },
                     isPresented: $showTranscriptPanel
+                )
+            }
+            if let bibliographyPrefill, let ledgerStore,
+               let workspaceId = tabManager.activeWorkspaceId {
+                BibliographyPanel(
+                    workspaceId: workspaceId,
+                    initialQuery: bibliographyPrefill,
+                    ledgerStore: ledgerStore,
+                    composer: anchorComposer,
+                    onClose: { self.bibliographyPrefill = nil }
                 )
             }
             if let auditDocumentId,
@@ -3300,6 +3312,9 @@ struct ContentView: View {
         center.addMainActorObserver(forName: .browserToggleAuditView, object: nil, queue: .main) { [self] _ in
             toggleAuditView()
         }
+        center.addMainActorObserver(forName: .browserToggleBibliography, object: nil, queue: .main) { [self] _ in
+            toggleBibliographyPanel()
+        }
         // A focused document redirects Cmd-L to the editor's find bar (design
         // §1.2). Registered after NotificationManager's own showOmnibar
         // observer, so this runs second and wins.
@@ -3373,6 +3388,22 @@ struct ContentView: View {
             return
         }
         auditDocumentId = target
+    }
+
+    /// ⌃⌘B: prefill from the focused document pane's selection when there is
+    /// one; otherwise open with an empty query.
+    private func toggleBibliographyPanel() {
+        if bibliographyPrefill != nil {
+            bibliographyPrefill = nil
+            return
+        }
+        guard tabManager.activeWorkspaceId != nil else {
+            showTransientNote(String(localized: "Open a workspace to search its bibliography."))
+            return
+        }
+        let selection = tabManager.focusedDocumentId
+            .flatMap { documentPaneManager.paneView(for: $0)?.selectedText() }
+        bibliographyPrefill = selection ?? ""
     }
 
     private func handleOpenAnchor(_ note: Notification) {

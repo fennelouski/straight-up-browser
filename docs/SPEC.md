@@ -4,7 +4,7 @@ Research workspaces inside Straight Up Browser. A workspace owns its tabs, its d
 
 Built for one person's research: food science for video scripts, plus AI, software engineering, and the occasional academic paper. Most sources are general web pages and YouTube videos; some are academic papers. General-audience polish is explicitly not a goal.
 
-**Status:** Phases 1–4 are complete and shipped. See `docs/phase1-handoff.md` and `docs/phase2-handoff.md` for what exists, `docs/adr/0007-the-research-ledger.md` and `docs/adr/0008-split-admits-document-panes.md` for the decisions that shaped them.
+**Status:** Phases 1–5 are complete and shipped. See `docs/phase1-handoff.md` and `docs/phase2-handoff.md` for what exists, `docs/adr/0007-the-research-ledger.md` and `docs/adr/0008-split-admits-document-panes.md` for the decisions that shaped them.
 
 ---
 
@@ -129,9 +129,11 @@ Document-anchored, not free-floating: text down one side, sources down the other
 
 Shipped exactly as specified: `AuditModel` + `AuditView` over the edge table, ⌃⌘G / document-header entry, modes as filters over one layout. Unused is workspace-wide; shared upstream renders only the lineage `openedFromSourceId` recorded since Phase 1. **Scope notes:** no interview held ([design call]s in `docs/phase4-design.md`); read-only snapshot view; manual verification pending (checklist, Phase 4 section).
 
-### Phase 5 — Bibliography matching
+### Phase 5 — Bibliography matching ✅ **Complete**
 
 "Does anything in my bibliography support this sentence?" Retrieval over the user's own saved sources only — no open-web search, no hallucination surface. First AI feature because it runs on trusted data.
+
+Shipped with zero required inference: a deterministic lexical matcher behind the SPEC-mandated `PassageMatcher` protocol, optionally re-ranked by the OS's on-device `NLEmbedding`. Corpus = reader-extracted blocks + windowed transcripts of the workspace's sources; results are verbatim passages, banded Strong/Possible; a match becomes real only via its Anchor button (Phase 2's composer tail). ⌃⌘B. **Scope notes:** no interview held ([design call]s in `docs/phase5-design.md`); no persisted index (rebuilt per open, per ADR 0007); manual verification pending (checklist, Phase 5 section).
 
 ### Phase 6 — Background claim extraction
 

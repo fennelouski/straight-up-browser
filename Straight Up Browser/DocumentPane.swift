@@ -130,6 +130,13 @@ final class DocumentPaneView: NSView, NSTextViewDelegate {
         window?.makeFirstResponder(textView)
     }
 
+    /// The editor's current selection — the bibliography panel's query prefill.
+    func selectedText() -> String? {
+        let range = textView.selectedRange()
+        guard range.length > 0 else { return nil }
+        return (textView.string as NSString).substring(with: range)
+    }
+
     @objc private func focusFind() {
         guard window?.firstResponder === textView
             || window?.firstResponder === self

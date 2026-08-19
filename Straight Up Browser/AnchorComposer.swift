@@ -104,6 +104,21 @@ final class AnchorComposer {
         )
     }
 
+    /// Phase 5's acceptance gesture: a bibliography passage becomes an anchor
+    /// with a text-fragment locator — exactly what the manual selection gesture
+    /// would have produced.
+    func anchorPassage(article: NewspaperArticle, passageText: String, workspaceId: UUID) -> String {
+        let locator = AnchorLocator.textFragment(Self.textFragmentDirective(for: passageText))
+        let linkText = Self.linkText(selection: passageText, title: article.title, locator: locator)
+        return finishAnchor(
+            article: article,
+            locator: locator,
+            quote: String(passageText.prefix(2000)),
+            linkText: linkText,
+            workspaceId: workspaceId
+        )
+    }
+
     // MARK: Shared tail
 
     private func finishAnchor(

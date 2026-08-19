@@ -163,6 +163,8 @@ extension Notification.Name {
     static let browserDocumentFind = Notification.Name("browserDocumentFind")
     /// Toggle the graph/audit view for the focused (or current) document (⌃⌘G).
     static let browserToggleAuditView = Notification.Name("browserToggleAuditView")
+    /// Toggle bibliography matching for the active workspace (⌃⌘B).
+    static let browserToggleBibliography = Notification.Name("browserToggleBibliography")
 
     // CLI data command
     static let browserGetPageData = Notification.Name("browserGetPageData")

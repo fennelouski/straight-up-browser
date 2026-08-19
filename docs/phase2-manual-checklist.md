@@ -101,3 +101,16 @@ Phase 3 shipped right behind Phase 2, same status: automated suite green, zero h
 - [ ] **Shared Upstream** mode: open a source page, ⌘-click several links from it into new tabs, let them settle, then check the audit — the spawned sources share one colored "Shared upstream" badge (the fan).
 - [ ] Click a source card: it opens per your "Anchor links open" setting (split beside on Mac, full screen iPhone), and the audit closes.
 - [ ] ⌃⌘G outside a workspace / in a workspace with no documents: correct refusal notes.
+
+---
+
+# Phase 5 — Bibliography matching (also NOT yet run)
+
+- [ ] In a workspace whose sources have been *opened at least once* (so text extracted), select a sentence in a document and press **⌃⌘B**: the panel opens with the sentence prefilled and verbatim passages from your own sources ranked beneath, banded Strong/Possible — never a raw score.
+- [ ] Every result is text you can find in the actual source (no hallucination surface — it's retrieval, not generation).
+- [ ] A query nothing supports says so plainly ("That is an answer too.").
+- [ ] **Anchor** on a text result: the anchor + link land exactly like a manual selection anchor (appended to the current document, copied). Anchor on a transcript result: a timestamped video anchor.
+- [ ] Close the panel without anchoring: nothing was written anywhere (check the document and the ledger).
+- [ ] Sources never opened (deferred, no text) contribute nothing, and an all-deferred workspace explains itself.
+- [ ] iPhone: workspace switcher → Search Bibliography; same behavior, typed query.
+- [ ] Airplane mode: everything above works identically (fully on-device).
