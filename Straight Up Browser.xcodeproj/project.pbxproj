@@ -55,12 +55,12 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Assets.xcassets,
-				AutofillContacts.swift,
 				Autofill.swift,
+				AutofillContacts.swift,
 				AutofillMenu.swift,
 				AutofillSettingsView.swift,
-				BrowserAgent.swift,
 				BookmarkImporter.swift,
+				BrowserAgent.swift,
 				BrowserCLI.swift,
 				BrowserIntents.swift,
 				ContentView.swift,
@@ -79,6 +79,9 @@
 				SettingsWindow.swift,
 				Straight_Up_BrowserApp.swift,
 				TabGridView.swift,
+				TabDashboard.swift,
+				TabInsights.swift,
+				TabPeek.swift,
 				TabRowView.swift,
 				WebExtension.swift,
 				WebView.swift,
@@ -99,37 +102,27 @@
 		};
 		803E20792F11608100A31C8D /* Straight Up BrowserTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = "Straight Up BrowserTests";
 			sourceTree = "<group>";
 		};
 		803E20832F11608100A31C8D /* Straight Up BrowserUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = "Straight Up BrowserUITests";
-			sourceTree = "<group>";
-		};
-		CACF1DAAEDABC0FCAEF39F90 /* Browser iOS */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
-			path = "Browser iOS";
 			sourceTree = "<group>";
 		};
 		A13A00000000000000000003 /* Browser iOSUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = "Browser iOSUITests";
 			sourceTree = "<group>";
 		};
 		B14B00000000000000000003 /* Browser iOSTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = "Browser iOSTests";
+			sourceTree = "<group>";
+		};
+		CACF1DAAEDABC0FCAEF39F90 /* Browser iOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Browser iOS";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -157,14 +150,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A5972A50C46376EF4AEBBF74 /* Frameworks */ = {
+		A13A00000000000000000005 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A13A00000000000000000005 /* Frameworks */ = {
+		A5972A50C46376EF4AEBBF74 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -230,48 +223,6 @@
 			productName = "Browser iOS";
 			productReference = 58AA1C45E6DEE7337895173D /* Browser.app */;
 			productType = "com.apple.product-type.application";
-		};
-		B14B00000000000000000001 /* Browser iOSTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = B14B00000000000000000007 /* Build configuration list for PBXNativeTarget "Browser iOSTests" */;
-			buildPhases = (
-				B14B00000000000000000004 /* Sources */,
-				B14B00000000000000000005 /* Frameworks */,
-				B14B00000000000000000006 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				B14B0000000000000000000B /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				B14B00000000000000000003 /* Browser iOSTests */,
-			);
-			name = "Browser iOSTests";
-			productName = "Browser iOSTests";
-			productReference = B14B00000000000000000002 /* Browser iOSTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		A13A00000000000000000001 /* Browser iOSUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = A13A00000000000000000007 /* Build configuration list for PBXNativeTarget "Browser iOSUITests" */;
-			buildPhases = (
-				A13A00000000000000000004 /* Sources */,
-				A13A00000000000000000005 /* Frameworks */,
-				A13A00000000000000000006 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				A13A0000000000000000000B /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				A13A00000000000000000003 /* Browser iOSUITests */,
-			);
-			name = "Browser iOSUITests";
-			productName = "Browser iOSUITests";
-			productReference = A13A00000000000000000002 /* Browser iOSUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 		803E20662F11607F00A31C8D /* Browser */ = {
 			isa = PBXNativeTarget;
@@ -339,6 +290,48 @@
 			productReference = 803E20802F11608100A31C8D /* Straight Up BrowserUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		A13A00000000000000000001 /* Browser iOSUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A13A00000000000000000007 /* Build configuration list for PBXNativeTarget "Browser iOSUITests" */;
+			buildPhases = (
+				A13A00000000000000000004 /* Sources */,
+				A13A00000000000000000005 /* Frameworks */,
+				A13A00000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A13A0000000000000000000B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A13A00000000000000000003 /* Browser iOSUITests */,
+			);
+			name = "Browser iOSUITests";
+			productName = "Browser iOSUITests";
+			productReference = A13A00000000000000000002 /* Browser iOSUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		B14B00000000000000000001 /* Browser iOSTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B14B00000000000000000007 /* Build configuration list for PBXNativeTarget "Browser iOSTests" */;
+			buildPhases = (
+				B14B00000000000000000004 /* Sources */,
+				B14B00000000000000000005 /* Frameworks */,
+				B14B00000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B14B0000000000000000000B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				B14B00000000000000000003 /* Browser iOSTests */,
+			);
+			name = "Browser iOSTests";
+			productName = "Browser iOSTests";
+			productReference = B14B00000000000000000002 /* Browser iOSTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -355,10 +348,10 @@
 							com.apple.BackgroundModes = {
 								enabled = 1;
 							};
-							com.apple.iCloud = {
+							com.apple.Push = {
 								enabled = 1;
 							};
-							com.apple.Push = {
+							com.apple.iCloud = {
 								enabled = 1;
 							};
 						};
@@ -472,13 +465,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		C16F61A6F480C996325AD27F /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		A13A00000000000000000006 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -487,6 +473,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		B14B00000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C16F61A6F480C996325AD27F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -611,11 +604,11 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser";
 				PRODUCT_NAME = Browser;
 				SDKROOT = iphoneos;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -660,7 +653,6 @@
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
-				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
@@ -668,6 +660,7 @@
 					"DEBUG=1",
 					"$(inherited)",
 				);
+				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
@@ -727,8 +720,8 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
-				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
@@ -902,52 +895,6 @@
 			};
 			name = Release;
 		};
-		B14B00000000000000000008 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
-				DEVELOPMENT_TEAM = EJLR2RPSV2;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 2.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser-iOSTests";
-				PRODUCT_NAME = "Browser iOSTests";
-				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Browser.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Browser";
-			};
-			name = Debug;
-		};
-		B14B00000000000000000009 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
-				DEVELOPMENT_TEAM = EJLR2RPSV2;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 2.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser-iOSTests";
-				PRODUCT_NAME = "Browser iOSTests";
-				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Browser.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Browser";
-			};
-			name = Release;
-		};
 		A13A00000000000000000008 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1010,13 +957,59 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser";
 				PRODUCT_NAME = Browser;
 				SDKROOT = iphoneos;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		B14B00000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 23;
+				DEVELOPMENT_TEAM = EJLR2RPSV2;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 2.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser-iOSTests";
+				PRODUCT_NAME = "Browser iOSTests";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Browser.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Browser";
+			};
+			name = Debug;
+		};
+		B14B00000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 23;
+				DEVELOPMENT_TEAM = EJLR2RPSV2;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 2.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser-iOSTests";
+				PRODUCT_NAME = "Browser iOSTests";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Browser.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Browser";
 			};
 			name = Release;
 		};
@@ -1059,6 +1052,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		9D256FC2A98C0DD0DB2020B1 /* Build configuration list for PBXNativeTarget "Browser iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A2925710064FA6BC8E00F638 /* Release */,
+				671E9E8583919459BDBC84A0 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		A13A00000000000000000007 /* Build configuration list for PBXNativeTarget "Browser iOSUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -1073,15 +1075,6 @@
 			buildConfigurations = (
 				B14B00000000000000000008 /* Debug */,
 				B14B00000000000000000009 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		9D256FC2A98C0DD0DB2020B1 /* Build configuration list for PBXNativeTarget "Browser iOS" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				A2925710064FA6BC8E00F638 /* Release */,
-				671E9E8583919459BDBC84A0 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

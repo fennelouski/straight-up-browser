@@ -337,6 +337,13 @@ struct Straight_Up_BrowserApp: App {
         .windowResizability(.contentMinSize)
         .defaultSize(width: 760, height: 560)
 
+        Window("Website Activity", id: "tab-dashboard") {
+            TabDashboardWindow()
+        }
+        .windowStyle(.automatic)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 1120, height: 560)
+
         Window("Downloads", id: "downloads") {
             FilesWindow()
         }
@@ -435,6 +442,10 @@ struct Straight_Up_BrowserApp: App {
                     openWindow(id: "downloads")
                 }
                 .keyboardShortcut(sc(.showDownloads))
+
+                Button("Show Website Activity") {
+                    openWindow(id: "tab-dashboard")
+                }
             }
 
             CommandGroup(replacing: .printItem) {

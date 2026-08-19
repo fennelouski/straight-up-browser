@@ -2404,3 +2404,125 @@ struct WebKitNavigationIntegrationTests {
         webView.navigationDelegate = nil
     }
 }
+
+struct MemoryPinnedSitesTests {
+    @Test func pinnedSiteBeatsThePerTabPolicyAndCoversSubdomains() {
+        let hosts = ["spotify.com", "meet.google.com"]
+
+        #expect(MemoryPinnedSites.matches(URL(string: "https://open.spotify.com/album/1"), hosts: hosts))
+        #expect(MemoryPinnedSites.matches(URL(string: "https://spotify.com"), hosts: hosts))
+        #expect(MemoryPinnedSites.matches(URL(string: "https://meet.google.com/abc-defg"), hosts: hosts))
+        // A parent-domain pin must not leak sideways into the rest of Google.
+        #expect(!MemoryPinnedSites.matches(URL(string: "https://mail.google.com"), hosts: hosts))
+        // Nor may a suffix that merely ends in the same letters.
+        #expect(!MemoryPinnedSites.matches(URL(string: "https://notspotify.com"), hosts: hosts))
+        #expect(!MemoryPinnedSites.matches(nil, hosts: hosts))
+    }
+
+    @Test func entriesAreNormalizedFromBareHostsAndPastedURLs() {
+        #expect(MemoryPinnedSites.normalized("  WWW.Spotify.com ") == "spotify.com")
+        #expect(MemoryPinnedSites.normalized("https://open.spotify.com/track/9") == "open.spotify.com")
+        #expect(MemoryPinnedSites.normalized("") == "")
+    }
+
+    @MainActor
+    @Test func unloadPolicyHonorsThePinRegardlessOfPressure() {
+        let key = MemoryPinnedSites.defaultsKey
+        let original = UserDefaults.standard.array(forKey: key)
+        defer { UserDefaults.standard.set(original, forKey: key) }
+
+        MemoryPinnedSites.hosts = ["spotify.com"]
+        let pinned = URL(string: "https://open.spotify.com/album/1")
+        let other = URL(string: "https://example.com/article")
+
+        #expect(!BrowserResourcePolicy.shouldUnload(.always, url: pinned, critical: true))
+        #expect(BrowserResourcePolicy.shouldUnload(.always, url: other, critical: false))
+
+        MemoryPinnedSites.setPinned(false, for: pinned)
+        #expect(BrowserResourcePolicy.shouldUnload(.always, url: pinned, critical: false))
+    }
+}
+
+struct TabPeekPlacementTests {
+    private let screen = NSRect(x: 0, y: 0, width: 1600, height: 1000)
+    private let size = NSSize(width: 420, height: 322)
+
+    @MainActor
+    @Test func screenTopCentersUnderTheCamera() {
+        let frame = TabPeekController.frame(
+            for: size,
+            placement: .screenTop,
+            pointer: NSPoint(x: 100, y: 100),
+            windowFrame: NSRect(x: 200, y: 200, width: 800, height: 600),
+            screens: []
+        )
+        // No screens to query: falls back to a 1440x900 bound, still top-centered.
+        #expect(frame.midX == 720)
+        #expect(frame.maxY == 900)
+    }
+
+    @MainActor
+    @Test func pointerPlacementStaysOnTheScreenNearTheEdges() {
+        let frame = TabPeekController.frame(
+            for: size,
+            placement: .pointer,
+            pointer: NSPoint(x: 5, y: 5),
+            windowFrame: nil,
+            screens: []
+        )
+        #expect(frame.minX >= 8)
+        #expect(frame.minY >= 8)
+        #expect(frame.maxX <= 1440 - 8)
+    }
+
+    @MainActor
+    @Test func windowCenterUsesTheWindowNotTheScreen() {
+        let window = NSRect(x: 300, y: 100, width: 900, height: 700)
+        let frame = TabPeekController.frame(
+            for: size,
+            placement: .windowCenter,
+            pointer: NSPoint(x: 400, y: 400),
+            windowFrame: window,
+            screens: []
+        )
+        #expect(abs(frame.midX - window.midX) < 0.5)
+        #expect(abs(frame.midY - window.midY) < 0.5)
+    }
+}
+
+struct TabProcessMetricsTests {
+    @MainActor
+    @Test func perTabMemoryAndCPUAreReadableFromTheWebContentProcess() async throws {
+        // The two SPI-adjacent moves the Website Activity window depends on:
+        // asking WebKit which process a tab runs in, and asking the kernel what
+        // that process costs. If either stops working the dashboard silently
+        // loses its headline columns, so this is the check that fails first.
+        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+        webView.loadHTMLString("<html><body>hi</body></html>", baseURL: nil)
+        for _ in 0..<80 where webView.isLoading {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+
+        let pid = try #require(
+            TabProcessMetrics.processIdentifier(of: webView),
+            "WKWebView no longer answers _webProcessIdentifier"
+        )
+        let before = try #require(
+            TabProcessMetrics.sample(pid: pid),
+            "proc_pidinfo is blocked for the web content process"
+        )
+        #expect(before.residentBytes > 1_000_000)
+
+        // A one-second busy loop must show up as roughly one second of CPU.
+        // This is what proves the mach-tick conversion: raw ticks would read
+        // ~0.02s here and every CPU number in the dashboard would be 40x low.
+        _ = try? await webView.callAsyncJavaScript(
+            "const end = Date.now() + 1000; while (Date.now() < end) {} return 1;",
+            arguments: [:], in: nil, contentWorld: .page
+        )
+        let after = try #require(TabProcessMetrics.sample(pid: pid))
+        let burned = after.cpuSeconds - before.cpuSeconds
+        #expect(burned > 0.7 && burned < 1.6, "measured \(burned)s of CPU for a 1s busy loop")
+
+    }
+}

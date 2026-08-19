@@ -534,7 +534,33 @@ class WebViewManager: NSObject, ObservableObject {
     // purely cosmetic cache. Tabs with no capture yet fall back to their favicon.
     @Published private(set) var thumbnails: [UUID: WebViewThumbnail] = [:]
 
-    func thumbnail(for tabId: UUID) -> WebViewThumbnail? { thumbnails[tabId] }
+    // Stand-in cards for tabs this session has never rendered: the page's own
+    // og:image — what any chat app shows when you paste the link — costs one
+    // metadata fetch instead of a whole content process, so a restored session
+    // has something to look at immediately. A real snapshot always wins.
+    @Published private(set) var linkPreviewImages: [UUID: WebViewThumbnail] = [:]
+    private var linkPreviewRequested: Set<UUID> = []
+
+    func thumbnail(for tabId: UUID) -> WebViewThumbnail? {
+        thumbnails[tabId] ?? linkPreviewImages[tabId]
+    }
+
+    /// One metadata fetch per tab per session. Callers must exclude incognito
+    /// tabs: this fetch happens outside the tab's ephemeral data store.
+    func warmLinkPreviews(for targets: [(id: UUID, url: URL?)]) {
+        for target in targets {
+            guard let url = target.url,
+                  url.scheme == "http" || url.scheme == "https",
+                  thumbnails[target.id] == nil,
+                  linkPreviewImages[target.id] == nil,
+                  linkPreviewRequested.insert(target.id).inserted else { continue }
+            Task { @MainActor [weak self] in
+                guard let image = await LinkPreviewCards.image(for: url),
+                      let self, self.thumbnails[target.id] == nil else { return }
+                self.linkPreviewImages[target.id] = image
+            }
+        }
+    }
 
     #if canImport(AppKit)
     // Off-screen preview warm-up. Implementation in TabPreviewOven.swift.
@@ -694,6 +720,10 @@ class WebViewManager: NSObject, ObservableObject {
         "media.net", "teads.tv", "sharethrough.com", "spotxchange.com",
         "indexexchange.com",
     ]
+
+    // The same list the dashboard counts page requests against, so "ads blocked"
+    // and "ad requests seen" can never disagree about what an ad host is.
+    static var adHostList: [String] { adHosts }
 
     private static var adBlockList: WKContentRuleList?
 
@@ -874,6 +904,11 @@ class WebViewManager: NSObject, ObservableObject {
             ownedTabIds.remove(tabId)
             tabSessions.removeValue(forKey: tabId)
             thumbnails.removeValue(forKey: tabId)
+            linkPreviewImages.removeValue(forKey: tabId)
+            linkPreviewRequested.remove(tabId)
+            #if canImport(AppKit)
+            Task { @MainActor in TabInsights.shared.forget(tabId) }
+            #endif
             #if canImport(AppKit)
             ovenQueue.removeAll { $0.id == tabId }
             #endif

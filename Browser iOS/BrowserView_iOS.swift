@@ -1513,7 +1513,7 @@ struct BrowserView_iOS: View {
                 : [tabManager.selectedTabId].compactMap { $0 }
         )
         for tab in allTabs where !displayedTabIDs.contains(tab.id)
-            && BrowserResourcePolicy.shouldUnload(tab.memoryPolicy, critical: critical) {
+            && BrowserResourcePolicy.shouldUnload(tab.memoryPolicy, url: tab.url, critical: critical) {
             webViewManager?.unloadWebView(for: tab.id)
         }
     }

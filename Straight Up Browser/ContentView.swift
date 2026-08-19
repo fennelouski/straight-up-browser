@@ -740,7 +740,7 @@ struct ContentView: View {
         // visible too and must not go blank under pressure.
         let displayed = displayedTabIds
         for tab in tabs where !displayed.contains(tab.id)
-            && BrowserResourcePolicy.shouldUnload(tab.memoryPolicy, critical: critical) {
+            && BrowserResourcePolicy.shouldUnload(tab.memoryPolicy, url: tab.url, critical: critical) {
             webViewManager?.unloadWebView(for: tab.id)
         }
     }
@@ -1106,6 +1106,13 @@ struct ContentView: View {
                                 tab.isMuted.toggle()
                                 webViewManager?.setMuted(tab.isMuted, for: tab.id)
                                 try? modelContext.save()
+                            }
+                            if let host = tab.url?.host.map(MemoryPinnedSites.normalized), !host.isEmpty {
+                                Button(MemoryPinnedSites.isPinned(tab.url)
+                                       ? "Stop Keeping \(host) in Memory"
+                                       : "Always Keep \(host) in Memory") {
+                                    MemoryPinnedSites.setPinned(!MemoryPinnedSites.isPinned(tab.url), for: tab.url)
+                                }
                             }
                             Button("Move to Top", action: { tabManager.reorderTabs(sourceTabId: tab.id, targetTabId: groupSection.tabs[0].id, tabs: allTabs) })
                                 .disabled(groupSection.tabs.first?.id == tab.id)
@@ -2983,6 +2990,22 @@ struct ContentView: View {
         tabManager.setModelContext(modelContext)
         tabManager.setWebViewManager(webViewManager)
         #if os(macOS)
+        // The Website Activity window is its own scene and can't see any of this.
+        // Closures capture the managers (classes) and re-read the store, rather
+        // than capturing this struct — a captured View copy freezes its @Query.
+        TabInsights.shared.webViewManager = webViewManager
+        TabInsights.shared.tabsProvider = { [weak tabManager] in
+            let stored = (try? modelContext.fetch(FetchDescriptor<BrowserTab>())) ?? []
+            return TabSync.visible(stored) + (tabManager?.incognitoTabs ?? [])
+        }
+        TabInsights.shared.displayedTabIdsProvider = { [weak tabManager] in
+            guard let tabManager else { return [] }
+            return tabManager.splitTabIds.isEmpty
+                ? [tabManager.selectedTabId].compactMap { $0 }
+                : tabManager.splitTabIds
+        }
+        #endif
+        #if os(macOS)
         webViewManager.extensionTabCreationHandler = {
             [weak tabManager, weak webViewManager] url, shouldActivate in
             guard let tabManager, let webViewManager else { return nil }
@@ -3501,6 +3524,8 @@ struct ContentView: View {
     /// to go through the off-screen oven, which also covers tabs this session
     /// has never opened.
     private func hoverPreview(_ tab: BrowserTab) {
+        // Control-hover peeks at the tab without switching to it (see TabPeek).
+        TabPeekController.shared.hovered(tab: tab, webViewManager: webViewManager)
         guard visualTabLivePreviews else { return }
         if displayedTabIds.contains(tab.id) {
             refreshVisualTabPreviews()
@@ -3516,12 +3541,20 @@ struct ContentView: View {
     private func warmBackgroundPreviews() {
         guard visualTabLivePreviews, !isLoading else { return }
         let displayed = displayedTabIds
+        // A link-preview card doesn't count as warm: the oven still owes this
+        // tab a real snapshot, the og:image is only what it shows until then.
         let cold = allTabs.filter {
             !displayed.contains($0.id) && $0.url != nil
                 && !warmedTabIds.contains($0.id)
-                && webViewManager?.thumbnail(for: $0.id) == nil
+                && webViewManager?.thumbnails[$0.id] == nil
         }
         guard !cold.isEmpty else { return }
+        // Every cold tab gets a link-preview card right away — it's one fetch,
+        // not a content process, so it isn't subject to the oven's launch limit.
+        // Incognito tabs are excluded: this fetch happens outside their store.
+        webViewManager?.warmLinkPreviews(
+            for: cold.filter { $0.sessionKind != .incognito }.map { (id: $0.id, url: $0.url) }
+        )
         let batch = cold.prefix(WebViewManager.ovenLaunchLimit)
         if cold.count > batch.count {
             Logger.log("Preview warm-up: baking \(batch.count) of \(cold.count) cold tabs; the rest wait for hover",

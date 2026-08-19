@@ -302,6 +302,9 @@ struct WebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             certificateOverrideWebViews.remove(ObjectIdentifier(webView))
+            if let tabId = parent.webViewManager?.tabId(for: webView) {
+                TabInsights.shared.loadStarted(tabId)
+            }
             if isActiveWebView(webView) {
                 NotificationCenter.default.post(name: .browserAutofillDismissed, object: nil)
             }
@@ -463,6 +466,10 @@ struct WebView: NSViewRepresentable {
 
                 // Notify parent of URL change to update stable URL
                 parent.onURLChange?(currentURL)
+            }
+
+            if let tabId = parent.webViewManager?.tabId(for: webView) {
+                TabInsights.shared.loadFinished(tabId)
             }
 
             // Load favicon for the current page

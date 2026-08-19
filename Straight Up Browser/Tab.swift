@@ -35,8 +35,63 @@ enum MemoryPolicy: String, Codable, CaseIterable {
     }
 }
 
+// Sites that stay live no matter what: streaming, calls, anything you leave
+// running in a background tab. Matched by host suffix, so "spotify.com" also
+// pins open.spotify.com, and one entry covers every tab on that site — a tab's
+// own MemoryPolicy doesn't have to be re-set each time you open one.
+enum MemoryPinnedSites {
+    static let defaultsKey = "memoryPinnedSites"
+
+    static let starterHosts = [
+        "meet.google.com", "zoom.us", "teams.microsoft.com", "teams.live.com",
+        "webex.com", "whereby.com", "discord.com", "app.slack.com",
+        "open.spotify.com", "music.apple.com", "music.youtube.com",
+        "soundcloud.com", "pandora.com", "tidal.com",
+        "netflix.com", "twitch.tv", "hulu.com", "max.com", "disneyplus.com",
+    ]
+
+    static var hosts: [String] {
+        get { UserDefaults.standard.array(forKey: defaultsKey) as? [String] ?? starterHosts }
+        set {
+            let cleaned = Array(Set(newValue.map(normalized).filter { !$0.isEmpty })).sorted()
+            UserDefaults.standard.set(cleaned, forKey: defaultsKey)
+        }
+    }
+
+    /// Accepts a bare host or a pasted URL; returns the bare, lowercased host.
+    static func normalized(_ entry: String) -> String {
+        var value = entry.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let host = URL(string: value)?.host { value = host }
+        if value.hasPrefix("www.") { value = String(value.dropFirst(4)) }
+        return value
+    }
+
+    static func matches(_ url: URL?, hosts: [String]) -> Bool {
+        guard let host = url?.host?.lowercased() else { return false }
+        return hosts.contains { pinned in
+            !pinned.isEmpty && (host == pinned || host.hasSuffix("." + pinned))
+        }
+    }
+
+    static func isPinned(_ url: URL?) -> Bool { matches(url, hosts: hosts) }
+
+    static func setPinned(_ pinned: Bool, for url: URL?) {
+        guard let host = url?.host.map(normalized), !host.isEmpty else { return }
+        if pinned {
+            hosts = hosts + [host]
+        } else {
+            // Drop every entry this URL matches, not just an exact one — otherwise
+            // un-pinning a page covered by a parent-domain rule silently does nothing.
+            hosts = hosts.filter { !matches(url, hosts: [$0]) }
+        }
+    }
+}
+
 enum BrowserResourcePolicy {
-    static func shouldUnload(_ policy: MemoryPolicy, critical: Bool) -> Bool {
+    static func shouldUnload(_ policy: MemoryPolicy, url: URL? = nil, critical: Bool) -> Bool {
+        // Site pin beats the per-tab policy: the whole point is not having to set
+        // the policy on every Spotify tab you ever open.
+        if MemoryPinnedSites.isPinned(url) { return false }
         switch policy {
         case .never: return false
         case .lastResort: return critical

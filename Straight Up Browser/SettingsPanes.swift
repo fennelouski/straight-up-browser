@@ -1098,6 +1098,10 @@ struct AppearanceSettingsView: View {
     private var visualTabLivePreviews = true
     @AppStorage(VisualTabPreferences.switcherKey)
     private var visualTabSwitcher = true
+    #if os(macOS)
+    @AppStorage(TabPeekPlacement.enabledKey) private var tabPeekEnabled = true
+    @AppStorage(TabPeekPlacement.defaultsKey) private var tabPeekPlacementRaw = TabPeekPlacement.pointer.rawValue
+    #endif
     @AppStorage(TabCardNames.useAppleIntelligenceKey)
     private var tabCardNamesUseAI = true
     @AppStorage(NewTabButtonVisibility.visibleKey) private var showNewTabButton = true
@@ -1159,6 +1163,17 @@ struct AppearanceSettingsView: View {
                 Text("Compact and wide sidebars always show visual cards. Live previews refresh the page you're on, load the rest in the background for their first card, and re-capture whichever tab you point at.")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Show tab thumbnails while switching with ⌃Tab", isOn: $visualTabSwitcher)
+                #if os(macOS)
+                Toggle("Peek at a tab by holding Control and hovering it", isOn: $tabPeekEnabled)
+                Picker("Show the peek", selection: $tabPeekPlacementRaw) {
+                    ForEach(TabPeekPlacement.allCases) { placement in
+                        Text(placement.label).tag(placement.rawValue)
+                    }
+                }
+                .disabled(!tabPeekEnabled)
+                Text("Checks in on a background tab without switching to it. Top middle of the screen puts the page right under the webcam, so glancing at it still looks like eye contact on a call.")
+                    .font(.caption).foregroundStyle(.secondary)
+                #endif
                 Toggle("Show the new tab button above the sidebar", isOn: $showNewTabButton)
                 Text("⌘T always opens a tab. The button retires itself if a week and ten launches go by without a click; this puts it back.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -1504,6 +1519,14 @@ struct MemorySettingsView: View {
     @AppStorage("memorySaverEnabled") private var memorySaverEnabled = false
     @AppStorage("memorySaverDefaultPolicy") private var defaultPolicy = MemoryPolicy.whenNeeded.rawValue
     @Query(sort: \BrowserTab.orderIndex) private var tabs: [BrowserTab]
+    @State private var pinnedHosts = MemoryPinnedSites.hosts
+    @State private var newHost = ""
+
+    private func addPinnedHost() {
+        MemoryPinnedSites.hosts = pinnedHosts + [newHost]
+        pinnedHosts = MemoryPinnedSites.hosts
+        newHost = ""
+    }
 
     var body: some View {
         Form {
@@ -1524,6 +1547,44 @@ struct MemorySettingsView: View {
                 .disabled(!memorySaverEnabled)
             } header: {
                 SettingsLabel("Memory Saving", systemImage: "memorychip", tint: SettingsTint.memory)
+            }
+
+            Section {
+                if pinnedHosts.isEmpty {
+                    Text("No pinned sites.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(pinnedHosts, id: \.self) { host in
+                        HStack {
+                            Image(systemName: "pin.fill").foregroundStyle(.secondary)
+                            Text(host)
+                            Spacer(minLength: 8)
+                            Button {
+                                MemoryPinnedSites.hosts = pinnedHosts.filter { $0 != host }
+                                pinnedHosts = MemoryPinnedSites.hosts
+                            } label: {
+                                Image(systemName: "minus.circle")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                }
+                HStack {
+                    TextField("Add a site (spotify.com)", text: $newHost)
+                        .onSubmit(addPinnedHost)
+                    Button("Add", action: addPinnedHost)
+                        .disabled(MemoryPinnedSites.normalized(newHost).isEmpty)
+                    Button("Reset") {
+                        MemoryPinnedSites.hosts = MemoryPinnedSites.starterHosts
+                        pinnedHosts = MemoryPinnedSites.hosts
+                    }
+                }
+                Text("Tabs on these sites are never released, whatever their policy above — streaming, calls, anything you leave running in the background.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                SettingsLabel("Never Release These Sites", systemImage: "pin", tint: SettingsTint.memory)
             }
 
             Section {
