@@ -20,6 +20,8 @@ struct Suggestion: Identifiable {
     let url: URL
     let title: String?
     let type: SuggestionType
+    /// Prior encounter from the research ledger ("Rated 4 in Fermentation").
+    var ledgerNote: String?
 }
 
 // Turns raw omnibar text into a loadable URL string: adds https:// to a bare
@@ -67,7 +69,9 @@ func omnibarSuggestions(
     input: String,
     tabs: [Tab],
     bookmarks: [(title: String, url: URL)],
-    durableHistory: [URL] = []
+    durableHistory: [URL] = [],
+    /// Looks a URL up in the research ledger. Nil result = never seen.
+    ledgerNote: ((URL) -> String?)? = nil
 ) -> [Suggestion] {
     let lowercased = input.lowercased()
     guard !lowercased.isEmpty else { return [] }
@@ -88,7 +92,7 @@ func omnibarSuggestions(
     }.map { Suggestion(url: $0, title: nil, type: .history) }
 
     let all = matchingBookmarks + matchingHistory
-    return Array(all.sorted { a, b in
+    let ranked = Array(all.sorted { a, b in
         if a.type == .bookmark && b.type == .history { return true }
         if a.type == .history && b.type == .bookmark { return false }
         let aStr = a.url.absoluteString.lowercased(), bStr = b.url.absoluteString.lowercased()
@@ -97,6 +101,14 @@ func omnibarSuggestions(
         if aStarts != bStarts { return aStarts }
         return aStr.count < bStr.count
     }.prefix(8))
+
+    // One decoration point, so no suggestion source can forget it.
+    guard let ledgerNote else { return ranked }
+    return ranked.map { suggestion in
+        var decorated = suggestion
+        decorated.ledgerNote = ledgerNote(suggestion.url)
+        return decorated
+    }
 }
 
 // The dropdown under the omnibar field. Selection is keyboard-navigable
@@ -120,6 +132,12 @@ struct SuggestionsPanel: View {
                                 .font(.body)
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
+                            if let note = suggestion.ledgerNote {
+                                Text(note)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
                             Text(suggestion.url.absoluteString)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)

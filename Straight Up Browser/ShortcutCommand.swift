@@ -239,6 +239,9 @@ extension ShortcutCommand {
 
     // Bookmarks
     static let addBookmark  = Self("addBookmark", "Add Bookmark", .bookmarks, Shortcut(key: "d", command: true))
+    // The deliberate "keep this one" gesture inside a research workspace,
+    // next to Add Bookmark because it is the same instinct in a different register.
+    static let captureSource = Self("captureSource", "Capture Source to Workspace", .bookmarks, Shortcut(key: "d", command: true, shift: true))
     static let showBookmarks = Self("showBookmarks", "Show Bookmarks", .bookmarks, Shortcut(key: "b", command: true, shift: true))
     static let showHistory = Self("showHistory", "Show History", .bookmarks, Shortcut(key: "y", command: true))
 
@@ -286,7 +289,7 @@ extension ShortcutCommand {
            findInPage, findNext, findPrevious, zoomIn, zoomOut, actualSize, printPage, exportPDF, fullScreen,
            toggleTranslation, translateInSplit, readerMode, toggleAutofill,
            toggleTabBar, hideTabBar, minimalTabBar, compactTabBar, wideTabBar,
-           addBookmark, showBookmarks, showHistory, clearSiteData, convertToIncognito,
+           addBookmark, captureSource, showBookmarks, showHistory, clearSiteData, convertToIncognito,
            omnibar, quickOpen, quickOpenNewTab, tabGrid, scratchPad, agentPanel, shortcutOverlay, settings, help, extensionPopup]
         + platformCommands
 
@@ -346,6 +349,7 @@ enum BrowserPlatformCommandAction: Hashable {
     case settings
     case shortcutOverlay
     case addBookmark
+    case captureSource
     case showBookmarks
     case showHistory
     case showDownloads
@@ -394,6 +398,7 @@ struct BrowserPlatformCommandEntry: Identifiable {
         case .settings: .browserShowSettings
         case .shortcutOverlay: .browserToggleShortcutOverlay
         case .addBookmark: .browserAddBookmark
+        case .captureSource: .browserCaptureSource
         case .showBookmarks: .browserShowBookmarks
         case .showHistory: .browserShowHistory
         case .showDownloads: .browserShowDownloads
@@ -456,6 +461,7 @@ enum BrowserPlatformCommandRegistry {
 
     private static let iPadBookmarkCommands: [BrowserPlatformCommandEntry] = [
         .init(group: .bookmarks, command: .addBookmark, action: .addBookmark),
+        .init(group: .bookmarks, command: .captureSource, action: .captureSource),
         .init(group: .bookmarks, command: .showBookmarks, action: .showBookmarks),
         .init(group: .bookmarks, command: .showHistory, action: .showHistory),
     ]

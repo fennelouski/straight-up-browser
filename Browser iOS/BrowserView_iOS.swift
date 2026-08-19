@@ -222,7 +222,8 @@ struct BrowserView_iOS: View {
             input: omnibarText,
             tabs: tabs,
             bookmarks: bookmarkPairs,
-            durableHistory: browsingHistory.recentVisits.map(\.url)
+            durableHistory: browsingHistory.recentVisits.map(\.url),
+            ledgerNote: { ledgerNote(for: $0) }
         )
     }
 
@@ -549,7 +550,14 @@ struct BrowserView_iOS: View {
         case .newTab: createNewTab()
         case .newIncognitoTab: _ = tabManager.createIncognitoTab(); focusOmnibar()
         case .closeTab: closeActiveTab()
-        case .closeTabSet: tabManager.closeTabSet(tabs: visibleTabs)
+        case .closeTabSet:
+            // Inside a workspace this closes the WORKSPACE and writes nothing;
+            // outside one it keeps its original meaning.
+            if tabManager.activeWorkspaceId != nil {
+                tabManager.suspendWorkspace()
+            } else {
+                tabManager.closeTabSet(tabs: visibleTabs)
+            }
         case .reopenTab: _ = tabManager.reopenLastClosedTab()
         case .openLocation: focusOmnibar()
         case .back: webViewManager?.goBack()
@@ -572,6 +580,7 @@ struct BrowserView_iOS: View {
         case .switchTab(let index):
             tabManager.switchToTab(at: index - 1, tabs: visibleTabOrder)
         case .addBookmark: toggleBookmark()
+        case .captureSource: captureCurrentSource()
         case .showBookmarks: presentLibrary(.bookmarks)
         case .showHistory: presentLibrary(.history)
         case .showDownloads: showDownloads = true
@@ -1091,6 +1100,38 @@ struct BrowserView_iOS: View {
         Button("Workspaces…") { showWorkspaceSwitcher = true }
     }
 
+    /// ⇧⌘D on iPad; also the page-menu action. iPhone reaches it from the
+    /// workspace switcher.
+    private func captureCurrentSource() {
+        guard let tab = activeTab, tabManager.activeWorkspaceId != nil,
+              tab.sessionKind != .incognito else { return }
+        tabManager.captureSourceNow(tab: tab)
+    }
+
+    private func archiveActiveWorkspace() {
+        guard let id = tabManager.activeWorkspaceId,
+              let workspace = workspaces.first(where: { $0.id == id })
+        else { return }
+        ledgerStore?.archiveWorkspace(workspace)
+        tabManager.suspendWorkspace()
+    }
+
+    /// "Rated 4 in Fermentation, March" — decorates the omnibar rows that are
+    /// already there rather than competing with them.
+    private func ledgerNote(for url: URL) -> String? {
+        guard let first = ledgerStore?.priorEncounters(for: url).first else { return nil }
+        let when = first.addedAt.formatted(.dateTime.month(.abbreviated).year())
+        let verdict: String
+        switch first.disposition {
+        case .dismissed: verdict = String(localized: "Dismissed in \(first.workspaceName)")
+        case .kept: verdict = String(localized: "Kept in \(first.workspaceName)")
+        case .open: verdict = String(localized: "Open in \(first.workspaceName)")
+        }
+        return first.rating > 0
+            ? String(localized: "Rated \(first.rating) · \(verdict), \(when)")
+            : String(localized: "\(verdict), \(when)")
+    }
+
     private func promoteToWorkspace(_ name: String) {
         tabManager.promoteDefaultWorkspace(
             named: name,
@@ -1311,6 +1352,32 @@ struct BrowserView_iOS: View {
                             if tabManager.activeWorkspaceId == nil {
                                 Image(systemName: "checkmark").foregroundStyle(.tint)
                             }
+                        }
+                    }
+                }
+                if tabManager.activeWorkspaceId != nil {
+                    Section {
+                        Button {
+                            captureCurrentSource()
+                            showWorkspaceSwitcher = false
+                        } label: {
+                            Label("Capture This Page", systemImage: "plus.rectangle.on.folder")
+                        }
+                        .disabled(activeTab?.url == nil || activeTab?.sessionKind == .incognito)
+                        Button {
+                            archiveActiveWorkspace()
+                            showWorkspaceSwitcher = false
+                        } label: {
+                            Label("Archive Workspace", systemImage: "archivebox")
+                        }
+                    }
+                } else {
+                    Section {
+                        Button {
+                            showWorkspaceSwitcher = false
+                            showSaveWorkspace = true
+                        } label: {
+                            Label("Turn This Into a Workspace…", systemImage: "folder.badge.plus")
                         }
                     }
                 }

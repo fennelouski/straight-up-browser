@@ -261,6 +261,7 @@ class KeyboardShortcutsManager {
         case .openLocation: return post(.showOmnibar)
         case .findInPage: return post(.browserFindInPage)
         case .addBookmark: return post(.browserAddBookmark)
+        case .captureSource: return post(.browserCaptureSource)
         case .printPage: return post(.browserPrint)
         case .toggleTabBar: return post(.browserToggleTabBar)
         default: return nil

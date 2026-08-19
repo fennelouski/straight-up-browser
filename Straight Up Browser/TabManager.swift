@@ -680,6 +680,14 @@ class TabManager: NSObject, ObservableObject {
         )
     }
 
+    /// Deliberate capture of one tab into the active workspace.
+    @discardableResult
+    func captureSourceNow(tab: Tab) -> Bool {
+        // existingWebView, not getWebView: capturing must never bring a web view
+        // into being as a side effect.
+        settleCapture?.captureNow(tab: tab, webView: webViewManager?.existingWebView(for: tab.id)) ?? false
+    }
+
     /// The source a tab was opened FROM, when it was spawned by another tab in
     /// the same workspace. Phase 1 records this as provenance lineage; Phase 4's
     /// graph renders the fan-to-common-ancestor pattern from it.

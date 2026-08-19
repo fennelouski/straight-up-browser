@@ -84,6 +84,28 @@ final class WorkspaceSettleCapture {
         }
     }
 
+    /// Deliberate one-keystroke capture: the user says "keep this one" without
+    /// waiting out the dwell. Same writes as a settle, but the method records
+    /// that a person chose it. Returns false when there is nothing to capture.
+    @discardableResult
+    func captureNow(tab: Tab, webView: WKWebView?) -> Bool {
+        guard tab.sessionKind != .incognito,
+              let workspaceId = tab.workspaceId,
+              let url = tab.url
+        else { return false }
+
+        // A pending settle for this tab is now redundant.
+        cancel(tabId: tab.id)
+
+        let article = ledgerStore.recordManualCapture(
+            url: url,
+            title: tab.title,
+            workspaceId: workspaceId
+        )
+        captureOpportunistically(article: article, webView: webView, expectedURL: url)
+        return true
+    }
+
     func cancel(tabId: UUID) {
         pending[tabId]?.cancel()
         pending[tabId] = nil

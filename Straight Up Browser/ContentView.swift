@@ -2571,6 +2571,14 @@ struct ContentView: View {
                 preloadFaviconsForAllTabs()
 
                 NotificationCenter.default.addMainActorObserver(
+                    forName: .browserCaptureSource,
+                    object: nil,
+                    queue: .main
+                ) { [self] _ in
+                    captureCurrentSource()
+                }
+
+                NotificationCenter.default.addMainActorObserver(
                     forName: .browserPageArrived,
                     object: nil,
                     queue: .main
@@ -3175,6 +3183,35 @@ struct ContentView: View {
 
     private func moveTabToGroup(_ tab: Tab, groupId: UUID?) {
         tab.groupId = groupId
+    }
+
+    /// ⇧⌘D: keep this one, without waiting out the settle dwell. Outside a
+    /// workspace there is nothing to capture into, which the banner says rather
+    /// than failing silently.
+    private func captureCurrentSource() {
+        guard let tab = activeTab else { return }
+        guard tabManager.activeWorkspaceId != nil else {
+            showTransientNote(String(localized: "Open a workspace to capture sources into it."))
+            return
+        }
+        guard tab.sessionKind != .incognito else {
+            showTransientNote(String(localized: "Private tabs are never captured."))
+            return
+        }
+        guard tabManager.captureSourceNow(tab: tab) else { return }
+        showTransientNote(String(localized: "Captured to \(activeWorkspace?.name ?? "")"))
+    }
+
+    /// Reuses the seen-before banner rather than adding a second transient
+    /// surface — ContentView's type-check budget is a real ceiling.
+    private func showTransientNote(_ text: String) {
+        seenBeforeNote = text
+        let token = UUID()
+        seenBeforeToken = token
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            if seenBeforeToken == token { seenBeforeNote = nil }
+        }
     }
 
     /// Arrival banner: catches sources reached by clicking a link or a search
