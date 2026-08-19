@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The handoff channel: the extension writes the ShareInbox queue here;
+	     the app drains it. The extension never opens the app's store. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.nathanfennel.Straight-Up-Browser</string>
+	</array>
+</dict>
+</plist>

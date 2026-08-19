@@ -568,11 +568,12 @@ struct BrowserView_iOS: View {
         .onReceive(phase2Publisher) { handlePhase2($0) }
     }
 
-    // Phase 2 signals share one merged publisher, same reason as commandPublisher.
+    // Phase 2/3 signals share one merged publisher, same reason as commandPublisher.
     private var phase2Publisher: AnyPublisher<Notification, Never> {
         let center = NotificationCenter.default
         return Publishers.MergeMany(
-            [Notification.Name.browserDocumentNote, .browserOpenAnchor, .browserAnchorSelection]
+            [Notification.Name.browserDocumentNote, .browserOpenAnchor, .browserAnchorSelection,
+             UIApplication.didBecomeActiveNotification, UIApplication.willResignActiveNotification]
                 .map { center.publisher(for: $0) }
         )
         .eraseToAnyPublisher()
@@ -586,8 +587,24 @@ struct BrowserView_iOS: View {
             if let url = note.userInfo?["url"] as? URL { openAnchorURL(url) }
         case .browserAnchorSelection:
             anchorCurrentSelection()
+        case UIApplication.didBecomeActiveNotification:
+            // Share-sheet capture (Phase 3): ingest anything queued while the
+            // app was away, and keep the extension's picker mirror fresh.
+            drainSharedItems()
+        case UIApplication.willResignActiveNotification:
+            ShareIngest.updateMirror(workspaces: workspaces, activeWorkspaceId: tabManager.activeWorkspaceId)
         default:
             break
+        }
+    }
+
+    private func drainSharedItems() {
+        ShareIngest.updateMirror(workspaces: workspaces, activeWorkspaceId: tabManager.activeWorkspaceId)
+        guard let ledgerStore else { return }
+        let result = ShareIngest.drain(ledgerStore: ledgerStore)
+        guard result.ingested > 0 else { return }
+        if let name = result.workspaceName {
+            showNote(String(localized: "Added ^[\(result.ingested) shared item](inflect: true) to \(name)"))
         }
     }
 
@@ -1354,6 +1371,9 @@ struct BrowserView_iOS: View {
         documentStore = docStore
         tabManager.isDocumentPaneId = { [weak docStore] id in docStore?.document(id: id) != nil }
         anchorComposer = AnchorComposer(ledgerStore: store, documentStore: docStore, settleCapture: settle)
+
+        // Phase 3: ingest shares queued while the app was closed.
+        drainSharedItems()
         if !supportsSplitPanes {
             tabManager.splitTabIds = []
         }

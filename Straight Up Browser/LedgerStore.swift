@@ -7,6 +7,7 @@
 //  disposition (docs/phase1-design.md §3, ADR 0007).
 //
 
+import CryptoKit
 import Foundation
 import SwiftData
 
@@ -141,6 +142,81 @@ final class LedgerStore {
         )
         save("Record manual capture")
         return article
+    }
+
+    // MARK: Share-sheet capture (Phase 3)
+
+    /// A URL shared in from another app (docs/phase3-design.md §4). Same writes
+    /// as any capture — enqueue + reference — with the method that says a share
+    /// sheet chose it. No text extraction here (no web view at drain); the
+    /// article stays `deferred` and fills in when the source is next opened.
+    @discardableResult
+    func recordShareCapture(url: URL, title: String, workspaceId: UUID) -> NewspaperArticle {
+        let article = enqueueSource(url: url, title: title, workspaceId: workspaceId)
+        upsertReference(
+            workspaceId: workspaceId,
+            article: article,
+            method: .shareSheet,
+            disposition: .open
+        )
+        save("Record shared source")
+        return article
+    }
+
+    /// A file/image shared in: bytes become a permanent import, identity is the
+    /// content hash (`NewspaperArticle.contentHash`, the Phase 1 column built
+    /// for exactly this), so the same bytes shared twice are one source.
+    @discardableResult
+    func recordFileImport(
+        data: Data,
+        suggestedName: String,
+        workspaceId: UUID,
+        importsDirectory: URL
+    ) -> NewspaperArticle? {
+        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        let sourceKey = "hash:" + hash
+        let cleanedName = suggestedName.isEmpty ? "Import" : suggestedName
+        if let existing = source(sourceKey: sourceKey) {
+            upsertReference(workspaceId: workspaceId, article: existing, method: .shareSheet, disposition: .open)
+            save("Record shared file")
+            return existing
+        }
+        let ext = (cleanedName as NSString).pathExtension
+        let fileURL = importsDirectory.appendingPathComponent(hash + (ext.isEmpty ? "" : "." + ext))
+        do {
+            try FileManager.default.createDirectory(at: importsDirectory, withIntermediateDirectories: true)
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            return nil
+        }
+        let article = enqueueSource(url: fileURL, title: cleanedName, workspaceId: workspaceId)
+        // Content identity, not path identity: re-key onto the hash so the same
+        // bytes from any path collapse to one source.
+        article.sourceKey = sourceKey
+        article.contentHash = hash
+        switch ext.lowercased() {
+        case "png", "jpg", "jpeg", "gif", "webp", "heic", "avif": article.modality = .image
+        case "pdf": article.modality = .pdf
+        default: article.modality = .importedFile
+        }
+        upsertReference(workspaceId: workspaceId, article: article, method: .shareSheet, disposition: .open)
+        save("Record shared file")
+        return article
+    }
+
+    /// "Items movable afterward": re-point the join row. Disposition and method
+    /// travel with it; the Newspaper section does NOT re-file (the freeze rule)
+    /// and `firstWorkspaceId` is history, not location. Moving onto a workspace
+    /// that already references the source merges into the existing row.
+    func moveReference(_ ref: WorkspaceSourceRef, to workspaceId: UUID) {
+        guard ref.workspaceId != workspaceId else { return }
+        if reference(workspaceId: workspaceId, sourceKey: ref.sourceKey) != nil {
+            modelContext.delete(ref)
+        } else {
+            ref.workspaceId = workspaceId
+            ref.updatedAt = Date()
+        }
+        save("Move workspace reference")
     }
 
     // MARK: Rejection

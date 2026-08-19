@@ -70,3 +70,22 @@ Unit tests cover the editor core, resolution, conflicts, transcripts, and pane r
 ## Cross-device
 - [ ] Anchor on the Mac → within a minute the iPhone's same workspace shows the document row and, once iCloud Drive syncs the file, its content with the pill enriched (anchor row came via CloudKit, bytes via iCloud Drive — brief "Waiting for iCloud…" is normal, not a bug).
 - [ ] A transcript fetched on the Mac is searchable from the iPhone omnibar without re-fetching.
+
+---
+
+# Phase 3 — Share-sheet capture (also NOT yet run)
+
+Phase 3 shipped right behind Phase 2, same status: automated suite green, zero hands-on verification. The share extension especially can only be proven on a device.
+
+## iPhone
+- [ ] Build to a device/simulator; in Safari, Share → **Browser** appears in the share sheet (if not: enable it under the sheet's Edit Actions).
+- [ ] Share a page: the sheet shows "Add to *\<most recent workspace\>*" as the big first button; one tap dismisses.
+- [ ] Open Browser: transient capsule "Added 1 shared item to …"; the source appears in seen-before/omnibar for that workspace; the Newspaper shows it (deferred — text fills in when first opened).
+- [ ] Share a YouTube link from the YouTube app; after opening it in the workspace once, its transcript panel works.
+- [ ] Share an image/PDF from Photos/Files: it lands as a hash-keyed import; sharing the *same* file again (even renamed) does not create a second source.
+- [ ] Share with Browser never having had a workspace: the sheet explains and only offers Cancel.
+- [ ] Switch workspaces in the app, background it, share again: the *new* workspace is the one-tap default (the mirror refreshed on resign-active).
+- [ ] Delete a workspace, then share to it from a stale sheet, then open Browser: the item is dropped quietly (no crash, no orphan row).
+
+## Both platforms
+- [ ] Newspaper → long-press/right-click an article → **Move to Workspace**: the reference moves (check seen-before now names the new workspace); the article's Section did not change; moving onto a workspace that already has it merges (one reference remains).

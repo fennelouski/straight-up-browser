@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Share-sheet capture (Phase 3): the app group carries the ShareInbox
+	     queue and the workspace mirror between the app and Browser Share. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.nathanfennel.Straight-Up-Browser</string>
+	</array>
 	<key>aps-environment</key>
 	<string>development</string>
 	<key>com.apple.developer.icloud-container-identifiers</key>

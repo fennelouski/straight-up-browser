@@ -7,10 +7,21 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4A3E87148FA867D7F9D7A1DD /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 68ADAA7B926E62694E3DE4A1 /* Foundation.framework */; };
 		5C95253C1149EC1BFF629A08 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = DDB1530130DF80B281CC55E5 /* Sparkle */; };
+		71B29BFFCF1A5D9250392278 /* BrowserShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A160EA668E249A38C55A5C48 /* BrowserShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		8C26ECF6ED3DED2BB3DB23F4 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 661372C2F36F0BFA1C05D9E4 /* ShareViewController.swift */; };
+		9CB01A0BED5AB4CE77A98ACD /* ShareQueue.swift (shared) in Sources */ = {isa = PBXBuildFile; fileRef = 48B0B3E39964D77BCA1E1F5C /* ShareQueue.swift (shared) */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		455E8459C3D950532D80FD16 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 803E205F2F11607F00A31C8D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CF46037B651B5455FAF3AE2A;
+			remoteInfo = BrowserShare;
+		};
 		803E20772F11608100A31C8D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 803E205F2F11607F00A31C8D /* Project object */;
@@ -41,12 +52,32 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		D0506A0330BF9CABE3302B20 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				71B29BFFCF1A5D9250392278 /* BrowserShare.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		1F580FA73347DD37D4207587 /* BrowserShare.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = BrowserShare.entitlements; sourceTree = "<group>"; };
+		3421592C319E6B69F40379BB /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		48B0B3E39964D77BCA1E1F5C /* ShareQueue.swift (shared) */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = "ShareQueue.swift (shared)"; path = "Straight Up Browser/ShareQueue.swift"; sourceTree = "<group>"; };
 		58AA1C45E6DEE7337895173D /* Browser.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Browser.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		661372C2F36F0BFA1C05D9E4 /* ShareViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		68ADAA7B926E62694E3DE4A1 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		803E20672F11607F00A31C8D /* Browser.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Browser.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		803E20762F11608100A31C8D /* Straight Up BrowserTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; name = "Straight Up BrowserTests.xctest"; path = BrowserTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		803E20802F11608100A31C8D /* Straight Up BrowserUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; name = "Straight Up BrowserUITests.xctest"; path = BrowserUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A13A00000000000000000002 /* Browser iOSUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Browser iOSUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A160EA668E249A38C55A5C48 /* BrowserShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BrowserShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B14B00000000000000000002 /* Browser iOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Browser iOSTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -171,6 +202,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BCAA7B90BA70923C94A380D8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4A3E87148FA867D7F9D7A1DD /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -184,6 +223,9 @@
 				CACF1DAAEDABC0FCAEF39F90 /* Browser iOS */,
 				B14B00000000000000000003 /* Browser iOSTests */,
 				A13A00000000000000000003 /* Browser iOSUITests */,
+				DE63AA31B49C573A32042824 /* Frameworks */,
+				A76634D894A085D3986646FE /* Browser Share */,
+				48B0B3E39964D77BCA1E1F5C /* ShareQueue.swift (shared) */,
 			);
 			sourceTree = "<group>";
 		};
@@ -196,8 +238,35 @@
 				58AA1C45E6DEE7337895173D /* Browser.app */,
 				B14B00000000000000000002 /* Browser iOSTests.xctest */,
 				A13A00000000000000000002 /* Browser iOSUITests.xctest */,
+				A160EA668E249A38C55A5C48 /* BrowserShare.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		8330FA08CDEDD375549FEB32 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				68ADAA7B926E62694E3DE4A1 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		A76634D894A085D3986646FE /* Browser Share */ = {
+			isa = PBXGroup;
+			children = (
+				661372C2F36F0BFA1C05D9E4 /* ShareViewController.swift */,
+				3421592C319E6B69F40379BB /* Info.plist */,
+				1F580FA73347DD37D4207587 /* BrowserShare.entitlements */,
+			);
+			path = "Browser Share";
+			sourceTree = "<group>";
+		};
+		DE63AA31B49C573A32042824 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				8330FA08CDEDD375549FEB32 /* iOS */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -210,10 +279,12 @@
 				2BA0BF16E83FD7391746FDB3 /* Sources */,
 				A5972A50C46376EF4AEBBF74 /* Frameworks */,
 				C16F61A6F480C996325AD27F /* Resources */,
+				D0506A0330BF9CABE3302B20 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				12DA5AA0BE6C05F0EE8257F2 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				803E20692F11607F00A31C8D /* Straight Up Browser */,
@@ -332,6 +403,23 @@
 			productReference = B14B00000000000000000002 /* Browser iOSTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		CF46037B651B5455FAF3AE2A /* BrowserShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 66A2D0BC018AB4C355E44D1E /* Build configuration list for PBXNativeTarget "BrowserShare" */;
+			buildPhases = (
+				5CEE8C2CB1B48FE6F914D0D3 /* Sources */,
+				BCAA7B90BA70923C94A380D8 /* Frameworks */,
+				00A699B0C341153402565BBD /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = BrowserShare;
+			productName = BrowserShare;
+			productReference = A160EA668E249A38C55A5C48 /* BrowserShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -439,11 +527,19 @@
 				5799E6C8B0A6D3D0970EB02B /* Browser iOS */,
 				B14B00000000000000000001 /* Browser iOSTests */,
 				A13A00000000000000000001 /* Browser iOSUITests */,
+				CF46037B651B5455FAF3AE2A /* BrowserShare */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		00A699B0C341153402565BBD /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		803E20652F11607F00A31C8D /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -521,6 +617,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		5CEE8C2CB1B48FE6F914D0D3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8C26ECF6ED3DED2BB3DB23F4 /* ShareViewController.swift in Sources */,
+				9CB01A0BED5AB4CE77A98ACD /* ShareQueue.swift (shared) in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		803E20632F11607F00A31C8D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -559,6 +664,12 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		12DA5AA0BE6C05F0EE8257F2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = BrowserShare;
+			target = CF46037B651B5455FAF3AE2A /* BrowserShare */;
+			targetProxy = 455E8459C3D950532D80FD16 /* PBXContainerItemProxy */;
+		};
 		803E20782F11608100A31C8D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 803E20662F11607F00A31C8D /* Browser */;
@@ -582,6 +693,63 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		1A8FB5CB7D725504253C453C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = "Browser Share/BrowserShare.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 23;
+				DEVELOPMENT_TEAM = EJLR2RPSV2;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Browser Share/Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 2.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser.share";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		366E6CBEF569AC0FE6D12A08 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = "Browser Share/BrowserShare.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 23;
+				DEVELOPMENT_TEAM = EJLR2RPSV2;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Browser Share/Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 2.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser.share";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		671E9E8583919459BDBC84A0 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1016,6 +1184,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		66A2D0BC018AB4C355E44D1E /* Build configuration list for PBXNativeTarget "BrowserShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				366E6CBEF569AC0FE6D12A08 /* Release */,
+				1A8FB5CB7D725504253C453C /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		803E20622F11607F00A31C8D /* Build configuration list for PBXProject "Straight Up Browser" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

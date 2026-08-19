@@ -537,6 +537,9 @@ private struct NewspaperStoryLink: View {
     let prominence: NewspaperStoryProminence
     let actions: NewspaperArticleActions
 
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Workspace.orderIndex) private var workspaces: [Workspace]
+
     var body: some View {
         NavigationLink(value: article.id) {
             NewspaperStoryCard(article: article, layout: layout, prominence: prominence)
@@ -555,12 +558,45 @@ private struct NewspaperStoryLink: View {
                     }
                 }
             }
+            // "Items movable afterward" (Phase 3, design §5): re-points the
+            // most recent workspace reference; the Section never re-files.
+            if !workspaces.isEmpty {
+                Menu("Move to Workspace") {
+                    ForEach(workspaces.filter { !$0.isArchived }) { workspace in
+                        Button {
+                            moveToWorkspace(workspace)
+                        } label: {
+                            if referencedWorkspaceIds.contains(workspace.id) {
+                                Label(workspace.name, systemImage: "checkmark")
+                            } else {
+                                Text(workspace.name)
+                            }
+                        }
+                    }
+                }
+            }
             Divider()
             Button("Remove from Newspaper", role: .destructive) {
                 actions.remove(article)
             }
         }
         .accessibilityHint("Open the saved article")
+    }
+
+    private var referencedWorkspaceIds: Set<UUID> {
+        Set(LedgerStore(modelContext: modelContext)
+            .references(sourceKey: article.sourceKey).map(\.workspaceId))
+    }
+
+    private func moveToWorkspace(_ workspace: Workspace) {
+        let ledger = LedgerStore(modelContext: modelContext)
+        let refs = ledger.references(sourceKey: article.sourceKey)
+        if let ref = refs.max(by: { $0.updatedAt < $1.updatedAt }) {
+            ledger.moveReference(ref, to: workspace.id)
+        } else {
+            // Not in any workspace yet: moving IS adding.
+            ledger.recordManualCapture(url: article.url, title: article.title, workspaceId: workspace.id)
+        }
     }
 }
 

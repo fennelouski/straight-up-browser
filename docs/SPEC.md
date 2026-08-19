@@ -4,7 +4,7 @@ Research workspaces inside Straight Up Browser. A workspace owns its tabs, its d
 
 Built for one person's research: food science for video scripts, plus AI, software engineering, and the occasional academic paper. Most sources are general web pages and YouTube videos; some are academic papers. General-audience polish is explicitly not a goal.
 
-**Status:** Phases 1 and 2 are complete and shipped. See `docs/phase1-handoff.md` and `docs/phase2-handoff.md` for what exists, `docs/adr/0007-the-research-ledger.md` and `docs/adr/0008-split-admits-document-panes.md` for the decisions that shaped them.
+**Status:** Phases 1–3 are complete and shipped. See `docs/phase1-handoff.md` and `docs/phase2-handoff.md` for what exists, `docs/adr/0007-the-research-ledger.md` and `docs/adr/0008-split-admits-document-panes.md` for the decisions that shaped them.
 
 ---
 
@@ -117,9 +117,11 @@ Delivered on macOS, iPadOS and iPhone. iPhone gets workspace switching only; iPa
 
 **Scope changes at close:** iPad displays documents full screen only (document-in-Split is Mac-only for now — flagged, not silently dropped); PDF-page and image-region anchor *creation* deferred (locator formats ready); the manual verification pass (`docs/phase2-manual-checklist.md`) is still to be run.
 
-### Phase 3 — Share-sheet capture
+### Phase 3 — Share-sheet capture ✅ **Complete** (iOS)
 
 Share any page, video, or file from any app into a chosen workspace; default to the most recently active one; items movable afterward.
+
+Shipped as an iOS share extension (one-tap picker, most-recent workspace first) handing off through an app-group inbox the app drains on activation — the extension never opens the store. Files import by content hash; "movable afterward" is the Newspaper's Move to Workspace menu on both platforms. **Scope notes:** Mac share-menu extension deferred (in-app capture already covers the Mac); no interview was held — decisions are [design call]s in `docs/phase3-design.md`; manual verification pending (`docs/phase2-manual-checklist.md`, Phase 3 section).
 
 ### Phase 4 — Graph / audit view
 
@@ -163,6 +165,5 @@ Resolved in Phase 2: transcript storage (a synced ledger entity; Whisper cut ent
 Still open:
 
 - **Claim promotion UX** — what gesture turns a text range into a named claim.
-- **Share-sheet workspace picker** — how to keep it one-tap on iPhone.
 - **Undo of an accidental tab close** must un-write the `dismissed` disposition, not merely restore the tab.
 - **iPad document-in-split** — deferred from Phase 2 (deviation #6); needs an explicit keep-or-build decision.
