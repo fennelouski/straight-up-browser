@@ -165,6 +165,8 @@ extension Notification.Name {
     static let browserToggleAuditView = Notification.Name("browserToggleAuditView")
     /// Toggle bibliography matching for the active workspace (⌃⌘B).
     static let browserToggleBibliography = Notification.Name("browserToggleBibliography")
+    /// Toggle the claims panel / research plan (⌃⌘C).
+    static let browserToggleClaims = Notification.Name("browserToggleClaims")
 
     // CLI data command
     static let browserGetPageData = Notification.Name("browserGetPageData")

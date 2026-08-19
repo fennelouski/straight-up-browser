@@ -189,6 +189,10 @@ class KeyboardShortcutsManager {
                 NotificationCenter.default.post(name: .browserToggleBibliography, object: nil)
                 return nil
             }
+            if store.matches(event, .claimsPanel) {
+                NotificationCenter.default.post(name: .browserToggleClaims, object: nil)
+                return nil
+            }
 
             // While the omnibar is open, every other key passes through so
             // editing shortcuts work in the text field.

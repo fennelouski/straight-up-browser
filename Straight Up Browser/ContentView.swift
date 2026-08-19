@@ -520,6 +520,8 @@ struct ContentView: View {
     @State private var auditDocumentId: UUID?
     /// Phase 5: non-nil = the bibliography panel is up, with this query prefill.
     @State private var bibliographyPrefill: String?
+    /// Phase 6: non-nil = the claims panel is up for this document.
+    @State private var claimsDocumentId: UUID?
     @State private var seenBeforeNote: String?
     @State private var seenBeforeToken = UUID()
     @State private var workspaceName = ""
@@ -1663,6 +1665,15 @@ struct ContentView: View {
                     workspaceId: tabManager.activeWorkspaceId,
                     webView: activeTab.flatMap { webViewManager?.existingWebView(for: $0.id) },
                     isPresented: $showTranscriptPanel
+                )
+            }
+            if let claimsDocumentId, let documentStore, let ledgerStore,
+               let claimsDocument = documentStore.document(id: claimsDocumentId) {
+                ClaimsPanel(
+                    session: documentStore.session(for: claimsDocument, workspaceId: claimsDocument.workspaceId),
+                    ledgerStore: ledgerStore,
+                    onFindSupport: { claim in bibliographyPrefill = claim },
+                    onClose: { self.claimsDocumentId = nil }
                 )
             }
             if let bibliographyPrefill, let ledgerStore,
@@ -3315,6 +3326,9 @@ struct ContentView: View {
         center.addMainActorObserver(forName: .browserToggleBibliography, object: nil, queue: .main) { [self] _ in
             toggleBibliographyPanel()
         }
+        center.addMainActorObserver(forName: .browserToggleClaims, object: nil, queue: .main) { [self] _ in
+            toggleClaimsPanel()
+        }
         // A focused document redirects Cmd-L to the editor's find bar (design
         // §1.2). Registered after NotificationManager's own showOmnibar
         // observer, so this runs second and wins.
@@ -3404,6 +3418,26 @@ struct ContentView: View {
         let selection = tabManager.focusedDocumentId
             .flatMap { documentPaneManager.paneView(for: $0)?.selectedText() }
         bibliographyPrefill = selection ?? ""
+    }
+
+    /// ⌃⌘C: the claims target is the focused document, else the workspace's
+    /// current one — the same rule as ⌃⌘G.
+    private func toggleClaimsPanel() {
+        if claimsDocumentId != nil {
+            claimsDocumentId = nil
+            return
+        }
+        guard let workspaceId = tabManager.activeWorkspaceId else {
+            showTransientNote(String(localized: "Open a workspace to see its research plan."))
+            return
+        }
+        let target = tabManager.focusedDocumentId
+            ?? documentStore?.currentDocument(workspaceId: workspaceId)?.id
+        guard let target else {
+            showTransientNote(String(localized: "This workspace has no documents yet."))
+            return
+        }
+        claimsDocumentId = target
     }
 
     private func handleOpenAnchor(_ note: Notification) {

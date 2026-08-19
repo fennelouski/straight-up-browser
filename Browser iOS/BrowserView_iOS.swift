@@ -107,6 +107,9 @@ struct BrowserView_iOS: View {
     /// Phase 4: non-nil = the audit sheet is up for this document.
     @State private var auditDocumentId: UUID?
     @State private var showBibliographySheet = false
+    @State private var bibliographyPrefill = ""
+    /// Phase 6: non-nil = the claims sheet is up for this document.
+    @State private var claimsDocumentId: UUID?
     @State private var transientNote: String?
     @State private var transientNoteToken = UUID()
     @State private var showShortcutSheet = false
@@ -558,14 +561,34 @@ struct BrowserView_iOS: View {
                 .presentationDragIndicator(.visible)
             }
         }
+        .sheet(isPresented: Binding(
+            get: { claimsDocumentId != nil },
+            set: { if !$0 { claimsDocumentId = nil } }
+        )) {
+            if let claimsDocumentId, let documentStore, let ledgerStore,
+               let claimsDocument = documentStore.document(id: claimsDocumentId) {
+                ClaimsPanel(
+                    session: documentStore.session(for: claimsDocument, workspaceId: claimsDocument.workspaceId),
+                    ledgerStore: ledgerStore,
+                    onFindSupport: { claim in
+                        self.claimsDocumentId = nil
+                        bibliographyPrefill = claim
+                        showBibliographySheet = true
+                    },
+                    onClose: { self.claimsDocumentId = nil }
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
+        }
         .sheet(isPresented: $showBibliographySheet) {
             if let workspaceId = tabManager.activeWorkspaceId, let ledgerStore {
                 BibliographyPanel(
                     workspaceId: workspaceId,
-                    initialQuery: "",
+                    initialQuery: bibliographyPrefill,
                     ledgerStore: ledgerStore,
                     composer: anchorComposer,
-                    onClose: { showBibliographySheet = false }
+                    onClose: { showBibliographySheet = false; bibliographyPrefill = "" }
                 )
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
@@ -613,7 +636,7 @@ struct BrowserView_iOS: View {
         let center = NotificationCenter.default
         return Publishers.MergeMany(
             [Notification.Name.browserDocumentNote, .browserOpenAnchor, .browserAnchorSelection,
-             .browserToggleAuditView, .browserToggleBibliography,
+             .browserToggleAuditView, .browserToggleBibliography, .browserToggleClaims,
              UIApplication.didBecomeActiveNotification, UIApplication.willResignActiveNotification]
                 .map { center.publisher(for: $0) }
         )
@@ -632,6 +655,8 @@ struct BrowserView_iOS: View {
             toggleAuditView()
         case .browserToggleBibliography:
             toggleBibliographySheet()
+        case .browserToggleClaims:
+            toggleClaimsSheet()
         case UIApplication.didBecomeActiveNotification:
             // Share-sheet capture (Phase 3): ingest anything queued while the
             // app was away, and keep the extension's picker mirror fresh.
@@ -661,6 +686,24 @@ struct BrowserView_iOS: View {
             return
         }
         auditDocumentId = target
+    }
+
+    private func toggleClaimsSheet() {
+        if claimsDocumentId != nil {
+            claimsDocumentId = nil
+            return
+        }
+        guard let workspaceId = tabManager.activeWorkspaceId else {
+            showNote(String(localized: "Open a workspace to see its research plan."))
+            return
+        }
+        let target = tabManager.focusedDocumentId
+            ?? documentStore?.currentDocument(workspaceId: workspaceId)?.id
+        guard let target else {
+            showNote(String(localized: "This workspace has no documents yet."))
+            return
+        }
+        claimsDocumentId = target
     }
 
     private func toggleBibliographySheet() {
@@ -737,6 +780,7 @@ struct BrowserView_iOS: View {
         case .transcriptPanel: showTranscriptSheet.toggle()
         case .auditView: toggleAuditView()
         case .bibliographySearch: toggleBibliographySheet()
+        case .claimsPanel: toggleClaimsSheet()
         case .showBookmarks: presentLibrary(.bookmarks)
         case .showHistory: presentLibrary(.history)
         case .showDownloads: showDownloads = true
@@ -1657,6 +1701,12 @@ struct BrowserView_iOS: View {
                             showWorkspaceSwitcher = false
                         } label: {
                             Label("Search Bibliography", systemImage: "text.book.closed")
+                        }
+                        Button {
+                            toggleClaimsSheet()
+                            showWorkspaceSwitcher = false
+                        } label: {
+                            Label("Claims & Research Plan", systemImage: "checklist")
                         }
                         Button {
                             archiveActiveWorkspace()

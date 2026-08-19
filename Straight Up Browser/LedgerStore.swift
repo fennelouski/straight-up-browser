@@ -480,6 +480,45 @@ final class LedgerStore {
         save("Delete document edges")
     }
 
+    // MARK: Claims (Phase 6)
+
+    /// Promotion: the only write claim extraction ever performs, and
+    /// LedgerClaim's first writer since Phase 1 reserved it. Fetch-then-insert
+    /// on normalizedText — the dedup-across-projects key.
+    @discardableResult
+    func promoteClaim(text: String) -> LedgerClaim {
+        let normalized = LedgerClaim.normalize(text)
+        var descriptor = FetchDescriptor<LedgerClaim>(
+            predicate: #Predicate { $0.normalizedText == normalized }
+        )
+        descriptor.fetchLimit = 1
+        if let existing = try? modelContext.fetch(descriptor).first { return existing }
+        let claim = LedgerClaim(text: text)
+        modelContext.insert(claim)
+        save("Promote claim")
+        return claim
+    }
+
+    func claimExists(normalizedFrom text: String) -> Bool {
+        let normalized = LedgerClaim.normalize(text)
+        var descriptor = FetchDescriptor<LedgerClaim>(
+            predicate: #Predicate { $0.normalizedText == normalized }
+        )
+        descriptor.fetchLimit = 1
+        return ((try? modelContext.fetch(descriptor).first) ?? nil) != nil
+    }
+
+    /// Stamp the claim onto this document's edges whose range starts inside the
+    /// claim's paragraph — LedgerEdge.claimId's first writer. An edge already
+    /// claimed keeps its earlier claim; stamping is not a merge tool.
+    func stampClaim(_ claimId: UUID, documentId: UUID, within range: NSRange) {
+        for edge in edges(documentId: documentId)
+        where edge.claimId == nil && NSLocationInRange(edge.rangeStart, range) {
+            edge.claimId = claimId
+        }
+        save("Stamp claim onto edges")
+    }
+
     // MARK: Transcripts (Phase 2)
 
     func transcript(sourceKey: String) -> SourceTranscript? {

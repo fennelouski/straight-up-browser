@@ -4,7 +4,7 @@ Research workspaces inside Straight Up Browser. A workspace owns its tabs, its d
 
 Built for one person's research: food science for video scripts, plus AI, software engineering, and the occasional academic paper. Most sources are general web pages and YouTube videos; some are academic papers. General-audience polish is explicitly not a goal.
 
-**Status:** Phases 1–5 are complete and shipped. See `docs/phase1-handoff.md` and `docs/phase2-handoff.md` for what exists, `docs/adr/0007-the-research-ledger.md` and `docs/adr/0008-split-admits-document-panes.md` for the decisions that shaped them.
+**Status:** Phases 1–6 are complete and shipped. See `docs/phase1-handoff.md` and `docs/phase2-handoff.md` for what exists, `docs/adr/0007-the-research-ledger.md` and `docs/adr/0008-split-admits-document-panes.md` for the decisions that shaped them.
 
 ---
 
@@ -135,9 +135,11 @@ Shipped exactly as specified: `AuditModel` + `AuditView` over the edge table, �
 
 Shipped with zero required inference: a deterministic lexical matcher behind the SPEC-mandated `PassageMatcher` protocol, optionally re-ranked by the OS's on-device `NLEmbedding`. Corpus = reader-extracted blocks + windowed transcripts of the workspace's sources; results are verbatim passages, banded Strong/Possible; a match becomes real only via its Anchor button (Phase 2's composer tail). ⌃⌘B. **Scope notes:** no interview held ([design call]s in `docs/phase5-design.md`); no persisted index (rebuilt per open, per ADR 0007); manual verification pending (checklist, Phase 5 section).
 
-### Phase 6 — Background claim extraction
+### Phase 6 — Background claim extraction ✅ **Complete**
 
 Trigger on paragraph-settle debounce, never per keystroke. Content-hash each paragraph; never re-extract unchanged text. Output is advisory; accepted claims become ledger objects, the rest vanish. The "research plan" is the list of extracted-but-unanchored claims — a to-do generated from the user's own writing.
+
+Shipped with a deterministic heuristic extractor as the default and the on-device FoundationModels model (availability- and AI-switch-gated, verbatim-guarded — selection, never generation) layered behind the same protocol. ⌃⌘C opens the claims panel: Research plan → Find Support hands off to Phase 5; Promote writes `LedgerClaim` + stamps `LedgerEdge.claimId` — the last writerless Phase 1 entities now have writers. **Scope notes:** no interview held ([design call]s in `docs/phase6-design.md`); candidates and dismissals deliberately unpersisted; extraction runs while the claims panel is open (hash-gated, identical results to always-on — recorded deviation); manual verification pending (checklist, Phase 6 section).
 
 ### Phase 7 — Deep-research import
 

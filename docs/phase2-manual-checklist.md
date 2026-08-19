@@ -114,3 +114,17 @@ Phase 3 shipped right behind Phase 2, same status: automated suite green, zero h
 - [ ] Sources never opened (deferred, no text) contribute nothing, and an all-deferred workspace explains itself.
 - [ ] iPhone: workspace switcher → Search Bibliography; same behavior, typed query.
 - [ ] Airplane mode: everything above works identically (fully on-device).
+
+---
+
+# Phase 6 — Background claim extraction (also NOT yet run)
+
+- [ ] Write a few paragraphs with checkable statements in a document, press **⌃⌘C**: the claims panel lists them — paragraphs with anchors under "Supported", the rest under "Research plan".
+- [ ] Type a new claim-shaped sentence; ~3s after you stop, it appears (paragraph-settle, never per keystroke).
+- [ ] Edit an unrelated paragraph: previously extracted paragraphs do not re-extract (no flicker, instant list).
+- [ ] **Find Support** on a research-plan claim opens the bibliography panel prefilled with it.
+- [ ] **Promote** a claim; promote a re-worded-only-in-case version in another workspace's document later — the ledger holds ONE claim (dedup across projects).
+- [ ] Dismiss a candidate: gone for the session; reopen the app, it may reappear (dismissals are deliberately not persisted).
+- [ ] With AI Features ON on an Apple Intelligence Mac: extraction may catch subtler claims; every listed claim is still a verbatim sentence from your text (select it and ⌘F to prove it).
+- [ ] With AI Features OFF or no Apple Intelligence: the heuristic still produces the number/comparative-shaped claims above, identically on iPhone.
+- [ ] Close the panel without touching anything, then check the ledger: nothing was written.
