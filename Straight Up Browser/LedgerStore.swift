@@ -160,7 +160,7 @@ final class LedgerStore {
         upsertReference(
             workspaceId: workspaceId,
             article: article,
-            method: .settle,
+            method: .rejectedOnClose,
             disposition: .dismissed
         )
         save("Record rejected source")

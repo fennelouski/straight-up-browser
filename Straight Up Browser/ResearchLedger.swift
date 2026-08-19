@@ -44,10 +44,11 @@ nonisolated enum SourceModality: String, CaseIterable, Codable, Sendable {
 
 /// Where a workspace reference came from.
 nonisolated enum SourceCaptureMethod: String, CaseIterable, Codable, Sendable {
-    case settle       // the page loaded and the user stayed with it
-    case manual       // deliberate one-keystroke capture, and workspace promotion
-    case shareSheet   // Phase 3
-    case importBundle // Phase 7
+    case settle          // the page loaded and the user stayed with it
+    case manual          // deliberate one-keystroke capture, and workspace promotion
+    case rejectedOnClose // never settled; the close itself created the row
+    case shareSheet      // Phase 3
+    case importBundle    // Phase 7
 }
 
 /// The user's verdict on a source within one workspace. Universal semantics:
@@ -76,6 +77,8 @@ nonisolated enum WorkspaceCapturePolicy {
     static let settleDwell: Duration = .seconds(20)
 
     /// Archives above this are skipped; the extracted text still lands.
+    /// ponytail: per-archive cap plus manual clearing in Settings, no automatic
+    /// eviction. Add LRU eviction if the local archive store gets uncomfortable.
     static let maximumArchiveBytes = 25 * 1_024 * 1_024
 }
 

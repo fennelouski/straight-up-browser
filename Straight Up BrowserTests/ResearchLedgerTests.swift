@@ -217,6 +217,8 @@ struct LedgerStoreTests {
         let ref = try #require(store.reference(workspaceId: workspace.id, sourceKey: key))
         #expect(ref.disposition == .dismissed)
 
+        #expect(ref.method == .rejectedOnClose, "a page that never settled must not claim it did")
+
         let article = try #require(store.source(sourceKey: key))
         #expect(article.originalPayloadData == nil, "rejection must never capture text")
         #expect(article.captureState == .deferred)
