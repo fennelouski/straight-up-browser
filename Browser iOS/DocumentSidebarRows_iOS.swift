@@ -15,6 +15,9 @@ struct DocumentSidebarRows_iOS: View {
     let focusedDocumentId: UUID?
     let onSelect: (UUID) -> Void
     let onNewDocument: () -> Void
+    // iPad only (ADR 0008): non-nil enables the Open in Split context action.
+    let splitMembership: ((UUID) -> Bool)?
+    let onToggleSplit: ((UUID) -> Void)?
 
     @Query private var documents: [WorkspaceDocument]
     @State private var renamingDocument: WorkspaceDocument?
@@ -25,13 +28,17 @@ struct DocumentSidebarRows_iOS: View {
         documentStore: DocumentStore,
         focusedDocumentId: UUID?,
         onSelect: @escaping (UUID) -> Void,
-        onNewDocument: @escaping () -> Void
+        onNewDocument: @escaping () -> Void,
+        splitMembership: ((UUID) -> Bool)? = nil,
+        onToggleSplit: ((UUID) -> Void)? = nil
     ) {
         self.workspaceId = workspaceId
         self.documentStore = documentStore
         self.focusedDocumentId = focusedDocumentId
         self.onSelect = onSelect
         self.onNewDocument = onNewDocument
+        self.splitMembership = splitMembership
+        self.onToggleSplit = onToggleSplit
         _documents = Query(
             filter: #Predicate<WorkspaceDocument> { $0.workspaceId == workspaceId },
             sort: [SortDescriptor(\.orderIndex), SortDescriptor(\.createdAt)]
@@ -82,6 +89,16 @@ struct DocumentSidebarRows_iOS: View {
             }
         }
         .contextMenu {
+            if let onToggleSplit {
+                Button {
+                    onToggleSplit(document.id)
+                } label: {
+                    Label(splitMembership?(document.id) == true
+                          ? String(localized: "Remove from Split")
+                          : String(localized: "Open in Split"),
+                          systemImage: "rectangle.split.2x1")
+                }
+            }
             Button {
                 renameText = document.displayName
                 renamingDocument = document

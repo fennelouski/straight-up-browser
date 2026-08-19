@@ -161,6 +161,27 @@ struct UndoCloseTests {
         #expect(manager.selectedTabId == tabB.id)
     }
 
+    @Test("Restore reverses a rejection in one workspace and touches nothing else")
+    func restoreDismissedFlipsOnlyDismissedRefs() throws {
+        let (_, context, store, _) = try makeFixture()
+        let first = Workspace(name: "Fermentation")
+        let second = Workspace(name: "Kombucha")
+        context.insert(first)
+        context.insert(second)
+        let url = URL(string: "https://example.com/maybe")!
+        store.recordRejection(url: url, title: "Maybe", workspaceId: first.id)
+        store.recordSettle(url: url, title: "Maybe", workspaceId: second.id)
+        let key = SourceCanonicalizer.canonicalKey(for: url)
+
+        store.restoreDismissed(sourceKey: key, workspaceId: first.id)
+        #expect(store.reference(workspaceId: first.id, sourceKey: key)?.disposition == .open)
+
+        // A ref that is not dismissed is not restorable — kept stays kept.
+        _ = store.archiveWorkspace(second)
+        store.restoreDismissed(sourceKey: key, workspaceId: second.id)
+        #expect(store.reference(workspaceId: second.id, sourceKey: key)?.disposition == .kept)
+    }
+
     @Test("restoreSplit resolves document ids beside tab ids")
     func restoreSplitResolvesDocuments() throws {
         let (_, _, _, manager) = try makeFixture()

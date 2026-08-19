@@ -75,6 +75,8 @@ struct BrowserView_iOS: View {
     @ObservedObject private var downloadManager = DownloadManager.shared
     @StateObject private var pageTranslator = PageTranslator()
     @StateObject private var fastForward = FastForward()
+    // iPad document-in-split (ADR 0008): per-window registry of UIKit pane views.
+    @StateObject private var documentPaneManager = DocumentPaneManager_iOS()
     @State private var webViewManager: WebViewManager?
     @State private var navigationManager: NavigationManager?
     @State private var bookmarkManager: BookmarkManager?
@@ -300,6 +302,10 @@ struct BrowserView_iOS: View {
                            tabs: allTabs,
                            activeTabId: tabManager.selectedTabId,
                            splitTabIds: supportsSplitPanes ? tabManager.splitTabIds : [],
+                           documentPaneProvider: supportsSplitPanes
+                               ? { documentPaneManager.paneView(for: $0) }
+                               : nil,
+                           focusedDocumentId: tabManager.focusedDocumentId,
                            onURLChange: { _ in },
                            onPageFinished: { pageTranslator.maybeAutoTranslate(webView: $0) })
                     // Keep the page viewport below the top safe area. Sites that
@@ -320,8 +326,10 @@ struct BrowserView_iOS: View {
             }
 
             // A focused document displays full screen where the page would
-            // (ADR 0008; iPhone/iPad solo display — design §1.4).
+            // (ADR 0008; solo display — design §1.4). A document that is a
+            // split MEMBER renders as a pane inside the web container instead.
             if managersInitialized, let focusedDocumentId = tabManager.focusedDocumentId,
+               !tabManager.splitTabIds.contains(focusedDocumentId),
                let documentStore {
                 DocumentPaneHost_iOS(
                     documentId: focusedDocumentId,
@@ -1347,7 +1355,16 @@ struct BrowserView_iOS: View {
                 tabManager.selectDocument(id)
                 withAnimation { showSidebar = false }
             },
-            onNewDocument: { createWorkspaceDocument() }
+            onNewDocument: { createWorkspaceDocument() },
+            splitMembership: supportsSplitPanes
+                ? { tabManager.splitTabIds.contains($0) }
+                : nil,
+            onToggleSplit: supportsSplitPanes
+                ? { id in
+                    tabManager.toggleDocumentSplitMembership(id)
+                    withAnimation { showSidebar = false }
+                }
+                : nil
         ))
     }
 
@@ -1390,15 +1407,30 @@ struct BrowserView_iOS: View {
     /// link's fragment/params do the scrolling and seeking.
     private func openAnchorURL(_ url: URL) {
         let key = SourceCanonicalizer.canonicalKey(for: url)
+        // Read-beside-write on iPad (ADR 0008, design §6.4): "Beside the
+        // document" reuses or opens the source's tab as a pane next to the
+        // focused document, exactly like the Mac. iPhone (no splits) and the
+        // "As a tab" setting keep full-screen navigation.
+        let behavior = UserDefaults.standard.string(forKey: "anchorLinkOpenBehavior") ?? "split"
+        let besideDocument = supportsSplitPanes && behavior != "tab"
+            && tabManager.focusedDocumentId != nil
+
         if let existing = visibleTabs.first(where: {
             $0.url.map { SourceCanonicalizer.canonicalKey(for: $0) } == key
         }) {
             webViewManager?.getWebView(for: existing.id).load(URLRequest(url: url))
-            tabManager.selectedTabId = existing.id
+            if besideDocument, !tabManager.splitTabIds.contains(existing.id) {
+                tabManager.toggleSplitMembership(existing, tabs: visibleTabs)
+            } else {
+                tabManager.selectedTabId = existing.id
+            }
             return
         }
-        let tab = tabManager.createNewTab(url: url)
+        let tab = tabManager.createNewTab(url: url, select: !besideDocument)
         webViewManager?.getWebView(for: tab.id).load(URLRequest(url: url))
+        if besideDocument {
+            tabManager.toggleSplitMembership(tab, tabs: visibleTabs + [tab])
+        }
     }
 
     private func showNote(_ text: String) {
@@ -1525,8 +1557,12 @@ struct BrowserView_iOS: View {
             guard let row = docStore?.document(id: id) else { return false }
             return row.workspaceId == tabManager?.activeWorkspaceId
         }
-        // Leaving a workspace closes its document edit sessions (Phase 2 debt).
-        tabManager.workspaceSwitched = { [weak docStore] in docStore?.closeAllSessions() }
+        // Leaving a workspace discards its document panes and closes every edit
+        // session (Phase 2 debt).
+        documentPaneManager.documentStore = docStore
+        tabManager.workspaceSwitched = { [weak documentPaneManager] in
+            documentPaneManager?.discardAll()
+        }
         anchorComposer = AnchorComposer(ledgerStore: store, documentStore: docStore, settleCapture: settle)
 
         // Phase 3: ingest shares queued while the app was closed.

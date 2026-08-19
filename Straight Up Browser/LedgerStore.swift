@@ -409,6 +409,17 @@ final class LedgerStore {
         return Set(byKey.filter { $0.value.allSatisfy { $0 == .dismissed } }.keys)
     }
 
+    /// The Newspaper's Restore action — `dismissed`'s one UI surface: reverse a
+    /// rejection in one workspace, returning the source to that project's
+    /// working set (the same verdict-reversal deliberately reopening it makes).
+    func restoreDismissed(sourceKey: String, workspaceId: UUID) {
+        guard let ref = reference(workspaceId: workspaceId, sourceKey: sourceKey),
+              ref.disposition == .dismissed else { return }
+        ref.disposition = .open
+        ref.updatedAt = Date()
+        save("Restore dismissed source")
+    }
+
     // MARK: Anchors (Phase 2)
 
     func anchor(id: UUID) -> LedgerAnchor? {

@@ -36,6 +36,10 @@ struct TabWebView: UIViewRepresentable {
     var tabs: [Tab]?
     var activeTabId: UUID?
     var splitTabIds: [UUID]
+    // ADR 0008 on iPad: pane ids resolve to a document view first, then a web
+    // view. Nil (iPhone) keeps splits tab-only.
+    var documentPaneProvider: ((UUID) -> UIView?)?
+    var focusedDocumentId: UUID?
     var onURLChange: ((URL?) -> Void)?
     var onPageFinished: ((WKWebView) -> Void)?
 
@@ -52,6 +56,8 @@ struct TabWebView: UIViewRepresentable {
          tabs: [Tab]?,
          activeTabId: UUID?,
          splitTabIds: [UUID] = [],
+         documentPaneProvider: ((UUID) -> UIView?)? = nil,
+         focusedDocumentId: UUID? = nil,
          onURLChange: ((URL?) -> Void)?,
          onPageFinished: ((WKWebView) -> Void)? = nil) {
         self._url = url
@@ -67,6 +73,8 @@ struct TabWebView: UIViewRepresentable {
         self.tabs = tabs
         self.activeTabId = activeTabId
         self.splitTabIds = splitTabIds
+        self.documentPaneProvider = documentPaneProvider
+        self.focusedDocumentId = focusedDocumentId
         self.onURLChange = onURLChange
         self.onPageFinished = onPageFinished
     }
@@ -83,15 +91,23 @@ struct TabWebView: UIViewRepresentable {
         context.coordinator.tabs = tabs
         context.coordinator.tabManager = tabManager
 
-        uiView.setDisplayedTabs(activeTabId: activeTabId, splitTabIds: splitTabIds)
+        uiView.documentPaneProvider = documentPaneProvider
+        uiView.setDisplayedTabs(
+            activeTabId: activeTabId,
+            splitTabIds: splitTabIds,
+            focusedDocumentId: focusedDocumentId
+        )
 
         // Restored split members may not have been selected yet this launch.
         // Prime each visible pane without making it the active command target.
+        // Document ids are skipped BEFORE getWebView — it would create a web
+        // view as a side effect (ADR 0008).
         let displayedIds = splitTabIds.count >= 2
             ? splitTabIds
             : [activeTabId].compactMap { $0 }
         for id in displayedIds where id != activeTabId {
-            guard let tab = tabs?.first(where: { $0.id == id }),
+            guard documentPaneProvider?(id) == nil,
+                  let tab = tabs?.first(where: { $0.id == id }),
                   let pane = webViewManager?.getWebView(for: id) else { continue }
             pane.pageZoom = tab.zoomLevel
             if pane.url == nil, let paneURL = tab.url, !pane.isLoading {
@@ -789,7 +805,12 @@ final class WebViewContainer_iOS: UIView {
     private var webViewManager: WebViewManager?
     private weak var coordinator: TabWebView.Coordinator?
     private var activeTabId: UUID?
-    private var visibleWebViews: [WKWebView] = []
+    // Pane views in splitTabIds order: WKWebViews and (iPad, ADR 0008)
+    // document pane views alike.
+    private var visiblePanes: [UIView] = []
+    var documentPaneProvider: ((UUID) -> UIView?)?
+    // id of each displayed document pane view, for tap-to-focus.
+    private var documentPaneIds: [UIView: UUID] = [:]
 
     var activeWebView: WKWebView? {
         if let activeTabId = activeTabId, let webViewManager = webViewManager {
@@ -808,34 +829,65 @@ final class WebViewContainer_iOS: UIView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func setDisplayedTabs(activeTabId tabId: UUID?, splitTabIds: [UUID]) {
+    func setDisplayedTabs(activeTabId tabId: UUID?, splitTabIds: [UUID], focusedDocumentId: UUID? = nil) {
         let tabChanged = activeTabId != tabId
         activeTabId = tabId
         webViewManager?.setActiveTab(tabId)
 
-        for webView in visibleWebViews { webView.isHidden = true }
-        visibleWebViews.removeAll()
+        for pane in visiblePanes { pane.isHidden = true }
+        visiblePanes.removeAll()
 
         let desiredIds = splitTabIds.count >= 2
             ? splitTabIds
             : [tabId].compactMap { $0 }
         guard !desiredIds.isEmpty, let webViewManager else { return }
 
+        // Exactly one pane owns focus: the focused document when there is one,
+        // else the active tab (ADR 0008).
+        let focusedPaneId = focusedDocumentId ?? tabId
         for desiredId in desiredIds {
+            // Documents first — getWebView(for:) with a document id would
+            // create an orphan web view as a side effect.
+            if let documentView = documentPaneProvider?(desiredId) {
+                configureDocumentPane(documentView, id: desiredId)
+                documentView.isHidden = false
+                documentView.layer.borderWidth = desiredId == focusedPaneId && desiredIds.count > 1 ? 2 : 0
+                documentView.layer.borderColor = UIColor.tintColor.cgColor
+                visiblePanes.append(documentView)
+                continue
+            }
             let webView = webViewManager.getWebView(for: desiredId)
             configure(webView)
             webView.isHidden = false
-            webView.layer.borderWidth = desiredId == tabId && desiredIds.count > 1 ? 2 : 0
+            webView.layer.borderWidth = desiredId == focusedPaneId && desiredIds.count > 1 ? 2 : 0
             webView.layer.borderColor = UIColor.tintColor.cgColor
-            visibleWebViews.append(webView)
+            visiblePanes.append(webView)
         }
 
         setNeedsLayout()
 
-        if tabChanged, let tabId,
-           let webView = visibleWebViews.first(where: { webViewManager.tabId(for: $0) == tabId }) {
+        if tabChanged, let tabId, focusedDocumentId == nil,
+           let webView = visiblePanes.first(where: { ($0 as? WKWebView).flatMap(webViewManager.tabId(for:)) == tabId }) {
             webView.becomeFirstResponder()
         }
+    }
+
+    private func configureDocumentPane(_ view: UIView, id: UUID) {
+        documentPaneIds[view] = id
+        if view.superview !== self {
+            // Tapping anywhere in the pane focuses its document, exactly as
+            // tapping a web pane focuses its tab.
+            let focusTap = UITapGestureRecognizer(target: self, action: #selector(documentPaneTapped(_:)))
+            focusTap.cancelsTouchesInView = false
+            focusTap.name = "BrowserPaneFocus"
+            view.addGestureRecognizer(focusTap)
+            addSubview(view)
+        }
+    }
+
+    @objc private func documentPaneTapped(_ recognizer: UITapGestureRecognizer) {
+        guard let view = recognizer.view, let documentId = documentPaneIds[view] else { return }
+        coordinator?.tabManager?.selectDocument(documentId)
     }
 
     private func configure(_ webView: WKWebView) {
@@ -870,10 +922,10 @@ final class WebViewContainer_iOS: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        // `visibleWebViews` is rebuilt in splitTabIds order. UIKit subview
+        // `visiblePanes` is rebuilt in splitTabIds order. UIKit subview
         // insertion order reflects creation history and must not decide pane
         // order after the user reorders a split.
-        let panes = visibleWebViews.filter { !$0.isHidden && $0.superview === self }
+        let panes = visiblePanes.filter { !$0.isHidden && $0.superview === self }
         guard panes.count > 1 else {
             panes.first?.frame = bounds
             return
@@ -915,8 +967,9 @@ final class WebViewContainer_iOS: UIView {
         if let webView = subview as? WKWebView {
             webView.removeObserver(self, forKeyPath: "estimatedProgress")
             webView.removeObserver(self, forKeyPath: #keyPath(WKWebView.url))
-            visibleWebViews.removeAll { $0 === webView }
         }
+        visiblePanes.removeAll { $0 === subview }
+        documentPaneIds.removeValue(forKey: subview)
         super.willRemoveSubview(subview)
     }
 

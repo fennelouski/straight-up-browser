@@ -33,7 +33,11 @@ struct Settings_iOS: View {
 
     @AppStorage("searchEngine") private var searchEngine = "Google"
     // Phase 2 (design §6.4): what tapping an anchor link in a document does.
-    @AppStorage("anchorLinkOpenBehavior") private var anchorLinkOpenBehavior = "peek"
+    // "peek" was removed from this picker 2026-08-20 (phase2-design §12 #8):
+    // iOS never peeked, so the option promised what it didn't do. A stored
+    // legacy "peek" behaves as "split" (openAnchorURL treats non-"tab" as
+    // beside-the-document where splits exist).
+    @AppStorage("anchorLinkOpenBehavior") private var anchorLinkOpenBehavior = "split"
     @AppStorage(FastForward.Key.enabled) private var fastForwardEnabled = true
     @AppStorage("spaceScrollPercent") private var spaceScrollPercent = 90.0
     @AppStorage("javaScriptEnabled") private var javaScriptEnabled = true
@@ -131,9 +135,11 @@ struct Settings_iOS: View {
 
                 Section {
                     Picker("Anchor links open", selection: $anchorLinkOpenBehavior) {
-                        Text("Peek first").tag("peek")
                         Text("Beside the document").tag("split")
                         Text("As a tab").tag("tab")
+                    }
+                    .onAppear {
+                        if anchorLinkOpenBehavior == "peek" { anchorLinkOpenBehavior = "split" }
                     }
                 } header: {
                     Text("Research Anchors")

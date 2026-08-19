@@ -10,6 +10,163 @@
 
 import SwiftUI
 import UIKit
+import Combine
+
+// MARK: - Split panes (iPad)
+
+/// UIKit twin of the Mac `DocumentPaneManager` (ADR 0008 on iPad): a per-window
+/// registry of pane views. `WebViewContainer_iOS` resolves pane ids here BEFORE
+/// ever asking WebViewManager — `getWebView(for:)` with a document id would
+/// create an orphan web view as a side effect.
+@MainActor
+final class DocumentPaneManager_iOS: ObservableObject {
+    private var panes: [UUID: DocumentPaneView_iOS] = [:]
+    weak var documentStore: DocumentStore?
+
+    /// Nil when the id is not a document in the given store.
+    func paneView(for id: UUID) -> UIView? {
+        if let existing = panes[id] { return existing }
+        guard let store = documentStore, let row = store.document(id: id) else { return nil }
+        let session = store.session(for: row, workspaceId: row.workspaceId)
+        let pane = DocumentPaneView_iOS(session: session, store: store)
+        panes[id] = pane
+        return pane
+    }
+
+    func discardAll() {
+        for pane in panes.values { pane.removeFromSuperview() }
+        panes.removeAll()
+        documentStore?.closeAllSessions()
+    }
+}
+
+/// UIKit twin of the Mac `DocumentPaneView`: the editor plus its transient
+/// status line, framed by `WebViewContainer_iOS.layoutSubviews`. The solo
+/// (full-screen) path below stays SwiftUI.
+@MainActor
+final class DocumentPaneView_iOS: UIView, UITextViewDelegate {
+    let session: DocumentEditSession
+    private weak var store: DocumentStore?
+    private let textView = MarkdownTextView_iOS()
+    private let statusLabel = UILabel()
+    private var cancellables: Set<AnyCancellable> = []
+
+    init(session: DocumentEditSession, store: DocumentStore) {
+        self.session = session
+        self.store = store
+        super.init(frame: .zero)
+        backgroundColor = .systemBackground
+        clipsToBounds = true
+
+        textView.delegate = self
+        addSubview(textView)
+
+        statusLabel.font = .preferredFont(forTextStyle: .caption1)
+        statusLabel.textColor = .secondaryLabel
+        statusLabel.textAlignment = .center
+        statusLabel.backgroundColor = .secondarySystemBackground
+        statusLabel.isHidden = true
+        addSubview(statusLabel)
+
+        session.$externalRevision
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.adoptSessionText() }
+            .store(in: &cancellables)
+        session.$resolvedLinks
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.restyle() }
+            .store(in: &cancellables)
+        store.$missingDocumentIds
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] missing in self?.updateStatus(missing: missing) }
+            .store(in: &cancellables)
+
+        if session.isLoaded {
+            adoptSessionText()
+        } else {
+            Task { [weak self] in
+                await self?.session.open()
+                self?.adoptSessionText()
+            }
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        textView.frame = bounds
+        statusLabel.frame = CGRect(x: 0, y: 0, width: bounds.width, height: statusLabel.isHidden ? 0 : 24)
+    }
+
+    private func adoptSessionText() {
+        if textView.text != session.text {
+            let selection = textView.selectedRange
+            textView.text = session.text
+            let length = (textView.text as NSString).length
+            textView.selectedRange = NSRange(location: min(selection.location, length), length: 0)
+        }
+        restyle()
+        updateStatus(missing: store?.missingDocumentIds ?? [])
+    }
+
+    private func restyle() {
+        textView.restyle(resolved: session.resolvedLinks)
+    }
+
+    private func updateStatus(missing: Set<UUID>) {
+        if missing.contains(session.documentId) {
+            statusLabel.text = String(localized: "File missing — it may have been moved or deleted outside Browser.")
+            statusLabel.isHidden = false
+        } else if case .unavailable = store?.containerState {
+            statusLabel.text = String(localized: "iCloud Drive is unavailable — sign in to edit documents.")
+            statusLabel.isHidden = false
+        } else if !session.isLoaded {
+            statusLabel.text = String(localized: "Waiting for iCloud…")
+            statusLabel.isHidden = false
+        } else {
+            statusLabel.isHidden = true
+        }
+        setNeedsLayout()
+    }
+
+    // MARK: UITextViewDelegate (mirrors MarkdownEditorRepresentable_iOS)
+
+    func textViewDidChange(_ textView: UITextView) {
+        session.editorDidChangeText(textView.text)
+        restyle()
+    }
+
+    func textViewDidChangeSelection(_ textView: UITextView) {
+        restyle()
+    }
+
+    func textViewDidEndEditing(_ textView: UITextView) {
+        let session = session
+        Task { await session.saveNow() }
+    }
+
+    func textView(
+        _ textView: UITextView,
+        primaryActionFor textItem: UITextItem,
+        defaultAction: UIAction
+    ) -> UIAction? {
+        guard case .link(let url) = textItem.content else { return defaultAction }
+        let attributes = textView.attributedText.attributes(at: textItem.range.location, effectiveRange: nil)
+        let anchorId = attributes[MarkdownStyling.anchorIdAttribute] as? UUID
+        return UIAction(title: String(localized: "Open")) { _ in
+            if let anchorId {
+                NotificationCenter.default.post(
+                    name: .browserOpenAnchor, object: nil,
+                    userInfo: ["anchorId": anchorId, "url": url]
+                )
+            } else {
+                NotificationCenter.default.post(name: .browserOpenURL, object: url)
+            }
+        }
+    }
+}
 
 /// Full-screen document host: header strip + editor.
 struct DocumentPaneHost_iOS: View {

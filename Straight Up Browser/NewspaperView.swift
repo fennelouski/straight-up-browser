@@ -35,6 +35,10 @@ struct NewspaperView: View {
 
     @State private var selectedSection = Self.allSections
     @State private var unreadOnly = false
+    // `dismissed`'s one UI surface: sources rejected in every workspace are
+    // hidden (ADR 0007's feed rule, wired here); this toggle reveals them, and
+    // the card context menu can restore one per workspace.
+    @State private var showDismissed = false
     @State private var pageIndex = 0
 
     private static let allSections = "All Sections"
@@ -48,7 +52,11 @@ struct NewspaperView: View {
     }
 
     private var sortedArticles: [NewspaperArticle] {
-        storedArticles
+        let hidden: Set<String> = showDismissed
+            ? []
+            : LedgerStore(modelContext: modelContext).hiddenFromFeedKeys()
+        return storedArticles
+            .filter { hidden.isEmpty || !hidden.contains($0.sourceKey) }
             .filter { !unreadOnly || !$0.isRead }
             .filter { selectedSection == Self.allSections || $0.section == selectedSection }
             .sorted {
@@ -185,6 +193,11 @@ struct NewspaperView: View {
 
         Toggle(isOn: $unreadOnly) {
             Label("Unread", systemImage: "circle")
+        }
+        .toggleStyle(.button)
+
+        Toggle(isOn: $showDismissed) {
+            Label("Dismissed", systemImage: "archivebox")
         }
         .toggleStyle(.button)
     }
@@ -575,6 +588,18 @@ private struct NewspaperStoryLink: View {
                     }
                 }
             }
+            // `dismissed`'s restore path: reverse a rejection per workspace,
+            // the same verdict-reversal deliberately reopening the source makes.
+            if !dismissedWorkspaces.isEmpty {
+                Menu("Restore to Working Set") {
+                    ForEach(dismissedWorkspaces, id: \.0) { entry in
+                        Button(entry.1) {
+                            LedgerStore(modelContext: modelContext)
+                                .restoreDismissed(sourceKey: article.sourceKey, workspaceId: entry.0)
+                        }
+                    }
+                }
+            }
             Divider()
             Button("Remove from Newspaper", role: .destructive) {
                 actions.remove(article)
@@ -586,6 +611,16 @@ private struct NewspaperStoryLink: View {
     private var referencedWorkspaceIds: Set<UUID> {
         Set(LedgerStore(modelContext: modelContext)
             .references(sourceKey: article.sourceKey).map(\.workspaceId))
+    }
+
+    /// Workspaces where this source is currently rejected, named for the menu.
+    private var dismissedWorkspaces: [(UUID, String)] {
+        LedgerStore(modelContext: modelContext)
+            .references(sourceKey: article.sourceKey)
+            .filter { $0.disposition == .dismissed }
+            .compactMap { ref in
+                workspaces.first { $0.id == ref.workspaceId }.map { (ref.workspaceId, $0.name) }
+            }
     }
 
     private func moveToWorkspace(_ workspace: Workspace) {

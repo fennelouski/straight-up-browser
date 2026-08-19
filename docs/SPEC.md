@@ -174,4 +174,4 @@ Still open:
 
 - **Claim promotion UX** — what gesture turns a text range into a named claim. (The claims panel's Promote button covers extracted claims; a selection-based gesture remains open.)
 - ~~**Undo of an accidental tab close** must un-write the `dismissed` disposition~~ — **resolved 2026-08-20**: the closed-tab snapshot carries the ref's prior disposition; ⇧⌘T restores it (or deletes a ref the close created), restores workspace membership, and undoes a multi-pane ⌘W as one unit. Pinned by `UndoCloseTests`.
-- **iPad document-in-split** — deferred from Phase 2 (deviation #6); needs an explicit keep-or-build decision.
+- ~~**iPad document-in-split**~~ — **built 2026-08-20** on the owner's verdict (phase2-design §12 #6): iPad splits admit document panes exactly as the Mac's do, and anchor links honor "Beside the document" there. Hands-on iPad verification pending (checklist).

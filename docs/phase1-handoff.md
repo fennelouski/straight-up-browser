@@ -196,5 +196,5 @@ Claim promotion UX, the Markdown editor, anchor creation UI, YouTube transcripts
 
 **Known debt beyond the ponytail list:**
 - ~~**Undo of an accidental tab close does not un-write the disposition.**~~ *Closed 2026-08-20: the snapshot carries workspace, prior disposition, and an undo-group id; `reopenLastClosedTab` un-writes the `dismissed` (restore-or-delete, never clobbering a newer verdict) and a multi-pane ⌘W undoes as one unit. Pinned by `UndoCloseTests`.*
-- **`dismissed` has no UI.** Rejections are recorded and shown nowhere.
+- ~~**`dismissed` has no UI.**~~ *Closed 2026-08-20 (owner picked the Newspaper-filter proposal): fully-dismissed sources are now actually hidden from the Newspaper (the ADR 0007 feed rule finally has its caller), a Dismissed toggle in the masthead reveals them, and the card context menu restores a rejection per workspace (`LedgerStore.restoreDismissed`).*
 - **The workspace UI flow is not covered by a UI test.** Verified by unit tests and by inspecting the real store at runtime, not by driving the menus.
