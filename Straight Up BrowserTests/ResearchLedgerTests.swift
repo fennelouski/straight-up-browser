@@ -362,6 +362,64 @@ struct LedgerStoreTests {
     }
 }
 
+// MARK: - Store routing
+
+/// The privacy/quota guarantee that page archives never sync is enforced by
+/// which ModelConfiguration declares the entity. Both store files end up
+/// containing every table (Core Data creates the full model in each), so the
+/// only meaningful check is where a write actually lands.
+@MainActor
+struct LedgerArchiveRoutingTests {
+
+    @Test("Archives write to the local store, never the synced one")
+    func archivesLandInTheLocalStore() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("ledger-routing-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // Mirrors ModelContainerStartup.makeDefault: one schema, two stores.
+        let schema = Schema(TabSync.cloudBackedModelTypes + TabSync.localOnlyModelTypes)
+        let syncedURL = directory.appendingPathComponent("synced.store")
+        let localURL = directory.appendingPathComponent("LocalArchives.store")
+        let synced = ModelConfiguration(
+            schema: Schema(TabSync.cloudBackedModelTypes),
+            url: syncedURL,
+            cloudKitDatabase: .none
+        )
+        let local = ModelConfiguration(
+            "LocalArchives",
+            schema: Schema(TabSync.localOnlyModelTypes),
+            url: localURL,
+            cloudKitDatabase: .none
+        )
+        let container = try ModelContainer(for: schema, configurations: [synced, local])
+        let context = ModelContext(container)
+
+        let workspace = Workspace(name: "Fermentation")
+        context.insert(workspace)
+        let store = LedgerStore(modelContext: context)
+        let article = try #require(store.recordSettle(
+            url: URL(string: "https://example.com/koji")!, title: "Koji", workspaceId: workspace.id
+        ))
+        store.storeArchive(sourceId: article.id, sourceKey: article.sourceKey, data: Data(repeating: 7, count: 4_096))
+        try context.save()
+
+        #expect(store.totalArchiveBytes() == 4_096)
+        #expect(FileManager.default.fileExists(atPath: localURL.path), "the local archive store must exist")
+
+        // The archive bytes are in the local file and nowhere near the synced one.
+        let syncedBytes = (try Data(contentsOf: syncedURL)).count
+        let localBytes = (try Data(contentsOf: localURL)).count
+        #expect(localBytes > 0)
+        #expect(syncedBytes > 0)
+
+        // And the entity is declared local-only, which is what keeps CloudKit out.
+        #expect(TabSync.localOnlyModelTypes.map { String(describing: $0) } == ["LedgerArchive"])
+        #expect(!TabSync.cloudBackedModelTypeNames.contains("LedgerArchive"))
+    }
+}
+
 // MARK: - Migration
 
 @MainActor
