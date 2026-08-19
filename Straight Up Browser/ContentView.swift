@@ -516,6 +516,8 @@ struct ContentView: View {
     @State private var anchorComposer: AnchorComposer?
     @StateObject private var documentPaneManager = DocumentPaneManager()
     @State private var showTranscriptPanel = false
+    /// Phase 4: non-nil = the audit view is up for this document.
+    @State private var auditDocumentId: UUID?
     @State private var seenBeforeNote: String?
     @State private var seenBeforeToken = UUID()
     @State private var workspaceName = ""
@@ -1660,6 +1662,29 @@ struct ContentView: View {
                     webView: activeTab.flatMap { webViewManager?.existingWebView(for: $0.id) },
                     isPresented: $showTranscriptPanel
                 )
+            }
+            if let auditDocumentId,
+               let documentStore, let ledgerStore,
+               let auditDocument = documentStore.document(id: auditDocumentId) {
+                AuditView(
+                    document: auditDocument,
+                    workspaceId: auditDocument.workspaceId,
+                    loadModel: { [weak documentStore, weak ledgerStore] in
+                        guard let documentStore, let ledgerStore else { return nil }
+                        return AuditLoader.load(
+                            document: auditDocument,
+                            workspaceId: auditDocument.workspaceId,
+                            ledgerStore: ledgerStore,
+                            documentStore: documentStore
+                        )
+                    },
+                    onClose: { self.auditDocumentId = nil }
+                )
+                .frame(maxWidth: 1080, maxHeight: 720)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.primary.opacity(0.12)))
+                .shadow(color: .black.opacity(0.3), radius: 24, y: 10)
+                .padding(28)
             }
             if showSaveWorkspaceDialog {
                 Color.black.opacity(0.5)
@@ -3272,6 +3297,9 @@ struct ContentView: View {
         center.addMainActorObserver(forName: .browserOpenAnchor, object: nil, queue: .main) { [self] note in
             handleOpenAnchor(note)
         }
+        center.addMainActorObserver(forName: .browserToggleAuditView, object: nil, queue: .main) { [self] _ in
+            toggleAuditView()
+        }
         // A focused document redirects Cmd-L to the editor's find bar (design
         // §1.2). Registered after NotificationManager's own showOmnibar
         // observer, so this runs second and wins.
@@ -3325,6 +3353,26 @@ struct ContentView: View {
         } else {
             showTransientNote(String(localized: "Transcripts are available on video pages."))
         }
+    }
+
+    /// ⌃⌘G: the audit target is the focused document, else the workspace's
+    /// current document (the anchor-append rule).
+    private func toggleAuditView() {
+        if auditDocumentId != nil {
+            auditDocumentId = nil
+            return
+        }
+        guard let workspaceId = tabManager.activeWorkspaceId else {
+            showTransientNote(String(localized: "Open a workspace to audit its documents."))
+            return
+        }
+        let target = tabManager.focusedDocumentId
+            ?? documentStore?.currentDocument(workspaceId: workspaceId)?.id
+        guard let target else {
+            showTransientNote(String(localized: "This workspace has no documents yet."))
+            return
+        }
+        auditDocumentId = target
     }
 
     private func handleOpenAnchor(_ note: Notification) {

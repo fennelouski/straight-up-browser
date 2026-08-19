@@ -161,6 +161,8 @@ extension Notification.Name {
     static let browserOpenAnchor = Notification.Name("browserOpenAnchor")
     /// Focus the document editor's find bar (⌘L while a document is focused).
     static let browserDocumentFind = Notification.Name("browserDocumentFind")
+    /// Toggle the graph/audit view for the focused (or current) document (⌃⌘G).
+    static let browserToggleAuditView = Notification.Name("browserToggleAuditView")
 
     // CLI data command
     static let browserGetPageData = Notification.Name("browserGetPageData")

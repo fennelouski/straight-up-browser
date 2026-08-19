@@ -89,3 +89,15 @@ Phase 3 shipped right behind Phase 2, same status: automated suite green, zero h
 
 ## Both platforms
 - [ ] Newspaper → long-press/right-click an article → **Move to Workspace**: the reference moves (check seen-before now names the new workspace); the article's Section did not change; moving onto a workspace that already has it merges (one reference remains).
+
+---
+
+# Phase 4 — Graph / audit view (also NOT yet run)
+
+- [ ] In a workspace with an anchored document, press **⌃⌘G** (Mac) / tap the graph icon in the document header (iOS): the audit view opens — document blocks left, source cards right, curved lines between anchored passages and their sources.
+- [ ] Scroll the text column: lines only draw for passages on screen (the visible-passage filter).
+- [ ] **Unsupported Claims** mode: paragraphs with no anchor get the yellow bar; headings never do.
+- [ ] **Unused Sources** mode: sources captured in the workspace but cited in no document get the orange badge and stay bright; cited ones dim. Anchor one of them from its page, reopen the audit — it moves to the cited group.
+- [ ] **Shared Upstream** mode: open a source page, ⌘-click several links from it into new tabs, let them settle, then check the audit — the spawned sources share one colored "Shared upstream" badge (the fan).
+- [ ] Click a source card: it opens per your "Anchor links open" setting (split beside on Mac, full screen iPhone), and the audit closes.
+- [ ] ⌃⌘G outside a workspace / in a workspace with no documents: correct refusal notes.

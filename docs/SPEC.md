@@ -4,7 +4,7 @@ Research workspaces inside Straight Up Browser. A workspace owns its tabs, its d
 
 Built for one person's research: food science for video scripts, plus AI, software engineering, and the occasional academic paper. Most sources are general web pages and YouTube videos; some are academic papers. General-audience polish is explicitly not a goal.
 
-**Status:** Phases 1–3 are complete and shipped. See `docs/phase1-handoff.md` and `docs/phase2-handoff.md` for what exists, `docs/adr/0007-the-research-ledger.md` and `docs/adr/0008-split-admits-document-panes.md` for the decisions that shaped them.
+**Status:** Phases 1–4 are complete and shipped. See `docs/phase1-handoff.md` and `docs/phase2-handoff.md` for what exists, `docs/adr/0007-the-research-ledger.md` and `docs/adr/0008-split-admits-document-panes.md` for the decisions that shaped them.
 
 ---
 
@@ -123,9 +123,11 @@ Share any page, video, or file from any app into a chosen workspace; default to 
 
 Shipped as an iOS share extension (one-tap picker, most-recent workspace first) handing off through an app-group inbox the app drains on activation — the extension never opens the store. Files import by content hash; "movable afterward" is the Newspaper's Move to Workspace menu on both platforms. **Scope notes:** Mac share-menu extension deferred (in-app capture already covers the Mac); no interview was held — decisions are [design call]s in `docs/phase3-design.md`; manual verification pending (`docs/phase2-manual-checklist.md`, Phase 3 section).
 
-### Phase 4 — Graph / audit view
+### Phase 4 — Graph / audit view ✅ **Complete**
 
 Document-anchored, not free-floating: text down one side, sources down the other, edges between, filtered to the visible passage. No force-directed hairball. Modes: unsupported claims, unused sources, shared upstream. This is a rendering of the edge table.
+
+Shipped exactly as specified: `AuditModel` + `AuditView` over the edge table, ⌃⌘G / document-header entry, modes as filters over one layout. Unused is workspace-wide; shared upstream renders only the lineage `openedFromSourceId` recorded since Phase 1. **Scope notes:** no interview held ([design call]s in `docs/phase4-design.md`); read-only snapshot view; manual verification pending (checklist, Phase 4 section).
 
 ### Phase 5 — Bibliography matching
 

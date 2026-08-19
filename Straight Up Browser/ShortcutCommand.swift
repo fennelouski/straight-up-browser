@@ -248,6 +248,7 @@ extension ShortcutCommand {
     static let anchorSelection = Self("anchorSelection", "Anchor Selection to Document", .bookmarks, Shortcut(key: "d", command: true, shift: true, option: true))
     static let newWorkspaceDocument = Self("newWorkspaceDocument", "New Workspace Document", .bookmarks, Shortcut(key: "n", command: true, control: true))
     static let transcriptPanel = Self("transcriptPanel", "Toggle Video Transcript", .page, Shortcut(key: "t", command: true, control: true))
+    static let auditView = Self("auditView", "Graph & Audit View", .page, Shortcut(key: "g", command: true, control: true))
     static let showBookmarks = Self("showBookmarks", "Show Bookmarks", .bookmarks, Shortcut(key: "b", command: true, shift: true))
     static let showHistory = Self("showHistory", "Show History", .bookmarks, Shortcut(key: "y", command: true))
 
@@ -295,7 +296,7 @@ extension ShortcutCommand {
            findInPage, findNext, findPrevious, zoomIn, zoomOut, actualSize, printPage, exportPDF, fullScreen,
            toggleTranslation, translateInSplit, readerMode, toggleAutofill,
            toggleTabBar, hideTabBar, minimalTabBar, compactTabBar, wideTabBar,
-           addBookmark, captureSource, anchorSelection, newWorkspaceDocument, transcriptPanel,
+           addBookmark, captureSource, anchorSelection, newWorkspaceDocument, transcriptPanel, auditView,
            showBookmarks, showHistory, clearSiteData, convertToIncognito,
            omnibar, quickOpen, quickOpenNewTab, tabGrid, scratchPad, agentPanel, shortcutOverlay, settings, help, extensionPopup]
         + platformCommands
@@ -360,6 +361,7 @@ enum BrowserPlatformCommandAction: Hashable {
     case anchorSelection
     case newWorkspaceDocument
     case transcriptPanel
+    case auditView
     case showBookmarks
     case showHistory
     case showDownloads
@@ -412,6 +414,7 @@ struct BrowserPlatformCommandEntry: Identifiable {
         case .anchorSelection: .browserAnchorSelection
         case .newWorkspaceDocument: .browserNewWorkspaceDocument
         case .transcriptPanel: .browserToggleTranscript
+        case .auditView: .browserToggleAuditView
         case .showBookmarks: .browserShowBookmarks
         case .showHistory: .browserShowHistory
         case .showDownloads: .browserShowDownloads
@@ -478,6 +481,7 @@ enum BrowserPlatformCommandRegistry {
         .init(group: .bookmarks, command: .anchorSelection, action: .anchorSelection),
         .init(group: .bookmarks, command: .newWorkspaceDocument, action: .newWorkspaceDocument),
         .init(group: .bookmarks, command: .transcriptPanel, action: .transcriptPanel),
+        .init(group: .bookmarks, command: .auditView, action: .auditView),
         .init(group: .bookmarks, command: .showBookmarks, action: .showBookmarks),
         .init(group: .bookmarks, command: .showHistory, action: .showHistory),
     ]

@@ -104,6 +104,8 @@ struct BrowserView_iOS: View {
     @State private var documentStore: DocumentStore?
     @State private var anchorComposer: AnchorComposer?
     @State private var showTranscriptSheet = false
+    /// Phase 4: non-nil = the audit sheet is up for this document.
+    @State private var auditDocumentId: UUID?
     @State private var transientNote: String?
     @State private var transientNoteToken = UUID()
     @State private var showShortcutSheet = false
@@ -531,6 +533,30 @@ struct BrowserView_iOS: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: Binding(
+            get: { auditDocumentId != nil },
+            set: { if !$0 { auditDocumentId = nil } }
+        )) {
+            if let auditDocumentId, let documentStore, let ledgerStore,
+               let auditDocument = documentStore.document(id: auditDocumentId) {
+                AuditView(
+                    document: auditDocument,
+                    workspaceId: auditDocument.workspaceId,
+                    loadModel: { [weak documentStore, weak ledgerStore] in
+                        guard let documentStore, let ledgerStore else { return nil }
+                        return AuditLoader.load(
+                            document: auditDocument,
+                            workspaceId: auditDocument.workspaceId,
+                            ledgerStore: ledgerStore,
+                            documentStore: documentStore
+                        )
+                    },
+                    onClose: { self.auditDocumentId = nil }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
+        }
         .sheet(isPresented: $showTranscriptSheet) {
             if let article = transcriptArticle, let fetcher = tabManager.settleCapture?.transcriptFetcher {
                 TranscriptPanelView(
@@ -573,6 +599,7 @@ struct BrowserView_iOS: View {
         let center = NotificationCenter.default
         return Publishers.MergeMany(
             [Notification.Name.browserDocumentNote, .browserOpenAnchor, .browserAnchorSelection,
+             .browserToggleAuditView,
              UIApplication.didBecomeActiveNotification, UIApplication.willResignActiveNotification]
                 .map { center.publisher(for: $0) }
         )
@@ -587,6 +614,8 @@ struct BrowserView_iOS: View {
             if let url = note.userInfo?["url"] as? URL { openAnchorURL(url) }
         case .browserAnchorSelection:
             anchorCurrentSelection()
+        case .browserToggleAuditView:
+            toggleAuditView()
         case UIApplication.didBecomeActiveNotification:
             // Share-sheet capture (Phase 3): ingest anything queued while the
             // app was away, and keep the extension's picker mirror fresh.
@@ -596,6 +625,26 @@ struct BrowserView_iOS: View {
         default:
             break
         }
+    }
+
+    /// ⌃⌘G / the switcher entry: audit the focused document, else the
+    /// workspace's current one (the anchor-append rule).
+    private func toggleAuditView() {
+        if auditDocumentId != nil {
+            auditDocumentId = nil
+            return
+        }
+        guard let workspaceId = tabManager.activeWorkspaceId else {
+            showNote(String(localized: "Open a workspace to audit its documents."))
+            return
+        }
+        let target = tabManager.focusedDocumentId
+            ?? documentStore?.currentDocument(workspaceId: workspaceId)?.id
+        guard let target else {
+            showNote(String(localized: "This workspace has no documents yet."))
+            return
+        }
+        auditDocumentId = target
     }
 
     private func drainSharedItems() {
@@ -662,6 +711,7 @@ struct BrowserView_iOS: View {
         case .anchorSelection: anchorCurrentSelection()
         case .newWorkspaceDocument: createWorkspaceDocument()
         case .transcriptPanel: showTranscriptSheet.toggle()
+        case .auditView: toggleAuditView()
         case .showBookmarks: presentLibrary(.bookmarks)
         case .showHistory: presentLibrary(.history)
         case .showDownloads: showDownloads = true
@@ -1570,6 +1620,12 @@ struct BrowserView_iOS: View {
                             } label: {
                                 Label("Video Transcript", systemImage: "text.quote")
                             }
+                        }
+                        Button {
+                            toggleAuditView()
+                            showWorkspaceSwitcher = false
+                        } label: {
+                            Label("Graph & Audit", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
                         }
                         Button {
                             archiveActiveWorkspace()

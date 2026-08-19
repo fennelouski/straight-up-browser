@@ -45,6 +45,13 @@ private struct DocumentPane_iOS: View {
                     .lineLimit(1)
                 Spacer()
                 Button {
+                    NotificationCenter.default.post(name: .browserToggleAuditView, object: nil)
+                } label: {
+                    Image(systemName: "point.topleft.down.to.point.bottomright.curvepath")
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityLabel(String(localized: "Graph & Audit"))
+                Button {
                     onClose()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
