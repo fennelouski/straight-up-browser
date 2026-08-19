@@ -32,6 +32,8 @@ struct Settings_iOS: View {
     private var syncAgentUserAuthoredMemory = false
 
     @AppStorage("searchEngine") private var searchEngine = "Google"
+    // Phase 2 (design §6.4): what tapping an anchor link in a document does.
+    @AppStorage("anchorLinkOpenBehavior") private var anchorLinkOpenBehavior = "peek"
     @AppStorage(FastForward.Key.enabled) private var fastForwardEnabled = true
     @AppStorage("spaceScrollPercent") private var spaceScrollPercent = 90.0
     @AppStorage("javaScriptEnabled") private var javaScriptEnabled = true
@@ -125,6 +127,18 @@ struct Settings_iOS: View {
                     Text("Fast Forward")
                 } footer: {
                     Text("When a search clearly names a destination, keep the results visible and open that destination in a split pane.")
+                }
+
+                Section {
+                    Picker("Anchor links open", selection: $anchorLinkOpenBehavior) {
+                        Text("Peek first").tag("peek")
+                        Text("Beside the document").tag("split")
+                        Text("As a tab").tag("tab")
+                    }
+                } header: {
+                    Text("Research Anchors")
+                } footer: {
+                    Text("What opening an anchor link in a workspace document does. On iPhone the source always opens full screen, seeked or scrolled to the anchored spot.")
                 }
 
                 Section {

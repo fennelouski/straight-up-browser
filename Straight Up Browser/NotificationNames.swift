@@ -146,6 +146,22 @@ extension Notification.Name {
     static let browserTabTitleDisplayModeChanged = Notification.Name("browserTabTitleDisplayModeChanged")
     static let toneScheduleChanged = Notification.Name("toneScheduleChanged")
 
+    // Thought Flow Phase 2: documents and anchors
+    /// Transient feedback line (userInfo["text"]: String) — reuses the
+    /// seen-before banner surface in each platform's content view.
+    static let browserDocumentNote = Notification.Name("browserDocumentNote")
+    /// Create an anchor from the focused tab's current selection (⌥⌘A / menus).
+    static let browserAnchorSelection = Notification.Name("browserAnchorSelection")
+    /// New document in the active workspace (⌥⌘N).
+    static let browserNewWorkspaceDocument = Notification.Name("browserNewWorkspaceDocument")
+    /// Toggle the transcript panel on a video tab (⌥⌘T).
+    static let browserToggleTranscript = Notification.Name("browserToggleTranscript")
+    /// An anchor pill was activated in a document (userInfo["anchorId"]: UUID,
+    /// userInfo["url"]: URL). The content view applies the user's open setting.
+    static let browserOpenAnchor = Notification.Name("browserOpenAnchor")
+    /// Focus the document editor's find bar (⌘L while a document is focused).
+    static let browserDocumentFind = Notification.Name("browserDocumentFind")
+
     // CLI data command
     static let browserGetPageData = Notification.Name("browserGetPageData")
 

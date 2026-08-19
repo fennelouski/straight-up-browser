@@ -25,9 +25,14 @@ final class WorkspaceSettleCapture {
     /// didFinish.
     private var pending: [UUID: Task<Void, Never>] = [:]
 
+    /// Video sources get their caption track fetched at capture (Phase 2);
+    /// async and failure-tolerant — never on the capture path's critical path.
+    let transcriptFetcher: TranscriptFetcher
+
     init(ledgerStore: LedgerStore, modelContext: ModelContext) {
         self.ledgerStore = ledgerStore
         newspaper = NewspaperStore(modelContext: modelContext)
+        transcriptFetcher = TranscriptFetcher(ledgerStore: ledgerStore)
     }
 
     /// Called on every committed navigation. Cancels any settle in flight for
@@ -136,6 +141,12 @@ final class WorkspaceSettleCapture {
             store: newspaper
         )
         archive(article: article, from: webView)
+        if article.modality == .video {
+            let fetcher = transcriptFetcher
+            Task { @MainActor [weak webView] in
+                _ = await fetcher.ensureTranscript(for: article, webView: webView)
+            }
+        }
     }
 
     private func archive(article: NewspaperArticle, from webView: WKWebView) {

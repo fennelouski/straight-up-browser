@@ -511,6 +511,11 @@ struct ContentView: View {
     @State private var showSaveWorkspaceDialog = false
     @State private var ledgerStore: LedgerStore?
     @State private var settleCapture: WorkspaceSettleCapture?
+    // Phase 2: workspace documents + anchors (docs/phase2-design.md)
+    @State private var documentStore: DocumentStore?
+    @State private var anchorComposer: AnchorComposer?
+    @StateObject private var documentPaneManager = DocumentPaneManager()
+    @State private var showTranscriptPanel = false
     @State private var seenBeforeNote: String?
     @State private var seenBeforeToken = UUID()
     @State private var workspaceName = ""
@@ -723,9 +728,13 @@ struct ContentView: View {
     }
     private var allTabs: [BrowserTab] { visiblePersistedTabs + tabManager.incognitoTabs }
 
-    // The tabs visible in the window: the split members, or just the focused tab.
+    // The panes visible in the window: the split members, or the focused pane —
+    // a solo-displayed document when one owns focus, else the selected tab
+    // (ADR 0008).
     private var displayedTabIds: [UUID] {
-        tabManager.splitTabIds.isEmpty ? [tabManager.selectedTabId].compactMap { $0 } : tabManager.splitTabIds
+        tabManager.splitTabIds.isEmpty
+            ? [tabManager.focusedDocumentId ?? tabManager.selectedTabId].compactMap { $0 }
+            : tabManager.splitTabIds
     }
 
     // The tint for a tab's isolated session (nil for a normal tab): a container's
@@ -995,6 +1004,14 @@ struct ContentView: View {
                 let _ = tabSelectionRefreshTrigger
                 let _ = tabTitleDisplayRefreshTrigger
                 let _ = visualPreviewRefresh
+                if let workspaceId = tabManager.activeWorkspaceId, let documentStore {
+                    WorkspaceDocumentSidebarRows(
+                        workspaceId: workspaceId,
+                        documentStore: documentStore,
+                        tabManager: tabManager,
+                        iconOnly: tabBarWidth <= 30
+                    )
+                }
                 ForEach(groupedTabs, id: \.group?.id) { groupSection in
                     if let group = groupSection.group {
                         groupHeaderView(for: group)
@@ -1199,10 +1216,11 @@ struct ContentView: View {
                         pageTranslator: pageTranslator,
                         fastForward: fastForward,
                         tabs: allTabs,
-                        activeTabId: tabManager.selectedTabId,
+                        activeTabId: tabManager.focusedDocumentId ?? tabManager.selectedTabId,
                         displayedTabIds: displayedTabIds,
                         onURLChange: { _ in },
-                        onSaveLinkToNewspaper: saveLinkToNewspaper)
+                        onSaveLinkToNewspaper: saveLinkToNewspaper,
+                        documentPaneProvider: { documentPaneManager.paneView(for: $0) })
                         .allowsHitTesting(true)
                         .focusable(true)
             } else {
@@ -1327,6 +1345,7 @@ struct ContentView: View {
                                 .frame(height: geometry.size.height * omnibarTopFraction)
                             OmnibarView(
                                 ledgerNote: { ledgerNote(for: $0) },
+                                transcriptHits: { transcriptSuggestions(for: $0) },
                                 isPresented: $showOmnibar,
                                 urlString: .constant(currentURL?.absoluteString ?? ""),
                                 onNavigate: { urlString, commit in
@@ -1629,6 +1648,19 @@ struct ContentView: View {
 
     private var saveWorkspaceDialogOverlay: some View {
         Group {
+            // The transcript panel shares this overlay: adding a modifier to
+            // ContentView.body breaks the type-check budget (see Gotchas).
+            if showTranscriptPanel, let article = transcriptArticle,
+               let fetcher = settleCapture?.transcriptFetcher {
+                TranscriptPanelView(
+                    article: article,
+                    fetcher: fetcher,
+                    composer: anchorComposer,
+                    workspaceId: tabManager.activeWorkspaceId,
+                    webView: activeTab.flatMap { webViewManager?.existingWebView(for: $0.id) },
+                    isPresented: $showTranscriptPanel
+                )
+            }
             if showSaveWorkspaceDialog {
                 Color.black.opacity(0.5)
                     .edgesIgnoringSafeArea(.all)
@@ -2567,6 +2599,17 @@ struct ContentView: View {
                 tabManager.settleCapture = settle
                 tabManager.activeWorkspaceId = TabManager.restoredActiveWorkspaceId()
 
+                // Phase 2: documents, anchors, transcripts.
+                let docStore = DocumentStore(modelContext: modelContext, ledgerStore: store)
+                documentStore = docStore
+                documentPaneManager.documentStore = docStore
+                tabManager.isDocumentPaneId = { [weak documentPaneManager] id in
+                    documentPaneManager?.isDocument(id) ?? false
+                }
+                anchorComposer = AnchorComposer(
+                    ledgerStore: store, documentStore: docStore, settleCapture: settle)
+                setupPhase2Observers()
+
                 // Load favicons for all tabs BEFORE web views are loaded
                 preloadFaviconsForAllTabs()
 
@@ -3019,6 +3062,12 @@ struct ContentView: View {
                 showOmnibar: $showOmnibar,
                 tabs: { self.allTabs },
                 closeTabAction: { tab, tabs in
+                    // Cmd-W on a focused document closes its pane — never a tab,
+                    // never a disposition (ADR 0008).
+                    if let documentId = tabManager.focusedDocumentId {
+                        tabManager.closeDocumentPane(documentId)
+                        return
+                    }
                     // The omnibar edits the current tab's address; once that tab is
                     // gone it's pointing at nothing, so dismiss it with the tab.
                     self.showOmnibar = false
@@ -3204,6 +3253,133 @@ struct ContentView: View {
 
     /// Reuses the seen-before banner rather than adding a second transient
     /// surface — ContentView's type-check budget is a real ceiling.
+    // MARK: Phase 2 — documents, anchors, transcripts
+
+    private func setupPhase2Observers() {
+        let center = NotificationCenter.default
+        center.addMainActorObserver(forName: .browserAnchorSelection, object: nil, queue: .main) { [self] _ in
+            anchorCurrentSelection()
+        }
+        center.addMainActorObserver(forName: .browserNewWorkspaceDocument, object: nil, queue: .main) { [self] _ in
+            createWorkspaceDocument()
+        }
+        center.addMainActorObserver(forName: .browserToggleTranscript, object: nil, queue: .main) { [self] _ in
+            toggleTranscriptPanel()
+        }
+        center.addMainActorObserver(forName: .browserDocumentNote, object: nil, queue: .main) { [self] note in
+            if let text = note.userInfo?["text"] as? String { showTransientNote(text) }
+        }
+        center.addMainActorObserver(forName: .browserOpenAnchor, object: nil, queue: .main) { [self] note in
+            handleOpenAnchor(note)
+        }
+        // A focused document redirects Cmd-L to the editor's find bar (design
+        // §1.2). Registered after NotificationManager's own showOmnibar
+        // observer, so this runs second and wins.
+        center.addMainActorObserver(forName: .showOmnibar, object: nil, queue: .main) { [self] _ in
+            if tabManager.focusedDocumentId != nil {
+                showOmnibar = false
+                NotificationCenter.default.post(name: .browserDocumentFind, object: nil)
+            }
+        }
+    }
+
+    private func anchorCurrentSelection() {
+        guard let composer = anchorComposer, let tab = activeTab else { return }
+        // existingWebView, never getWebView: anchoring must not create one.
+        let webView = webViewManager?.existingWebView(for: tab.id)
+        let workspaceId = tabManager.activeWorkspaceId
+        Task { @MainActor in
+            showTransientNote(await composer.anchorSelection(
+                tab: tab, webView: webView, workspaceId: workspaceId))
+        }
+    }
+
+    private func createWorkspaceDocument() {
+        guard let workspace = activeWorkspace, let documentStore else {
+            showTransientNote(String(localized: "Open a workspace to create documents in it."))
+            return
+        }
+        guard let row = documentStore.createDocument(in: workspace) else {
+            showTransientNote(String(localized: "iCloud Drive is unavailable — documents need it."))
+            return
+        }
+        tabManager.selectDocument(row.id)
+    }
+
+    /// The source behind the focused video tab, if the ledger has it.
+    private var transcriptArticle: NewspaperArticle? {
+        guard let url = activeTab?.url,
+              let article = ledgerStore?.source(sourceKey: SourceCanonicalizer.canonicalKey(for: url)),
+              article.modality == .video
+        else { return nil }
+        return article
+    }
+
+    private func toggleTranscriptPanel() {
+        if showTranscriptPanel {
+            showTranscriptPanel = false
+        } else if transcriptArticle != nil {
+            showTranscriptPanel = true
+        } else if activeTab?.url.map({ SourceModality.inferred(from: $0) }) == .video {
+            showTransientNote(String(localized: "Capture this video first (⇧⌘D), then open its transcript."))
+        } else {
+            showTransientNote(String(localized: "Transcripts are available on video pages."))
+        }
+    }
+
+    private func handleOpenAnchor(_ note: Notification) {
+        guard let url = note.userInfo?["url"] as? URL else { return }
+        let behavior = UserDefaults.standard.string(forKey: "anchorLinkOpenBehavior") ?? "peek"
+        if behavior == "tab" {
+            // Ordinary link behavior; single-view dissolve rules apply.
+            _ = tabManager.createNewTab(url: url)
+            return
+        }
+        openAnchorBesideDocument(url: url)
+    }
+
+    /// Design §6.4: reuse an existing workspace tab for the source when there is
+    /// one, else open one, as a pane beside the document — the Fast Forward
+    /// companion-pane pattern. The deep link's fragment/params do the scrolling
+    /// and seeking with none of our code.
+    private func openAnchorBesideDocument(url: URL) {
+        let key = SourceCanonicalizer.canonicalKey(for: url)
+        if let existing = visiblePersistedTabs.first(where: {
+            $0.url.map { SourceCanonicalizer.canonicalKey(for: $0) } == key
+        }) {
+            webViewManager?.getWebView(for: existing.id).loadURL(url)
+            if tabManager.splitTabIds.contains(existing.id) {
+                tabManager.selectedTabId = existing.id
+            } else {
+                tabManager.toggleSplitMembership(existing, tabs: allTabs)
+            }
+            return
+        }
+        let tab = tabManager.createNewTab(url: url, select: false)
+        webViewManager?.getWebView(for: tab.id).loadURL(url)
+        tabManager.toggleSplitMembership(tab, tabs: allTabs)
+    }
+
+    /// Omnibar rows from stored video transcripts (design §8.3): the matched
+    /// caption line, opening the watch URL with t= set so the video arrives
+    /// seeked.
+    private func transcriptSuggestions(for query: String) -> [Suggestion] {
+        guard let fetcher = settleCapture?.transcriptFetcher, let ledgerStore else { return [] }
+        return fetcher.search(query).compactMap { hit -> Suggestion? in
+            guard let article = ledgerStore.source(sourceKey: hit.sourceKey) else { return nil }
+            let base = URL(string: article.sourceKey) ?? article.url
+            let url = AnchorLocator.timestamp(start: hit.segment.startSeconds, end: nil)
+                .url(base: base, modality: .video)
+            var suggestion = Suggestion(
+                url: url,
+                title: "\(AnchorComposer.formatTimestamp(hit.segment.startSeconds)) \u{00B7} \(article.title)",
+                type: .transcript
+            )
+            suggestion.ledgerNote = "\u{201C}\(hit.segment.t)\u{201D}"
+            return suggestion
+        }
+    }
+
     private func showTransientNote(_ text: String) {
         seenBeforeNote = text
         let token = UUID()

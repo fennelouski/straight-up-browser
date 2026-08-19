@@ -1877,7 +1877,8 @@ struct TabSyncDisclosureTests {
             "WorkspaceDocument",
             "LedgerAnchor",
             "LedgerClaim",
-            "LedgerEdge"
+            "LedgerEdge",
+            "SourceTranscript"
         ])
         // Several models can share one category; the list shows each once.
         #expect(TabSync.syncedDataCategories == [

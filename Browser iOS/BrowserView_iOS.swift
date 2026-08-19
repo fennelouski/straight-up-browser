@@ -100,6 +100,12 @@ struct BrowserView_iOS: View {
     @State private var showSidebar = false
     @State private var showWorkspaceSwitcher = false
     @State private var ledgerStore: LedgerStore?
+    // Phase 2: workspace documents + anchors (docs/phase2-design.md)
+    @State private var documentStore: DocumentStore?
+    @State private var anchorComposer: AnchorComposer?
+    @State private var showTranscriptSheet = false
+    @State private var transientNote: String?
+    @State private var transientNoteToken = UUID()
     @State private var showShortcutSheet = false
     @State private var showGestureGuide = false
     @State private var showSettings = false
@@ -223,7 +229,8 @@ struct BrowserView_iOS: View {
             tabs: tabs,
             bookmarks: bookmarkPairs,
             durableHistory: browsingHistory.recentVisits.map(\.url),
-            ledgerNote: { ledgerNote(for: $0) }
+            ledgerNote: { ledgerNote(for: $0) },
+            transcriptHits: { transcriptSuggestions(for: $0) }
         )
     }
 
@@ -305,6 +312,18 @@ struct BrowserView_iOS: View {
                     )
             }
 
+            // A focused document displays full screen where the page would
+            // (ADR 0008; iPhone/iPad solo display — design §1.4).
+            if managersInitialized, let focusedDocumentId = tabManager.focusedDocumentId,
+               let documentStore {
+                DocumentPaneHost_iOS(
+                    documentId: focusedDocumentId,
+                    documentStore: documentStore,
+                    tabManager: tabManager
+                )
+                .ignoresSafeArea(edges: .bottom)
+            }
+
             EdgeProgressBar(progress: progressValue, show: showProgressBar,
                             top: progressBarTop, bottom: progressBarBottom,
                             left: progressBarLeft, right: progressBarRight)
@@ -322,6 +341,10 @@ struct BrowserView_iOS: View {
                         desiredPlacement: showOmnibar || showSidebar ? nil : railPlacement
                     )
                 }
+            }
+
+            if let note = transientNote {
+                TransientNoteCapsule_iOS(text: note)
             }
 
             // Touch's stand-in for the keyboard (iPhone has no ⌘L / ⌘T). Hidden
@@ -508,6 +531,20 @@ struct BrowserView_iOS: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showTranscriptSheet) {
+            if let article = transcriptArticle, let fetcher = tabManager.settleCapture?.transcriptFetcher {
+                TranscriptPanelView(
+                    article: article,
+                    fetcher: fetcher,
+                    composer: anchorComposer,
+                    workspaceId: tabManager.activeWorkspaceId,
+                    webView: activeTab.flatMap { webViewManager?.existingWebView(for: $0.id) },
+                    isPresented: $showTranscriptSheet
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
+        }
     }
 
     private var eventContent: some View {
@@ -527,6 +564,30 @@ struct BrowserView_iOS: View {
             handleMemoryPressure(
                 critical: note.userInfo?["critical"] as? Bool ?? false
             )
+        }
+        .onReceive(phase2Publisher) { handlePhase2($0) }
+    }
+
+    // Phase 2 signals share one merged publisher, same reason as commandPublisher.
+    private var phase2Publisher: AnyPublisher<Notification, Never> {
+        let center = NotificationCenter.default
+        return Publishers.MergeMany(
+            [Notification.Name.browserDocumentNote, .browserOpenAnchor, .browserAnchorSelection]
+                .map { center.publisher(for: $0) }
+        )
+        .eraseToAnyPublisher()
+    }
+
+    private func handlePhase2(_ note: Notification) {
+        switch note.name {
+        case .browserDocumentNote:
+            if let text = note.userInfo?["text"] as? String { showNote(text) }
+        case .browserOpenAnchor:
+            if let url = note.userInfo?["url"] as? URL { openAnchorURL(url) }
+        case .browserAnchorSelection:
+            anchorCurrentSelection()
+        default:
+            break
         }
     }
 
@@ -581,6 +642,9 @@ struct BrowserView_iOS: View {
             tabManager.switchToTab(at: index - 1, tabs: visibleTabOrder)
         case .addBookmark: toggleBookmark()
         case .captureSource: captureCurrentSource()
+        case .anchorSelection: anchorCurrentSelection()
+        case .newWorkspaceDocument: createWorkspaceDocument()
+        case .transcriptPanel: showTranscriptSheet.toggle()
         case .showBookmarks: presentLibrary(.bookmarks)
         case .showHistory: presentLibrary(.history)
         case .showDownloads: showDownloads = true
@@ -751,6 +815,7 @@ struct BrowserView_iOS: View {
                 onShortcuts: { showShortcutSheet = true },
                 onGestures: { withAnimation { showSidebar = false }; showGestureGuide = true },
                 workspaceMenu: AnyView(workspaceMenu),
+                documentsSection: sidebarDocumentsSection,
                 containersMenu: AnyView(containersMenu)
             )
         }
@@ -1102,6 +1167,100 @@ struct BrowserView_iOS: View {
 
     /// ⇧⌘D on iPad; also the page-menu action. iPhone reaches it from the
     /// workspace switcher.
+    // MARK: Phase 2 — documents, anchors, transcripts
+
+    private var sidebarDocumentsSection: AnyView? {
+        guard let workspaceId = tabManager.activeWorkspaceId, let documentStore else { return nil }
+        return AnyView(DocumentSidebarRows_iOS(
+            workspaceId: workspaceId,
+            documentStore: documentStore,
+            focusedDocumentId: tabManager.focusedDocumentId,
+            onSelect: { id in
+                tabManager.selectDocument(id)
+                withAnimation { showSidebar = false }
+            },
+            onNewDocument: { createWorkspaceDocument() }
+        ))
+    }
+
+    /// The source behind the focused video tab, if the ledger has it.
+    private var transcriptArticle: NewspaperArticle? {
+        guard let url = activeTab?.url,
+              let article = ledgerStore?.source(sourceKey: SourceCanonicalizer.canonicalKey(for: url)),
+              article.modality == .video
+        else { return nil }
+        return article
+    }
+
+    private func anchorCurrentSelection() {
+        guard let composer = anchorComposer, let tab = activeTab else { return }
+        let webView = webViewManager?.existingWebView(for: tab.id)
+        let workspaceId = tabManager.activeWorkspaceId
+        Task { @MainActor in
+            showNote(await composer.anchorSelection(
+                tab: tab, webView: webView, workspaceId: workspaceId))
+        }
+    }
+
+    private func createWorkspaceDocument() {
+        guard let id = tabManager.activeWorkspaceId,
+              let workspace = workspaces.first(where: { $0.id == id }),
+              let documentStore else {
+            showNote(String(localized: "Open a workspace to create documents in it."))
+            return
+        }
+        guard let row = documentStore.createDocument(in: workspace) else {
+            showNote(String(localized: "iCloud Drive is unavailable — documents need it."))
+            return
+        }
+        tabManager.selectDocument(row.id)
+        withAnimation { showSidebar = false }
+    }
+
+    /// iPhone/iPad anchor navigation is full screen (design §6.4): reuse the
+    /// workspace's tab for the source when one exists, else open one. The deep
+    /// link's fragment/params do the scrolling and seeking.
+    private func openAnchorURL(_ url: URL) {
+        let key = SourceCanonicalizer.canonicalKey(for: url)
+        if let existing = visibleTabs.first(where: {
+            $0.url.map { SourceCanonicalizer.canonicalKey(for: $0) } == key
+        }) {
+            webViewManager?.getWebView(for: existing.id).load(URLRequest(url: url))
+            tabManager.selectedTabId = existing.id
+            return
+        }
+        let tab = tabManager.createNewTab(url: url)
+        webViewManager?.getWebView(for: tab.id).load(URLRequest(url: url))
+    }
+
+    private func showNote(_ text: String) {
+        transientNote = text
+        let token = UUID()
+        transientNoteToken = token
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            if transientNoteToken == token { transientNote = nil }
+        }
+    }
+
+    /// Omnibar rows from stored video transcripts (design §8.3).
+    private func transcriptSuggestions(for query: String) -> [Suggestion] {
+        guard let fetcher = tabManager.settleCapture?.transcriptFetcher, let ledgerStore else { return [] }
+        return fetcher.search(query).compactMap { hit -> Suggestion? in
+            guard let article = ledgerStore.source(sourceKey: hit.sourceKey) else { return nil }
+            let base = URL(string: article.sourceKey) ?? article.url
+            let url = AnchorLocator.timestamp(start: hit.segment.startSeconds, end: nil)
+                .url(base: base, modality: .video)
+            var suggestion = Suggestion(
+                url: url,
+                title: "\(AnchorComposer.formatTimestamp(hit.segment.startSeconds)) \u{00B7} \(article.title)",
+                type: .transcript
+            )
+            suggestion.ledgerNote = "\u{201C}\(hit.segment.t)\u{201D}"
+            return suggestion
+        }
+    }
+
     private func captureCurrentSource() {
         guard let tab = activeTab, tabManager.activeWorkspaceId != nil,
               tab.sessionKind != .incognito else { return }
@@ -1186,8 +1345,15 @@ struct BrowserView_iOS: View {
         let store = LedgerStore(modelContext: modelContext)
         ledgerStore = store
         tabManager.ledgerStore = store
-        tabManager.settleCapture = WorkspaceSettleCapture(ledgerStore: store, modelContext: modelContext)
+        let settle = WorkspaceSettleCapture(ledgerStore: store, modelContext: modelContext)
+        tabManager.settleCapture = settle
         tabManager.activeWorkspaceId = TabManager.restoredActiveWorkspaceId()
+
+        // Phase 2: documents, anchors, transcripts.
+        let docStore = DocumentStore(modelContext: modelContext, ledgerStore: store)
+        documentStore = docStore
+        tabManager.isDocumentPaneId = { [weak docStore] id in docStore?.document(id: id) != nil }
+        anchorComposer = AnchorComposer(ledgerStore: store, documentStore: docStore, settleCapture: settle)
         if !supportsSplitPanes {
             tabManager.splitTabIds = []
         }
@@ -1364,6 +1530,27 @@ struct BrowserView_iOS: View {
                             Label("Capture This Page", systemImage: "plus.rectangle.on.folder")
                         }
                         .disabled(activeTab?.url == nil || activeTab?.sessionKind == .incognito)
+                        Button {
+                            anchorCurrentSelection()
+                            showWorkspaceSwitcher = false
+                        } label: {
+                            Label("Anchor This Page", systemImage: "link.badge.plus")
+                        }
+                        .disabled(activeTab?.url == nil || activeTab?.sessionKind == .incognito)
+                        Button {
+                            createWorkspaceDocument()
+                            showWorkspaceSwitcher = false
+                        } label: {
+                            Label("New Document", systemImage: "plus.rectangle.portrait")
+                        }
+                        if transcriptArticle != nil {
+                            Button {
+                                showTranscriptSheet = true
+                                showWorkspaceSwitcher = false
+                            } label: {
+                                Label("Video Transcript", systemImage: "text.quote")
+                            }
+                        }
                         Button {
                             archiveActiveWorkspace()
                             showWorkspaceSwitcher = false
@@ -1859,4 +2046,29 @@ struct EdgeProgressBar: View {
     }
 
     private var bar: some View { Rectangle().fill(Color.accentColor) }
+}
+
+
+/// The transient feedback line (capture, anchor, conflict notes) — the iOS
+/// sibling of the Mac's seen-before banner surface.
+struct TransientNoteCapsule_iOS: View {
+    let text: String
+
+    var body: some View {
+        VStack {
+            Text(text)
+                .font(.system(size: 13))
+                .lineLimit(2)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(.thinMaterial, in: Capsule())
+                .shadow(radius: 6)
+                .padding(.top, 60)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+        .allowsHitTesting(false)
+        .transition(.move(edge: .top).combined(with: .opacity))
+        .accessibilityLabel(text)
+    }
 }

@@ -40,9 +40,16 @@
 	<array>
 		<string>iCloud.com.nathanfennel.Straight-Up-Browser</string>
 	</array>
+	<key>com.apple.developer.ubiquity-container-identifiers</key>
+	<array>
+		<string>iCloud.com.nathanfennel.Straight-Up-Browser</string>
+	</array>
 	<key>com.apple.developer.icloud-services</key>
 	<array>
 		<string>CloudKit</string>
+		<!-- Workspace documents are plain Markdown files in the app's own
+		     iCloud Drive container (Thought Flow Phase 2). -->
+		<string>CloudDocuments</string>
 	</array>
 </dict>
 </plist>

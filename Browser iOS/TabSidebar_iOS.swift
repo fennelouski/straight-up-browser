@@ -36,6 +36,8 @@ struct TabSidebar_iOS: View {
     let onShortcuts: () -> Void
     let onGestures: () -> Void
     let workspaceMenu: AnyView
+    /// Phase 2: the active workspace's document rows, above the tab list.
+    var documentsSection: AnyView? = nil
     let containersMenu: AnyView
 
     private var groupedTabs: [(group: TabGroup?, tabs: [Tab])] {
@@ -49,6 +51,9 @@ struct TabSidebar_iOS: View {
             get: { tabManager.selectedTabId },
             set: { if let id = $0 { tabManager.selectedTabId = id } }
         )) {
+            if let documentsSection {
+                documentsSection
+            }
             ForEach(groupedTabs, id: \.group?.id) { section in
                 if let group = section.group {
                     Section {

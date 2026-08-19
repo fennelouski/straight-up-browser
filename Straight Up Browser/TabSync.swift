@@ -100,7 +100,8 @@ enum TabSync {
         CloudBackedModelDescriptor(modelType: WorkspaceDocument.self, category: .research),
         CloudBackedModelDescriptor(modelType: LedgerAnchor.self, category: .research),
         CloudBackedModelDescriptor(modelType: LedgerClaim.self, category: .research),
-        CloudBackedModelDescriptor(modelType: LedgerEdge.self, category: .research)
+        CloudBackedModelDescriptor(modelType: LedgerEdge.self, category: .research),
+        CloudBackedModelDescriptor(modelType: SourceTranscript.self, category: .research)
     ]
 
     /// Deliberately NOT cloud-backed. Page archives run to tens of MB; syncing

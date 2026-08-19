@@ -167,6 +167,21 @@ class KeyboardShortcutsManager {
                 return nil
             }
 
+            // Research commands (Phase 2): rebindable, dispatched here because
+            // they have no Mac menu item (the @CommandsBuilder is at its cap).
+            if store.matches(event, .anchorSelection) {
+                NotificationCenter.default.post(name: .browserAnchorSelection, object: nil)
+                return nil
+            }
+            if store.matches(event, .newWorkspaceDocument) {
+                NotificationCenter.default.post(name: .browserNewWorkspaceDocument, object: nil)
+                return nil
+            }
+            if store.matches(event, .transcriptPanel) {
+                NotificationCenter.default.post(name: .browserToggleTranscript, object: nil)
+                return nil
+            }
+
             // While the omnibar is open, every other key passes through so
             // editing shortcuts work in the text field.
             if self.showOmnibar.wrappedValue {

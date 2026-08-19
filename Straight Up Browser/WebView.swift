@@ -32,6 +32,9 @@ struct WebView: NSViewRepresentable {
     var displayedTabIds: [UUID] = []
     var onURLChange: ((URL?) -> Void)?
     var onSaveLinkToNewspaper: ((URL, WKWebView) -> Void)?
+    /// Non-nil result = the pane id is a workspace document; the returned view
+    /// is laid out where a web view would be (ADR 0008). Nil = ordinary tab.
+    var documentPaneProvider: ((UUID) -> NSView?)?
 
     // Trackpad pinch + two-finger double-tap smart zoom. @AppStorage here so
     // flipping the setting re-runs updateNSView and applies it live.
@@ -61,7 +64,8 @@ struct WebView: NSViewRepresentable {
          activeTabId: UUID?,
          displayedTabIds: [UUID] = [],
          onURLChange: ((URL?) -> Void)?,
-         onSaveLinkToNewspaper: ((URL, WKWebView) -> Void)? = nil) {
+         onSaveLinkToNewspaper: ((URL, WKWebView) -> Void)? = nil,
+         documentPaneProvider: ((UUID) -> NSView?)? = nil) {
         self._url = url
         self._canGoBack = canGoBack
         self._canGoForward = canGoForward
@@ -78,6 +82,7 @@ struct WebView: NSViewRepresentable {
         self.displayedTabIds = displayedTabIds.isEmpty ? [activeTabId].compactMap { $0 } : displayedTabIds
         self.onURLChange = onURLChange
         self.onSaveLinkToNewspaper = onSaveLinkToNewspaper
+        self.documentPaneProvider = documentPaneProvider
 
         Logger.log("WebView init: activeTabId=\(activeTabId?.uuidString ?? "nil")", type: "WebView")
     }
@@ -98,7 +103,17 @@ struct WebView: NSViewRepresentable {
         context.coordinator.tabManager = tabManager
 
         // Update the displayed panes (one pane normally, 2–4 in a split)
-        nsView.onPaneFocus = { [tabManager] id in tabManager?.selectedTabId = id }
+        nsView.documentPaneProvider = documentPaneProvider
+        let isDocumentPane: (UUID) -> Bool = { [documentPaneProvider] id in
+            documentPaneProvider?(id) != nil
+        }
+        nsView.onPaneFocus = { [tabManager] id in
+            if isDocumentPane(id) {
+                tabManager?.selectDocument(id)
+            } else {
+                tabManager?.selectedTabId = id
+            }
+        }
         nsView.whitePoint = toneSchedule.isActive ? pageWhitePoint : 100
         nsView.blackPoint = toneSchedule.isActive ? pageBlackPoint : 0
         nsView.setDisplayedTabs(displayedTabIds, focusedTabId: activeTabId)
@@ -1191,7 +1206,28 @@ struct WebView: NSViewRepresentable {
                 menu.insertItem(newspaperItem, at: insertionIndex)
             }
 
+            // Anchor the page selection into the active workspace's current
+            // document (Phase 2). Only offered inside a workspace — outside one
+            // there is nothing to anchor into.
+            if tabManager?.activeWorkspaceId != nil,
+               tab(for: webView)?.sessionKind != .incognito,
+               !menu.items.contains(where: { $0.action == #selector(anchorSelectionFromContextMenu(_:)) }) {
+                let anchorItem = NSMenuItem(
+                    title: String(localized: "Anchor Selection to Document"),
+                    action: #selector(anchorSelectionFromContextMenu(_:)),
+                    keyEquivalent: ""
+                )
+                anchorItem.target = self
+                anchorItem.image = menuImage(named: "link.badge.plus", description: anchorItem.title)
+                let copyIndex = menu.items.firstIndex { $0.title.localizedCaseInsensitiveContains("copy") }
+                menu.insertItem(anchorItem, at: copyIndex ?? menu.items.count)
+            }
+
             decorateMenu(menu)
+        }
+
+        @objc private func anchorSelectionFromContextMenu(_ sender: NSMenuItem) {
+            NotificationCenter.default.post(name: .browserAnchorSelection, object: nil)
         }
 
         @objc private func addContextLinkToNewspaper(_ sender: NSMenuItem) {
@@ -1414,6 +1450,17 @@ class WebViewContainer: NSView {
     private var focusedTabId: UUID?
     private var displayedTabIds: [UUID] = []
     private var visibleWebViews: Set<WKWebView> = []
+    // Workspace document panes displayed beside (or instead of) web views
+    // (ADR 0008). The provider decides which pane ids are documents; it must be
+    // consulted BEFORE getWebView, which creates a web view as a side effect.
+    var documentPaneProvider: ((UUID) -> NSView?)?
+    private var visibleDocumentViews: Set<NSView> = []
+
+    /// The view behind one pane id: a document editor, or the tab's web view.
+    private func paneView(for id: UUID) -> NSView? {
+        if let documentView = documentPaneProvider?(id) { return documentView }
+        return webViewManager?.getWebView(for: id)
+    }
 
     // Split pane geometry. colFractions are per-column width fractions for 2–3
     // panes; for the 2×2 grid it's [leftColumnFraction] plus rowFraction (top row).
@@ -1478,6 +1525,9 @@ class WebViewContainer: NSView {
         // *previous* focus there loaded the newly selected tab's page into the
         // old tab's web view — the "tabs showing each other's pages" bug.
         if let focusedTabId = pendingDisplay?.focused ?? focusedTabId, let webViewManager = webViewManager {
+            // A focused document pane has no web view — and asking getWebView
+            // for one would create it as a side effect.
+            if documentPaneProvider?(focusedTabId) != nil { return nil }
             return webViewManager.getWebView(for: focusedTabId)
         }
         return webViewManager?.activeWebView
@@ -1558,14 +1608,20 @@ class WebViewContainer: NSView {
         }
         self.focusedTabId = focusedTabId
 
-        // Update the WebViewManager's active tab (the focused pane)
-        webViewManager?.setActiveTab(focusedTabId)
+        // Update the WebViewManager's active tab (the focused pane) — unless a
+        // document owns focus, in which case no tab is "active" for web chrome.
+        let focusedIsDocument = focusedTabId.map { documentPaneProvider?($0) != nil } ?? false
+        webViewManager?.setActiveTab(focusedIsDocument ? nil : focusedTabId)
 
-        // Hide all currently visible web views
+        // Hide all currently visible panes
         for webView in visibleWebViews {
             webView.isHidden = true
         }
         visibleWebViews.removeAll()
+        for documentView in visibleDocumentViews {
+            documentView.isHidden = true
+        }
+        visibleDocumentViews.removeAll()
 
         guard !ids.isEmpty, let webViewManager = webViewManager else {
             Logger.log("WebViewContainer setDisplayedTabs: no tabs or webViewManager", type: "WebView")
@@ -1573,6 +1629,14 @@ class WebViewContainer: NSView {
         }
 
         for id in ids {
+            if let documentView = documentPaneProvider?(id) {
+                attachPane(documentView)
+                documentView.isHidden = false
+                visibleDocumentViews.insert(documentView)
+                documentView.layer?.borderWidth = (ids.count > 1 && id == focusedTabId) ? 2 : 0
+                documentView.layer?.borderColor = NSColor.controlAccentColor.cgColor
+                continue
+            }
             let webView = webViewManager.getWebView(for: id)
             attach(webView)
             webView.isHidden = false
@@ -1594,8 +1658,22 @@ class WebViewContainer: NSView {
         // it. Only on a real tab change (or when nothing has focus) so
         // routine SwiftUI updates don't steal focus from the omnibar.
         if let focusedTabId, let window = self.window, tabChanged || window.firstResponder === window {
-            window.makeFirstResponder(webViewManager.getWebView(for: focusedTabId))
+            if let documentView = documentPaneProvider?(focusedTabId) {
+                (documentView as? DocumentPaneView)?.focusEditor()
+            } else {
+                window.makeFirstResponder(webViewManager.getWebView(for: focusedTabId))
+            }
         }
+    }
+
+    // A document pane joining this container: plain subview, frames owned by
+    // layoutPanes. None of the web-view delegate/KVO setup applies.
+    private func attachPane(_ view: NSView) {
+        guard view.superview !== self else { return }
+        view.autoresizingMask = []
+        view.wantsLayer = true
+        view.layer?.masksToBounds = true
+        addSubview(view)
     }
 
     // The one-time setup for a webview joining this container (delegates + KVO,
@@ -1638,8 +1716,9 @@ class WebViewContainer: NSView {
             if subviews.last !== overlay { addSubview(overlay, positioned: .above, relativeTo: nil) }
         }
 
-        guard let webViewManager = webViewManager, !displayedTabIds.isEmpty else { return }
-        let views = displayedTabIds.map { webViewManager.getWebView(for: $0) }
+        guard webViewManager != nil, !displayedTabIds.isEmpty else { return }
+        let views = displayedTabIds.compactMap { paneView(for: $0) }
+        guard views.count == displayedTabIds.count else { return }
         let b = bounds
 
         if views.count == 4 {
@@ -1722,11 +1801,11 @@ class WebViewContainer: NSView {
     }
 
     private func handlePaneClick(_ event: NSEvent) {
-        guard displayedTabIds.count > 1, event.window === window, let webViewManager = webViewManager else { return }
+        guard displayedTabIds.count > 1, event.window === window else { return }
         let point = convert(event.locationInWindow, from: nil)
         guard bounds.contains(point) else { return }
         for id in displayedTabIds where id != focusedTabId {
-            if webViewManager.getWebView(for: id).frame.contains(point) {
+            if paneView(for: id)?.frame.contains(point) == true {
                 DispatchQueue.main.async { self.onPaneFocus?(id) }
                 return
             }

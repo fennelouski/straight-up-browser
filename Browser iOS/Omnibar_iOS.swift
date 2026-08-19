@@ -13,6 +13,8 @@ import SwiftUI
 enum SuggestionType {
     case history
     case bookmark
+    /// "said at 6:57 in <video>" — cross-transcript recall (Phase 2, design §8.3).
+    case transcript
 }
 
 struct Suggestion: Identifiable {
@@ -71,7 +73,10 @@ func omnibarSuggestions(
     bookmarks: [(title: String, url: URL)],
     durableHistory: [URL] = [],
     /// Looks a URL up in the research ledger. Nil result = never seen.
-    ledgerNote: ((URL) -> String?)? = nil
+    ledgerNote: ((URL) -> String?)? = nil,
+    /// Cross-transcript search rows, appended below the ranked list (at most 2)
+    /// so they never displace a URL being typed toward.
+    transcriptHits: ((String) -> [Suggestion])? = nil
 ) -> [Suggestion] {
     let lowercased = input.lowercased()
     guard !lowercased.isEmpty else { return [] }
@@ -102,13 +107,14 @@ func omnibarSuggestions(
         return aStr.count < bStr.count
     }.prefix(8))
 
+    let transcriptRows = transcriptHits?(input) ?? []
     // One decoration point, so no suggestion source can forget it.
-    guard let ledgerNote else { return ranked }
+    guard let ledgerNote else { return ranked + transcriptRows }
     return ranked.map { suggestion in
         var decorated = suggestion
         decorated.ledgerNote = ledgerNote(suggestion.url)
         return decorated
-    }
+    } + transcriptRows
 }
 
 // The dropdown under the omnibar field. Selection is keyboard-navigable
@@ -118,12 +124,20 @@ struct SuggestionsPanel: View {
     let selectedIndex: Int
     let onPick: (Suggestion) -> Void
 
+    private func suggestionIcon(_ type: SuggestionType) -> String {
+        switch type {
+        case .bookmark: "bookmark.fill"
+        case .history: "clock.arrow.circlepath"
+        case .transcript: "play.circle"
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, suggestion in
                 Button { onPick(suggestion) } label: {
                     HStack(spacing: 10) {
-                        Image(systemName: suggestion.type == .bookmark ? "bookmark.fill" : "clock.arrow.circlepath")
+                        Image(systemName: suggestionIcon(suggestion.type))
                             .font(.system(size: 12))
                             .foregroundStyle(suggestion.type == .bookmark ? Color.accentColor : .secondary)
                             .frame(width: 18)

@@ -38,6 +38,8 @@ struct GeneralSettingsView: View {
     @AppStorage(Prefetcher.enabledKey) private var prefetchEnabled = true
     @AppStorage(SettingsManager.automaticLinkMitosisKey) private var automaticLinkMitosis = true
     @AppStorage(SettingsManager.automaticLinkSplitKey) private var automaticLinkSplit = false
+    // Phase 2 (design §6.4): what clicking an anchor pill in a document does.
+    @AppStorage("anchorLinkOpenBehavior") private var anchorLinkOpenBehavior = "peek"
     @State private var iCloudAvailable: Bool?
 
     private let searchEngines = ["Google", "DuckDuckGo", "Bing", "Yahoo"]
@@ -112,6 +114,19 @@ struct GeneralSettingsView: View {
                 SettingsLabel("Links That Open New Tabs", systemImage: "arrow.up.right.square", tint: SettingsTint.general)
             } footer: {
                 Text("These apply when a website makes a clicked link open in another tab. They are independent, and Command-click is unaffected.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section {
+                Picker("Anchor links open", selection: $anchorLinkOpenBehavior) {
+                    Text("Peek first, then open beside the document").tag("peek")
+                    Text("Beside the document").tag("split")
+                    Text("As a tab").tag("tab")
+                }
+            } header: {
+                SettingsLabel("Research Anchors", systemImage: "link.badge.plus", tint: SettingsTint.general)
+            } footer: {
+                Text("What clicking an anchor link in a workspace document does. Peek shows the quote and source first; opening beside the document reuses the source's tab in a split pane, scrolled or seeked to the anchored spot.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

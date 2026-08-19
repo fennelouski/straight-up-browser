@@ -15,6 +15,8 @@ enum SuggestionType: Int, Comparable {
     case site
     case bookmark
     case history
+    /// "said at 6:57 in <video>" — cross-transcript recall (Phase 2, design §8.3).
+    case transcript
 
     static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
 }
@@ -111,6 +113,10 @@ private struct OmnibarSuggestionLabel: View {
                 .foregroundColor(.secondary)
         case .history:
             EmptyView()
+        case .transcript:
+            Image(systemName: "play.circle")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
         }
     }
 }
@@ -337,6 +343,10 @@ struct OmnibarTextField: NSViewRepresentable {
 struct OmnibarView: View {
     /// Looks a URL up in the research ledger. Nil result = never seen.
     var ledgerNote: ((URL) -> String?)? = nil
+    /// Cross-transcript search: "said at 6:57 in <video>" rows for the typed
+    /// text, opening the video seeked. A new suggestion SOURCE — Phase 1's
+    /// single ledgerNote decoration point is unchanged.
+    var transcriptHits: ((String) -> [Suggestion])? = nil
     @Binding var isPresented: Bool
     @Binding var urlString: String
     var onNavigate: (String, OmnibarCommit) -> Void
@@ -494,7 +504,10 @@ struct OmnibarView: View {
             }
         }
 
-        return Array((openTabs + frequentSites + rest).prefix(8)) // Limit to 8 suggestions
+        let ranked = Array((openTabs + frequentSites + rest).prefix(8)) // Limit to 8 suggestions
+        // Transcript recall rows ride BELOW the ranked list (at most 2), so they
+        // can never displace a URL you were typing toward.
+        return ranked + (transcriptHits?(inputText) ?? [])
     }
 
     // The open tab a plain Return should switch to, if any: whatever is arrowed to,

@@ -4,7 +4,7 @@ Research workspaces inside Straight Up Browser. A workspace owns its tabs, its d
 
 Built for one person's research: food science for video scripts, plus AI, software engineering, and the occasional academic paper. Most sources are general web pages and YouTube videos; some are academic papers. General-audience polish is explicitly not a goal.
 
-**Status:** Phase 1 is complete and shipped. See `docs/phase1-handoff.md` for what exists, `docs/adr/0007-the-research-ledger.md` for the decisions that shaped it.
+**Status:** Phases 1 and 2 are complete and shipped. See `docs/phase1-handoff.md` and `docs/phase2-handoff.md` for what exists, `docs/adr/0007-the-research-ledger.md` and `docs/adr/0008-split-admits-document-panes.md` for the decisions that shaped them.
 
 ---
 
@@ -107,13 +107,15 @@ For sources with DOIs, use free open APIs — OpenAlex, Semantic Scholar, Crossr
 
 Delivered on macOS, iPadOS and iPhone. iPhone gets workspace switching only; iPad has desktop parity.
 
-### Phase 2 — Editor with anchors
+### Phase 2 — Editor with anchors ✅ **Complete**
 
-- Markdown editor over iCloud Drive files; multiple documents per workspace; side-by-side with the page on iPad.
-- Anchor links stored as plain Markdown, rendered enriched in-app, resolved against the ledger, resilient via the stored quote.
-- YouTube transcript ingestion so video is text-searchable with timestamps. Visual/frame search is deferred indefinitely.
+- Markdown editor (hybrid live rendering, native text views) over files in the app's own iCloud Drive container; multiple documents per workspace; external edits reload, conflicts keep both versions as visible sibling files.
+- Anchor links stored as plain Markdown, rendered enriched in-app as pills, resolved against the ledger in the shipped three-step order, resilient via the stored quote; every save reconciles the edge table from the document's links.
+- One-gesture anchor creation from any source tab (⌥⇧⌘D / context menu on Mac, the selection callout bar on iOS): anchor written, link appended to the workspace's current document and copied to the clipboard.
+- YouTube transcript ingestion (captions only — **Whisper cut in the Phase 2 interview**), synced as a ledger entity; per-video transcript panel with anchor-from-caption, plus cross-transcript omnibar recall rows.
+- Split widened to admit document panes — ADR 0008 resolves the inherited constraint. Read-beside-write ships on the Mac.
 
-**Inherited constraint:** a document pane is not a Tab, and a Split is defined as an arrangement of 2–4 Tabs. Side-by-side needs either a new pane concept or a deliberate widening of Split.
+**Scope changes at close:** iPad displays documents full screen only (document-in-Split is Mac-only for now — flagged, not silently dropped); PDF-page and image-region anchor *creation* deferred (locator formats ready); the manual verification pass (`docs/phase2-manual-checklist.md`) is still to be run.
 
 ### Phase 3 — Share-sheet capture
 
@@ -156,10 +158,11 @@ One-way publish to Google Docs; Scite API for supporting/contrasting classificat
 
 Resolved in Phase 1 (see ADR 0007): ledger storage engine, sync topology, dead-source handling, capture trigger, close semantics, canonical identity, and the anchor link syntax.
 
+Resolved in Phase 2: transcript storage (a synced ledger entity; Whisper cut entirely — captions only) and document conflicts (newest wins the path, losers become visible sibling files; never a merge, never a modal).
+
 Still open:
 
 - **Claim promotion UX** — what gesture turns a text range into a named claim.
 - **Share-sheet workspace picker** — how to keep it one-tap on iPhone.
-- **Transcript storage size**, and whether Whisper runs on-device or on the Mac only.
-- **Document conflicts** — iCloud file-level conflicts are crude; per-document ownership may be simpler than merge.
 - **Undo of an accidental tab close** must un-write the `dismissed` disposition, not merely restore the tab.
+- **iPad document-in-split** — deferred from Phase 2 (deviation #6); needs an explicit keep-or-build decision.

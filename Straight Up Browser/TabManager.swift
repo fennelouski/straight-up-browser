@@ -67,6 +67,8 @@ class TabManager: NSObject, ObservableObject {
     // (see docs/adr/0001-split-is-view-state.md).
     @Published var selectedTabId: UUID? {
         didSet {
+            // Selecting any tab takes focus back from a document pane (ADR 0008).
+            if oldValue != selectedTabId { focusedDocumentId = nil }
             noteSelectionForRecentOrder()
             if !splitTabIds.isEmpty, let id = selectedTabId, !splitTabIds.contains(id) {
                 splitTabIds = []
@@ -84,6 +86,20 @@ class TabManager: NSObject, ObservableObject {
     @Published var splitTabIds: [UUID] = [] {
         didSet { UserDefaults.standard.set(splitTabIds.map(\.uuidString), forKey: Self.splitKey) }
     }
+    // A Split is an arrangement of 2–4 PANES: tabs or workspace documents
+    // (ADR 0008). splitTabIds keeps its name and persistence key but holds pane
+    // ids; each resolves against the tab list first, then the active workspace's
+    // documents, and unresolved ids are dropped by the existing restore rule.
+    //
+    // Non-nil = a document owns focus (omnibar shows its name, ⌘W closes its
+    // pane and never writes a disposition). selectedTabId stays tabs-only so its
+    // many call sites keep meaning what they meant; selecting any tab clears this.
+    @Published var focusedDocumentId: UUID?
+
+    /// Set by the content view once the DocumentStore exists: whether a pane id
+    /// is a workspace document. Nil (tests, startup) means "no id is".
+    var isDocumentPaneId: ((UUID) -> Bool)?
+
     // Incognito tabs live only in memory — never inserted into SwiftData — so a private
     // URL never persists to disk or syncs to iCloud. They vanish when the app quits.
     @Published var incognitoTabs: [Tab] = []
@@ -492,7 +508,7 @@ class TabManager: NSObject, ObservableObject {
         if splitTabIds.contains(tab.id) {
             removeFromSplit(tab.id)
         } else if splitTabIds.isEmpty {
-            guard let current = selectedTabId, current != tab.id else {
+            guard let current = focusedDocumentId ?? selectedTabId, current != tab.id else {
                 selectedTabId = tab.id
                 return
             }
@@ -507,11 +523,57 @@ class TabManager: NSObject, ObservableObject {
         // At the cap (4): adding is a no-op.
     }
 
+    // MARK: Document panes (ADR 0008)
+
+    /// Selecting a document row: solo display, dissolving a split it isn't in —
+    /// the same rule as selecting a non-member tab.
+    func selectDocument(_ documentId: UUID) {
+        if !splitTabIds.contains(documentId) { splitTabIds = [] }
+        focusedDocumentId = documentId
+    }
+
+    /// Shift-click / context-menu toggle for a document row, exactly like
+    /// toggleSplitMembership for tabs. Documents are never gathered in the
+    /// sidebar — they live in their own block within the workspace section.
+    func toggleDocumentSplitMembership(_ documentId: UUID) {
+        if splitTabIds.contains(documentId) {
+            removeFromSplit(documentId)
+            if focusedDocumentId == documentId { focusedDocumentId = nil }
+        } else if splitTabIds.isEmpty {
+            guard let current = focusedDocumentId ?? selectedTabId, current != documentId else {
+                focusedDocumentId = documentId
+                return
+            }
+            splitTabIds = [current, documentId]
+            focusedDocumentId = documentId
+        } else if splitTabIds.count < Self.maxSplitTabs {
+            splitTabIds.append(documentId)
+            focusedDocumentId = documentId
+        }
+        // At the cap (4): adding is a no-op.
+    }
+
+    /// ⌘W on a focused document: close its pane. Never writes a disposition —
+    /// documents have none — and the sidebar row remains (closing ≠ deleting).
+    func closeDocumentPane(_ documentId: UUID) {
+        if splitTabIds.contains(documentId) {
+            removeFromSplit(documentId)
+        }
+        if focusedDocumentId == documentId { focusedDocumentId = nil }
+    }
+
     private func removeFromSplit(_ tabId: UUID) {
         let remaining = splitTabIds.filter { $0 != tabId }
         splitTabIds = remaining.count >= 2 ? remaining : []
         if selectedTabId == tabId {
-            selectedTabId = remaining.first ?? selectedTabId
+            // selectedTabId stays tabs-only: a document successor takes focus
+            // through focusedDocumentId instead (ADR 0008).
+            let isDocument = isDocumentPaneId ?? { _ in false }
+            if let successor = remaining.first(where: { !isDocument($0) }) {
+                selectedTabId = successor
+            } else if let documentSuccessor = remaining.first {
+                focusedDocumentId = documentSuccessor
+            }
         }
     }
 
@@ -707,6 +769,7 @@ class TabManager: NSObject, ObservableObject {
     func suspendWorkspace() {
         guard activeWorkspaceId != nil else { return }
         splitTabIds = []
+        focusedDocumentId = nil
         activeWorkspaceId = nil
         selectedTabId = nil
     }
@@ -716,6 +779,7 @@ class TabManager: NSObject, ObservableObject {
     func enterWorkspace(_ id: UUID, tabs: [Tab]) {
         guard activeWorkspaceId != id else { return }
         splitTabIds = []
+        focusedDocumentId = nil
         activeWorkspaceId = id
         selectedTabId = nil
         ensureSelectedTab(from: tabs.filter { $0.workspaceId == id })

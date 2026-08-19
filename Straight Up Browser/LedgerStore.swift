@@ -283,6 +283,170 @@ final class LedgerStore {
         return Set(byKey.filter { $0.value.allSatisfy { $0 == .dismissed } }.keys)
     }
 
+    // MARK: Anchors (Phase 2)
+
+    func anchor(id: UUID) -> LedgerAnchor? {
+        var descriptor = FetchDescriptor<LedgerAnchor>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        return try? modelContext.fetch(descriptor).first
+    }
+
+    /// Resolution step 1: the "^a1b2c3d4" marker from a document's link title.
+    /// ponytail: linear scan over the anchor table; add an indexed prefix column
+    /// if anchor counts ever make this visible.
+    func anchor(idPrefix: String) -> LedgerAnchor? {
+        let anchors = (try? modelContext.fetch(FetchDescriptor<LedgerAnchor>())) ?? []
+        return anchors.first { AnchorLink.matches(anchorId: $0.id, idPrefix: idPrefix) }
+    }
+
+    func anchors(sourceKey: String) -> [LedgerAnchor] {
+        (try? modelContext.fetch(FetchDescriptor<LedgerAnchor>(
+            predicate: #Predicate { $0.sourceKey == sourceKey }
+        ))) ?? []
+    }
+
+    /// Anchor creation reuses an identical existing anchor rather than piling up
+    /// duplicates: anchoring the same selection twice is the same anchor.
+    @discardableResult
+    func createAnchor(
+        source: NewspaperArticle,
+        modality: SourceModality,
+        locator: AnchorLocator,
+        quote: String,
+        label: String = ""
+    ) -> LedgerAnchor {
+        let stored = locator.stored
+        if let existing = anchors(sourceKey: source.sourceKey)
+            .first(where: { $0.locator == stored && $0.quote == quote }) {
+            return existing
+        }
+        let anchor = LedgerAnchor(
+            sourceId: source.id,
+            sourceKey: source.sourceKey,
+            modality: modality,
+            locator: stored,
+            quote: quote,
+            label: label
+        )
+        modelContext.insert(anchor)
+        save("Create anchor")
+        return anchor
+    }
+
+    // MARK: Edges (Phase 2)
+
+    /// One anchor-link occurrence found in a document's Markdown at save time.
+    nonisolated struct EdgeOccurrence: Equatable, Sendable {
+        let anchorId: UUID
+        let quote: String
+        let start: Int
+        let length: Int
+    }
+
+    func edges(documentId: UUID) -> [LedgerEdge] {
+        (try? modelContext.fetch(FetchDescriptor<LedgerEdge>(
+            predicate: #Predicate { $0.documentId == documentId }
+        ))) ?? []
+    }
+
+    /// Declarative: the document's anchor links ARE its edge set. Called on every
+    /// save with the links actually present — upserts offsets (`rangeQuote` stays
+    /// the truth, offsets are the recomputed fast path) and deletes edges whose
+    /// anchor no longer appears. One edge per (document, anchor); a second
+    /// occurrence of the same anchor keeps the first occurrence's range.
+    func reconcileEdges(documentId: UUID, occurrences: [EdgeOccurrence]) {
+        var firstByAnchor: [UUID: EdgeOccurrence] = [:]
+        for occurrence in occurrences where firstByAnchor[occurrence.anchorId] == nil {
+            firstByAnchor[occurrence.anchorId] = occurrence
+        }
+        let existing = edges(documentId: documentId)
+        for edge in existing {
+            if let occurrence = firstByAnchor.removeValue(forKey: edge.anchorId) {
+                edge.rangeQuote = occurrence.quote
+                edge.rangeStart = occurrence.start
+                edge.rangeLength = occurrence.length
+            } else {
+                modelContext.delete(edge)
+            }
+        }
+        for occurrence in firstByAnchor.values {
+            modelContext.insert(LedgerEdge(
+                documentId: documentId,
+                anchorId: occurrence.anchorId,
+                rangeQuote: occurrence.quote,
+                rangeStart: occurrence.start,
+                rangeLength: occurrence.length
+            ))
+        }
+        save("Reconcile document edges")
+    }
+
+    /// One targeted edge write, for the append-to-a-closed-document path where
+    /// no save pass will run until the document is next opened. Offsets start at
+    /// zero — rangeQuote is the truth, and the next save recomputes them.
+    func recordEdge(documentId: UUID, anchorId: UUID, quote: String) {
+        if let existing = edges(documentId: documentId).first(where: { $0.anchorId == anchorId }) {
+            existing.rangeQuote = quote
+        } else {
+            modelContext.insert(LedgerEdge(
+                documentId: documentId,
+                anchorId: anchorId,
+                rangeQuote: quote
+            ))
+        }
+        save("Record document edge")
+    }
+
+    /// Deleting a document deletes its edges. Anchors are never deleted here —
+    /// they belong to sources, and other documents may reference them.
+    func deleteEdges(documentId: UUID) {
+        for edge in edges(documentId: documentId) { modelContext.delete(edge) }
+        save("Delete document edges")
+    }
+
+    // MARK: Transcripts (Phase 2)
+
+    func transcript(sourceKey: String) -> SourceTranscript? {
+        var descriptor = FetchDescriptor<SourceTranscript>(
+            predicate: #Predicate { $0.sourceKey == sourceKey }
+        )
+        descriptor.fetchLimit = 1
+        return try? modelContext.fetch(descriptor).first
+    }
+
+    @discardableResult
+    func storeTranscript(
+        sourceId: UUID,
+        sourceKey: String,
+        languageCode: String,
+        isAutoGenerated: Bool,
+        segments: [TranscriptSegment]
+    ) -> SourceTranscript {
+        let data = try? JSONEncoder().encode(segments)
+        if let existing = transcript(sourceKey: sourceKey) {
+            existing.languageCode = languageCode
+            existing.isAutoGenerated = isAutoGenerated
+            existing.segmentsData = data
+            existing.fetchedAt = Date()
+            save("Update transcript")
+            return existing
+        }
+        let transcript = SourceTranscript(
+            sourceId: sourceId,
+            sourceKey: sourceKey,
+            languageCode: languageCode,
+            isAutoGenerated: isAutoGenerated,
+            segmentsData: data
+        )
+        modelContext.insert(transcript)
+        save("Store transcript")
+        return transcript
+    }
+
+    func allTranscripts() -> [SourceTranscript] {
+        (try? modelContext.fetch(FetchDescriptor<SourceTranscript>())) ?? []
+    }
+
     private func save(_ operation: String) {
         do {
             try modelContext.save()

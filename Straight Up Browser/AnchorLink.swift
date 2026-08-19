@@ -130,6 +130,51 @@ nonisolated enum AnchorLink {
         let idPrefix: String?
     }
 
+    /// A parsed link plus where it sits in the document — the spans the editor
+    /// needs for pill rendering, edge offsets, and title repair. All ranges are
+    /// UTF-16 (NSRange) offsets into the markdown string.
+    nonisolated struct Match: Equatable, Sendable {
+        let parsed: Parsed
+        /// The whole `[text](url "title")` span.
+        let range: NSRange
+        /// The link-text span (inside the brackets).
+        let textRange: NSRange
+        /// The title-content span (inside the quotes), or nil when no title.
+        let titleRange: NSRange?
+    }
+
+    /// `parseAll` with source ranges. Same regex, same tolerance: links with no
+    /// `"^…"` title carry a nil idPrefix.
+    static func parseAllMatches(in markdown: String) -> [Match] {
+        let pattern = #"\[([^\]]*)\]\(([^\s\)]+)(?:\s+"([^"]*)")?\)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let range = NSRange(markdown.startIndex..<markdown.endIndex, in: markdown)
+        return regex.matches(in: markdown, range: range).compactMap { match in
+            guard let textRange = Range(match.range(at: 1), in: markdown),
+                  let urlRange = Range(match.range(at: 2), in: markdown),
+                  let url = URL(string: String(markdown[urlRange]))
+            else { return nil }
+            var idPrefix: String?
+            var titleRange: NSRange?
+            if match.range(at: 3).location != NSNotFound,
+               let range3 = Range(match.range(at: 3), in: markdown) {
+                titleRange = match.range(at: 3)
+                let title = String(markdown[range3])
+                if title.hasPrefix("^") { idPrefix = String(title.dropFirst()).lowercased() }
+            }
+            return Match(
+                parsed: Parsed(
+                    text: String(markdown[textRange]).replacingOccurrences(of: "\\]", with: "]"),
+                    url: url,
+                    idPrefix: idPrefix
+                ),
+                range: match.range,
+                textRange: match.range(at: 1),
+                titleRange: titleRange
+            )
+        }
+    }
+
     /// Finds every Markdown link in a chunk of document text. Links with no
     /// `"^…"` title parse fine and simply carry a nil idPrefix — resolution
     /// falls back to matching URL + locator, and failing that renders plainly.

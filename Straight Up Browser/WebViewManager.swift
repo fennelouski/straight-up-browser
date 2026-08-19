@@ -1127,7 +1127,7 @@ class WebViewManager: NSObject, ObservableObject {
         WebExtensionManager.shared.register(self)
         #endif
 
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let webView = BrowserWKWebView(frame: .zero, configuration: configuration)
         applyStandardSetup(to: webView)
         return webView
     }
@@ -1523,4 +1523,23 @@ extension WebViewManager: WKScriptMessageHandler {
             break
         }
     }
+}
+
+/// WKWebView subclass whose only job is the iOS text-selection edit menu:
+/// "Anchor" beside Copy is the one truly low-friction selection gesture iOS
+/// allows (Phase 2, design §6.1). A plain WKWebView everywhere else.
+final class BrowserWKWebView: WKWebView {
+    #if os(iOS)
+    override func buildMenu(with builder: any UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        let anchor = UIAction(
+            title: String(localized: "Anchor"),
+            image: UIImage(systemName: "link.badge.plus")
+        ) { _ in
+            NotificationCenter.default.post(name: .browserAnchorSelection, object: nil)
+        }
+        builder.insertSibling(UIMenu(options: .displayInline, children: [anchor]),
+                              afterMenu: .standardEdit)
+    }
+    #endif
 }
