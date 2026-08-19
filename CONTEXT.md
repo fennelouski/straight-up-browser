@@ -64,6 +64,37 @@ _Avoid_: `TabGroup`, split group
 A user-authored note or clipped piece of text, link, or image with optional source attribution. Scratch Items are portable, private artifacts: they sync with browser data and can be dragged elsewhere, but are not Agent messages, scoped memory, bookmarks, or Saved Articles.
 _Avoid_: memory, chat attachment (until explicitly attached), Saved Article
 
+**Workspace**:
+A named research project. Owns **Tabs** (via `Tab.workspaceId`), **Workspace documents**, and references into the ledger. Closing a workspace suspends it; its tabs keep their membership and are never carried into the **Default workspace**.
+_Avoid_: saved workspace (the old UserDefaults tab snapshot, now removed), `TabGroup`, **Split**
+
+**Default workspace**:
+`workspaceId == nil` — the absence of a workspace, not a row. Ordinary browsing happens here and nothing is captured.
+_Avoid_: default session (`BrowserSession` means website-data isolation, which is orthogonal)
+
+**Source**:
+A globally unique captured item, identified by its canonical key. A Source **is** a **Saved Article** (`NewspaperArticle`) — the same entity seen from research rather than reading. It exists once no matter how many Workspaces reference it.
+_Avoid_: a second entity beside Saved Article; "capture" as a noun for the Source itself
+
+**Workspace reference**:
+The join between a **Workspace** and a **Source**: when it entered the project, how, the **Disposition**, and which Source led to it. The same Source in three projects has three references.
+
+**Disposition**:
+The user's verdict on a Source within one Workspace — `open` (in the working set), `dismissed` (rejected by closing its tab), or `kept` (survived to archiving). Universal semantics: no per-workspace or per-user setting.
+_Avoid_: status, state (that's `NewspaperCaptureState`)
+
+**Anchor**:
+A precise location inside a **Source**: modality plus a locator (text fragment, timestamp, PDF page, image region) plus a stored quote that survives the locator breaking.
+
+**Claim**:
+A named assertion promoted from a text range when the user wants deduplication across projects. Implicit text ranges are the default; promotion is a later phase.
+
+**Edge**:
+A link between a text range in a **Workspace document** and an **Anchor**. The graph view, the audit view, and "unsupported claims" are all renderings of this one relation.
+
+**Workspace document**:
+A Markdown file in iCloud Drive belonging to a **Workspace**, referenced by relative path. A document pane is not a **Tab** and therefore cannot be a **Split** member.
+
 ## Relationships
 
 - A **Split** displays 2–4 **Tabs**; exactly one of them is the **Focused tab**
@@ -94,6 +125,15 @@ _Avoid_: memory, chat attachment (until explicitly attached), Saved Article
 - A **Scratch Item** is never sent to the Agent automatically; “Ask Agent” explicitly copies its bounded text and source attribution into the prompt composer
 - A **Scratch Item** with a web source can promote that source through Newspaper's ordinary page-capture path; the clip itself never substitutes for the source's complete Article Document
 - Scratch Item drag export uses standard text, URL, and image representations so the artifact can leave the browser without coupling destination sites or apps to browser internals
+- A **Workspace** owns zero or more **Tabs**; a Tab belongs to at most one Workspace, permanently, and incognito Tabs never belong to any
+- Suspension is per-window view state on `TabManager` (like a **Split**), never a column: a Workspace can be open in one window and not another
+- Suspend and restore are the same one-line filter on the tab list — nothing is discarded, so nothing is recreated
+- Capture happens when a page **settles** (loaded, then dwelt on for 20 seconds), never when a Tab closes
+- Closing a Tab is how a **Source** is rejected: it writes `dismissed` and performs no capture. ⇧⌘W inside a Workspace closes the Workspace and writes nothing
+- Archiving a Workspace sweeps its remaining `open` references to `kept`; `dismissed` references are never touched
+- A **Source** is filed under the **Section** named for the first Workspace that captured it; later Workspaces add references but never re-file it
+- Sources rejected in every Workspace are hidden from the **Newspaper**
+- Page archives are local-only and never sync; extracted text and every other ledger entity does
 - Browser chrome is keyboard-first: every user-facing surface needs a discoverable key command for opening it, and every primary action within that surface must be reachable without a pointer; pointer controls are alternate affordances, not the only path
 
 ## Example dialogue
@@ -110,3 +150,5 @@ _Avoid_: memory, chat attachment (until explicitly attached), Saved Article
 - "reading list" and "TBR" refer to the collection of **Saved Articles**, not a second kind of Tab or bookmark.
 - "newspaper issue" refers to the current **Newspaper** projection; there is no durable edition object in the initial model.
 - "section" in reading flows means **Section**; it never means `TabGroup`.
+- "session" is `BrowserSession` (website-data isolation: containers and incognito). The **Default workspace** is a different axis — a Tab has one of each, and they never imply one another.
+- "workspace" once meant a saved snapshot of tabs in UserDefaults that replaced the whole tab set on load. That mechanism is gone; a **Workspace** is a durable entity and loading one destroys nothing.

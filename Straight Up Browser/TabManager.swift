@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import WebKit
 import Combine
 #if os(macOS)
 import AppKit
@@ -104,12 +105,34 @@ class TabManager: NSObject, ObservableObject {
     private static let closedTabsKey = "closedTabsStack"
     private static let maxClosedTabs = 25
     private static let splitKey = "splitTabIds"
+    static let activeWorkspaceKey = "activeWorkspaceId"
+
+    static func restoredActiveWorkspaceId() -> UUID? {
+        UserDefaults.standard.string(forKey: activeWorkspaceKey).flatMap(UUID.init(uuidString:))
+    }
     static let maxSplitTabs = 4
 
     private var modelContext: ModelContext?
     private weak var webViewManager: WebViewManager?
     weak var fastForward: FastForward?
     private let terminateApplication: () -> Void
+
+    /// The workspace this window is showing, or nil for the default workspace.
+    /// Per-window view state persisted to UserDefaults, exactly like splitTabIds
+    /// (ADR 0001) — two windows can sit in two different workspaces.
+    @Published var activeWorkspaceId: UUID? {
+        didSet {
+            if let id = activeWorkspaceId {
+                UserDefaults.standard.set(id.uuidString, forKey: Self.activeWorkspaceKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.activeWorkspaceKey)
+            }
+        }
+    }
+
+    /// Set once the model container exists. Nil in tests that don't need a ledger.
+    var ledgerStore: LedgerStore?
+    var settleCapture: WorkspaceSettleCapture?
 
     // The blank tab the last new-tab command (⌘T/+) created, if the user hasn't
     // navigated it anywhere yet. Tracked so a second new-tab press undoes the
@@ -193,6 +216,8 @@ class TabManager: NSObject, ObservableObject {
         let newTab = Tab(title: String(localized: "New Tab"), url: url, isActive: false)
         newTab.preferredEngine = preferredEngine
         newTab.openerId = selectedTabId
+        // New tabs join whatever workspace this window is showing.
+        newTab.workspaceId = activeWorkspaceId
         newTab.memoryPolicy = MemoryPolicy(rawValue:
             UserDefaults.standard.string(forKey: "memorySaverDefaultPolicy") ?? "") ?? .whenNeeded
         if url != nil {
@@ -315,7 +340,7 @@ class TabManager: NSObject, ObservableObject {
         // Stray blank tabs (e.g. the one launch starts with) shouldn't pile up
         // alongside a freshly created one either.
         for tab in tabs where tab.url == nil && tab.id != selectedTabId {
-            closeTab(tab, tabs: tabs)
+            closeTab(tab, tabs: tabs, reason: .housekeeping)
         }
 
         tabIdBeforePendingNewTab = selectedTabId
@@ -330,7 +355,7 @@ class TabManager: NSObject, ObservableObject {
     func forceNewTab(tabs: [Tab], inheriting context: BrowsingContext) -> Tab {
         _ = closePendingNewTab(tabs: tabs)
         for tab in tabs where tab.url == nil && tab.id != selectedTabId {
-            closeTab(tab, tabs: tabs)
+            closeTab(tab, tabs: tabs, reason: .housekeeping)
         }
         tabIdBeforePendingNewTab = selectedTabId
         let newTab = createTab(inheriting: context)
@@ -350,7 +375,7 @@ class TabManager: NSObject, ObservableObject {
         selectedTabId = tabIdBeforePendingNewTab
         pendingNewTabId = nil
         tabIdBeforePendingNewTab = nil
-        closeTab(pendingTab, tabs: tabs)
+        closeTab(pendingTab, tabs: tabs, reason: .housekeeping)
         return true
     }
 
@@ -363,7 +388,7 @@ class TabManager: NSObject, ObservableObject {
         pendingNewTabId = nil
         tabIdBeforePendingNewTab = nil
         if let tab = tabs.first(where: { $0.id == oldValue }), tab.url == nil {
-            closeTab(tab, tabs: tabs)
+            closeTab(tab, tabs: tabs, reason: .housekeeping)
         }
     }
 
@@ -455,8 +480,9 @@ class TabManager: NSObject, ObservableObject {
               let child = tabs.first(where: { $0.id == childId }),
               tabs.contains(where: { $0.id == sourceId }) else { return false }
 
+        // Undoing an automatic link open, not rejecting the source.
         selectedTabId = sourceId
-        closeTab(child, tabs: tabs)
+        closeTab(child, tabs: tabs, reason: .housekeeping)
         return true
     }
 
@@ -539,7 +565,19 @@ class TabManager: NSObject, ObservableObject {
         return tabs.count > 1 ? tabs[index + 1].id : nil
     }
 
-    func closeTab(_ tab: Tab, tabs: [Tab]) {
+    /// `reason` is required, not defaulted: this function has roughly fifteen
+    /// callers and most of them are housekeeping (blank-tab cleanup, JS
+    /// window.close(), container deletion, undoing an automatic link open). A
+    /// default would silently misfile whichever call site is added next, and
+    /// closing a tab in a workspace is how the user REJECTS a source.
+    func closeTab(_ tab: Tab, tabs: [Tab], reason: TabCloseReason) {
+        // Closing is rejection, and that is the whole of what it writes: a
+        // disposition. No capture, no archive, no web view retained past the
+        // close. See docs/phase1-design.md §3 and ADR 0007.
+        if reason == .userRejected, tab.sessionKind != .incognito, let workspaceId = tab.workspaceId {
+            ledgerStore?.recordRejection(url: tab.url, title: tab.title, workspaceId: workspaceId)
+        }
+
         automaticLinkOpeners.removeValue(forKey: tab.id)
         automaticLinkOpeners = automaticLinkOpeners.filter { $0.value != tab.id }
 
@@ -608,6 +646,14 @@ class TabManager: NSObject, ObservableObject {
             selectedTabId = successor
         }
         if remaining.isEmpty {
+            // Inside a workspace an empty tab set means "I'm done here", not
+            // "quit": suspend back to the default workspace instead. Otherwise
+            // closing the last tab would both reject every source and terminate.
+            if activeWorkspaceId != nil {
+                if let modelContext { try? modelContext.save() }
+                suspendWorkspace()
+                return
+            }
             // Persist the deletion before termination so relaunch starts from an
             // actually empty session rather than restoring the tab just closed.
             if let modelContext { try? modelContext.save() }
@@ -615,6 +661,89 @@ class TabManager: NSObject, ObservableObject {
         } else {
             ensureSelectedTab(from: remaining)
         }
+    }
+
+    // MARK: Workspaces
+
+    /// A page finished loading. Starts the settle clock: if the tab is still on
+    /// this page 20 seconds from now, it enters the ledger. Any further
+    /// navigation restarts it, so only the page actually dwelt on is recorded.
+    func notePageFinished(tab: Tab, webView: WKWebView?, tabs: [Tab]) {
+        // Seen-before surfacing runs on arrival, whatever brought you here.
+        if tab.id == selectedTabId, tab.sessionKind != .incognito {
+            NotificationCenter.default.post(name: .browserPageArrived, object: tab.url)
+        }
+        settleCapture?.pageDidSettleEventually(
+            tab: tab,
+            webView: webView,
+            openedFromSourceId: openerSourceId(for: tab, tabs: tabs)
+        )
+    }
+
+    /// The source a tab was opened FROM, when it was spawned by another tab in
+    /// the same workspace. Phase 1 records this as provenance lineage; Phase 4's
+    /// graph renders the fan-to-common-ancestor pattern from it.
+    func openerSourceId(for tab: Tab, tabs: [Tab]) -> UUID? {
+        guard let openerId = tab.openerId,
+              let opener = tabs.first(where: { $0.id == openerId }),
+              opener.workspaceId == tab.workspaceId,
+              let url = opener.url
+        else { return nil }
+        return ledgerStore?.source(sourceKey: SourceCanonicalizer.canonicalKey(for: url))?.id
+    }
+
+
+    /// Leaving a workspace. Tabs keep their workspaceId and simply stop being
+    /// shown; their web views go through the same release path the memory saver
+    /// uses. Nothing is written to the ledger.
+    func suspendWorkspace() {
+        guard activeWorkspaceId != nil else { return }
+        splitTabIds = []
+        activeWorkspaceId = nil
+        selectedTabId = nil
+    }
+
+    /// Entering a workspace. Restore is just the filter changing — nothing is
+    /// recreated, because nothing was ever discarded.
+    func enterWorkspace(_ id: UUID, tabs: [Tab]) {
+        guard activeWorkspaceId != id else { return }
+        splitTabIds = []
+        activeWorkspaceId = id
+        selectedTabId = nil
+        ensureSelectedTab(from: tabs.filter { $0.workspaceId == id })
+    }
+
+    /// Turn the default workspace into a real one: every tab in this window with
+    /// no workspace joins it. Those tabs have no ledger references — capture only
+    /// fires inside a workspace — so the caller captures them immediately rather
+    /// than waiting for a re-navigation that may never come.
+    @discardableResult
+    func promoteDefaultWorkspace(named name: String, tabs: [Tab], orderIndex: Int) -> Workspace? {
+        guard activeWorkspaceId == nil, let modelContext else { return nil }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let workspace = Workspace(name: trimmed, orderIndex: orderIndex)
+        modelContext.insert(workspace)
+
+        // Incognito tabs are never workspace members, and tabs already owned by
+        // another workspace are not in this window's default set to begin with.
+        let promoted = tabs.filter { $0.workspaceId == nil && $0.sessionKind != .incognito }
+        for tab in promoted { tab.workspaceId = workspace.id }
+        try? modelContext.save()
+
+        if let ledgerStore {
+            for tab in promoted {
+                guard let url = tab.url else { continue }
+                ledgerStore.recordManualCapture(
+                    url: url,
+                    title: tab.title,
+                    workspaceId: workspace.id
+                )
+            }
+        }
+        activeWorkspaceId = workspace.id
+        return workspace
     }
 
 
@@ -632,27 +761,8 @@ class TabManager: NSObject, ObservableObject {
     func deleteTabs(at offsets: IndexSet, tabs: [Tab]) {
         for index in offsets {
             let tab = tabs[index]
-            closeTab(tab, tabs: tabs)
+            closeTab(tab, tabs: tabs, reason: .userRejected)
         }
-    }
-
-    // Replace a workspace without treating every displaced tab as a user close.
-    // This tears down WebViews/session mappings and deletes persisted rows, but
-    // deliberately creates no reopen snapshots and never terminates the app.
-    func discardTabsForWorkspaceLoad(_ tabs: [Tab]) {
-        splitTabIds = []
-        pendingNewTabId = nil
-        tabIdBeforePendingNewTab = nil
-
-        for tab in tabs {
-            webViewManager?.removeWebView(for: tab.id)
-            if tab.sessionKind == .incognito {
-                incognitoTabs.removeAll { $0.id == tab.id }
-            } else {
-                modelContext?.delete(tab)
-            }
-        }
-        selectedTabId = nil
     }
 
     func closeTabSet(tabs: [Tab]) {
@@ -665,7 +775,7 @@ class TabManager: NSObject, ObservableObject {
         var remaining = tabs
         for id in targetIds {
             guard let tab = remaining.first(where: { $0.id == id }) else { continue }
-            closeTab(tab, tabs: remaining)
+            closeTab(tab, tabs: remaining, reason: .userRejected)
             remaining.removeAll { $0.id == id }
         }
     }

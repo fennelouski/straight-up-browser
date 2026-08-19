@@ -977,6 +977,16 @@ private struct NewspaperArticleView: View {
             .foregroundStyle(.orange)
             .padding(14)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        case .deferred:
+            // Recorded in the research ledger but never extracted — the source
+            // and its link are real, the readable text just isn't here yet.
+            Label(
+                "This source is saved. Its readable text hasn't been captured yet.",
+                systemImage: "text.badge.plus"
+            )
+            .foregroundStyle(.secondary)
+            .padding(14)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
         case .ready:
             if article.originalPayloadData == nil {
                 Label(

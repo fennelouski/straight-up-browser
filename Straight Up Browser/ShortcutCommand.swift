@@ -186,7 +186,9 @@ extension ShortcutCommand {
     // Tabs
     static let newTab       = Self("newTab", "New Tab", .tabs, Shortcut(key: "t", command: true))
     static let closeTab     = Self("closeTab", "Close Tab", .tabs, Shortcut(key: "w", command: true))
-    static let closeTabSet  = Self("closeTabSet", "Close Tab Set", .tabs, Shortcut(key: "w", command: true, shift: true))
+    // Two meanings that never coexist: inside a workspace this closes the
+    // workspace, outside one it closes the split's tab set.
+    static let closeTabSet  = Self("closeTabSet", "Close Workspace or Tab Set", .tabs, Shortcut(key: "w", command: true, shift: true))
     static let reopenTab    = Self("reopenTab", "Reopen Last Closed Tab", .tabs, Shortcut(key: "t", command: true, shift: true))
     static let nextTab      = Self("nextTab", "Next Tab", .tabs, Shortcut(key: "\t", control: true))
     static let previousTab  = Self("previousTab", "Previous Tab", .tabs, Shortcut(key: "\t", shift: true, control: true))

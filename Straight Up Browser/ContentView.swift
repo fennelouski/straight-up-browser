@@ -290,77 +290,6 @@ private struct TabDownloadBars: View {
     }
 }
 
-// Workspace data structures for persistence
-struct SavedWorkspace: Codable, Identifiable {
-    let id: UUID
-    let name: String
-    let createdAt: Date
-    let groups: [SavedTabGroup]
-    let tabs: [SavedWorkspaceTab]
-
-    init(name: String, groups: [TabGroup], tabs: [BrowserTab]) {
-        self.id = UUID()
-        self.name = name
-        self.createdAt = Date()
-        self.groups = groups.map { SavedTabGroup(from: $0) }
-        self.tabs = tabs.map { SavedWorkspaceTab(from: $0) }
-    }
-}
-
-struct SavedTabGroup: Codable {
-    let id: UUID
-    let name: String
-    let colorHex: String
-    let orderIndex: Int
-
-    init(from group: TabGroup) {
-        self.id = group.id
-        self.name = group.name
-        self.colorHex = group.colorHex
-        self.orderIndex = group.orderIndex
-    }
-}
-
-struct SavedWorkspaceTab: Codable {
-    let id: UUID
-    let title: String
-    let urlString: String?
-    let groupId: UUID?
-    let isPinned: Bool
-    let isMuted: Bool
-    let zoomLevel: Double
-    let orderIndex: Int
-    // Optional so workspaces saved before container support decode as normal tabs.
-    let sessionKind: SessionKind?
-    let sessionId: UUID?
-
-    init(from tab: Tab) {
-        self.id = tab.id
-        self.title = tab.title
-        self.urlString = tab.url?.absoluteString
-        self.groupId = tab.groupId
-        self.isPinned = tab.isPinned
-        self.isMuted = tab.isMuted
-        self.zoomLevel = tab.zoomLevel
-        self.orderIndex = tab.orderIndex
-        self.sessionKind = tab.sessionKind == .normal ? nil : tab.sessionKind
-        self.sessionId = tab.sessionId
-    }
-
-    func makeTab() -> Tab {
-        let tab = Tab(title: title, url: urlString.flatMap(URL.init(string:)), isActive: false)
-        tab.id = id
-        tab.groupId = groupId
-        tab.isPinned = isPinned
-        tab.isMuted = isMuted
-        tab.zoomLevel = zoomLevel
-        tab.orderIndex = orderIndex
-        tab.sessionKind = sessionKind ?? .normal
-        tab.sessionId = sessionId
-        return tab
-    }
-}
-
 /// Where the find bar sits and how loudly it flashes a match. Shared by the bar itself
 /// (ContentView) and the controls in Settings.
 enum FindBar {
@@ -523,6 +452,7 @@ struct ContentView: View {
     @Query(sort: \NewspaperArticle.addedAt, order: .reverse)
     private var newspaperArticles: [NewspaperArticle]
     @Query(sort: \BrowserSession.createdAt) private var browserSessions: [BrowserSession]
+    @Query(sort: \Workspace.orderIndex) private var workspaces: [Workspace]
 
     // Managers
     @StateObject private var tabManager: TabManager
@@ -579,8 +509,11 @@ struct ContentView: View {
     @State private var newContainerColor = Color.purple
     @State private var showWorkspaceMenu = false
     @State private var showSaveWorkspaceDialog = false
+    @State private var ledgerStore: LedgerStore?
+    @State private var settleCapture: WorkspaceSettleCapture?
+    @State private var seenBeforeNote: String?
+    @State private var seenBeforeToken = UUID()
     @State private var workspaceName = ""
-    @State private var savedWorkspaces: [SavedWorkspace] = []
     @AppStorage("tabBarWidth") private var tabBarWidth: Double = 200.0
     @AppStorage(BrowserChromePlacementSettings.Key.tabSidebarSide) private var tabSidebarSideRaw = BrowserChromeSide.left.rawValue
     @State private var tabBarResizeStartWidth: Double?
@@ -782,7 +715,12 @@ struct ContentView: View {
     // The working set of tabs visible on this device: persisted normal/container
     // tabs (excluding open-only sync closes) plus the in-memory incognito tabs.
     // Used for selection, switching, active-tab lookup, and rendering.
-    private var visiblePersistedTabs: [BrowserTab] { TabSync.visible(tabs) }
+    private var visiblePersistedTabs: [BrowserTab] {
+        // A workspace's tabs stay with it permanently; the default workspace
+        // (nil) never inherits them. This one filter IS suspend and restore —
+        // nothing is ever discarded or recreated.
+        TabSync.visible(tabs).filter { $0.workspaceId == tabManager.activeWorkspaceId }
+    }
     private var allTabs: [BrowserTab] { visiblePersistedTabs + tabManager.incognitoTabs }
 
     // The tabs visible in the window: the split members, or just the focused tab.
@@ -964,10 +902,20 @@ struct ContentView: View {
 
                 Divider()
 
-                Button("Save Workspace…", action: { showSaveWorkspaceDialog = true })
-                ForEach(savedWorkspaces) { workspace in
-                    Button(workspace.name) {
-                        loadWorkspace(workspace)
+                if tabManager.activeWorkspaceId == nil {
+                    Button("Turn This Into a Workspace…", action: { showSaveWorkspaceDialog = true })
+                } else {
+                    Button("Close Workspace", action: { tabManager.suspendWorkspace() })
+                    if let active = activeWorkspace {
+                        Button("Archive Workspace") { archiveActiveWorkspace(active) }
+                    }
+                }
+                if !workspaces.isEmpty {
+                    Divider()
+                    ForEach(workspaces.filter { !$0.isArchived }) { workspace in
+                        Button(workspace.name) {
+                            tabManager.enterWorkspace(workspace.id, tabs: tabs)
+                        }
                     }
                 }
             } label: {
@@ -1096,7 +1044,7 @@ struct ContentView: View {
                             Button("Forward") { webView?.goForward() }.disabled(!(webView?.canGoForward ?? false))
                             Divider()
 
-                            Button("Close Tab", action: { tabManager.closeTab(tab, tabs: allTabs) })
+                            Button("Close Tab", action: { tabManager.closeTab(tab, tabs: allTabs, reason: .userRejected) })
                             Button("Duplicate Tab", action: { _ = tabManager.duplicateTab(tab) })
                             Button(tab.isPinned ? "Unpin Tab" : "Pin Tab") {
                                 tab.isPinned.toggle()
@@ -1378,6 +1326,7 @@ struct ContentView: View {
                             Spacer()
                                 .frame(height: geometry.size.height * omnibarTopFraction)
                             OmnibarView(
+                                ledgerNote: { ledgerNote(for: $0) },
                                 isPresented: $showOmnibar,
                                 urlString: .constant(currentURL?.absoluteString ?? ""),
                                 onNavigate: { urlString, commit in
@@ -1690,9 +1639,15 @@ struct ContentView: View {
                 VStack {
                     Spacer()
                     VStack(spacing: 20) {
-                        Text("Save Workspace")
+                        Text("New Workspace")
                             .font(.title2)
                             .bold()
+
+                        Text("The tabs open now become this workspace's tabs, and their pages enter the research ledger.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
 
                         TextField("Workspace Name", text: $workspaceName)
                             .textFieldStyle(.roundedBorder)
@@ -1705,8 +1660,8 @@ struct ContentView: View {
                             }
                             .buttonStyle(.bordered)
 
-                            Button("Save") {
-                                saveCurrentWorkspace(name: workspaceName)
+                            Button("Create") {
+                                promoteToWorkspace(name: workspaceName)
                                 showSaveWorkspaceDialog = false
                                 workspaceName = ""
                             }
@@ -2249,7 +2204,7 @@ struct ContentView: View {
                                             }
                                             Text(tab.title.isEmpty ? Tab.extractDomain(from: tab.url) : tab.title)
                                                 .lineLimit(1)
-                                            Button { tabManager.closeTab(tab, tabs: allTabs) } label: {
+                                            Button { tabManager.closeTab(tab, tabs: allTabs, reason: .userRejected) } label: {
                                                 Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
                                             }
                                             .buttonStyle(.plain)
@@ -2587,6 +2542,7 @@ struct ContentView: View {
                 onEnabledChange: showAutofillHUD(enabled:)
             ))
             .overlay { faviconPeekOverlay }
+            .overlay(alignment: .top) { seenBeforeBanner }
             .overlay(alignment: agentPanelSide.alignment) { agentPanelOverlay }
             // One session, serialized by pageTranslator's own queue: it advances
             // `configuration` to the next pending request as each one finishes.
@@ -2603,10 +2559,24 @@ struct ContentView: View {
             // not recreate managers or stack observers
             if !managersInitialized {
                 initializeManagers()
-                loadWorkspacesFromDisk()
+                let store = LedgerStore(modelContext: modelContext)
+                ledgerStore = store
+                let settle = WorkspaceSettleCapture(ledgerStore: store, modelContext: modelContext)
+                settleCapture = settle
+                tabManager.ledgerStore = store
+                tabManager.settleCapture = settle
+                tabManager.activeWorkspaceId = TabManager.restoredActiveWorkspaceId()
 
                 // Load favicons for all tabs BEFORE web views are loaded
                 preloadFaviconsForAllTabs()
+
+                NotificationCenter.default.addMainActorObserver(
+                    forName: .browserPageArrived,
+                    object: nil,
+                    queue: .main
+                ) { [self] note in
+                    refreshSeenBefore(for: note.object as? URL)
+                }
 
                 // Setup observer for tab title display mode changes
                 NotificationCenter.default.addMainActorObserver(
@@ -3044,11 +3014,18 @@ struct ContentView: View {
                     // The omnibar edits the current tab's address; once that tab is
                     // gone it's pointing at nothing, so dismiss it with the tab.
                     self.showOmnibar = false
-                    tabManager.closeTab(tab, tabs: tabs)
+                    tabManager.closeTab(tab, tabs: tabs, reason: .userRejected)
                 },
                 closeTabSetAction: {
                     self.showOmnibar = false
-                    tabManager.closeTabSet(tabs: allTabs)
+                    // Inside a workspace, ⇧⌘W closes the WORKSPACE — it never
+                    // closes tabs, so it cannot mass-reject sources. Outside one
+                    // it keeps its original meaning: close the split's tab set.
+                    if tabManager.activeWorkspaceId != nil {
+                        tabManager.suspendWorkspace()
+                    } else {
+                        tabManager.closeTabSet(tabs: allTabs)
+                    }
                 },
                 createNewTabAction: {
                     // Inherit the active tab's session so Cmd+T stays in the current
@@ -3170,7 +3147,8 @@ struct ContentView: View {
     private func deleteContainer(_ session: BrowserSession) {
         // Close its tabs, forget the definition, and wipe its on-disk jar.
         let toClose = tabs.filter { $0.sessionKind == .container && $0.sessionId == session.id }
-        for tab in toClose { tabManager.closeTab(tab, tabs: allTabs) }
+        // Deleting a container, not judging its sources.
+        for tab in toClose { tabManager.closeTab(tab, tabs: allTabs, reason: .housekeeping) }
         let id = session.id
         tabManager.purgeClosedTabs(forSession: id)
         ContainerStoreRemoval.remove(identifier: id) { result in
@@ -3199,64 +3177,90 @@ struct ContentView: View {
         tab.groupId = groupId
     }
 
-    private func saveCurrentWorkspace(name: String) {
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else { return }
-
-        let workspace = SavedWorkspace(name: trimmedName, groups: tabGroups, tabs: tabs)
-        savedWorkspaces.append(workspace)
-        saveWorkspacesToDisk()
-    }
-
-    private func loadWorkspace(_ workspace: SavedWorkspace) {
-        // Workspace replacement is not a normal user close: discard views and
-        // models without adding every old tab to the reopen stack.
-        tabManager.discardTabsForWorkspaceLoad(tabs)
-        for group in tabGroups {
-            modelContext.delete(group)
-        }
-
-        // Restore groups
-        var restoredGroups: [UUID: TabGroup] = [:]
-        for savedGroup in workspace.groups {
-            let group = TabGroup(name: savedGroup.name, color: Color(hex: savedGroup.colorHex) ?? Color.blue, orderIndex: savedGroup.orderIndex)
-            group.id = savedGroup.id
-            modelContext.insert(group)
-            restoredGroups[group.id] = group
-        }
-
-        // Restore tabs
-        var restoredTabs: [Tab] = []
-        for savedTab in workspace.tabs {
-            let tab = savedTab.makeTab()
-            modelContext.insert(tab)
-            restoredTabs.append(tab)
-        }
-        webViewManager?.syncSessions(from: restoredTabs)
-
-        // Select the first tab if available
-        DispatchQueue.main.async {
-            if let firstTab = try? modelContext.fetch(FetchDescriptor<Tab>()).first {
-                tabManager.selectedTabId = firstTab.id
+    /// Arrival banner: catches sources reached by clicking a link or a search
+    /// result, which is most of how a source is met again. The omnibar covers
+    /// typed navigation.
+    @ViewBuilder
+    private var seenBeforeBanner: some View {
+        if let note = seenBeforeNote {
+            HStack(spacing: 10) {
+                Image(systemName: "clock.arrow.circlepath")
+                Text(note)
+                    .lineLimit(2)
+                Button {
+                    seenBeforeNote = nil
+                } label: {
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                }
+                .buttonStyle(.plain)
             }
+            .font(.system(size: 12))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(.thinMaterial, in: Capsule())
+            .shadow(radius: 6)
+            .padding(.top, 10)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .accessibilityLabel(Text("Seen before: \(note)"))
         }
     }
 
-    private func saveWorkspacesToDisk() {
-        let encoder = JSONEncoder()
-        if let data = try? encoder.encode(savedWorkspaces) {
-            UserDefaults.standard.set(data, forKey: "saved_workspaces")
-            UserDefaults.standard.synchronize()
+    /// Called when a tab's URL changes. Nil clears the banner.
+    private func refreshSeenBefore(for url: URL?) {
+        guard let url, let note = ledgerNote(for: url) else {
+            if seenBeforeNote != nil { seenBeforeNote = nil }
+            return
+        }
+        seenBeforeNote = note
+        let token = UUID()
+        seenBeforeToken = token
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(8))
+            if seenBeforeToken == token { seenBeforeNote = nil }
         }
     }
 
-    private func loadWorkspacesFromDisk() {
-        if let data = UserDefaults.standard.data(forKey: "saved_workspaces") {
-            let decoder = JSONDecoder()
-            if let workspaces = try? decoder.decode([SavedWorkspace].self, from: data) {
-                savedWorkspaces = workspaces
-            }
+    /// "Rated 4 in Fermentation, March" — the seen-before line, for the omnibar
+    /// and the arrival banner alike.
+    private func ledgerNote(for url: URL) -> String? {
+        guard let encounters = ledgerStore?.priorEncounters(for: url), let first = encounters.first
+        else { return nil }
+        let when = first.addedAt.formatted(.dateTime.month(.abbreviated).year())
+        let verdict: String
+        switch first.disposition {
+        case .dismissed: verdict = String(localized: "Dismissed in \(first.workspaceName)")
+        case .kept: verdict = String(localized: "Kept in \(first.workspaceName)")
+        case .open: verdict = String(localized: "Open in \(first.workspaceName)")
         }
+        if first.rating > 0 {
+            return String(localized: "Rated \(first.rating) · \(verdict), \(when)")
+        }
+        return String(localized: "\(verdict), \(when)")
+    }
+
+    private var activeWorkspace: Workspace? {
+        guard let id = tabManager.activeWorkspaceId else { return nil }
+        return workspaces.first { $0.id == id }
+    }
+
+    /// Turn the default workspace into a real one. Replaces the old
+    /// SavedWorkspace snapshot mechanism, which replaced every open tab on load.
+    private func promoteToWorkspace(name: String) {
+        let workspace = tabManager.promoteDefaultWorkspace(
+            named: name,
+            tabs: visiblePersistedTabs,
+            orderIndex: workspaces.count
+        )
+        guard workspace != nil else { return }
+        Logger.log("Promoted default workspace to \(name)", type: "Workspace")
+    }
+
+    /// Completion: every remaining `open` source becomes `kept`. Rejections are
+    /// left alone, which is the point of keeping the distinction.
+    private func archiveActiveWorkspace(_ workspace: Workspace) {
+        let swept = ledgerStore?.archiveWorkspace(workspace) ?? 0
+        Logger.log("Archived \(workspace.name): \(swept) sources kept", type: "Workspace")
+        tabManager.suspendWorkspace()
     }
 
     private func preloadFaviconsForAllTabs() {
@@ -3688,7 +3692,7 @@ struct ContentView: View {
 
     private func closeCurrentTab() {
         if let activeTab = activeTab {
-            tabManager.closeTab(activeTab, tabs: allTabs)
+            tabManager.closeTab(activeTab, tabs: allTabs, reason: .userRejected)
         }
     }
 

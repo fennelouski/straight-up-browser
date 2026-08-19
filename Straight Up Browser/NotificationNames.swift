@@ -25,6 +25,8 @@ extension Notification.Name {
     static let browserOpenURL = Notification.Name("browserOpenURL")
     static let browserCloseTab = Notification.Name("browserCloseTab")
     static let browserCloseTabSet = Notification.Name("browserCloseTabSet")
+    /// A page finished loading; the seen-before banner re-checks the ledger.
+    static let browserPageArrived = Notification.Name("browserPageArrived")
     static let browserNewTab = Notification.Name("browserNewTab")
     static let browserForceNewTab = Notification.Name("browserForceNewTab")
     static let reopenLastClosedTab = Notification.Name("reopenLastClosedTab")

@@ -37,6 +37,7 @@ enum SyncedDataCategory: String, CaseIterable {
     case autofillProfiles
     case newspaper
     case scratchPad
+    case research
 
     var label: String {
         switch self {
@@ -54,6 +55,8 @@ enum SyncedDataCategory: String, CaseIterable {
             return String(localized: "Newspaper: saved article text, reading state, sections, and ratings")
         case .scratchPad:
             return String(localized: "Scratch Pad: notes, clipped text, links, images, and source attribution")
+        case .research:
+            return String(localized: "Research workspaces: projects, captured sources, anchors, and links between your writing and sources")
         }
     }
 
@@ -66,6 +69,7 @@ enum SyncedDataCategory: String, CaseIterable {
         case .autofillProfiles: return "text.append"
         case .newspaper: return "newspaper"
         case .scratchPad: return "note.text"
+        case .research: return "books.vertical"
         }
     }
 }
@@ -88,8 +92,21 @@ enum TabSync {
         CloudBackedModelDescriptor(modelType: BrowserSession.self, category: .browserSessions),
         CloudBackedModelDescriptor(modelType: AutofillProfile.self, category: .autofillProfiles),
         CloudBackedModelDescriptor(modelType: NewspaperArticle.self, category: .newspaper),
-        CloudBackedModelDescriptor(modelType: ScratchPadItem.self, category: .scratchPad)
+        CloudBackedModelDescriptor(modelType: ScratchPadItem.self, category: .scratchPad),
+        // One category covers all six research models: six toggles for one
+        // feature would be noise.
+        CloudBackedModelDescriptor(modelType: Workspace.self, category: .research),
+        CloudBackedModelDescriptor(modelType: WorkspaceSourceRef.self, category: .research),
+        CloudBackedModelDescriptor(modelType: WorkspaceDocument.self, category: .research),
+        CloudBackedModelDescriptor(modelType: LedgerAnchor.self, category: .research),
+        CloudBackedModelDescriptor(modelType: LedgerClaim.self, category: .research),
+        CloudBackedModelDescriptor(modelType: LedgerEdge.self, category: .research)
     ]
+
+    /// Deliberately NOT cloud-backed. Page archives run to tens of MB; syncing
+    /// them would wreck the CloudKit quota. They live in the container's second,
+    /// non-CloudKit configuration.
+    static let localOnlyModelTypes: [any PersistentModel.Type] = [LedgerArchive.self]
 
     static var cloudBackedModelTypes: [any PersistentModel.Type] {
         cloudBackedModels.map(\.modelType)
@@ -100,7 +117,9 @@ enum TabSync {
     }
 
     static var syncedDataCategories: [SyncedDataCategory] {
-        cloudBackedModels.map(\.category)
+        // Several models can share one category; the settings list shows each once.
+        var seen: Set<SyncedDataCategory> = []
+        return cloudBackedModels.map(\.category).filter { seen.insert($0).inserted }
     }
 
     // UserDefaults keys (mirrored by @AppStorage in the settings UI).

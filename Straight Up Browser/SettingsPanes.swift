@@ -1815,6 +1815,7 @@ struct PrivacySettingsView: View {
 // MARK: - Clear Data Dialog
 
 struct ClearDataDialog: View {
+    @Environment(\.modelContext) private var modelContext
     @Query private var tabs: [Tab]
     @Query private var browserSessions: [BrowserSession]
 
@@ -1823,6 +1824,18 @@ struct ClearDataDialog: View {
     @Binding var clearCookies: Bool
     @Binding var clearCache: Bool
     @Binding var clearLocalStorage: Bool
+    @State private var clearPageArchives = false
+    @State private var pageArchiveBytes = 0
+
+    /// Snapshots of pages captured for research. Deleting them loses the offline
+    /// copy an anchor falls back to; the extracted text and the ledger survive.
+    private var pageArchiveSizeDescription: String {
+        pageArchiveBytes == 0
+            ? String(localized: "Nothing saved yet")
+            : String(
+                localized: "\(ByteCountFormatter.string(fromByteCount: Int64(pageArchiveBytes), countStyle: .file)) of research page snapshots"
+            )
+    }
 
     var body: some View {
         VStack(spacing: 20) {
@@ -1838,6 +1851,16 @@ struct ClearDataDialog: View {
                 Toggle("Cookies", isOn: $clearCookies)
                 Toggle("Cached images and files", isOn: $clearCache)
                 Toggle("Local storage", isOn: $clearLocalStorage)
+                // Research page archives are local-only and can grow large, so
+                // they get their own opt-in rather than riding on "cache".
+                Toggle(isOn: $clearPageArchives) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Saved page archives")
+                        Text(pageArchiveSizeDescription)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
             .padding(.horizontal)
 
@@ -1855,11 +1878,15 @@ struct ClearDataDialog: View {
         }
         .padding(32)
         .frame(width: 400)
+        .onAppear { pageArchiveBytes = LedgerStore(modelContext: modelContext).totalArchiveBytes() }
     }
 
     private func clearSelectedData() {
         if clearHistory {
             BrowsingDataCleaner.clearHistory(in: tabs)
+        }
+        if clearPageArchives {
+            LedgerStore(modelContext: modelContext).clearArchives()
         }
 
         BrowsingDataCleaner.clearSelectedWebsiteData(

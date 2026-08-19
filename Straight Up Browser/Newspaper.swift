@@ -11,6 +11,11 @@ nonisolated enum NewspaperCaptureState: String, Codable, CaseIterable {
     case capturing
     case ready
     case failed
+    /// Recorded in the research ledger, text not captured. Written when a
+    /// workspace tab settles but full extraction was not cheap at that moment,
+    /// and when a source is rejected before it ever settled.
+    /// `reconcileInterruptedWork` deliberately leaves this state alone.
+    case deferred
 }
 
 nonisolated enum NewspaperCondensationState: String, Codable, CaseIterable {
@@ -354,6 +359,13 @@ final class NewspaperArticle {
     var leadImageURL: URL?
     var leadImageAltText: String?
 
+    // Research ledger (docs/phase1-design.md §1.1): a Source IS a Saved Article.
+    var modalityRaw: String = SourceModality.webPage.rawValue
+    /// For file-backed sources with no meaningful URL.
+    var contentHash: String?
+    /// The workspace that first captured this, and therefore owns its section.
+    var firstWorkspaceId: UUID?
+
     var captureStateRaw: String = "capturing"
     var captureError: String?
     var captureRequestID: UUID? = nil
@@ -381,6 +393,11 @@ final class NewspaperArticle {
     var captureState: NewspaperCaptureState {
         get { NewspaperCaptureState(rawValue: captureStateRaw) ?? .capturing }
         set { captureStateRaw = newValue.rawValue }
+    }
+
+    var modality: SourceModality {
+        get { SourceModality(rawValue: modalityRaw) ?? .webPage }
+        set { modalityRaw = newValue.rawValue }
     }
 
     var condensationState: NewspaperCondensationState {
@@ -525,7 +542,7 @@ final class NewspaperStore {
     }
 
     @discardableResult
-    func enqueue(url: URL, title: String) -> EnqueueResult {
+    func enqueue(url: URL, title: String, section: String? = nil) -> EnqueueResult {
         let key = Self.sourceKey(for: url)
         if let existing = article(sourceKey: key) {
             existing.url = url
@@ -552,8 +569,11 @@ final class NewspaperStore {
             title: fallbackTitle.isEmpty
                 ? (url.host ?? String(localized: "Saved Article"))
                 : fallbackTitle,
-            section: Self.defaultSection(for: url)
+            // A research capture is filed under its workspace; first workspace
+            // wins, so an existing article's section is never rewritten above.
+            section: section ?? Self.defaultSection(for: url)
         )
+        item.modality = SourceModality.inferred(from: url)
         modelContext.insert(item)
         save("Add newspaper article")
         return EnqueueResult(article: item, wasInserted: true)
@@ -836,13 +856,10 @@ final class NewspaperStore {
         }
     }
 
+    /// One canonical identity per source, shared with the research ledger so the
+    /// reading list and the ledger can never disagree about what page this is.
     nonisolated static func sourceKey(for url: URL) -> String {
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        else { return url.absoluteString }
-        components.fragment = nil
-        components.scheme = components.scheme?.lowercased()
-        components.host = components.host?.lowercased()
-        return components.url?.absoluteString ?? url.absoluteString
+        SourceCanonicalizer.canonicalKey(for: url)
     }
 
     static func defaultSection(for url: URL) -> String {

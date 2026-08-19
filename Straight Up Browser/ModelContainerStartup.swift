@@ -42,40 +42,60 @@ struct ModelContainerStartup {
     }
 
     static func makeDefault() -> ModelContainerStartup {
-        let schema = Schema(TabSync.cloudBackedModelTypes)
+        // Two configurations in one container: everything syncs except page
+        // archives, which are far too large for CloudKit. A model in the local
+        // configuration cannot be the target of a SwiftData relationship from a
+        // synced model, which is why the ledger links by UUID throughout.
+        let schema = Schema(TabSync.cloudBackedModelTypes + TabSync.localOnlyModelTypes)
+        let cloudSchema = Schema(TabSync.cloudBackedModelTypes)
+        let localSchema = Schema(TabSync.localOnlyModelTypes)
         let isRunningUnderTests = ProcessInfo.processInfo.arguments.contains("-uiTesting")
             || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
             || ProcessInfo.processInfo.environment["XCInjectBundleInto"] != nil
         let persistentConfiguration = ModelConfiguration(
-            schema: schema,
+            schema: cloudSchema,
             isStoredInMemoryOnly: false,
             cloudKitDatabase: TabSync.cloudKitDatabase
         )
+        let archiveConfiguration = ModelConfiguration(
+            "LocalArchives",
+            schema: localSchema,
+            isStoredInMemoryOnly: false,
+            cloudKitDatabase: .none
+        )
         let ephemeralConfiguration = ModelConfiguration(
-            schema: schema,
+            schema: cloudSchema,
+            isStoredInMemoryOnly: true,
+            cloudKitDatabase: .none
+        )
+        let ephemeralArchiveConfiguration = ModelConfiguration(
+            "LocalArchives",
+            schema: localSchema,
             isStoredInMemoryOnly: true,
             cloudKitDatabase: .none
         )
         // UI-test hosts launch several app instances against the same user
         // container. Keep those instances isolated so SwiftData does not race
         // on the user's persistent store while XCTest is exercising the shell.
-        let launchConfiguration = isRunningUnderTests
-            ? ephemeralConfiguration
-            : persistentConfiguration
-        func makeContainer(configuration: ModelConfiguration) throws -> ModelContainer {
+        let launchConfigurations = isRunningUnderTests
+            ? [ephemeralConfiguration, ephemeralArchiveConfiguration]
+            : [persistentConfiguration, archiveConfiguration]
+        func makeContainer(configurations: [ModelConfiguration]) throws -> ModelContainer {
             let container = try ModelContainer(
                 for: schema,
-                configurations: [configuration]
+                configurations: configurations
             )
             NewspaperStore(modelContext: container.mainContext).reconcileInterruptedWork()
+            // Idempotent, version-gated data migrations for the research ledger.
+            LedgerMigrator(modelContext: container.mainContext).migrateIfNeeded()
             return container
         }
         return recover(
             persistent: {
-                try makeContainer(configuration: launchConfiguration)
+                try makeContainer(configurations: launchConfigurations)
             },
             ephemeral: {
-                try makeContainer(configuration: ephemeralConfiguration)
+                try makeContainer(configurations: [ephemeralConfiguration, ephemeralArchiveConfiguration])
             }
         )
     }

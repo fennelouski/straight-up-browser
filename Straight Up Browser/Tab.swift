@@ -178,6 +178,11 @@ final class Tab {
         )
     }
 
+    /// The research workspace this tab belongs to; nil is the default workspace
+    /// (no workspace), which is an absence rather than a row. A workspace's tabs
+    /// stay with it permanently and are never carried into the default workspace.
+    var workspaceId: UUID?
+
     // Additional tab properties
     var isPinned: Bool = false
     var isMuted: Bool = false

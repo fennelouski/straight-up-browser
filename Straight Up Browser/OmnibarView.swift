@@ -25,6 +25,10 @@ struct Suggestion: Identifiable {
     let title: String?
     let type: SuggestionType
     let tabId: UUID?    // .openTab only: which tab to switch to
+    /// Prior encounter from the research ledger ("Rated 4 in Fermentation").
+    /// Decorates whichever row you were already going to see rather than adding
+    /// a competing one.
+    var ledgerNote: String?
 
     init(url: URL, title: String? = nil, type: SuggestionType, tabId: UUID? = nil) {
         self.url = url
@@ -57,6 +61,12 @@ private struct OmnibarSuggestionLabel: View {
                     if isReady { readyBadge }
                 }
                 .animation(.spring(response: 0.32, dampingFraction: 0.7), value: isReady)
+                if let note = suggestion.ledgerNote {
+                    Text(note)
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
                 Text(suggestion.url.absoluteString)
                     .font(.system(size: 12))
                     .foregroundColor(.gray)
@@ -325,6 +335,8 @@ struct OmnibarTextField: NSViewRepresentable {
 }
 
 struct OmnibarView: View {
+    /// Looks a URL up in the research ledger. Nil result = never seen.
+    var ledgerNote: ((URL) -> String?)? = nil
     @Binding var isPresented: Bool
     @Binding var urlString: String
     var onNavigate: (String, OmnibarCommit) -> Void
@@ -407,8 +419,19 @@ struct OmnibarView: View {
             .map(\.suggestion)
     }
 
-    // Filter suggestions based on input text
+    /// Every suggestion, decorated with any prior encounter in the research
+    /// ledger. One decoration point, so no suggestion source can forget it.
     private var filteredSuggestions: [Suggestion] {
+        guard let ledgerNote else { return undecoratedSuggestions }
+        return undecoratedSuggestions.map { suggestion in
+            var decorated = suggestion
+            decorated.ledgerNote = ledgerNote(suggestion.url)
+            return decorated
+        }
+    }
+
+    // Filter suggestions based on input text
+    private var undecoratedSuggestions: [Suggestion] {
         if historyMode {
             return BrowsingHistoryStore.shared.search(inputText).map {
                 Suggestion(url: $0.url, title: $0.title, type: .history)

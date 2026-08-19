@@ -432,7 +432,7 @@ struct LastTabLifecycleTests {
         let tab = Tab()
         manager.selectedTabId = tab.id
 
-        manager.closeTab(tab, tabs: [tab])
+        manager.closeTab(tab, tabs: [tab], reason: .userRejected)
 
         #expect(didTerminate)
     }
@@ -443,7 +443,7 @@ struct LastTabLifecycleTests {
         let tab = Tab(title: "Example", url: URL(string: "https://example.com"))
         manager.selectedTabId = tab.id
 
-        manager.closeTab(tab, tabs: [tab])
+        manager.closeTab(tab, tabs: [tab], reason: .userRejected)
 
         #expect(didTerminate)
     }
@@ -453,7 +453,7 @@ struct LastTabLifecycleTests {
         let manager = TabManager(terminateApplication: { didTerminate = true })
         let tab = manager.createIncognitoTab()
 
-        manager.closeTab(tab, tabs: [tab])
+        manager.closeTab(tab, tabs: [tab], reason: .userRejected)
 
         #expect(didTerminate)
         #expect(manager.incognitoTabs.isEmpty)
@@ -499,7 +499,7 @@ struct LastTabLifecycleTests {
         )
         manager.selectedTabId = tab.id
 
-        manager.closeTab(tab, tabs: [tab])
+        manager.closeTab(tab, tabs: [tab], reason: .userRejected)
 
         #expect(didTerminate)
         #expect(try context.fetch(FetchDescriptor<Browser.Tab>()).isEmpty)
@@ -618,7 +618,7 @@ struct SessionIsolationTests {
         _ = manager.createIncognitoTab()
         let before = manager.closedTabs.count
 
-        manager.closeTab(a, tabs: manager.incognitoTabs)
+        manager.closeTab(a, tabs: manager.incognitoTabs, reason: .userRejected)
         #expect(!manager.incognitoTabs.contains { $0.id == a.id })
         #expect(manager.incognitoTabs.count == 1)
         // Incognito closes never hit the reopen stack (ephemeral + private).
@@ -713,7 +713,7 @@ struct SessionIsolationTests {
         #expect(containerCopy.sessionId == containerSession)
         #expect(containerCopy.preferredEngine == .chromium)
 
-        manager.closeTab(containerTab, tabs: [containerTab, containerCopy])
+        manager.closeTab(containerTab, tabs: [containerTab, containerCopy], reason: .userRejected)
         let reopened = try #require(manager.reopenLastClosedTab())
         #expect(reopened.sessionKind == .container)
         #expect(reopened.sessionId == containerSession)
@@ -755,46 +755,6 @@ struct SessionIsolationTests {
         #expect(stored?.sessionKind == .container)
         #expect(stored?.sessionId == session.id)
         #expect(stored?.preferredEngine == .chromium)
-    }
-}
-
-struct WorkspaceTests {
-    @Test @MainActor func savedContainerTabRestoresItsSession() throws {
-        let sessionId = UUID()
-        let tab = Tab(title: "Work", url: URL(string: "https://work.example"))
-        tab.sessionKind = .container
-        tab.sessionId = sessionId
-
-        let encoded = try JSONEncoder().encode(SavedWorkspaceTab(from: tab))
-        let saved = try JSONDecoder().decode(SavedWorkspaceTab.self, from: encoded)
-        let restored = saved.makeTab()
-
-        #expect(restored.sessionKind == .container)
-        #expect(restored.sessionId == sessionId)
-    }
-
-    @Test @MainActor func replacingWorkspaceDiscardsModelsAndWebViews() throws {
-        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: Browser.Tab.self, configurations: configuration)
-        let context = container.mainContext
-        let webViews = WebViewManager()
-        let manager = TabManager(
-            modelContext: context,
-            webViewManager: webViews,
-            terminateApplication: {}
-        )
-        let sessionId = UUID()
-        let tab = manager.createTab(inheriting: (.container, sessionId))
-        let unopenedTab = manager.createTab(inheriting: (.container, sessionId))
-        _ = webViews.getWebView(for: tab.id)
-        #expect(webViews.liveTabIds == [tab.id])
-
-        manager.discardTabsForWorkspaceLoad([tab, unopenedTab])
-
-        #expect(webViews.liveTabIds.isEmpty)
-        #expect(webViews.session(for: tab.id).kind == .normal)
-        #expect(webViews.session(for: unopenedTab.id).kind == .normal)
-        #expect(try context.fetch(FetchDescriptor<Browser.Tab>()).isEmpty)
     }
 }
 
@@ -1261,13 +1221,13 @@ struct SplitViewTests {
         let tabs = makeTabs(3)
 
         manager.selectedTabId = tabs[1].id
-        manager.closeTab(tabs[1], tabs: tabs)
+        manager.closeTab(tabs[1], tabs: tabs, reason: .userRejected)
         #expect(manager.selectedTabId == tabs[0].id)
 
         // Closing the first tab has no predecessor: focus moves forward instead
         let remaining = [tabs[0], tabs[2]]
         manager.selectedTabId = tabs[0].id
-        manager.closeTab(tabs[0], tabs: remaining)
+        manager.closeTab(tabs[0], tabs: remaining, reason: .userRejected)
         #expect(manager.selectedTabId == tabs[2].id)
         cleanup(manager)
     }
@@ -1279,21 +1239,21 @@ struct SplitViewTests {
 
         // Closing the opener goes to its first opened tab, not the tab before it
         manager.selectedTabId = tabs[1].id
-        manager.closeTab(tabs[1], tabs: tabs)
+        manager.closeTab(tabs[1], tabs: tabs, reason: .userRejected)
         #expect(manager.selectedTabId == tabs[2].id)
 
         // Then each close walks forward through the rest, in click order
         var remaining = [tabs[0], tabs[2], tabs[3], tabs[4]]
-        manager.closeTab(tabs[2], tabs: remaining)
+        manager.closeTab(tabs[2], tabs: remaining, reason: .userRejected)
         #expect(manager.selectedTabId == tabs[3].id)
 
         remaining = [tabs[0], tabs[3], tabs[4]]
-        manager.closeTab(tabs[3], tabs: remaining)
+        manager.closeTab(tabs[3], tabs: remaining, reason: .userRejected)
         #expect(manager.selectedTabId == tabs[4].id)
 
         // Last one has no siblings left: back to the plain previous-tab rule
         remaining = [tabs[0], tabs[4]]
-        manager.closeTab(tabs[4], tabs: remaining)
+        manager.closeTab(tabs[4], tabs: remaining, reason: .userRejected)
         #expect(manager.selectedTabId == tabs[0].id)
         cleanup(manager)
     }
@@ -1307,13 +1267,13 @@ struct SplitViewTests {
 
         // Closing the focused member: its pane collapses, focus moves to a member,
         // and the rest of the split survives
-        manager.closeTab(tabs[2], tabs: tabs)
+        manager.closeTab(tabs[2], tabs: tabs, reason: .userRejected)
         #expect(manager.splitTabIds == [tabs[0].id, tabs[1].id])
         #expect(manager.selectedTabId == tabs[0].id)
 
         // Closing another member leaves one pane: back to a normal single view
         let remaining = [tabs[0], tabs[1]]
-        manager.closeTab(tabs[1], tabs: remaining)
+        manager.closeTab(tabs[1], tabs: remaining, reason: .userRejected)
         #expect(manager.splitTabIds.isEmpty)
         #expect(manager.selectedTabId == tabs[0].id)
         cleanup(manager)
@@ -1911,8 +1871,15 @@ struct TabSyncDisclosureTests {
             "BrowserSession",
             "AutofillProfile",
             "NewspaperArticle",
-            "ScratchPadItem"
+            "ScratchPadItem",
+            "Workspace",
+            "WorkspaceSourceRef",
+            "WorkspaceDocument",
+            "LedgerAnchor",
+            "LedgerClaim",
+            "LedgerEdge"
         ])
+        // Several models can share one category; the list shows each once.
         #expect(TabSync.syncedDataCategories == [
             .tabs,
             .tabGroups,
@@ -1920,8 +1887,12 @@ struct TabSyncDisclosureTests {
             .browserSessions,
             .autofillProfiles,
             .newspaper,
-            .scratchPad
+            .scratchPad,
+            .research
         ])
+        // Page archives are deliberately local: far too large for CloudKit.
+        #expect(TabSync.localOnlyModelTypes.map { String(describing: $0) } == ["LedgerArchive"])
+        #expect(!TabSync.cloudBackedModelTypeNames.contains("LedgerArchive"))
     }
 
     @Test func disablingPageStateDeletesExistingSnapshots() {

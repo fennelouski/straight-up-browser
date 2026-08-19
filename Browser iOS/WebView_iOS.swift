@@ -674,7 +674,8 @@ struct TabWebView: UIViewRepresentable {
                     ?? (tabs ?? []).first(where: { $0.id == id })
                     ?? tabManager.incognitoTabs.first(where: { $0.id == id })
             else { return }
-            tabManager.closeTab(tab, tabs: tabs ?? [])
+            // The page closed itself; the user did not reject the source.
+            tabManager.closeTab(tab, tabs: tabs ?? [], reason: .housekeeping)
         }
 
         func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping @MainActor @Sendable (WKPermissionDecision) -> Void) {

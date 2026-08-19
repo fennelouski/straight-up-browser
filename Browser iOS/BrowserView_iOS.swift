@@ -64,6 +64,7 @@ struct BrowserView_iOS: View {
     @Query(sort: \Tab.orderIndex) private var tabs: [Tab]
     @Query(sort: \TabGroup.orderIndex) private var tabGroups: [TabGroup]
     @Query(sort: \BrowserSession.createdAt) private var browserSessions: [BrowserSession]
+    @Query(sort: \Workspace.orderIndex) private var workspaces: [Workspace]
     @Query(sort: \Bookmark.createdAt, order: .reverse) private var bookmarks: [Bookmark]
     @Query(sort: \NewspaperArticle.addedAt, order: .reverse)
     private var newspaperArticles: [NewspaperArticle]
@@ -97,6 +98,8 @@ struct BrowserView_iOS: View {
     @State private var showOmnibar = false
 
     @State private var showSidebar = false
+    @State private var showWorkspaceSwitcher = false
+    @State private var ledgerStore: LedgerStore?
     @State private var showShortcutSheet = false
     @State private var showGestureGuide = false
     @State private var showSettings = false
@@ -121,7 +124,6 @@ struct BrowserView_iOS: View {
     @State private var newContainerName = ""
     @State private var showSaveWorkspace = false
     @State private var workspaceName = ""
-    @State private var savedWorkspaces: [SavedWorkspace] = []
     @State private var containerDeletionError: String?
 
     @AppStorage("progressBarTop") private var progressBarTop = true
@@ -190,7 +192,12 @@ struct BrowserView_iOS: View {
     // Tabs shown on this device: drops open-only local closes (their records stay
     // in the cloud so they remain open on your other devices). Incognito isn't
     // synced, so it bypasses the visibility filter and always shows.
-    private var visibleTabs: [Tab] { TabSync.visible(tabs) + tabManager.incognitoTabs }
+    private var visibleTabs: [Tab] {
+        // A workspace's tabs stay with it; the default workspace never inherits
+        // them. Incognito tabs are never workspace members and always show.
+        TabSync.visible(tabs).filter { $0.workspaceId == tabManager.activeWorkspaceId }
+            + tabManager.incognitoTabs
+    }
     private var visibleTabOrder: [Tab] {
         BrowserTabOrder.flattened(tabs: visibleTabs, groups: tabGroups)
     }
@@ -394,10 +401,12 @@ struct BrowserView_iOS: View {
         } message: {
             Text("An isolated, persistent session with its own cookies and logins — stay signed in under a different account, side by side.")
         }
-        .alert("Save Workspace", isPresented: $showSaveWorkspace) {
+        .alert("New Workspace", isPresented: $showSaveWorkspace) {
             TextField("Workspace name", text: $workspaceName)
-            Button("Save") { saveWorkspace(workspaceName) }
+            Button("Create") { promoteToWorkspace(workspaceName) }
             Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The tabs open now become this workspace's tabs, and their pages enter the research ledger.")
         }
         .alert(
             "Container Data Couldn’t Be Removed",
@@ -452,6 +461,7 @@ struct BrowserView_iOS: View {
             GestureGuide_iOS().presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showSettings) { Settings_iOS() }
+        .sheet(isPresented: $showWorkspaceSwitcher) { workspaceSwitcher }
         .sheet(isPresented: $showDownloads) {
             Downloads_iOS()
                 .presentationDetents([.medium, .large])
@@ -677,7 +687,7 @@ struct BrowserView_iOS: View {
             sessionColor: sessionColor,
             onSelect: { tabManager.selectedTabId = $0.id },
             onNewTab: createNewTab,
-            onClose: { tabManager.closeTab($0, tabs: visibleTabs) },
+            onClose: { tabManager.closeTab($0, tabs: visibleTabs, reason: .userRejected) },
             onDuplicate: { _ = tabManager.duplicateTab($0) },
             onTogglePinned: togglePinned,
             onToggleMuted: toggleMuted,
@@ -715,7 +725,7 @@ struct BrowserView_iOS: View {
                 showFaviconProgress: progressFaviconRing,
                 downloads: downloadManager.activeDownloads,
                 onNewTab: createNewTab,
-                onCloseTab: { tabManager.closeTab($0, tabs: visibleTabs) },
+                onCloseTab: { tabManager.closeTab($0, tabs: visibleTabs, reason: .userRejected) },
                 onTogglePinned: togglePinned,
                 onToggleMuted: toggleMuted,
                 onNewGroup: { newGroupName = ""; showNewGroup = true },
@@ -1011,28 +1021,17 @@ struct BrowserView_iOS: View {
                 .accessibilityElement()
                 .accessibilityLabel("Browser Controls")
                 .accessibilityValue(activeTab?.title ?? activeTab?.url?.host ?? String(localized: "New Tab"))
-                .accessibilityHint("Activate for the address bar. Swipe up for tabs, or left and right to change tabs.")
+                .accessibilityHint("Activate for the address bar. Swipe up for tabs, down for workspaces, or left and right to change tabs.")
                 .accessibilityAddTraits(.isButton)
                 .accessibilityIdentifier("browser.controls")
-                .accessibilityAction { focusOmnibar() }
-                .accessibilityAction(named: "New Tab") { createNewTab() }
-                .accessibilityAction(named: "Show Tabs") { toggleSidebar() }
-                .accessibilityAction(named: "Next Tab") {
-                    tabManager.switchToNextTab(tabs: visibleTabOrder)
-                }
-                .accessibilityAction(named: "Previous Tab") {
-                    tabManager.switchToPreviousTab(tabs: visibleTabOrder)
-                }
-                .accessibilityAdjustableAction { direction in
-                    switch direction {
-                    case .increment:
-                        tabManager.switchToNextTab(tabs: visibleTabOrder)
-                    case .decrement:
-                        tabManager.switchToPreviousTab(tabs: visibleTabOrder)
-                    @unknown default:
-                        break
-                    }
-                }
+                .modifier(BrowserGestureBarActions_iOS(
+                    focusOmnibar: focusOmnibar,
+                    createNewTab: createNewTab,
+                    toggleSidebar: toggleSidebar,
+                    showWorkspaces: { showWorkspaceSwitcher = true },
+                    nextTab: { tabManager.switchToNextTab(tabs: visibleTabOrder) },
+                    previousTab: { tabManager.switchToPreviousTab(tabs: visibleTabOrder) }
+                ))
                 .frame(
                     maxWidth: .infinity,
                     maxHeight: .infinity,
@@ -1074,6 +1073,10 @@ struct BrowserView_iOS: View {
         let dx = value.translation.width, dy = value.translation.height
         if dy < -30, abs(dy) > abs(dx) {
             toggleSidebar()                                    // up → all tabs
+        } else if dy > 30, abs(dy) > abs(dx) {
+            // down → up a level, to the projects themselves. Switching away from
+            // a workspace IS suspending it, so there is no separate gesture.
+            showWorkspaceSwitcher = true
         } else if dx < -30, abs(dx) > abs(dy) {
             tabManager.switchToNextTab(tabs: visibleTabOrder)  // left → next tab
         } else if dx > 30, abs(dx) > abs(dy) {
@@ -1085,13 +1088,15 @@ struct BrowserView_iOS: View {
 
     @ViewBuilder
     private var workspaceMenu: some View {
-        if savedWorkspaces.isEmpty {
-            Text("No saved workspaces")
-        } else {
-            ForEach(savedWorkspaces) { ws in
-                Button(ws.name) { loadWorkspace(ws) }
-            }
-        }
+        Button("Workspaces…") { showWorkspaceSwitcher = true }
+    }
+
+    private func promoteToWorkspace(_ name: String) {
+        tabManager.promoteDefaultWorkspace(
+            named: name,
+            tabs: visibleTabs.filter { $0.sessionKind != .incognito },
+            orderIndex: workspaces.count
+        )
     }
 
     // Incognito + containers, injected into the sidebar menu (mirrors the Mac's
@@ -1137,7 +1142,11 @@ struct BrowserView_iOS: View {
         // so each resumes in its own data store (not the default one).
         wvm.syncSessions(from: tabs)
         managersInitialized = true
-        savedWorkspaces = SavedWorkspace.loadAll()
+        let store = LedgerStore(modelContext: modelContext)
+        ledgerStore = store
+        tabManager.ledgerStore = store
+        tabManager.settleCapture = WorkspaceSettleCapture(ledgerStore: store, modelContext: modelContext)
+        tabManager.activeWorkspaceId = TabManager.restoredActiveWorkspaceId()
         if !supportsSplitPanes {
             tabManager.splitTabIds = []
         }
@@ -1235,7 +1244,7 @@ struct BrowserView_iOS: View {
 
     private func createNewTab() {
         for empty in tabs where empty.url == nil && empty.id != tabManager.selectedTabId {
-            tabManager.closeTab(empty, tabs: allTabs)
+            tabManager.closeTab(empty, tabs: allTabs, reason: .housekeeping)
         }
         // Inherit the active tab's session so a new tab stays in the current
         // container/incognito (a fresh incognito comes from ⇧⌘N).
@@ -1284,7 +1293,58 @@ struct BrowserView_iOS: View {
         activeTab?.browsingContext ?? .normalWebKit
     }
 
-    private func closeActiveTab() { if let t = activeTab { tabManager.closeTab(t, tabs: visibleTabs) } }
+    // MARK: Workspaces
+
+    /// iPhone gets exactly one workspace affordance: switching. No parallel
+    /// editor, no research surface — that is iPad and Mac.
+    private var workspaceSwitcher: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Button {
+                        tabManager.suspendWorkspace()
+                        showWorkspaceSwitcher = false
+                    } label: {
+                        HStack {
+                            Label("No Workspace", systemImage: "globe")
+                            Spacer()
+                            if tabManager.activeWorkspaceId == nil {
+                                Image(systemName: "checkmark").foregroundStyle(.tint)
+                            }
+                        }
+                    }
+                }
+                if !workspaces.filter({ !$0.isArchived }).isEmpty {
+                    Section("Workspaces") {
+                        ForEach(workspaces.filter { !$0.isArchived }) { workspace in
+                            Button {
+                                tabManager.enterWorkspace(workspace.id, tabs: tabs)
+                                showWorkspaceSwitcher = false
+                            } label: {
+                                HStack {
+                                    Label(workspace.name, systemImage: "books.vertical")
+                                    Spacer()
+                                    if tabManager.activeWorkspaceId == workspace.id {
+                                        Image(systemName: "checkmark").foregroundStyle(.tint)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Workspaces")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { showWorkspaceSwitcher = false }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func closeActiveTab() { if let t = activeTab { tabManager.closeTab(t, tabs: visibleTabs, reason: .userRejected) } }
 
     private func reloadOrStop() {
         if isLoading { webViewManager?.stopLoading() } else { webViewManager?.reload() }
@@ -1560,8 +1620,9 @@ struct BrowserView_iOS: View {
 
     private func deleteContainer(_ session: BrowserSession) {
         // Close its tabs, forget the definition, and wipe its on-disk jar.
+        // Deleting a container, not judging its sources.
         for tab in tabs where tab.sessionKind == .container && tab.sessionId == session.id {
-            tabManager.closeTab(tab, tabs: allTabs)
+            tabManager.closeTab(tab, tabs: allTabs, reason: .housekeeping)
         }
         let id = session.id
         tabManager.purgeClosedTabs(forSession: id)
@@ -1588,31 +1649,38 @@ struct BrowserView_iOS: View {
         modelContext.delete(group)
     }
 
-    private func saveWorkspace(_ name: String) {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        savedWorkspaces.append(SavedWorkspace(name: trimmed, groups: tabGroups, tabs: tabs))
-        SavedWorkspace.saveAll(savedWorkspaces)
-    }
+}
 
-    private func loadWorkspace(_ workspace: SavedWorkspace) {
-        tabManager.discardTabsForWorkspaceLoad(tabs)
-        for group in tabGroups { modelContext.delete(group) }
-        for sg in workspace.groups {
-            let g = TabGroup(name: sg.name, color: Color(hex: sg.colorHex) ?? .blue, orderIndex: sg.orderIndex)
-            g.id = sg.id
-            modelContext.insert(g)
-        }
-        var restoredTabs: [Tab] = []
-        for st in workspace.tabs {
-            let t = st.makeTab()
-            modelContext.insert(t)
-            restoredTabs.append(t)
-        }
-        webViewManager?.syncSessions(from: restoredTabs)
-        DispatchQueue.main.async {
-            tabManager.selectedTabId = (try? modelContext.fetch(FetchDescriptor<Tab>()))?.first?.id
-        }
+/// The gesture bar's VoiceOver actions, split out of the bar's own view chain:
+/// one more modifier there tips the expression past the type-checker's budget.
+///
+/// The bar is a single accessibility element, so none of its swipes are
+/// reachable by VoiceOver. Every gesture therefore needs an action here — the
+/// Workspaces one especially, since swipe-down is the only path to workspaces
+/// on iPhone.
+private struct BrowserGestureBarActions_iOS: ViewModifier {
+    let focusOmnibar: () -> Void
+    let createNewTab: () -> Void
+    let toggleSidebar: () -> Void
+    let showWorkspaces: () -> Void
+    let nextTab: () -> Void
+    let previousTab: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .accessibilityAction { focusOmnibar() }
+            .accessibilityAction(named: Text("New Tab")) { createNewTab() }
+            .accessibilityAction(named: Text("Show Tabs")) { toggleSidebar() }
+            .accessibilityAction(named: Text("Workspaces")) { showWorkspaces() }
+            .accessibilityAction(named: Text("Next Tab")) { nextTab() }
+            .accessibilityAction(named: Text("Previous Tab")) { previousTab() }
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: nextTab()
+                case .decrement: previousTab()
+                @unknown default: break
+                }
+            }
     }
 }
 
@@ -1660,6 +1728,7 @@ struct GestureGuide_iOS: View {
         .init(icon: "ellipsis",               gesture: "Tap the page menu",     action: "Navigate, share, find, edit the URL, or lock rotation"),
         .init(icon: "hand.tap",               gesture: "Tap the bar",            action: "Search or type a URL"),
         .init(icon: "square.stack",           gesture: "Swipe up on the bar",    action: "Show all tabs"),
+        .init(icon: "books.vertical",         gesture: "Swipe down on the bar",  action: "Switch research workspaces"),
         .init(icon: "arrow.left.arrow.right", gesture: "Swipe the bar sideways", action: "Switch tabs"),
         .init(icon: "plus.square",            gesture: "Long-press the bar",     action: "New tab"),
         .init(icon: "chevron.backward",       gesture: "Swipe from the screen edge", action: "Back and forward"),

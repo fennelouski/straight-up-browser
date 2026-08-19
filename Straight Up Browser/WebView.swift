@@ -442,6 +442,11 @@ struct WebView: NSViewRepresentable {
                     tab.url = currentURL
                 }
 
+                // Start the settle clock for research capture. Nothing happens
+                // for tabs outside a workspace, and any further navigation
+                // restarts it — see WorkspaceSettleCapture.
+                tabManager?.notePageFinished(tab: tab, webView: webView, tabs: tabs ?? [])
+
                 // Record the visit for omnibar suggestions; WKWebView owns back/forward
                 if tab.historyStrings.last != currentURL.absoluteString {
                     tab.historyStrings.append(currentURL.absoluteString)
@@ -1154,7 +1159,8 @@ struct WebView: NSViewRepresentable {
                   let tab = (tabs ?? []).first(where: { $0.id == id })
                     ?? tabManager.incognitoTabs.first(where: { $0.id == id })
             else { return }
-            tabManager.closeTab(tab, tabs: tabs ?? [])
+            // The page closed itself; the user did not reject the source.
+            tabManager.closeTab(tab, tabs: tabs ?? [], reason: .housekeeping)
         }
 
         // Keep WebKit's comprehensive native menu, then add Browser's own link
