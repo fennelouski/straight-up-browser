@@ -309,63 +309,66 @@ struct TabWebView: UIViewRepresentable {
         // MARK: - Favicon
 
         private func loadFavicon(for webView: WKWebView) {
+            // Every declared icon, in document order, then /favicon.ico. iOS needs
+            // the list, not just the first hit: UIImage can't decode SVG, so an
+            // svg-first site has to fall through to a PNG/ICO candidate.
             let faviconScript = """
             (function() {
-                var links = document.getElementsByTagName('link');
                 var rels = ['icon', 'shortcut icon', 'apple-touch-icon', 'apple-touch-icon-precomposed'];
+                var links = document.getElementsByTagName('link');
+                var hrefs = [];
                 for (var i = 0; i < links.length; i++) {
                     var link = links[i];
-                    if (link.rel) {
-                        var linkRel = link.rel.toLowerCase();
-                        for (var j = 0; j < rels.length; j++) {
-                            if (linkRel.indexOf(rels[j]) !== -1) { return link.href; }
-                        }
+                    if (!link.rel || !link.href) { continue; }
+                    var linkRel = link.rel.toLowerCase();
+                    for (var j = 0; j < rels.length; j++) {
+                        if (linkRel.indexOf(rels[j]) !== -1) { hrefs.push(link.href); break; }
                     }
                 }
-                return window.location.origin + '/favicon.ico';
+                hrefs.push(window.location.origin + '/favicon.ico');
+                return hrefs;
             })();
             """
             webView.evaluateJavaScript(faviconScript) { [weak self] result, _ in
                 guard let self = self else { return }
-                if let faviconURLString = result as? String,
-                   let baseURL = webView.url,
-                   let faviconURL = URL(string: faviconURLString, relativeTo: baseURL)?.absoluteURL {
-                    self.downloadFavicon(from: faviconURL, webView: webView)
+                let base = webView.url
+                let candidates = (result as? [String] ?? []).compactMap {
+                    URL(string: $0, relativeTo: base)?.absoluteURL
                 }
-                // No initial-letter image on iPad: the SwiftUI tab row draws the
-                // letter avatar when favicon is nil (replaces DomainInitialsGenerator).
+                self.downloadFavicon(candidates: candidates, webView: webView)
             }
         }
 
-        private func downloadFavicon(from url: URL, webView: WKWebView) {
+        private func downloadFavicon(candidates: [URL], webView: WKWebView) {
             guard let tab = tab(for: webView) else { return }
             let scope = FaviconCacheScope.forTab(tab)
-            if let cachedData = FaviconCache.shared.getFavicon(
-                for: url,
-                scope: scope
-            ) {
-                setFavicon(cachedData, for: webView)
-                return
+            for url in candidates {
+                if let cachedData = FaviconCache.shared.getFavicon(for: url, scope: scope) {
+                    setFavicon(cachedData, for: webView)
+                    return
+                }
             }
 
             let expectedPageURL = webView.url
             Task { @MainActor [weak self, weak webView] in
                 guard let self, let webView else { return }
-                guard let data = await FaviconLoadingPolicy.load(
-                    from: url,
-                    in: webView
-                ), webView.url == expectedPageURL,
-                   UIImage(data: data) != nil else { return }
-                _ = FaviconCache.shared.setFavicon(
-                    data,
-                    for: url,
-                    scope: scope
-                )
-                self.setFavicon(data, for: webView)
+                for url in candidates {
+                    guard webView.url == expectedPageURL else { return }
+                    guard let data = await FaviconLoadingPolicy.load(from: url, in: webView),
+                          UIImage(data: data) != nil else { continue }
+                    _ = FaviconCache.shared.setFavicon(data, for: url, scope: scope)
+                    self.setFavicon(data, for: webView)
+                    return
+                }
+                // Nothing decodable: clear it, or the row keeps showing the
+                // previous page's icon. The SwiftUI tab row draws the letter
+                // avatar when favicon is nil (replaces DomainInitialsGenerator).
+                guard webView.url == expectedPageURL else { return }
+                self.setFavicon(nil, for: webView)
             }
         }
 
-        private func setFavicon(_ data: Data, for webView: WKWebView) {
+        private func setFavicon(_ data: Data?, for webView: WKWebView) {
             DispatchQueue.main.async { self.tab(for: webView)?.favicon = data }
         }
 
