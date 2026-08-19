@@ -78,6 +78,16 @@ Folder name freezes at first document creation (the `sectionName` rule); workspa
 
 ## 5. Gotchas (beyond phase1-handoff's, which all still hold)
 
+- **`MarkdownTextView` trapped on first display until 2026-08-20.** NSTextView's
+  `init(frame:)` convenience dispatches to `init(frame:textContainer:)` on SELF;
+  the subclass declared its own `init()` (losing initializer inheritance), so the
+  first real render of any document pane hit "unimplemented initializer" and
+  crashed the app. Found on the first hands-on run of the checklist — the unit
+  suite drives `DocumentEditSession` headlessly and never instantiates the view,
+  so no automated gate could see it. Fixed by overriding the designated
+  initializer; if you subclass another AppKit view with a convenience-built
+  stack, remember this dispatch pattern.
+
 - **`NSDocument` refuses to overwrite an externally-modified file.** `WorkspaceDocumentFile.saveFile` (Mac) adopts the on-disk `fileModificationDate` before saving, because by then the conflict flow has already preserved the disk version as a sibling. Remove that and the dirty-buffer conflict path silently stops winning the path — a test pins it.
 - **Never call `getWebView(for:)` with a pane id before checking `documentPaneProvider`.** It creates a web view as a side effect; `WebViewContainer.paneView(for:)` is the safe accessor. Same rule as capture's `existingWebView`.
 - **The SDK's document classes are only partially MainActor.** `read/data/contents/load`, `autosavesInPlace`, `init(fileURL:)`, `presentedItemDidChange` are nonisolated; overrides must be too, which is why the text buffer and callbacks live in `Mutex` boxes. Follow the existing pattern when adding methods.

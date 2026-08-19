@@ -335,6 +335,19 @@ final class MarkdownTextView: NSTextView {
     init() {
         super.init(frame: .zero)
         isRichText = false
+        configure()
+    }
+
+    // NSTextView's init(frame:) convenience dispatches to
+    // init(frame:textContainer:) on SELF; without this override the subclass
+    // traps on "unimplemented initializer" the first time a pane is displayed
+    // (found on the first real launch of the editor, 2026-08-20 — the unit
+    // suite drives sessions headlessly and never instantiates the view).
+    override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
+        super.init(frame: frameRect, textContainer: container)
+    }
+
+    private func configure() {
         allowsUndo = true
         usesFindBar = true
         isIncrementalSearchingEnabled = true
