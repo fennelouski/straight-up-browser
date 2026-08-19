@@ -167,6 +167,8 @@ extension Notification.Name {
     static let browserToggleBibliography = Notification.Name("browserToggleBibliography")
     /// Toggle the claims panel / research plan (⌃⌘C).
     static let browserToggleClaims = Notification.Name("browserToggleClaims")
+    /// Open the deep-research report import sheet (⌃⌘I).
+    static let browserImportReport = Notification.Name("browserImportReport")
 
     // CLI data command
     static let browserGetPageData = Notification.Name("browserGetPageData")

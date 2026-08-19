@@ -110,6 +110,7 @@ struct BrowserView_iOS: View {
     @State private var bibliographyPrefill = ""
     /// Phase 6: non-nil = the claims sheet is up for this document.
     @State private var claimsDocumentId: UUID?
+    @State private var showImportReport = false
     @State private var transientNote: String?
     @State private var transientNoteToken = UUID()
     @State private var showShortcutSheet = false
@@ -581,6 +582,25 @@ struct BrowserView_iOS: View {
                 .presentationDragIndicator(.visible)
             }
         }
+        .sheet(isPresented: $showImportReport) {
+            if let id = tabManager.activeWorkspaceId,
+               let workspace = workspaces.first(where: { $0.id == id }),
+               let documentStore, let ledgerStore {
+                ImportReportSheet(
+                    workspace: workspace,
+                    ledgerStore: ledgerStore,
+                    documentStore: documentStore,
+                    onImported: { summary in
+                        showImportReport = false
+                        tabManager.selectDocument(summary.documentId)
+                        showNote(String(localized: "Imported “\(summary.documentName)”: \(summary.citedSources) sources, \(summary.linkedEdges) linked citations."))
+                    },
+                    onClose: { showImportReport = false }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
+        }
         .sheet(isPresented: $showBibliographySheet) {
             if let workspaceId = tabManager.activeWorkspaceId, let ledgerStore {
                 BibliographyPanel(
@@ -637,6 +657,7 @@ struct BrowserView_iOS: View {
         return Publishers.MergeMany(
             [Notification.Name.browserDocumentNote, .browserOpenAnchor, .browserAnchorSelection,
              .browserToggleAuditView, .browserToggleBibliography, .browserToggleClaims,
+             .browserImportReport,
              UIApplication.didBecomeActiveNotification, UIApplication.willResignActiveNotification]
                 .map { center.publisher(for: $0) }
         )
@@ -657,6 +678,8 @@ struct BrowserView_iOS: View {
             toggleBibliographySheet()
         case .browserToggleClaims:
             toggleClaimsSheet()
+        case .browserImportReport:
+            toggleImportReportSheet()
         case UIApplication.didBecomeActiveNotification:
             // Share-sheet capture (Phase 3): ingest anything queued while the
             // app was away, and keep the extension's picker mirror fresh.
@@ -686,6 +709,14 @@ struct BrowserView_iOS: View {
             return
         }
         auditDocumentId = target
+    }
+
+    private func toggleImportReportSheet() {
+        guard tabManager.activeWorkspaceId != nil else {
+            showNote(String(localized: "Open a workspace to import a report into it."))
+            return
+        }
+        showImportReport.toggle()
     }
 
     private func toggleClaimsSheet() {
@@ -781,6 +812,7 @@ struct BrowserView_iOS: View {
         case .auditView: toggleAuditView()
         case .bibliographySearch: toggleBibliographySheet()
         case .claimsPanel: toggleClaimsSheet()
+        case .importReport: toggleImportReportSheet()
         case .showBookmarks: presentLibrary(.bookmarks)
         case .showHistory: presentLibrary(.history)
         case .showDownloads: showDownloads = true
@@ -1707,6 +1739,12 @@ struct BrowserView_iOS: View {
                             showWorkspaceSwitcher = false
                         } label: {
                             Label("Claims & Research Plan", systemImage: "checklist")
+                        }
+                        Button {
+                            toggleImportReportSheet()
+                            showWorkspaceSwitcher = false
+                        } label: {
+                            Label("Import Research Report", systemImage: "square.and.arrow.down.on.square")
                         }
                         Button {
                             archiveActiveWorkspace()

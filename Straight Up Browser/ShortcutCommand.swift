@@ -251,6 +251,7 @@ extension ShortcutCommand {
     static let auditView = Self("auditView", "Graph & Audit View", .page, Shortcut(key: "g", command: true, control: true))
     static let bibliographySearch = Self("bibliographySearch", "Search Bibliography", .page, Shortcut(key: "b", command: true, control: true))
     static let claimsPanel = Self("claimsPanel", "Claims & Research Plan", .page, Shortcut(key: "c", command: true, control: true))
+    static let importReport = Self("importReport", "Import Research Report", .page, Shortcut(key: "i", command: true, control: true))
     static let showBookmarks = Self("showBookmarks", "Show Bookmarks", .bookmarks, Shortcut(key: "b", command: true, shift: true))
     static let showHistory = Self("showHistory", "Show History", .bookmarks, Shortcut(key: "y", command: true))
 
@@ -298,7 +299,7 @@ extension ShortcutCommand {
            findInPage, findNext, findPrevious, zoomIn, zoomOut, actualSize, printPage, exportPDF, fullScreen,
            toggleTranslation, translateInSplit, readerMode, toggleAutofill,
            toggleTabBar, hideTabBar, minimalTabBar, compactTabBar, wideTabBar,
-           addBookmark, captureSource, anchorSelection, newWorkspaceDocument, transcriptPanel, auditView, bibliographySearch, claimsPanel,
+           addBookmark, captureSource, anchorSelection, newWorkspaceDocument, transcriptPanel, auditView, bibliographySearch, claimsPanel, importReport,
            showBookmarks, showHistory, clearSiteData, convertToIncognito,
            omnibar, quickOpen, quickOpenNewTab, tabGrid, scratchPad, agentPanel, shortcutOverlay, settings, help, extensionPopup]
         + platformCommands
@@ -366,6 +367,7 @@ enum BrowserPlatformCommandAction: Hashable {
     case auditView
     case bibliographySearch
     case claimsPanel
+    case importReport
     case showBookmarks
     case showHistory
     case showDownloads
@@ -421,6 +423,7 @@ struct BrowserPlatformCommandEntry: Identifiable {
         case .auditView: .browserToggleAuditView
         case .bibliographySearch: .browserToggleBibliography
         case .claimsPanel: .browserToggleClaims
+        case .importReport: .browserImportReport
         case .showBookmarks: .browserShowBookmarks
         case .showHistory: .browserShowHistory
         case .showDownloads: .browserShowDownloads
@@ -490,6 +493,7 @@ enum BrowserPlatformCommandRegistry {
         .init(group: .bookmarks, command: .auditView, action: .auditView),
         .init(group: .bookmarks, command: .bibliographySearch, action: .bibliographySearch),
         .init(group: .bookmarks, command: .claimsPanel, action: .claimsPanel),
+        .init(group: .bookmarks, command: .importReport, action: .importReport),
         .init(group: .bookmarks, command: .showBookmarks, action: .showBookmarks),
         .init(group: .bookmarks, command: .showHistory, action: .showHistory),
     ]

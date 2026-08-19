@@ -4,7 +4,7 @@ Research workspaces inside Straight Up Browser. A workspace owns its tabs, its d
 
 Built for one person's research: food science for video scripts, plus AI, software engineering, and the occasional academic paper. Most sources are general web pages and YouTube videos; some are academic papers. General-audience polish is explicitly not a goal.
 
-**Status:** Phases 1–6 are complete and shipped. See `docs/phase1-handoff.md` and `docs/phase2-handoff.md` for what exists, `docs/adr/0007-the-research-ledger.md` and `docs/adr/0008-split-admits-document-panes.md` for the decisions that shaped them.
+**Status:** ALL SEVEN PHASES are complete and shipped. What remains is the "Later / optional" list below, the recorded scope deviations awaiting the owner's verdict (chiefly iPad document-in-split), the 40-locale translation pass, and the manual verification checklist (`docs/phase2-manual-checklist.md`) — none yet run. See `docs/phase1-handoff.md` and `docs/phase2-handoff.md` for what exists, `docs/adr/0007-the-research-ledger.md` and `docs/adr/0008-split-admits-document-panes.md` for the decisions that shaped them.
 
 ---
 
@@ -141,9 +141,11 @@ Trigger on paragraph-settle debounce, never per keystroke. Content-hash each par
 
 Shipped with a deterministic heuristic extractor as the default and the on-device FoundationModels model (availability- and AI-switch-gated, verbatim-guarded — selection, never generation) layered behind the same protocol. ⌃⌘C opens the claims panel: Research plan → Find Support hands off to Phase 5; Promote writes `LedgerClaim` + stamps `LedgerEdge.claimId` — the last writerless Phase 1 entities now have writers. **Scope notes:** no interview held ([design call]s in `docs/phase6-design.md`); candidates and dismissals deliberately unpersisted; extraction runs while the claims panel is open (hash-gated, identical results to always-on — recorded deviation); manual verification pending (checklist, Phase 6 section).
 
-### Phase 7 — Deep-research import
+### Phase 7 — Deep-research import ✅ **Complete**
 
 Import Gemini/Claude/ChatGPT reports as source bundles: every cited link becomes a source, the report becomes a source, its claim-citation pairs become pre-populated edges. Then run provenance tracing over the bundle — turning "confident report" into "what this report is standing on."
+
+Shipped by composition: the report becomes a workspace document, the importer writes sources/references/anchors (`.importBundle`, lineage to the report), and one ordinary Phase 2 save produces the repaired links and pre-populated edges. Provenance tracing is Phase 4's Shared Upstream fan over the recorded lineage. ⌃⌘I, paste-first. **Scope notes:** no interview held ([design call]s in `docs/phase7-design.md`); Markdown/plain-text reports only; no fetch of cited pages at import (they arrive deferred); manual verification pending (checklist, Phase 7 section).
 
 ### Later / optional
 

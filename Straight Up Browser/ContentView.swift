@@ -522,6 +522,8 @@ struct ContentView: View {
     @State private var bibliographyPrefill: String?
     /// Phase 6: non-nil = the claims panel is up for this document.
     @State private var claimsDocumentId: UUID?
+    /// Phase 7: the report import sheet.
+    @State private var showImportReport = false
     @State private var seenBeforeNote: String?
     @State private var seenBeforeToken = UUID()
     @State private var workspaceName = ""
@@ -1665,6 +1667,20 @@ struct ContentView: View {
                     workspaceId: tabManager.activeWorkspaceId,
                     webView: activeTab.flatMap { webViewManager?.existingWebView(for: $0.id) },
                     isPresented: $showTranscriptPanel
+                )
+            }
+            if showImportReport, let workspace = activeWorkspace,
+               let documentStore, let ledgerStore {
+                ImportReportSheet(
+                    workspace: workspace,
+                    ledgerStore: ledgerStore,
+                    documentStore: documentStore,
+                    onImported: { summary in
+                        showImportReport = false
+                        tabManager.selectDocument(summary.documentId)
+                        showTransientNote(String(localized: "Imported “\(summary.documentName)”: \(summary.citedSources) sources, \(summary.linkedEdges) linked citations. ⌃⌘G shows what it stands on."))
+                    },
+                    onClose: { showImportReport = false }
                 )
             }
             if let claimsDocumentId, let documentStore, let ledgerStore,
@@ -3329,6 +3345,9 @@ struct ContentView: View {
         center.addMainActorObserver(forName: .browserToggleClaims, object: nil, queue: .main) { [self] _ in
             toggleClaimsPanel()
         }
+        center.addMainActorObserver(forName: .browserImportReport, object: nil, queue: .main) { [self] _ in
+            toggleImportReport()
+        }
         // A focused document redirects Cmd-L to the editor's find bar (design
         // §1.2). Registered after NotificationManager's own showOmnibar
         // observer, so this runs second and wins.
@@ -3438,6 +3457,18 @@ struct ContentView: View {
             return
         }
         claimsDocumentId = target
+    }
+
+    private func toggleImportReport() {
+        if showImportReport {
+            showImportReport = false
+            return
+        }
+        guard tabManager.activeWorkspaceId != nil else {
+            showTransientNote(String(localized: "Open a workspace to import a report into it."))
+            return
+        }
+        showImportReport = true
     }
 
     private func handleOpenAnchor(_ note: Notification) {

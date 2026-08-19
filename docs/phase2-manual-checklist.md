@@ -128,3 +128,16 @@ Phase 3 shipped right behind Phase 2, same status: automated suite green, zero h
 - [ ] With AI Features ON on an Apple Intelligence Mac: extraction may catch subtler claims; every listed claim is still a verbatim sentence from your text (select it and ⌘F to prove it).
 - [ ] With AI Features OFF or no Apple Intelligence: the heuristic still produces the number/comparative-shaped claims above, identically on iPhone.
 - [ ] Close the panel without touching anything, then check the ledger: nothing was written.
+
+---
+
+# Phase 7 — Deep-research import (also NOT yet run)
+
+- [ ] Ask any assistant for a cited research report, copy it, press **⌃⌘I** in a workspace, paste, Import. Expect: the note names the new document with source and citation counts; the report opens as a document with its citation links rendered as **pills**.
+- [ ] The file in iCloud Drive now carries `"^id"` markers on the citation links (Phase 2's title repair ran at import).
+- [ ] **⌃⌘G** on the report: Shared Upstream mode shows every citation as ONE colored fan — the report's sources are not independent corroboration. Unsupported Claims mode shows the report's uncited assertions.
+- [ ] Clicking a citation pill opens the source per your setting; a video citation with a timestamp arrives seeked.
+- [ ] Bare footnote URLs joined the workspace as sources (seen-before knows them) but carry no edge.
+- [ ] Re-import the identical report: one report source in the ledger; the document arrives as "Title 2".
+- [ ] Open a cited source and close its tab: `dismissed` — close-is-rejection judges bundle citations like any tab.
+- [ ] iPhone: workspace switcher → Import Research Report → paste → same result.

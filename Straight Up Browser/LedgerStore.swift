@@ -171,13 +171,14 @@ final class LedgerStore {
         data: Data,
         suggestedName: String,
         workspaceId: UUID,
-        importsDirectory: URL
+        importsDirectory: URL,
+        method: SourceCaptureMethod = .shareSheet
     ) -> NewspaperArticle? {
         let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         let sourceKey = "hash:" + hash
         let cleanedName = suggestedName.isEmpty ? "Import" : suggestedName
         if let existing = source(sourceKey: sourceKey) {
-            upsertReference(workspaceId: workspaceId, article: existing, method: .shareSheet, disposition: .open)
+            upsertReference(workspaceId: workspaceId, article: existing, method: method, disposition: .open)
             save("Record shared file")
             return existing
         }
@@ -199,8 +200,31 @@ final class LedgerStore {
         case "pdf": article.modality = .pdf
         default: article.modality = .importedFile
         }
-        upsertReference(workspaceId: workspaceId, article: article, method: .shareSheet, disposition: .open)
+        upsertReference(workspaceId: workspaceId, article: article, method: method, disposition: .open)
         save("Record shared file")
+        return article
+    }
+
+    /// Phase 7: a citation inside an imported deep-research report. Same
+    /// writes as any capture, with the .importBundle method Phase 1 reserved
+    /// and lineage back to the report — which is what makes the audit view's
+    /// Shared Upstream mode render the bundle as one fan.
+    @discardableResult
+    func recordBundleSource(
+        url: URL,
+        title: String,
+        workspaceId: UUID,
+        openedFromSourceId: UUID?
+    ) -> NewspaperArticle {
+        let article = enqueueSource(url: url, title: title, workspaceId: workspaceId)
+        upsertReference(
+            workspaceId: workspaceId,
+            article: article,
+            method: .importBundle,
+            disposition: .open,
+            openedFromSourceId: openedFromSourceId
+        )
+        save("Record bundle source")
         return article
     }
 
