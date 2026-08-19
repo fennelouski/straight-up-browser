@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		19A2BD0A3C0EFE3E61FFBA3F /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 6107B19FB38ED093CF618419 /* Localizable.xcstrings */; };
 		4A3E87148FA867D7F9D7A1DD /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 68ADAA7B926E62694E3DE4A1 /* Foundation.framework */; };
 		5C95253C1149EC1BFF629A08 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = DDB1530130DF80B281CC55E5 /* Sparkle */; };
 		71B29BFFCF1A5D9250392278 /* BrowserShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A160EA668E249A38C55A5C48 /* BrowserShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -71,6 +72,7 @@
 		3421592C319E6B69F40379BB /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		48B0B3E39964D77BCA1E1F5C /* ShareQueue.swift (shared) */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = "ShareQueue.swift (shared)"; path = "Straight Up Browser/ShareQueue.swift"; sourceTree = "<group>"; };
 		58AA1C45E6DEE7337895173D /* Browser.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Browser.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6107B19FB38ED093CF618419 /* Localizable.xcstrings */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		661372C2F36F0BFA1C05D9E4 /* ShareViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		68ADAA7B926E62694E3DE4A1 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		803E20672F11607F00A31C8D /* Browser.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Browser.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -257,6 +259,7 @@
 				661372C2F36F0BFA1C05D9E4 /* ShareViewController.swift */,
 				3421592C319E6B69F40379BB /* Info.plist */,
 				1F580FA73347DD37D4207587 /* BrowserShare.entitlements */,
+				6107B19FB38ED093CF618419 /* Localizable.xcstrings */,
 			);
 			path = "Browser Share";
 			sourceTree = "<group>";
@@ -537,6 +540,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				19A2BD0A3C0EFE3E61FFBA3F /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

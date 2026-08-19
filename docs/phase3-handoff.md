@@ -26,7 +26,7 @@ Queue round-trips oldest-first and `clear` removes payloads; drain writes `.shar
 ## Gotchas
 
 - **Mac is untouched**: no app group on the Mac entitlements, no Mac share extension (deliberate — design §1). `ShareQueue.containerURL()` returns a group path on Mac anyway; nothing calls drain there.
-- **Extension strings are English-only** — the extension bundle has no string catalog. Fold into the i18n pipeline when it next runs.
+- ~~**Extension strings are English-only** — the extension bundle has no string catalog.~~ *Closed 2026-08-20: `Browser Share/Localizable.xcstrings` now carries the extension's 6 keys in all 36 locales, added to the `BrowserShare` resources phase.*
 - **First device build**: automatic signing must mint the app-group + extension provisioning; if the group id is rejected, register `group.com.nathanfennel.Straight-Up-Browser` on the team.
 - The Phase 1 rule stands: a share is `.open`, capture-shaped — never a disposition change, never text extraction at drain.
 
