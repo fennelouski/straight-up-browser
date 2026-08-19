@@ -266,6 +266,32 @@ final class LedgerStore {
         save("Record rejected source")
     }
 
+    /// The ref's disposition before a close, captured into the closed-tab
+    /// snapshot so undo can restore it. Nil = no ref exists yet (the close will
+    /// create one).
+    func priorDisposition(url: URL, workspaceId: UUID) -> SourceDisposition? {
+        reference(workspaceId: workspaceId, sourceKey: SourceCanonicalizer.canonicalKey(for: url))?.disposition
+    }
+
+    /// Undo of an accidental tab close: un-write the `dismissed` the close
+    /// wrote. A ref the close created is deleted outright; a ref that predated
+    /// it returns to its prior disposition. Only a ref still `dismissed` is
+    /// touched — if anything (a re-settle, another device) already moved it on,
+    /// the newer verdict wins.
+    func undoRejection(url: URL?, workspaceId: UUID, priorDispositionRaw: String?) {
+        guard let url, !url.absoluteString.isEmpty else { return }
+        let key = SourceCanonicalizer.canonicalKey(for: url)
+        guard let ref = reference(workspaceId: workspaceId, sourceKey: key),
+              ref.disposition == .dismissed else { return }
+        if let raw = priorDispositionRaw, let prior = SourceDisposition(rawValue: raw) {
+            ref.disposition = prior
+            ref.updatedAt = Date()
+        } else {
+            modelContext.delete(ref)
+        }
+        save("Undo rejected source")
+    }
+
     // MARK: Completion
 
     /// Archiving a workspace sweeps every remaining `open` reference to `kept`.

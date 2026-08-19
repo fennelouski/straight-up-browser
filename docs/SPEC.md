@@ -4,7 +4,7 @@ Research workspaces inside Straight Up Browser. A workspace owns its tabs, its d
 
 Built for one person's research: food science for video scripts, plus AI, software engineering, and the occasional academic paper. Most sources are general web pages and YouTube videos; some are academic papers. General-audience polish is explicitly not a goal.
 
-**Status:** ALL SEVEN PHASES are complete and shipped. What remains is the "Later / optional" list below, the recorded scope deviations awaiting the owner's verdict (chiefly iPad document-in-split), the 40-locale translation pass, and the manual verification checklist (`docs/phase2-manual-checklist.md`) — none yet run. See `docs/phase1-handoff.md` and `docs/phase2-handoff.md` for what exists, `docs/adr/0007-the-research-ledger.md` and `docs/adr/0008-split-admits-document-panes.md` for the decisions that shaped them.
+**Status:** ALL SEVEN PHASES are complete and shipped. The 40-locale translation pass ran 2026-08-20 (129 research keys + a new BrowserShare extension catalog, 36 locales each). What remains is the "Later / optional" list below, the recorded scope deviations awaiting the owner's verdict (chiefly iPad document-in-split), and the manual verification checklist (`docs/phase2-manual-checklist.md`) — not yet run. See `docs/phase1-handoff.md` and `docs/phase2-handoff.md` for what exists, `docs/adr/0007-the-research-ledger.md` and `docs/adr/0008-split-admits-document-panes.md` for the decisions that shaped them.
 
 ---
 
@@ -172,6 +172,6 @@ Resolved in Phase 2: transcript storage (a synced ledger entity; Whisper cut ent
 
 Still open:
 
-- **Claim promotion UX** — what gesture turns a text range into a named claim.
-- **Undo of an accidental tab close** must un-write the `dismissed` disposition, not merely restore the tab.
+- **Claim promotion UX** — what gesture turns a text range into a named claim. (The claims panel's Promote button covers extracted claims; a selection-based gesture remains open.)
+- ~~**Undo of an accidental tab close** must un-write the `dismissed` disposition~~ — **resolved 2026-08-20**: the closed-tab snapshot carries the ref's prior disposition; ⇧⌘T restores it (or deletes a ref the close created), restores workspace membership, and undoes a multi-pane ⌘W as one unit. Pinned by `UndoCloseTests`.
 - **iPad document-in-split** — deferred from Phase 2 (deviation #6); needs an explicit keep-or-build decision.

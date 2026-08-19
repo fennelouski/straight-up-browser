@@ -34,6 +34,17 @@ struct ClosedTabSnapshot: Codable {
     let sessionId: UUID?
     // Optional so snapshots written by WebKit-only releases still decode.
     let preferredEngine: BrowserEngine?
+    // Workspace membership at close, so reopen restores it. Optional for
+    // pre-workspace snapshots.
+    let workspaceId: UUID?
+    // True when this close wrote a `dismissed` disposition, so reopen can
+    // un-write it (SPEC: undo must un-write the rejection, not just the tab).
+    let wroteDismissed: Bool?
+    // The ref's disposition before the close; nil = the close created the ref.
+    let priorDispositionRaw: String?
+    // Set on every member of a multi-pane close (⌘W on a split), so one ⇧⌘T
+    // undoes the whole set as one unit.
+    let undoGroup: UUID?
 
     init(
         title: String,
@@ -41,7 +52,11 @@ struct ClosedTabSnapshot: Codable {
         historyStrings: [String],
         sessionKind: SessionKind?,
         sessionId: UUID?,
-        preferredEngine: BrowserEngine? = nil
+        preferredEngine: BrowserEngine? = nil,
+        workspaceId: UUID? = nil,
+        wroteDismissed: Bool? = nil,
+        priorDispositionRaw: String? = nil,
+        undoGroup: UUID? = nil
     ) {
         self.title = title
         self.url = url
@@ -49,6 +64,10 @@ struct ClosedTabSnapshot: Codable {
         self.sessionKind = sessionKind
         self.sessionId = sessionId
         self.preferredEngine = preferredEngine
+        self.workspaceId = workspaceId
+        self.wroteDismissed = wroteDismissed
+        self.priorDispositionRaw = priorDispositionRaw
+        self.undoGroup = undoGroup
     }
 }
 
@@ -108,6 +127,9 @@ class TabManager: NSObject, ObservableObject {
     @Published var closedTabs: [ClosedTabSnapshot] = [] {
         didSet { persistClosedTabs() }
     }
+    // Non-nil while closeTabSet is closing a multi-pane selection: every
+    // snapshot it stacks carries this id, so reopen restores the set as one unit.
+    private var pendingUndoGroup: UUID?
 
     // Set when a normal tab is created and we're not the default browser, so
     // ContentView can show the bottom-corner nudge. Every new-tab path (⌘T, +,
@@ -143,8 +165,16 @@ class TabManager: NSObject, ObservableObject {
             } else {
                 UserDefaults.standard.removeObject(forKey: Self.activeWorkspaceKey)
             }
+            // Document panes and their edit sessions belong to the workspace
+            // being left; the owner (ContentView / BrowserView_iOS) closes and
+            // discards them here so they don't accumulate across switches.
+            if oldValue != activeWorkspaceId { workspaceSwitched?() }
         }
     }
+
+    /// Called after the active workspace changes. Set by the content view to
+    /// close and discard document panes/sessions from the previous workspace.
+    var workspaceSwitched: (() -> Void)?
 
     /// Set once the model container exists. Nil in tests that don't need a ledger.
     var ledgerStore: LedgerStore?
@@ -598,14 +628,25 @@ class TabManager: NSObject, ObservableObject {
     // than 2 survivors means a plain single view.
     func restoreSplit(from tabs: [Tab]) {
         guard let strings = UserDefaults.standard.stringArray(forKey: Self.splitKey) else { return }
-        let ids = strings.compactMap(UUID.init(uuidString:)).filter { id in tabs.contains { $0.id == id } }
+        // Pane ids resolve against the tab list first, then the active
+        // workspace's documents (ADR 0008); unresolved ids drop as before.
+        let isDocument = isDocumentPaneId ?? { _ in false }
+        let ids = strings.compactMap(UUID.init(uuidString:)).filter { id in
+            tabs.contains { $0.id == id } || isDocument(id)
+        }
         guard ids.count >= 2 else {
             if !strings.isEmpty { UserDefaults.standard.removeObject(forKey: Self.splitKey) }
             return
         }
         splitTabIds = ids
         if let selected = selectedTabId, !ids.contains(selected) {
-            selectedTabId = ids.first
+            // selectedTabId stays tabs-only; an all-document split focuses its
+            // first pane through focusedDocumentId instead.
+            if let firstTab = ids.first(where: { id in tabs.contains { $0.id == id } }) {
+                selectedTabId = firstTab
+            } else {
+                focusedDocumentId = ids.first
+            }
         }
     }
 
@@ -636,7 +677,15 @@ class TabManager: NSObject, ObservableObject {
         // Closing is rejection, and that is the whole of what it writes: a
         // disposition. No capture, no archive, no web view retained past the
         // close. See docs/phase1-design.md §3 and ADR 0007.
+        // The ref's pre-close state rides the snapshot so ⇧⌘T un-writes the
+        // rejection, not just the tab (SPEC's undo-close debt).
+        var wroteDismissed = false
+        var priorDispositionRaw: String?
         if reason == .userRejected, tab.sessionKind != .incognito, let workspaceId = tab.workspaceId {
+            if let url = tab.url, !url.absoluteString.isEmpty {
+                wroteDismissed = true
+                priorDispositionRaw = ledgerStore?.priorDisposition(url: url, workspaceId: workspaceId)?.rawValue
+            }
             ledgerStore?.recordRejection(url: tab.url, title: tab.title, workspaceId: workspaceId)
         }
 
@@ -659,6 +708,10 @@ class TabManager: NSObject, ObservableObject {
         if splitTabIds.contains(tab.id) {
             removeFromSplit(tab.id)
         }
+        // If a document pane holds (or just inherited) focus, the selection
+        // reassignments below must not steal it — selectedTabId's didSet clears
+        // document focus, so it is restored after the selection settles.
+        let documentSuccessor = focusedDocumentId
 
         // Incognito tabs are in-memory and ephemeral: no closed-tab snapshot (privacy),
         // just drop the tab and wipe its jar once the session has no tabs left.
@@ -673,6 +726,7 @@ class TabManager: NSObject, ObservableObject {
                 terminateApplication()
             } else {
                 ensureSelectedTab(from: remaining)
+                if let documentSuccessor { focusedDocumentId = documentSuccessor }
             }
             return
         }
@@ -684,7 +738,11 @@ class TabManager: NSObject, ObservableObject {
             historyStrings: tab.historyStrings,
             sessionKind: tab.sessionKind,
             sessionId: tab.sessionId,
-            preferredEngine: tab.preferredEngine
+            preferredEngine: tab.preferredEngine,
+            workspaceId: tab.workspaceId,
+            wroteDismissed: wroteDismissed,
+            priorDispositionRaw: priorDispositionRaw,
+            undoGroup: pendingUndoGroup
         ))
 
         // Clean up the web view for this tab
@@ -699,6 +757,7 @@ class TabManager: NSObject, ObservableObject {
                 terminateApplication()
             } else {
                 ensureSelectedTab(from: remaining)
+                if let documentSuccessor { focusedDocumentId = documentSuccessor }
             }
             return
         }
@@ -722,6 +781,7 @@ class TabManager: NSObject, ObservableObject {
             terminateApplication()
         } else {
             ensureSelectedTab(from: remaining)
+            if let documentSuccessor { focusedDocumentId = documentSuccessor }
         }
     }
 
@@ -844,6 +904,10 @@ class TabManager: NSObject, ObservableObject {
 
         guard !targetIds.isEmpty else { return }
 
+        // The whole set is one gesture, so one ⇧⌘T undoes it as one unit.
+        pendingUndoGroup = targetIds.count > 1 ? UUID() : nil
+        defer { pendingUndoGroup = nil }
+
         var remaining = tabs
         for id in targetIds {
             guard let tab = remaining.first(where: { $0.id == id }) else { continue }
@@ -853,8 +917,29 @@ class TabManager: NSObject, ObservableObject {
     }
 
     func reopenLastClosedTab() -> Tab? {
-        guard let snapshot = closedTabs.popLast() else { return nil }
+        guard let last = closedTabs.last else { return nil }
 
+        // A multi-pane close (⌘W on a split) stacked its members contiguously
+        // under one group id; reopen them all as the single unit they were.
+        var snapshots: [ClosedTabSnapshot] = []
+        if let group = last.undoGroup {
+            while let next = closedTabs.last, next.undoGroup == group {
+                snapshots.append(closedTabs.removeLast())
+            }
+        } else {
+            snapshots.append(closedTabs.removeLast())
+        }
+
+        // Reopen in close order so sidebar order comes back out roughly right;
+        // the last snapshot popped (closed first) is restored first.
+        var lastReopened: Tab?
+        for snapshot in snapshots.reversed() {
+            lastReopened = reopen(snapshot)
+        }
+        return lastReopened
+    }
+
+    private func reopen(_ snapshot: ClosedTabSnapshot) -> Tab {
         // Old snapshots had no session fields and decode as normal. Incognito tabs
         // are never snapshotted; if one is encountered, createTab still keeps it
         // memory-only rather than persisting its URL.
@@ -868,6 +953,20 @@ class TabManager: NSObject, ObservableObject {
         )
         newTab.historyStrings = snapshot.historyStrings
         newTab.currentHistoryIndex = snapshot.historyStrings.isEmpty ? -1 : snapshot.historyStrings.count - 1
+
+        // Membership is permanent (ADR 0007): the tab returns to its workspace,
+        // not to whichever one happens to be active now.
+        if let workspaceId = snapshot.workspaceId {
+            newTab.workspaceId = workspaceId
+        }
+        // The close wrote `dismissed`; undoing the close un-writes it.
+        if snapshot.wroteDismissed == true, let workspaceId = snapshot.workspaceId {
+            ledgerStore?.undoRejection(
+                url: snapshot.url,
+                workspaceId: workspaceId,
+                priorDispositionRaw: snapshot.priorDispositionRaw
+            )
+        }
 
         // Update the title to use the domain name
         newTab.updateTitleFromURL()

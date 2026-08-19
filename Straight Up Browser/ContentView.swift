@@ -1385,7 +1385,8 @@ struct ContentView: View {
                                 currentTabId: tabManager.selectedTabId,
                                 onSwitchToTab: { tabManager.selectedTabId = $0 },
                                 thumbnail: { webViewManager?.thumbnail(for: $0) },
-                                pageProtection: pageProtectionSummary
+                                pageProtection: pageProtectionSummary,
+                                focusedDocumentName: focusedDocumentName
                             )
                             .allowsHitTesting(true)
                             .accessibilityElement(children: .contain)
@@ -2667,8 +2668,17 @@ struct ContentView: View {
                 let docStore = DocumentStore(modelContext: modelContext, ledgerStore: store)
                 documentStore = docStore
                 documentPaneManager.documentStore = docStore
-                tabManager.isDocumentPaneId = { [weak documentPaneManager] id in
-                    documentPaneManager?.isDocument(id) ?? false
+                // Scoped to the ACTIVE workspace (ADR 0008: pane ids resolve
+                // against the active workspace's documents) — a document id from
+                // a suspended workspace must not resolve as a pane.
+                tabManager.isDocumentPaneId = { [weak docStore, weak tabManager] id in
+                    guard let row = docStore?.document(id: id) else { return false }
+                    return row.workspaceId == tabManager?.activeWorkspaceId
+                }
+                // Leaving a workspace closes its document panes and edit
+                // sessions; nothing else discards them (Phase 2 known debt).
+                tabManager.workspaceSwitched = { [weak documentPaneManager] in
+                    documentPaneManager?.discardAll()
                 }
                 anchorComposer = AnchorComposer(
                     ledgerStore: store, documentStore: docStore, settleCapture: settle)
@@ -3598,6 +3608,13 @@ struct ContentView: View {
     private var activeWorkspace: Workspace? {
         guard let id = tabManager.activeWorkspaceId else { return nil }
         return workspaces.first { $0.id == id }
+    }
+
+    /// The focused document's name, for the omnibar header (Phase 2 deviation
+    /// #9, closed): nil whenever a tab owns focus.
+    private var focusedDocumentName: String? {
+        guard let id = tabManager.focusedDocumentId else { return nil }
+        return documentStore?.document(id: id)?.displayName
     }
 
     /// Turn the default workspace into a real one. Replaces the old

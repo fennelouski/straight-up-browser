@@ -195,6 +195,6 @@ Close writes `dismissed` and captures nothing; housekeeping closes write nothing
 Claim promotion UX, the Markdown editor, anchor creation UI, YouTube transcripts, the share extension, the graph/audit view, bibliography matching, credibility scoring, provenance tracing, any AI, and any external API (OpenAlex, Crossref, Semantic Scholar).
 
 **Known debt beyond the ponytail list:**
-- **Undo of an accidental tab close does not un-write the disposition.** `TabManager.reopenLastClosedTab` restores the tab only, so an accidental ⌘W leaves a false `dismissed` behind. The fix needs the closed-tab snapshot to carry the ref id; refs are addressable by `(workspaceId, sourceKey)`, so the schema already supports it. A ⇧⌘W multi-close should undo as one unit.
+- ~~**Undo of an accidental tab close does not un-write the disposition.**~~ *Closed 2026-08-20: the snapshot carries workspace, prior disposition, and an undo-group id; `reopenLastClosedTab` un-writes the `dismissed` (restore-or-delete, never clobbering a newer verdict) and a multi-pane ⌘W undoes as one unit. Pinned by `UndoCloseTests`.*
 - **`dismissed` has no UI.** Rejections are recorded and shown nowhere.
 - **The workspace UI flow is not covered by a UI test.** Verified by unit tests and by inspecting the real store at runtime, not by driving the menus.

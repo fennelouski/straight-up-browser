@@ -48,6 +48,9 @@ final class DocumentPaneManager: ObservableObject {
 
     func discardAll() {
         for id in Array(panes.keys) { discard(id) }
+        // Sessions can outlive their pane views (selection text lookups, panes
+        // never displayed); close the stragglers too.
+        documentStore?.closeAllSessions()
     }
 }
 

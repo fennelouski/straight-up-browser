@@ -1520,7 +1520,13 @@ struct BrowserView_iOS: View {
         // Phase 2: documents, anchors, transcripts.
         let docStore = DocumentStore(modelContext: modelContext, ledgerStore: store)
         documentStore = docStore
-        tabManager.isDocumentPaneId = { [weak docStore] id in docStore?.document(id: id) != nil }
+        // Scoped to the ACTIVE workspace (ADR 0008), matching the Mac wiring.
+        tabManager.isDocumentPaneId = { [weak docStore, weak tabManager] id in
+            guard let row = docStore?.document(id: id) else { return false }
+            return row.workspaceId == tabManager?.activeWorkspaceId
+        }
+        // Leaving a workspace closes its document edit sessions (Phase 2 debt).
+        tabManager.workspaceSwitched = { [weak docStore] in docStore?.closeAllSessions() }
         anchorComposer = AnchorComposer(ledgerStore: store, documentStore: docStore, settleCapture: settle)
 
         // Phase 3: ingest shares queued while the app was closed.

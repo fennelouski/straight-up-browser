@@ -293,6 +293,12 @@ final class DocumentStore: ObservableObject {
         Task { await session.close() }
     }
 
+    /// Close every open edit session (each flushes its save). Called when the
+    /// active workspace changes — sessions belong to the workspace being left.
+    func closeAllSessions() {
+        for id in Array(sessions.keys) { closeSession(for: id) }
+    }
+
     // MARK: Conflicts (design §5: newest wins, losers become siblings)
 
     /// Writes every unresolved NSFileVersion out as an ordinary sibling file,

@@ -124,6 +124,6 @@ Whisper/ASR; PDF-page and image-region anchor *creation* (locator formats ready)
 
 **Known debt:**
 - **The manual checklist has not been run** (`docs/phase2-manual-checklist.md`). Everything hands-on — the gesture feel, real iCloud conflict behavior, Files-app visibility, cross-device latency — is unverified.
-- `DocumentPaneManager` panes and their sessions live until workspace switch/delete; no LRU. Harmless at realistic document counts.
-- Closing a tab pane beside a document pane dissolves to a neighbor tab rather than the document (focus successor runs through `closeTab`'s tab-only path).
-- The undo-close-tab disposition debt from Phase 1 is untouched.
+- ~~`DocumentPaneManager` panes and their sessions live until workspace switch/delete; no LRU~~ — *closed 2026-08-20: `TabManager.workspaceSwitched` now discards panes and closes every edit session when the active workspace changes (both platforms).*
+- ~~Closing a tab pane beside a document pane dissolves to a neighbor tab rather than the document~~ — *closed 2026-08-20: `closeTab` restores the document successor's focus after the selection reassignment (pinned in `UndoCloseTests`).*
+- ~~The undo-close-tab disposition debt from Phase 1 is untouched~~ — *closed 2026-08-20: see SPEC "Still open" and `UndoCloseTests`.*

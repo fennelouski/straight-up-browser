@@ -357,6 +357,9 @@ struct OmnibarView: View {
     var onSwitchToTab: ((UUID) -> Void)? = nil
     var thumbnail: ((UUID) -> NSImage?)? = nil
     var pageProtection: PageProtectionSummary? = nil
+    /// Shown above the field when a workspace document owns focus — the omnibar
+    /// then names the document rather than implying a page (Phase 2 deviation #9).
+    var focusedDocumentName: String? = nil
 
     // Below this, a match is too weak to hijack a plain Return into a tab switch —
     // you can still arrow onto the suggestion at any length.
@@ -555,6 +558,18 @@ struct OmnibarView: View {
     var body: some View {
         // Fixed height container to prevent layout shifts when suggestions appear/disappear
         VStack(spacing: 0) {
+            if let focusedDocumentName {
+                HStack(spacing: 4) {
+                    Image(systemName: "doc.text")
+                    Text(focusedDocumentName)
+                        .lineLimit(1)
+                    Spacer()
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 32)
+                .padding(.bottom, 4)
+            }
             HStack {
                 if let pageProtection {
                     PageProtectionButton(summary: pageProtection)

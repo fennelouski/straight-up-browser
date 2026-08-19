@@ -139,12 +139,27 @@ nonisolated struct EmbeddingPassageMatcher: PassageMatcher {
             .map(\.0)
     }
 
+    // NLEmbedding loads a model from disk; cache one per language across
+    // queries instead of rebuilding it per panel keystroke. A cached miss (nil)
+    // is remembered too, so unsupported languages don't retry the disk.
+    private static let embeddingLock = NSLock()
+    nonisolated(unsafe) private static var embeddingCache: [NLLanguage: NLEmbedding?] = [:]
+
+    private static func cachedEmbedding(for language: NLLanguage) -> NLEmbedding? {
+        embeddingLock.lock()
+        defer { embeddingLock.unlock() }
+        if let cached = embeddingCache[language] { return cached }
+        let embedding = NLEmbedding.sentenceEmbedding(for: language)
+        embeddingCache[language] = embedding
+        return embedding
+    }
+
     private func makeDistance(query: String) -> ((String, String) -> Double?)? {
         if let distanceOverride { return distanceOverride }
         let recognizer = NLLanguageRecognizer()
         recognizer.processString(query)
         let language = recognizer.dominantLanguage ?? .english
-        guard let embedding = NLEmbedding.sentenceEmbedding(for: language) else { return nil }
+        guard let embedding = Self.cachedEmbedding(for: language) else { return nil }
         return { a, b in
             let d = embedding.distance(between: a, and: b)
             return d.isFinite ? d : nil
