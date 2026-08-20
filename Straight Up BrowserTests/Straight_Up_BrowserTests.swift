@@ -1908,21 +1908,33 @@ struct TabSyncDisclosureTests {
 }
 
 struct ShortcutColumnPackingTests {
+    // A stand-in for the live bindings, so the packing is tested on its own.
+    private let rows: (ShortcutSection) -> Int = { section in
+        switch section {
+        case .tabs: return 13
+        case .navigation: return 6
+        case .page: return 18
+        case .screenshots: return 4
+        case .tabBar: return 5
+        case .bookmarks: return 6
+        case .privacy: return 2
+        case .app: return 11
+        }
+    }
+
     @Test func packsEverySectionOnceInOrderAcrossBalancedColumns() {
-        let columns = ShortcutColumnPacking.balanced(into: 3)
+        let columns = ShortcutColumnPacking.balanced(into: 3, rows: rows)
         #expect(columns.count == 3)
         #expect(columns.allSatisfy { !$0.isEmpty })
         #expect(columns.flatMap { $0 } == ShortcutSection.allCases)
 
         // Balanced enough that no column runs to twice another's length.
-        let rows = columns.map { sections in
-            sections.reduce(0) { $0 + ShortcutStore.shared.cheatRows(for: $1).count }
-        }
-        #expect(rows.max()! <= 2 * rows.min()!)
+        let heights = columns.map { sections in sections.reduce(0) { $0 + rows($1) } }
+        #expect(heights.max()! <= 2 * heights.min()!)
     }
 
     @Test func oneColumnKeepsEverySection() {
-        #expect(ShortcutColumnPacking.balanced(into: 1) == [ShortcutSection.allCases])
+        #expect(ShortcutColumnPacking.balanced(into: 1, rows: rows) == [ShortcutSection.allCases])
     }
 }
 

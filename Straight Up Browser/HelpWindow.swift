@@ -136,12 +136,13 @@ private struct ShortcutsHelpView: View {
 enum ShortcutColumnPacking {
     static let columnWidth: CGFloat = 288
 
-    /// A section costs its rows plus its header and the gap above it.
-    private static func height(_ section: ShortcutSection) -> Int {
-        ShortcutStore.shared.cheatRows(for: section).count + 2
-    }
-
-    static func balanced(into count: Int) -> [[ShortcutSection]] {
+    /// A section costs its rows plus its header and the gap above it. `rows` is
+    /// injectable so the packing can be exercised without the live store.
+    static func balanced(
+        into count: Int,
+        rows: (ShortcutSection) -> Int = { ShortcutStore.shared.cheatRows(for: $0).count }
+    ) -> [[ShortcutSection]] {
+        func height(_ section: ShortcutSection) -> Int { rows(section) + 2 }
         var remaining = ShortcutSection.allCases.reduce(0) { $0 + height($1) }
         var columns: [[ShortcutSection]] = []
         var current: [ShortcutSection] = []
