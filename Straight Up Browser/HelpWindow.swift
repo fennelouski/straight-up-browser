@@ -32,7 +32,7 @@ struct HelpWindow: View {
                 }
                 .tag(2)
         }
-        .frame(width: 600, height: 560)
+        .frame(width: 952, height: 690)
         .padding()
         .preferredColorScheme(colorScheme)
     }
@@ -96,6 +96,10 @@ private struct GettingStartedView: View {
                         .padding(8)
                 }
             }
+            // The window is sized by the shortcut columns; prose stays at a
+            // readable measure instead of stretching the full width.
+            .frame(maxWidth: 640, alignment: .leading)
+            .frame(maxWidth: .infinity)
             .padding()
         }
     }
@@ -106,37 +110,95 @@ private struct GettingStartedView: View {
 // customizable) bindings — see ShortcutCommand.swift. Customize any of these in
 // Settings → Shortcuts.
 private struct ShortcutsHelpView: View {
-    private let store = ShortcutStore.shared
-
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 14) {
                 Text("Keyboard Shortcuts")
-                    .font(.title)
+                    .font(.title2)
                     .fontWeight(.bold)
 
-                ForEach(ShortcutSection.allCases, id: \.self) { section in
-                    GroupBox(label: Text(section.title)) {
-                        Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 6) {
-                            ForEach(store.cheatRows(for: section)) { row in
-                                GridRow {
-                                    Text(row.title)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                    Text(row.keys)
-                                        .font(.system(.body, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                        .padding(8)
-                    }
-                }
+                ShortcutColumnsView()
 
                 Text("The omnibar also opens from any app with ⌥Space (configurable), and quitting holds ⌘Q for two seconds. Customize any shortcut in Settings → Shortcuts.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding()
+            .padding(20)
+        }
+    }
+}
+
+// MARK: - Shortcut columns
+// Every command on one screen: the sections are packed into columns balanced by
+// row count, so no column runs long while its neighbour sits half empty. Shared
+// by the Help tab and the ⇧⌘H overlay — one layout, one place to change it.
+enum ShortcutColumnPacking {
+    static let columnWidth: CGFloat = 288
+
+    /// A section costs its rows plus its header and the gap above it.
+    private static func height(_ section: ShortcutSection) -> Int {
+        ShortcutStore.shared.cheatRows(for: section).count + 2
+    }
+
+    static func balanced(into count: Int) -> [[ShortcutSection]] {
+        var remaining = ShortcutSection.allCases.reduce(0) { $0 + height($1) }
+        var columns: [[ShortcutSection]] = []
+        var current: [ShortcutSection] = []
+        var used = 0
+        for section in ShortcutSection.allCases {
+            let target = Double(remaining) / Double(count - columns.count)
+            // Close the column when this section would overshoot the target by
+            // more than stopping short of it does.
+            if !current.isEmpty, columns.count < count - 1,
+               abs(Double(used + height(section)) - target) > abs(Double(used) - target) {
+                columns.append(current)
+                remaining -= used
+                current = []
+                used = 0
+            }
+            current.append(section)
+            used += height(section)
+        }
+        columns.append(current)
+        return columns
+    }
+}
+
+struct ShortcutColumnsView: View {
+    var columnCount = 3
+    var searchQuery = ""
+    var searchOpacity = 1.0
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 24) {
+            ForEach(ShortcutColumnPacking.balanced(into: columnCount), id: \.first) { sections in
+                // One Grid per column, not per section, so every key in the
+                // column shares a right edge instead of jumping around.
+                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 3) {
+                    ForEach(Array(sections.enumerated()), id: \.element) { index, section in
+                        GridRow {
+                            Text(section.title)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+                                .padding(.top, index == 0 ? 0 : 12)
+                                .gridCellColumns(2)
+                        }
+                        ForEach(ShortcutStore.shared.cheatRows(for: section)) { row in
+                            GridRow {
+                                CheatSheetTitleCell(
+                                    row: row,
+                                    searchQuery: searchQuery,
+                                    searchOpacity: searchOpacity
+                                )
+                                CheatSheetKeysCell(row: row)
+                            }
+                        }
+                    }
+                }
+                .frame(width: ShortcutColumnPacking.columnWidth, alignment: .topLeading)
+            }
         }
     }
 }
@@ -167,7 +229,16 @@ struct CheatSheetKeysCell: View {
 
     var body: some View {
         if let shortcut = row.shortcut {
-            HighlightedChord(shortcut: shortcut)
+            HStack(spacing: 0) {
+                HighlightedChord(shortcut: shortcut)
+                // Anything the row lists past the primary chord — the ⌃ twin
+                // that gets a page-proof second binding. Dim: it's the fallback.
+                if row.keys.hasPrefix(shortcut.displayString) {
+                    Text(row.keys.dropFirst(shortcut.displayString.count))
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                }
+            }
         } else {
             Text(row.keys)
                 .font(.system(size: 12, design: .monospaced))
@@ -264,34 +335,12 @@ struct ShortcutCheatSheetOverlay: View {
                     }
                 }
 
-                HStack(alignment: .top, spacing: 28) {
-                    let sections = ShortcutSection.allCases
-                    let mid = (sections.count + 1) / 2
-                    ForEach([Array(sections.prefix(mid)), Array(sections.suffix(from: mid))], id: \.first) { column in
-                        VStack(alignment: .leading, spacing: 16) {
-                            ForEach(column, id: \.self) { section in
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Text(section.title)
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundStyle(.secondary)
-                                        .textCase(.uppercase)
-                                    Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 3) {
-                                        ForEach(ShortcutStore.shared.cheatRows(for: section)) { row in
-                                            GridRow {
-                                                CheatSheetTitleCell(
-                                                    row: row,
-                                                    searchQuery: query,
-                                                    searchOpacity: searchOpacity
-                                                )
-                                                CheatSheetKeysCell(row: row)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        .frame(width: 290, alignment: .topLeading)
-                    }
+                // Three columns when the window is wide enough for them, fewer
+                // when it isn't — the overlay is sized to its content.
+                ViewThatFits(in: .horizontal) {
+                    ShortcutColumnsView(columnCount: 3, searchQuery: query, searchOpacity: searchOpacity)
+                    ShortcutColumnsView(columnCount: 2, searchQuery: query, searchOpacity: searchOpacity)
+                    ShortcutColumnsView(columnCount: 1, searchQuery: query, searchOpacity: searchOpacity)
                 }
             }
             .padding(24)
@@ -430,6 +479,8 @@ private struct CLIHelpView: View {
                     .padding(8)
                 }
             }
+            .frame(maxWidth: 640, alignment: .leading)
+            .frame(maxWidth: .infinity)
             .padding()
         }
     }

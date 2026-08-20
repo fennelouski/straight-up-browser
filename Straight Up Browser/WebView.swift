@@ -131,6 +131,7 @@ struct WebView: NSViewRepresentable {
                   let tab = tabs?.first(where: { $0.id == id }) else { continue }
             if TabSync.restoreInteractionState(tab, into: paneWebView) { continue }
             if let paneURL = tab.url {
+                context.coordinator.beginLoad(paneURL, in: paneWebView)
                 webViewManager?.beginFadeIn(paneWebView)
                 paneWebView.loadURL(paneURL)
             }
@@ -173,21 +174,14 @@ struct WebView: NSViewRepresentable {
         // Load the URL when it changes. Dedupe against what the webview already
         // shows and what we already requested - no time-based throttle, which
         // silently dropped legitimate navigations.
-        let normalizedURL = Tab.normalizeURLForComparison(url)
-        let normalizedWebViewURL = Tab.normalizeURLForComparison(activeWebView.url)
-        let normalizedRequestedURL = Tab.normalizeURLForComparison(context.coordinator.lastRequestedURL)
-
-        // Guard against in-flight navigations that the webview itself kicked off
-        // (e.g. the user clicking a link). In that case webView.url/lastRequestedURL
-        // race ahead of the SwiftUI `url` binding - which only catches up once
-        // didFinish updates activeTab.url - so comparing the *stale* `url` binding
-        // against lastRequestedURL here would wrongly conclude "this is a new
-        // request" and re-`load()` the old URL, cancelling the link navigation and
-        // making it look like the page just refreshed. Compare the webview's live
-        // URL instead: if it's already loading toward what we last requested, don't
-        // issue a second, stale load.
-        if let url = url, normalizedURL != normalizedWebViewURL,
-           !(activeWebView.isLoading && normalizedWebViewURL == normalizedRequestedURL) {
+        if let url = url, WebViewLoadDecision.shouldLoad(
+            target: url,
+            showing: activeWebView.url,
+            requested: context.coordinator.lastRequestedURL,
+            inFlight: context.coordinator.loadInFlight(for: activeWebView),
+            isLoading: activeWebView.isLoading
+        ) {
+            context.coordinator.beginLoad(url, in: activeWebView)
             Logger.log("WebView loading URL: \(url.absoluteString) (current: \(activeWebView.url?.absoluteString ?? "nil"))", type: "WebView")
             context.coordinator.lastRequestedURL = url
             // Hide now, synchronously, rather than waiting for didCommit - that
@@ -196,7 +190,8 @@ struct WebView: NSViewRepresentable {
             // before the fade catches up.
             webViewManager?.beginFadeIn(activeWebView)
             activeWebView.loadURL(url)
-        } else if let url = url, normalizedURL == normalizedWebViewURL {
+        } else if let url = url,
+                  Tab.normalizeURLForComparison(url) == Tab.normalizeURLForComparison(activeWebView.url) {
             // Ensure lastRequestedURL is set correctly
             context.coordinator.lastRequestedURL = url
         }
@@ -230,6 +225,27 @@ struct WebView: NSViewRepresentable {
         // One guard per WKWebView: background tabs and split panes must not
         // contribute to each other's redirect counts.
         private var redirectLoopGuards: [ObjectIdentifier: RedirectLoopGuard] = [:]
+
+        // The load we issued for a web view that hasn't committed yet.
+        // webView.url stays nil through the provisional phase, and
+        // lastRequestedURL only tracks the *active* web view — so a burst of
+        // SwiftUI updates during that window re-issued the same load over and
+        // over, and past three the redirect-loop guard cancelled the
+        // navigation and left the pane blank. A new split pane hit it every
+        // time: gathering the panes reorders tabs, which churns the view.
+        private var inFlightLoads: [ObjectIdentifier: URL] = [:]
+
+        func loadInFlight(for webView: WKWebView) -> URL? {
+            inFlightLoads[ObjectIdentifier(webView)]
+        }
+
+        func beginLoad(_ url: URL, in webView: WKWebView) {
+            inFlightLoads[ObjectIdentifier(webView)] = url
+        }
+
+        private func endLoad(in webView: WKWebView) {
+            inFlightLoads.removeValue(forKey: ObjectIdentifier(webView))
+        }
 
         private func shouldBlockRedirect(to url: URL, in webView: WKWebView) -> Bool {
             let key = ObjectIdentifier(webView)
@@ -383,6 +399,7 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            endLoad(in: webView)
             publishAgentSignal(
                 .navigation(.init(
                     observationID: agentObservationID(for: webView),
@@ -640,6 +657,7 @@ struct WebView: NSViewRepresentable {
             // Reset lastRequestedURL on failure so we can retry
             Logger.log("WebView didFail: resetting lastRequestedURL to nil", type: "WebView")
             lastRequestedURL = nil
+            endLoad(in: webView)
             if (error as NSError).code != NSURLErrorCancelled {
                 resetRedirectLoopGuard(for: webView)
             }
@@ -656,12 +674,14 @@ struct WebView: NSViewRepresentable {
             // Reset lastRequestedURL on failure so we can retry
             Logger.log("WebView didFailProvisionalNavigation: resetting lastRequestedURL to nil", type: "WebView")
             lastRequestedURL = nil
+            endLoad(in: webView)
             if (error as NSError).code != NSURLErrorCancelled {
                 resetRedirectLoopGuard(for: webView)
             }
         }
 
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            endLoad(in: webView)
             publishAgentSignal(
                 .pageLifecycle(.init(
                     phase: .webContentProcessTerminated,

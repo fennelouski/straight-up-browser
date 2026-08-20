@@ -1907,6 +1907,65 @@ struct TabSyncDisclosureTests {
     }
 }
 
+struct ShortcutColumnPackingTests {
+    @Test func packsEverySectionOnceInOrderAcrossBalancedColumns() {
+        let columns = ShortcutColumnPacking.balanced(into: 3)
+        #expect(columns.count == 3)
+        #expect(columns.allSatisfy { !$0.isEmpty })
+        #expect(columns.flatMap { $0 } == ShortcutSection.allCases)
+
+        // Balanced enough that no column runs to twice another's length.
+        let rows = columns.map { sections in
+            sections.reduce(0) { $0 + ShortcutStore.shared.cheatRows(for: $1).count }
+        }
+        #expect(rows.max()! <= 2 * rows.min()!)
+    }
+
+    @Test func oneColumnKeepsEverySection() {
+        #expect(ShortcutColumnPacking.balanced(into: 1) == [ShortcutSection.allCases])
+    }
+}
+
+struct WebViewLoadDecisionTests {
+    private let page = URL(string: "https://example.com/")!
+    private let other = URL(string: "https://wikipedia.org/")!
+
+    @Test func loadsAURLTheWebViewIsNotShowing() {
+        #expect(WebViewLoadDecision.shouldLoad(
+            target: page, showing: nil, requested: nil, inFlight: nil, isLoading: false
+        ))
+    }
+
+    @Test func skipsWhatTheWebViewAlreadyShows() {
+        #expect(!WebViewLoadDecision.shouldLoad(
+            target: page, showing: page, requested: page, inFlight: nil, isLoading: false
+        ))
+    }
+
+    // The regression: a fresh pane reports url == nil until its first load
+    // commits, so re-renders during that window must not re-issue the load —
+    // three of those in a row and RedirectLoopGuard cancels the navigation.
+    @Test func skipsALoadItAlreadyIssuedButThatHasNotCommitted() {
+        #expect(!WebViewLoadDecision.shouldLoad(
+            target: other, showing: nil, requested: page, inFlight: other, isLoading: true
+        ))
+    }
+
+    @Test func loadsAgainOnceTheInFlightRecordIsCleared() {
+        #expect(WebViewLoadDecision.shouldLoad(
+            target: other, showing: nil, requested: page, inFlight: nil, isLoading: false
+        ))
+    }
+
+    // A link click the page started: the binding is still on the old URL and
+    // must not cancel the navigation by re-loading it.
+    @Test func yieldsToANavigationThePageStarted() {
+        #expect(!WebViewLoadDecision.shouldLoad(
+            target: page, showing: other, requested: other, inFlight: nil, isLoading: true
+        ))
+    }
+}
+
 struct RedirectLoopGuardTests {
     @Test func blocksTheFourthEquivalentURLInsideTheWindow() {
         var guardrail = RedirectLoopGuard(maxOccurrences: 3, timeWindow: 10)

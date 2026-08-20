@@ -59,3 +59,29 @@ struct RedirectLoopGuard {
         return components.string ?? url.absoluteString
     }
 }
+
+/// Whether a web view still needs the load its tab's URL is asking for.
+/// Every clause here is a bug that shipped once, so it lives outside the view:
+/// - `showing` it already: nothing to do.
+/// - a navigation the *page* started (link click) beats the stale SwiftUI
+///   binding, which only catches up when didFinish writes the tab's URL back.
+/// - `inFlight` is our own load that hasn't committed yet. webView.url stays nil
+///   through the provisional phase, so without this a burst of view updates
+///   re-issues the same load until RedirectLoopGuard cancels it and the pane
+///   sits blank — what ⌘Return into a new split pane used to do every time.
+enum WebViewLoadDecision {
+    static func shouldLoad(
+        target: URL?,
+        showing: URL?,
+        requested: URL?,
+        inFlight: URL?,
+        isLoading: Bool
+    ) -> Bool {
+        guard let target else { return false }
+        let wanted = Tab.normalizeURLForComparison(target)
+        let shown = Tab.normalizeURLForComparison(showing)
+        guard wanted != shown else { return false }
+        if isLoading, shown == Tab.normalizeURLForComparison(requested) { return false }
+        return wanted != Tab.normalizeURLForComparison(inFlight)
+    }
+}

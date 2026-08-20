@@ -806,9 +806,12 @@ extension ShortcutStore {
             rows.append(CheatRow(id: command.id, title: command.title, keys: keys, shortcut: s))
         }
         if section == .tabs {
-            // Not a rebindable command — a mouse gesture, documented here so it's discoverable
+            // Not rebindable commands — mouse gestures and the omnibar's modified
+            // Return, documented here so they're discoverable
             rows.append(CheatRow(id: "splitPane", title: "Open Link in Split Pane", keys: "⌥Click", shortcut: nil))
             rows.append(CheatRow(id: "newspaperLink", title: "Add Link to Newspaper", keys: "⇧Click", shortcut: nil))
+            rows.append(CheatRow(id: "omnibarNewTab", title: "Omnibar: Open in New Tab", keys: "⇧Return", shortcut: nil))
+            rows.append(CheatRow(id: "omnibarSplitPane", title: "Omnibar: Open in Split Pane", keys: "⌘Return", shortcut: nil))
         }
         return rows
     }
