@@ -94,6 +94,9 @@ final class Straight_Up_BrowserUITests: XCTestCase {
             "-acceptedEULAVersion", "1",
             "-tabSyncEnabled", "NO",
             "-tabBarWidth", "200",
+            // Without this the pane shows whatever My Card state the machine
+            // already has, and the button under test is replaced by its row.
+            "-autofillIncludesMyCard", "NO",
         ]
         launchBrowserForUITesting(app)
 
