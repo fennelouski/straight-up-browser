@@ -3961,17 +3961,22 @@ struct ContentView: View {
         guard visualTabSwitcher,
               webViewManager?.activeWebView?.window?.isKeyWindow == true else { return }
         webViewManager?.captureThumbnail(for: tabManager.selectedTabId)
-        tabSwitcherTask?.cancel()
-        withAnimation(.easeOut(duration: 0.14)) { showTabSwitcher = true }
+        // Still inside the same Control hold: keep the original clock running so
+        // fast cycling doesn't restart the delay.
+        guard tabSwitcherTask == nil else { return }
         tabSwitcherTask = Task { @MainActor in
-            // Held Control means you're still cycling. A single tap never
-            // registers as held, so the trailing linger covers that case too.
-            while !Task.isCancelled, NSEvent.modifierFlags.contains(.control) {
-                try? await Task.sleep(for: .milliseconds(80))
+            defer { tabSwitcherTask = nil }
+            let start = ContinuousClock.now
+            // Only a deliberate half-second hold raises the strip; a quick ⌃Tab
+            // tap just switches the tab and leaves the screen alone.
+            while NSEvent.modifierFlags.contains(.control) {
+                if !showTabSwitcher, start.duration(to: .now) >= .milliseconds(500) {
+                    withAnimation(.easeOut(duration: 0.14)) { showTabSwitcher = true }
+                }
+                try? await Task.sleep(for: .milliseconds(50))
             }
-            try? await Task.sleep(for: .milliseconds(550))
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.2)) { showTabSwitcher = false }
+            guard showTabSwitcher else { return }
+            withAnimation(.easeOut(duration: 0.3)) { showTabSwitcher = false }
         }
     }
 
