@@ -96,11 +96,17 @@ class WebViewManager: NSObject, ObservableObject {
     // no ceremony can complete. Advertising an API we can't honor makes sites offer
     // passkey sign-in that dead-ends (Google loops on it), so we hide it and let them
     // fall back to password. navigator.credentials stays for password autofill.
-    // ponytail: delete this if the entitlement is ever granted.
+    // Scoped to the sites that actually dead-end. Deleting a global real Safari
+    // 26.4 ships (which our user agent claims to be) is a bot-detection tell:
+    // Cloudflare's managed challenge scores the mismatch and hard-fails with no
+    // retry. Hiding it only where passkey sign-in loops keeps both working.
+    // ponytail: delete this whole script if the entitlement is ever granted.
     private static let hideWebAuthnScript = """
-    delete window.PublicKeyCredential;
-    delete window.AuthenticatorAttestationResponse;
-    delete window.AuthenticatorAssertionResponse;
+    if (/(^|\\.)(google|youtube)\\.com$/.test(location.hostname)) {
+        delete window.PublicKeyCredential;
+        delete window.AuthenticatorAttestationResponse;
+        delete window.AuthenticatorAssertionResponse;
+    }
     """
 
     // A lightweight DevTools bridge. The wrappers are installed before page code,
@@ -245,13 +251,21 @@ class WebViewManager: NSObject, ObservableObject {
             setInspecting(false);
             post({ type: 'inspectCancel' });
         }, true);
-        ['log', 'debug', 'info', 'warn', 'error'].forEach(function(method) {
-            var original = console[method];
-            console[method] = function() {
-                send(method, Array.prototype.slice.call(arguments));
-                return original.apply(console, arguments);
-            };
-        });
+        // Patched on first enable(), not at document start: a permanently
+        // wrapped console is a bot-detection tell (console.log.toString() stops
+        // reading as native code) and Cloudflare's challenge fails on it.
+        var consoleWrapped = false;
+        function wrapConsole() {
+            if (consoleWrapped) return;
+            consoleWrapped = true;
+            ['log', 'debug', 'info', 'warn', 'error'].forEach(function(method) {
+                var original = console[method];
+                console[method] = function() {
+                    send(method, Array.prototype.slice.call(arguments));
+                    return original.apply(console, arguments);
+                };
+            });
+        }
         window.addEventListener('error', function(event) {
             send('error', [event.error || event.message], event.filename, event.lineno, event.colno);
         });
@@ -259,7 +273,7 @@ class WebViewManager: NSObject, ObservableObject {
             send('error', ['Uncaught (in promise)', event.reason]);
         });
         window.__subDevTools = {
-            enable: function() { enabled = true; },
+            enable: function() { enabled = true; wrapConsole(); },
             disable: function() { setInspecting(false); enabled = false; },
             setInspecting: setInspecting
         };
