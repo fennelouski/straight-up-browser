@@ -1105,6 +1105,18 @@ class TabManager: NSObject, ObservableObject {
             tab.orderIndex = index
         }
 
+        // Split pane order is splitTabIds' own order, not orderIndex, so a drag
+        // between two split members needs to move them there too. A non-member
+        // dragged into the block naturally does nothing here (it isn't found).
+        if let splitSourceIndex = splitTabIds.firstIndex(of: sourceTabId),
+           let splitTargetIndex = splitTabIds.firstIndex(of: targetTabId),
+           splitSourceIndex != splitTargetIndex {
+            var reorderedSplit = splitTabIds
+            let movedId = reorderedSplit.remove(at: splitSourceIndex)
+            reorderedSplit.insert(movedId, at: splitTargetIndex)
+            splitTabIds = reorderedSplit
+        }
+
         Logger.log("Reordered tabs: new order: \(reorderedTabs.map { $0.id })", type: "TabManager")
     }
 
