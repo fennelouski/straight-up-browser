@@ -564,6 +564,10 @@ struct ContentView: View {
     @State private var sidebarDropTargetTabId: UUID?
     @State private var sidebarLastCrossedTabId: UUID?
     @State private var sidebarDragMonitorTask: Task<Void, Never>?
+    @State private var sidebarDraggedGroupId: UUID?
+    @State private var sidebarDropTargetGroupId: UUID?
+    @State private var sidebarLastCrossedGroupId: UUID?
+    @State private var collapsedGroupIds: Set<UUID> = []
 
     // Progress Bar State
     @State private var showProgressBar = false
@@ -803,12 +807,8 @@ struct ContentView: View {
             return
         }
 
-        // Reordering across a group boundary would appear to do nothing because
-        // group membership determines the section. Keep this gesture scoped to
-        // the section the drag began in; moving groups remains a separate action.
         guard let source = allTabs.first(where: { $0.id == sourceTabId }),
-              let target = allTabs.first(where: { $0.id == targetTabId }),
-              source.groupId == target.groupId else {
+              let target = allTabs.first(where: { $0.id == targetTabId }) else {
             sidebarDropTargetTabId = nil
             return
         }
@@ -818,6 +818,9 @@ struct ContentView: View {
         sidebarLastCrossedTabId = targetTabId
 
         withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7)) {
+            // Dropping onto a tab in another group (or the ungrouped section)
+            // moves it there before reordering settles it into place.
+            source.groupId = target.groupId
             tabManager.reorderTabs(
                 sourceTabId: sourceTabId,
                 targetTabId: targetTabId,
@@ -836,10 +839,88 @@ struct ContentView: View {
         sidebarLastCrossedTabId = nil
     }
 
+    // Dropping a dragged tab directly on a group header (or the top "ungroup"
+    // zone, targetGroupId nil) reparents it without needing another tab in
+    // that section to land on.
+    private func moveDraggedTab(_ tabId: UUID, toGroup groupId: UUID?) {
+        guard sidebarDraggedTabId == tabId,
+              let tab = allTabs.first(where: { $0.id == tabId }),
+              tab.groupId != groupId else { return }
+        withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7)) {
+            tab.groupId = groupId
+        }
+    }
+
+    private func beginGroupHeaderDrag(_ groupId: UUID) {
+        sidebarDragMonitorTask?.cancel()
+        sidebarDraggedGroupId = groupId
+        sidebarDropTargetGroupId = nil
+        sidebarLastCrossedGroupId = groupId
+
+        sidebarDragMonitorTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(80))
+                guard !Task.isCancelled else { return }
+                if NSEvent.pressedMouseButtons & 1 == 0 {
+                    finishGroupHeaderDrag()
+                    return
+                }
+            }
+        }
+    }
+
+    private func hoverGroupHeader(_ targetGroupId: UUID, dragging sourceGroupId: UUID) {
+        guard sidebarDraggedGroupId == sourceGroupId, sourceGroupId != targetGroupId else { return }
+
+        sidebarDropTargetGroupId = targetGroupId
+        guard sidebarLastCrossedGroupId != targetGroupId else { return }
+        sidebarLastCrossedGroupId = targetGroupId
+
+        guard let sourceIndex = tabGroups.firstIndex(where: { $0.id == sourceGroupId }),
+              let targetIndex = tabGroups.firstIndex(where: { $0.id == targetGroupId }) else { return }
+
+        var reordered = tabGroups
+        let moved = reordered.remove(at: sourceIndex)
+        reordered.insert(moved, at: targetIndex)
+
+        withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7)) {
+            for (index, group) in reordered.enumerated() where group.orderIndex != index {
+                group.orderIndex = index
+            }
+        }
+    }
+
+    private func finishGroupHeaderDrag() {
+        sidebarDragMonitorTask?.cancel()
+        sidebarDragMonitorTask = nil
+        withAnimation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.78)) {
+            sidebarDraggedGroupId = nil
+            sidebarDropTargetGroupId = nil
+        }
+        sidebarLastCrossedGroupId = nil
+    }
+
+    private func toggleGroupCollapsed(_ groupId: UUID) {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.78)) {
+            if !collapsedGroupIds.insert(groupId).inserted {
+                collapsedGroupIds.remove(groupId)
+            }
+        }
+    }
+
     private func sidebarY(for tabId: UUID, availableHeight: CGFloat) -> CGFloat {
         var y: CGFloat = 36 // expanded sidebar header + top breathing room
         for section in groupedTabs {
+            let isCollapsed = section.group.map { collapsedGroupIds.contains($0.id) } ?? false
             if section.group != nil { y += 30 }
+            if isCollapsed {
+                // A tab hidden inside a collapsed group has no row of its own;
+                // point at the header that stands in for it.
+                if section.tabs.contains(where: { $0.id == tabId }) {
+                    return min(max(y - 10, 24), availableHeight - 24)
+                }
+                continue
+            }
             for tab in section.tabs {
                 if tab.id == tabId {
                     return min(max(y + 20, 24), availableHeight - 24)
@@ -979,8 +1060,16 @@ struct ContentView: View {
     }
 
     private func groupHeaderView(for group: TabGroup) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let isCollapsed = collapsedGroupIds.contains(group.id)
+        let isBeingDragged = sidebarDraggedGroupId == group.id
+        let isDropTarget = sidebarDraggedGroupId != nil && sidebarDropTargetGroupId == group.id && !isBeingDragged
+
+        return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundColor(.secondary.opacity(0.7))
+                    .rotationEffect(.degrees(isCollapsed ? 0 : 90))
                 Circle()
                     .fill(group.color)
                     .frame(width: 8, height: 8)
@@ -1000,8 +1089,46 @@ struct ContentView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(Color(.controlBackgroundColor).opacity(0.5))
+            .contentShape(Rectangle())
+            .onTapGesture { toggleGroupCollapsed(group.id) }
         }
         .padding(.vertical, 2)
+        .opacity(isBeingDragged ? 0.6 : 1)
+        .overlay {
+            if isDropTarget {
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(Color.accentColor.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                    .padding(.vertical, 1)
+                    .allowsHitTesting(false)
+            }
+        }
+        .animation(reduceMotion ? nil : .spring(response: 0.26, dampingFraction: 0.7), value: isBeingDragged)
+        .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.74), value: isDropTarget)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("\(group.name) group, \(isCollapsed ? "collapsed" : "expanded")")
+        .accessibilityHint("Double tap to \(isCollapsed ? "expand" : "collapse")")
+        .onDrag {
+            beginGroupHeaderDrag(group.id)
+            return groupDragItemProvider(for: group.id)
+        }
+        .onDrop(
+            of: [.straightUpBrowserTabGroup, .straightUpBrowserTab],
+            delegate: GroupZoneDropDelegate(
+                targetGroupId: group.id,
+                draggedTabId: sidebarDraggedTabId,
+                draggedGroupId: sidebarDraggedGroupId,
+                onTabEntered: moveDraggedTab,
+                onGroupEntered: hoverGroupHeader,
+                onDropFinished: {
+                    if sidebarDraggedGroupId != nil {
+                        finishGroupHeaderDrag()
+                    } else {
+                        finishSidebarTabDrag()
+                    }
+                }
+            )
+        )
     }
 
     private func tabListView(geometry: GeometryProxy) -> some View {
@@ -1014,8 +1141,24 @@ struct ContentView: View {
         }
         return ScrollView {
             VStack(spacing: 0) {
-                // Add a spacer at the top to allow dragging without scroll interference
-                Color.clear.frame(height: 1)
+                // Add a spacer at the top to allow dragging without scroll interference.
+                // While a tab is being dragged it doubles as the "remove from group"
+                // zone, since a group with no ungrouped tabs otherwise has no row to
+                // drop a tab onto for that.
+                Color.clear
+                    .frame(height: sidebarDraggedTabId != nil ? 10 : 1)
+                    .contentShape(Rectangle())
+                    .onDrop(
+                        of: [.straightUpBrowserTab],
+                        delegate: GroupZoneDropDelegate(
+                            targetGroupId: nil,
+                            draggedTabId: sidebarDraggedTabId,
+                            draggedGroupId: nil,
+                            onTabEntered: moveDraggedTab,
+                            onGroupEntered: nil,
+                            onDropFinished: finishSidebarTabDrag
+                        )
+                    )
                 // Force refresh when tab selection or title display mode changes
                 let _ = tabSelectionRefreshTrigger
                 let _ = tabTitleDisplayRefreshTrigger
@@ -1033,7 +1176,8 @@ struct ContentView: View {
                         groupHeaderView(for: group)
                     }
 
-                    // Tabs in this group
+                    // Tabs in this group, hidden while the group is collapsed
+                    if groupSection.group.map({ !collapsedGroupIds.contains($0.id) }) ?? true {
                     ForEach(groupSection.tabs) { tab in
                         TabRowView(
                             tab: tab,
@@ -1077,6 +1221,7 @@ struct ContentView: View {
                             insertion: .move(edge: .leading).combined(with: .opacity),
                             removal: .tabPoof
                         ))
+                    }
                     }
                 }
             }

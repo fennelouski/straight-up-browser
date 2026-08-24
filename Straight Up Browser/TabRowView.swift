@@ -10,6 +10,7 @@ import UniformTypeIdentifiers
 
 extension UTType {
     static let straightUpBrowserTab = UTType(exportedAs: "com.nathanfennel.straight-up-browser.tab")
+    static let straightUpBrowserTabGroup = UTType(exportedAs: "com.nathanfennel.straight-up-browser.tabgroup")
 }
 
 func tabDragItemProvider(for tabId: UUID) -> NSItemProvider {
@@ -17,6 +18,19 @@ func tabDragItemProvider(for tabId: UUID) -> NSItemProvider {
     let data = Data(tabId.uuidString.utf8)
     provider.registerDataRepresentation(
         forTypeIdentifier: UTType.straightUpBrowserTab.identifier,
+        visibility: .ownProcess
+    ) { completion in
+        completion(data, nil)
+        return nil
+    }
+    return provider
+}
+
+func groupDragItemProvider(for groupId: UUID) -> NSItemProvider {
+    let provider = NSItemProvider()
+    let data = Data(groupId.uuidString.utf8)
+    provider.registerDataRepresentation(
+        forTypeIdentifier: UTType.straightUpBrowserTabGroup.identifier,
         visibility: .ownProcess
     ) { completion in
         completion(data, nil)
@@ -147,6 +161,35 @@ struct TabDropDelegate: DropDelegate {
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
         return DropProposal(operation: .move)
+    }
+}
+
+/// Drop target for a group header (targetGroupId set) or the top "ungroup"
+/// zone (targetGroupId nil): reparents a dragged tab, or — on a header —
+/// reorders a dragged group.
+struct GroupZoneDropDelegate: DropDelegate {
+    let targetGroupId: UUID?
+    let draggedTabId: UUID?
+    let draggedGroupId: UUID?
+    let onTabEntered: ((UUID, UUID?) -> Void)?
+    let onGroupEntered: ((UUID, UUID) -> Void)?
+    let onDropFinished: (() -> Void)?
+
+    func dropEntered(info: DropInfo) {
+        if let draggedGroupId, let targetGroupId {
+            onGroupEntered?(targetGroupId, draggedGroupId)
+        } else if let draggedTabId {
+            onTabEntered?(draggedTabId, targetGroupId)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        onDropFinished?()
+        return true
     }
 }
 
