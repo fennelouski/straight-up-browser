@@ -198,7 +198,7 @@ struct ShortcutColumnsView: View {
                         }
                     }
                 }
-                .frame(width: ShortcutColumnPacking.columnWidth, alignment: .topLeading)
+                .frame(minWidth: ShortcutColumnPacking.columnWidth, maxWidth: .infinity, alignment: .topLeading)
             }
         }
     }
