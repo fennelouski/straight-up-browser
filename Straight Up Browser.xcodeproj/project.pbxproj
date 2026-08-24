@@ -96,6 +96,7 @@
 				BrowserAgent.swift,
 				BrowserCLI.swift,
 				BrowserIntents.swift,
+				ColorPanelPositioning.swift,
 				ContentView.swift,
 				DomainInitialsGenerator.swift,
 				FilesWindow.swift,
