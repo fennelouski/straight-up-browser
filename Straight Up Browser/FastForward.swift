@@ -389,6 +389,13 @@ final class FastForward: ObservableObject {
         return value
     }
 
+    /// "is slack down" is a question, not a destination — the model fallback isn't
+    /// reliable enough to trust with the negative case the header describes.
+    static func isStatusQuestion(_ query: String) -> Bool {
+        query.range(of: #"^is\b.+\bdown(\s+(right\s+now|today))?\??$"#,
+                    options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
     // MARK: Hooks from WebView.Coordinator
 
     /// didCommit: the search URL is known. A memory or recipe hit opens the pane
@@ -401,7 +408,7 @@ final class FastForward: ObservableObject {
         guard isEnabled, tab.sessionKind != .incognito else { return }
         guard let tabManager, tabManager.splitTabIds.isEmpty else { return }
         guard let url = webView.url, !handled.contains(url.absoluteString),
-              let query = Self.searchQuery(from: url) else { return }
+              let query = Self.searchQuery(from: url), !Self.isStatusQuestion(query) else { return }
 
         if let match = FastForwardRule.parse(query) {
             resolve(match, searchURL: url, from: tab)
