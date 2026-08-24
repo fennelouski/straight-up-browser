@@ -1622,6 +1622,10 @@ class WebViewContainer: NSView {
         Logger.log("WebViewContainer setDisplayedTabs: \(ids.count) pane(s), focused \(focusedTabId?.uuidString ?? "nil")", type: "WebView")
 
         let tabChanged = self.focusedTabId != focusedTabId
+        // A pane genuinely joining/leaving/reordering (not the first-ever
+        // layout, not a live drag or window resize) is the only case worth
+        // animating — those other call sites need frames to track 1:1.
+        let paneShapeChanged = !displayedTabIds.isEmpty && displayedTabIds != ids
         if displayedTabIds != ids {
             displayedTabIds = ids
             resetFractions()
@@ -1672,7 +1676,7 @@ class WebViewContainer: NSView {
             webView.layer?.borderColor = NSColor.controlAccentColor.cgColor
         }
 
-        layoutPanes()
+        layoutPanes(animated: paneShapeChanged)
 
         // Give the page key focus so arrow keys / space / cmd+arrows scroll
         // it. Only on a real tab change (or when nothing has focus) so
@@ -1727,7 +1731,10 @@ class WebViewContainer: NSView {
         rowFraction = 0.5
     }
 
-    private func layoutPanes() {
+    // `animated` covers a real join/leave/reorder of the split — callers on a
+    // live divider drag or window resize always pass false, since animating
+    // those would fight the cursor instead of tracking it.
+    private func layoutPanes(animated: Bool = false) {
         // Keep the veils covering everything, and last in z-order — attach() and
         // ensureDividers() both append subviews above them. White point first,
         // black point on top: scale the page down, then shift it.
@@ -1739,6 +1746,19 @@ class WebViewContainer: NSView {
         guard webViewManager != nil, !displayedTabIds.isEmpty else { return }
         let views = displayedTabIds.compactMap { paneView(for: $0) }
         guard views.count == displayedTabIds.count else { return }
+
+        if animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.22
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                self.placePanes(views) { $0.animator() }
+            }
+        } else {
+            placePanes(views) { $0 }
+        }
+    }
+
+    private func placePanes(_ views: [NSView], target: (NSView) -> NSView) {
         let b = bounds
 
         if views.count == 4 {
@@ -1746,10 +1766,10 @@ class WebViewContainer: NSView {
             let leftWidth = floor(b.width * colFractions[0])
             let topHeight = floor(b.height * rowFraction)
             let topY = b.height - topHeight
-            views[0].frame = NSRect(x: 0, y: topY, width: leftWidth, height: topHeight)
-            views[1].frame = NSRect(x: leftWidth, y: topY, width: b.width - leftWidth, height: topHeight)
-            views[2].frame = NSRect(x: 0, y: 0, width: leftWidth, height: topY)
-            views[3].frame = NSRect(x: leftWidth, y: 0, width: b.width - leftWidth, height: topY)
+            target(views[0]).frame = NSRect(x: 0, y: topY, width: leftWidth, height: topHeight)
+            target(views[1]).frame = NSRect(x: leftWidth, y: topY, width: b.width - leftWidth, height: topHeight)
+            target(views[2]).frame = NSRect(x: 0, y: 0, width: leftWidth, height: topY)
+            target(views[3]).frame = NSRect(x: leftWidth, y: 0, width: b.width - leftWidth, height: topY)
             ensureDividers([true, false])
             dividers[0].frame = NSRect(x: leftWidth - 4, y: 0, width: 8, height: b.height)
             dividers[1].frame = NSRect(x: 0, y: topY - 4, width: b.width, height: 8)
@@ -1758,7 +1778,7 @@ class WebViewContainer: NSView {
             var x: CGFloat = 0
             for (index, view) in views.enumerated() {
                 let width = index == views.count - 1 ? b.width - x : floor(b.width * colFractions[index])
-                view.frame = NSRect(x: x, y: 0, width: width, height: b.height)
+                target(view).frame = NSRect(x: x, y: 0, width: width, height: b.height)
                 x += width
             }
             ensureDividers(Array(repeating: true, count: views.count - 1))
@@ -1768,7 +1788,7 @@ class WebViewContainer: NSView {
                 divider.frame = NSRect(x: edge - 4, y: 0, width: 8, height: b.height)
             }
         } else {
-            views[0].frame = b
+            target(views[0]).frame = b
             ensureDividers([])
         }
     }
