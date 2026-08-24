@@ -76,7 +76,7 @@ private struct FloatingDownloadRings: View {
     }
 }
 
-private struct FloatingFaviconItem: View {
+private struct FloatingFaviconItem<ContextMenu: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let tab: BrowserTab
@@ -91,6 +91,7 @@ private struct FloatingFaviconItem: View {
     let dropTargetTabId: UUID?
     let automaticLinkBirthCue: AutomaticLinkBirthCue?
     var onHover: (() -> Void)? = nil
+    @ViewBuilder var contextMenu: () -> ContextMenu
 
     private let cell: CGFloat = 26
     private var isBeingDragged: Bool { draggedTabId == tab.id }
@@ -128,6 +129,7 @@ private struct FloatingFaviconItem: View {
         )
         .contentShape(Rectangle())
         .onHover { if $0 { onHover?() } }
+        .contextMenu { contextMenu() }
         .overlay {
             if isDropTarget {
                 RoundedRectangle(cornerRadius: ringRadius)
@@ -206,7 +208,7 @@ private struct FloatingFaviconItem: View {
 }
 
 // Floating favicon overlay for compact mode
-struct FloatingFaviconOverlay: View {
+struct FloatingFaviconOverlay<ContextMenu: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let tabs: [BrowserTab]
@@ -220,6 +222,7 @@ struct FloatingFaviconOverlay: View {
     let onDragBegan: (UUID) -> Void
     let onDropFinished: () -> Void
     var onHover: ((BrowserTab) -> Void)? = nil
+    @ViewBuilder var contextMenu: (BrowserTab) -> ContextMenu
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -240,7 +243,8 @@ struct FloatingFaviconOverlay: View {
                     draggedTabId: draggedTabId,
                     dropTargetTabId: dropTargetTabId,
                     automaticLinkBirthCue: tabManager?.automaticLinkBirthCue,
-                    onHover: { onHover?(tab) }
+                    onHover: { onHover?(tab) },
+                    contextMenu: { contextMenu(tab) }
                 )
                 .transition(.asymmetric(
                     insertion: .move(edge: .leading).combined(with: .opacity),
@@ -1066,88 +1070,7 @@ struct ContentView: View {
                             onHover: { hoverPreview(tab) }
                         )
                         .contextMenu {
-                            let webView = webViewManager?.existingWebView(for: tab.id)
-
-                            Button("Reload") { webView?.reload() }.disabled(tab.url == nil)
-                            Button("Back") { webView?.goBack() }.disabled(!(webView?.canGoBack ?? false))
-                            Button("Forward") { webView?.goForward() }.disabled(!(webView?.canGoForward ?? false))
-                            Divider()
-
-                            Button("Close Tab", action: { tabManager.closeTab(tab, tabs: allTabs, reason: .userRejected) })
-                            Button("Duplicate Tab", action: { _ = tabManager.duplicateTab(tab) })
-                            Button(tab.isPinned ? "Unpin Tab" : "Pin Tab") {
-                                tab.isPinned.toggle()
-                                try? modelContext.save()
-                            }
-                            Button(tab.isMuted ? "Unmute Tab" : "Mute Tab") {
-                                tab.isMuted.toggle()
-                                webViewManager?.setMuted(tab.isMuted, for: tab.id)
-                                try? modelContext.save()
-                            }
-                            if let host = tab.url?.host.map(MemoryPinnedSites.normalized), !host.isEmpty {
-                                Button(MemoryPinnedSites.isPinned(tab.url)
-                                       ? "Stop Keeping \(host) in Memory"
-                                       : "Always Keep \(host) in Memory") {
-                                    MemoryPinnedSites.setPinned(!MemoryPinnedSites.isPinned(tab.url), for: tab.url)
-                                }
-                            }
-                            Button("Move to Top", action: { tabManager.reorderTabs(sourceTabId: tab.id, targetTabId: groupSection.tabs[0].id, tabs: allTabs) })
-                                .disabled(groupSection.tabs.first?.id == tab.id)
-                            Divider()
-
-                            if tab.sessionKind == .incognito {
-                                Button("Remove from Incognito", action: { tabManager.convertToNormal(tab) })
-                            } else {
-                                Button("Convert to Incognito", action: { tabManager.convertToIncognito(tab) })
-                            }
-                            if tabManager.splitTabIds.contains(tab.id) {
-                                Button("Remove from Split", action: { tabManager.toggleSplitMembership(tab, tabs: allTabs) })
-                            } else if tabManager.splitTabIds.count < TabManager.maxSplitTabs {
-                                Button(tabManager.splitTabIds.isEmpty ? "Open in Split" : "Add to Split",
-                                       action: { tabManager.toggleSplitMembership(tab, tabs: allTabs) })
-                            }
-                            Divider()
-
-                            let newspaperSourceKey = tab.url.map {
-                                NewspaperStore.sourceKey(for: $0)
-                            }
-                            let tabIsInNewspaper = newspaperSourceKey.map { key in
-                                newspaperArticles.contains { $0.sourceKey == key }
-                            } ?? false
-                            Button(
-                                tabIsInNewspaper ? "Refresh Saved Article" : "Add to Newspaper",
-                                action: { addTabToNewspaper(tab) }
-                            )
-                            .disabled(tab.url == nil || tab.sessionKind == .incognito)
-                            Button("Share…", action: { shareTab(tab) }).disabled(tab.url == nil)
-                            Button("Copy URL", action: { copyURL(of: tab) }).disabled(tab.url == nil)
-                            Divider()
-
-                            Menu("Memory Saving") {
-                                ForEach(MemoryPolicy.allCases, id: \.self) { policy in
-                                    Button {
-                                        tab.memoryPolicy = policy
-                                    } label: {
-                                        if tab.memoryPolicy == policy {
-                                            Label(policy.label, systemImage: "checkmark")
-                                        } else {
-                                            Text(policy.label)
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Move to group submenu
-                            Menu("Move to Group") {
-                                Button("Ungrouped") {
-                                    moveTabToGroup(tab, groupId: nil)
-                                }
-                                ForEach(tabGroups.filter { $0.id != groupSection.group?.id }) { availableGroup in
-                                    Button(availableGroup.name) {
-                                        moveTabToGroup(tab, groupId: availableGroup.id)
-                                    }
-                                }
-                            }
+                            tabContextMenu(for: tab, groupTabs: groupSection.tabs, currentGroupId: groupSection.group?.id)
                         }
                         .padding(.vertical, 4)
                         .transition(.asymmetric(
@@ -1196,7 +1119,14 @@ struct ContentView: View {
                         dropTargetTabId: sidebarDropTargetTabId,
                         onDragBegan: beginSidebarTabDrag,
                         onDropFinished: finishSidebarTabDrag,
-                        onHover: hoverPreview
+                        onHover: hoverPreview,
+                        contextMenu: { tab in
+                            tabContextMenu(
+                                for: tab,
+                                groupTabs: allTabs.filter { $0.groupId == tab.groupId },
+                                currentGroupId: tab.groupId
+                            )
+                        }
                     )
                 } else {
                     // Regular tab list view
@@ -3311,6 +3241,96 @@ struct ContentView: View {
 
     private func moveTabToGroup(_ tab: Tab, groupId: UUID?) {
         tab.groupId = groupId
+    }
+
+    // Shared by TabRowView's row and the icon-only FloatingFaviconItem so the
+    // most compact sidebar still gets the full action set, not a trimmed one.
+    @ViewBuilder
+    private func tabContextMenu(for tab: BrowserTab, groupTabs: [BrowserTab], currentGroupId: UUID?) -> some View {
+        let webView = webViewManager?.existingWebView(for: tab.id)
+
+        Button("Reload") { webView?.reload() }.disabled(tab.url == nil)
+        Button("Back") { webView?.goBack() }.disabled(!(webView?.canGoBack ?? false))
+        Button("Forward") { webView?.goForward() }.disabled(!(webView?.canGoForward ?? false))
+        Divider()
+
+        Button("Close Tab", action: { tabManager.closeTab(tab, tabs: allTabs, reason: .userRejected) })
+        Button("Duplicate Tab", action: { _ = tabManager.duplicateTab(tab) })
+        Button(tab.isPinned ? "Unpin Tab" : "Pin Tab") {
+            tab.isPinned.toggle()
+            try? modelContext.save()
+        }
+        Button(tab.isMuted ? "Unmute Tab" : "Mute Tab") {
+            tab.isMuted.toggle()
+            webViewManager?.setMuted(tab.isMuted, for: tab.id)
+            try? modelContext.save()
+        }
+        if let host = tab.url?.host.map(MemoryPinnedSites.normalized), !host.isEmpty {
+            Button(MemoryPinnedSites.isPinned(tab.url)
+                   ? "Stop Keeping \(host) in Memory"
+                   : "Always Keep \(host) in Memory") {
+                MemoryPinnedSites.setPinned(!MemoryPinnedSites.isPinned(tab.url), for: tab.url)
+            }
+        }
+        if let first = groupTabs.first {
+            Button("Move to Top", action: { tabManager.reorderTabs(sourceTabId: tab.id, targetTabId: first.id, tabs: allTabs) })
+                .disabled(first.id == tab.id)
+        }
+        Divider()
+
+        if tab.sessionKind == .incognito {
+            Button("Remove from Incognito", action: { tabManager.convertToNormal(tab) })
+        } else {
+            Button("Convert to Incognito", action: { tabManager.convertToIncognito(tab) })
+        }
+        if tabManager.splitTabIds.contains(tab.id) {
+            Button("Remove from Split", action: { tabManager.toggleSplitMembership(tab, tabs: allTabs) })
+        } else if tabManager.splitTabIds.count < TabManager.maxSplitTabs {
+            Button(tabManager.splitTabIds.isEmpty ? "Open in Split" : "Add to Split",
+                   action: { tabManager.toggleSplitMembership(tab, tabs: allTabs) })
+        }
+        Divider()
+
+        let newspaperSourceKey = tab.url.map {
+            NewspaperStore.sourceKey(for: $0)
+        }
+        let tabIsInNewspaper = newspaperSourceKey.map { key in
+            newspaperArticles.contains { $0.sourceKey == key }
+        } ?? false
+        Button(
+            tabIsInNewspaper ? "Refresh Saved Article" : "Add to Newspaper",
+            action: { addTabToNewspaper(tab) }
+        )
+        .disabled(tab.url == nil || tab.sessionKind == .incognito)
+        Button("Share…", action: { shareTab(tab) }).disabled(tab.url == nil)
+        Button("Copy URL", action: { copyURL(of: tab) }).disabled(tab.url == nil)
+        Divider()
+
+        Menu("Memory Saving") {
+            ForEach(MemoryPolicy.allCases, id: \.self) { policy in
+                Button {
+                    tab.memoryPolicy = policy
+                } label: {
+                    if tab.memoryPolicy == policy {
+                        Label(policy.label, systemImage: "checkmark")
+                    } else {
+                        Text(policy.label)
+                    }
+                }
+            }
+        }
+
+        // Move to group submenu
+        Menu("Move to Group") {
+            Button("Ungrouped") {
+                moveTabToGroup(tab, groupId: nil)
+            }
+            ForEach(tabGroups.filter { $0.id != currentGroupId }) { availableGroup in
+                Button(availableGroup.name) {
+                    moveTabToGroup(tab, groupId: availableGroup.id)
+                }
+            }
+        }
     }
 
     /// ⇧⌘D: keep this one, without waiting out the settle dwell. Outside a
