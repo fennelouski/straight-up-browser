@@ -262,7 +262,9 @@ extension ShortcutCommand {
     static let tabGrid      = Self("tabGrid", "Show All Tabs", .tabs, Shortcut(key: "o", command: true))
     static let shortcutOverlay = Self("shortcutOverlay", "Keyboard Shortcuts", .app, Shortcut(key: "h", command: true, shift: true))
     static let settings     = Self("settings", "Settings", .app, Shortcut(key: ",", command: true))
-    static let help         = Self("help", "Help", .app, Shortcut(key: "?", command: true))
+    // ponytail: "/" not "?" — Shortcut.key is the unshifted character, so a
+    // "?" default only ever matched an event that also carried ⇧ (it never did).
+    static let help         = Self("help", "Help", .app, Shortcut(key: "/", command: true))
     static let extensionPopup = Self("extensionPopup", "Open Extension Popup", .app, Shortcut(key: "e", command: true, option: true))
     static let scratchPad = Self("scratchPad", "Scratch Pad", .app, Shortcut(key: "n", command: true, option: true))
     // Listed like any other command so it can be rebound — and so turning AI

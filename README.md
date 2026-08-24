@@ -133,6 +133,7 @@ are the defaults:
 | `⌘⇧L` | Toggle the tab sidebar |
 | `⌘⌥\`` / `⌘⌥1` / `⌘⌥2` / `⌘⌥3` | Hidden / minimal / compact / wide sidebar |
 | `⌘,` | Settings |
+| `⌘/` | Browser Help |
 | `⌥Click` / `⇧Click` a link | Open in a split pane / save to Newspaper |
 
 Back and forward also use the standard trackpad or screen-edge gestures.
