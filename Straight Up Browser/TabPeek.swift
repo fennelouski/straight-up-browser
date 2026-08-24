@@ -60,7 +60,7 @@ final class TabPeekController {
 
     private var placement: TabPeekPlacement {
         TabPeekPlacement(rawValue: UserDefaults.standard.string(forKey: TabPeekPlacement.defaultsKey) ?? "")
-            ?? .pointer
+            ?? .screenTop
     }
 
     private var isEnabled: Bool {

@@ -1115,7 +1115,7 @@ struct AppearanceSettingsView: View {
     private var visualTabSwitcher = true
     #if os(macOS)
     @AppStorage(TabPeekPlacement.enabledKey) private var tabPeekEnabled = true
-    @AppStorage(TabPeekPlacement.defaultsKey) private var tabPeekPlacementRaw = TabPeekPlacement.pointer.rawValue
+    @AppStorage(TabPeekPlacement.defaultsKey) private var tabPeekPlacementRaw = TabPeekPlacement.screenTop.rawValue
     #endif
     @AppStorage(TabCardNames.useAppleIntelligenceKey)
     private var tabCardNamesUseAI = true
