@@ -90,6 +90,7 @@ private struct FloatingFaviconItem: View {
     let draggedTabId: UUID?
     let dropTargetTabId: UUID?
     let automaticLinkBirthCue: AutomaticLinkBirthCue?
+    var onHover: (() -> Void)? = nil
 
     private let cell: CGFloat = 26
     private var isBeingDragged: Bool { draggedTabId == tab.id }
@@ -126,6 +127,7 @@ private struct FloatingFaviconItem: View {
             )
         )
         .contentShape(Rectangle())
+        .onHover { if $0 { onHover?() } }
         .overlay {
             if isDropTarget {
                 RoundedRectangle(cornerRadius: ringRadius)
@@ -217,6 +219,7 @@ struct FloatingFaviconOverlay: View {
     let dropTargetTabId: UUID?
     let onDragBegan: (UUID) -> Void
     let onDropFinished: () -> Void
+    var onHover: ((BrowserTab) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -236,7 +239,8 @@ struct FloatingFaviconOverlay: View {
                     onDropFinished: onDropFinished,
                     draggedTabId: draggedTabId,
                     dropTargetTabId: dropTargetTabId,
-                    automaticLinkBirthCue: tabManager?.automaticLinkBirthCue
+                    automaticLinkBirthCue: tabManager?.automaticLinkBirthCue,
+                    onHover: { onHover?(tab) }
                 )
                 .transition(.asymmetric(
                     insertion: .move(edge: .leading).combined(with: .opacity),
@@ -1191,7 +1195,8 @@ struct ContentView: View {
                         draggedTabId: sidebarDraggedTabId,
                         dropTargetTabId: sidebarDropTargetTabId,
                         onDragBegan: beginSidebarTabDrag,
-                        onDropFinished: finishSidebarTabDrag
+                        onDropFinished: finishSidebarTabDrag,
+                        onHover: hoverPreview
                     )
                 } else {
                     // Regular tab list view
