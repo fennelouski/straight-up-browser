@@ -1107,8 +1107,6 @@ struct AppearanceSettingsView: View {
     @AppStorage("adaptiveLargeSidebarTabs") private var adaptiveLargeSidebarTabs = true
     @AppStorage(VisualTabPreferences.aspectRatioKey)
     private var visualTabAspectRatio = VisualTabPreferences.defaultAspectRatio
-    @AppStorage(VisualTabPreferences.columnCountKey)
-    private var visualTabColumnCount = VisualTabPreferences.defaultColumnCount
     @AppStorage(VisualTabPreferences.livePreviewsKey)
     private var visualTabLivePreviews = true
     @AppStorage(VisualTabPreferences.switcherKey)
@@ -1173,7 +1171,6 @@ struct AppearanceSettingsView: View {
                     Text("16:9").tag(16.0 / 9.0)
                     Text("2:1").tag(2.0)
                 }
-                Stepper("Visual tab columns: \(visualTabColumnCount)", value: $visualTabColumnCount, in: 1...6)
                 Toggle("Keep visual tab previews live", isOn: $visualTabLivePreviews)
                 Text("Compact and wide sidebars always show visual cards. Live previews refresh the page you're on, load the rest in the background for their first card, and re-capture whichever tab you point at.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -1253,6 +1250,7 @@ struct AppearanceSettingsView: View {
             if aiFeaturesEnabled {
                 Section {
                     ColorPicker("Effect color", selection: aiSearchEffectColorBinding, supportsOpacity: false)
+                        .onDisappear { NSColorPanel.shared.close() }
                     Text("Used for the sparkles when AI Search is enabled. Defaults to the app logo blue.")
                         .font(.caption)
                         .foregroundStyle(.secondary)

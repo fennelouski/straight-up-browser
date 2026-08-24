@@ -12,12 +12,10 @@ import AppKit
 
 enum VisualTabPreferences {
     static let aspectRatioKey = "visualTabAspectRatio"
-    static let columnCountKey = "visualTabColumnCount"
     static let livePreviewsKey = "visualTabLivePreviews"
     static let switcherKey = "visualTabSwitcherStrip"
 
     static let defaultAspectRatio = 1.6
-    static let defaultColumnCount = 4
 
     static var livePreviewsEnabled: Bool {
         UserDefaults.standard.object(forKey: livePreviewsKey) == nil
@@ -172,55 +170,74 @@ struct TabGridView: View {
     @State private var index = 0
     @State private var keyMonitor: Any?
     @State private var previewRefresh = 0
+    @State private var columns = 1
     @AppStorage(VisualTabPreferences.aspectRatioKey)
     private var aspectRatio = VisualTabPreferences.defaultAspectRatio
-    @AppStorage(VisualTabPreferences.columnCountKey)
-    private var columnCount = VisualTabPreferences.defaultColumnCount
     @AppStorage(VisualTabPreferences.livePreviewsKey)
     private var livePreviews = true
 
     private static let cardWidth: CGFloat = 220
-    private var columns: Int { min(6, max(1, columnCount)) }
+    private static let spacing: CGFloat = 16
+    private static let gridPadding: CGFloat = 24
+    private static let outerPadding: CGFloat = 40
     private var cardHeight: CGFloat {
         Self.cardWidth / CGFloat(min(2.4, max(0.75, aspectRatio)))
     }
 
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.45)
-                .edgesIgnoringSafeArea(.all)
-                .contentShape(Rectangle())
-                .onTapGesture { isPresented = false }
+    // As many columns as fit the window, so the grid always fits on screen
+    // and only the last row (if not full) leaves empty space.
+    private func columns(for availableWidth: CGFloat) -> Int {
+        let usable = availableWidth - 2 * (Self.outerPadding + Self.gridPadding)
+        let perCard = Self.cardWidth + Self.spacing
+        return max(1, Int((usable + Self.spacing) / perCard))
+    }
 
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(Self.cardWidth), spacing: 16),
-                                             count: columns), spacing: 16) {
-                        let _ = previewRefresh
-                        ForEach(Array(tabs.enumerated()), id: \.element.id) { position, tab in
-                            card(for: tab, isFocused: position == index)
-                                .id(tab.id)
-                                .onTapGesture { choose(tab.id) }
-                                .onHover { hovering in
-                                    guard hovering else { return }
-                                    index = position
-                                    onHover?(tab)
-                                }
+    private var gridWidth: CGFloat {
+        CGFloat(columns) * (Self.cardWidth + Self.spacing) - Self.spacing + 2 * Self.gridPadding
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Color.black.opacity(0.45)
+                    .edgesIgnoringSafeArea(.all)
+                    .contentShape(Rectangle())
+                    .onTapGesture { isPresented = false }
+
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVGrid(columns: Array(repeating: GridItem(.fixed(Self.cardWidth), spacing: Self.spacing),
+                                                 count: columns), spacing: Self.spacing) {
+                            let _ = previewRefresh
+                            ForEach(Array(tabs.enumerated()), id: \.element.id) { position, tab in
+                                card(for: tab, isFocused: position == index)
+                                    .id(tab.id)
+                                    .onTapGesture { choose(tab.id) }
+                                    .onHover { hovering in
+                                        guard hovering else { return }
+                                        index = position
+                                        onHover?(tab)
+                                    }
+                            }
+                        }
+                        .padding(Self.gridPadding)
+                    }
+                    .onChange(of: index) { _, new in
+                        if tabs.indices.contains(new) {
+                            withAnimation { proxy.scrollTo(tabs[new].id, anchor: .center) }
                         }
                     }
-                    .padding(24)
                 }
-                .onChange(of: index) { _, new in
-                    if tabs.indices.contains(new) {
-                        withAnimation { proxy.scrollTo(tabs[new].id, anchor: .center) }
-                    }
-                }
+                .frame(width: gridWidth,
+                       height: max(100, geometry.size.height - 2 * Self.outerPadding))
+                .background(Color(.windowBackgroundColor).opacity(0.95))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .shadow(radius: 16)
             }
-            .frame(maxWidth: CGFloat(columns) * (Self.cardWidth + 16) + 48)
-            .background(Color(.windowBackgroundColor).opacity(0.95))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .shadow(radius: 16)
-            .padding(40)
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .onChange(of: geometry.size.width, initial: true) { _, width in
+                columns = columns(for: width)
+            }
         }
         .onAppear {
             index = tabs.firstIndex { $0.id == selectedTabId } ?? 0
