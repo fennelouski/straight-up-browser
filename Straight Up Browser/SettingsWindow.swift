@@ -328,6 +328,15 @@ extension UTType {
     static let straightUpBrowserSettingsPane = UTType(exportedAs: "com.nathanfennel.straight-up-browser.settings-pane")
 }
 
+/// Pulled out of the view so it's unit-testable without instantiating SettingsWindow.
+func reorderedSettingsPanes(_ order: [SettingsPane], moving dragged: SettingsPane, to target: SettingsPane) -> [SettingsPane] {
+    var order = order
+    guard let from = order.firstIndex(of: dragged), let to = order.firstIndex(of: target), from != to else { return order }
+    let item = order.remove(at: from)
+    order.insert(item, at: to)
+    return order
+}
+
 private func settingsPaneDragItemProvider(for pane: SettingsPane) -> NSItemProvider {
     let provider = NSItemProvider()
     let data = Data(pane.rawValue.utf8)
@@ -405,10 +414,7 @@ struct SettingsWindow: View {
     // Live reorder on hover, same as tab-bar dragging (TabRowView) — commit happens as rows are
     // crossed, the drop itself just clears the dragged marker.
     private func reorderPane(_ dragged: SettingsPane, to target: SettingsPane) {
-        var order = paneOrder
-        guard let from = order.firstIndex(of: dragged), let to = order.firstIndex(of: target), from != to else { return }
-        order.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
-        paneOrderRaw = order.map(\.rawValue).joined(separator: ",")
+        paneOrderRaw = reorderedSettingsPanes(paneOrder, moving: dragged, to: target).map(\.rawValue).joined(separator: ",")
     }
 
     // ⌘1...⌘9 jump straight to the pane in that position of the (user-ordered) sidebar.
