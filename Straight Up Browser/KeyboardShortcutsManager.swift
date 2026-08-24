@@ -32,15 +32,10 @@ class KeyboardShortcutsManager {
     static let quitHoldMaxPercent: Double = 1.0
     static let quitHoldDefaultPercent: Double = 0.8
     private static let quitHoldMaxDuration: TimeInterval = 2.0
-    // If the bar fills, you get a short release window to let go of ⌘Q.
-    // Only when the key is released inside this window do we quit; otherwise
-    // the hold is canceled and must be started again.
-    private static let quitReleaseWindowDuration: TimeInterval = 1.5
 
     private enum QuitHoldState {
         case inactive
         case holding
-        case releaseWindowOpen
     }
 
     private static var quitHoldDuration: TimeInterval {
@@ -53,8 +48,14 @@ class KeyboardShortcutsManager {
     private var controlWasDown = false
 
     private var quitHoldState: QuitHoldState = .inactive
-    private var quitHoldTimer: Timer?
-    private var quitHoldReleaseTimer: Timer?
+    // systemUptime (monotonic, immune to clock changes) is compared directly
+    // against the hold duration on release — no second Timer racing the first.
+    // That race was the bug: a Timer-driven "release window" state flip and
+    // the HUD's own withAnimation clock could disagree about whether the bar
+    // was actually full yet, so letting go right at the edge sometimes did
+    // nothing, and other times the app just sat there for another 1.5s.
+    private var quitHoldStartUptime: TimeInterval = 0
+    private var quitHoldDurationAtStart: TimeInterval = 0
 
     init(
         showOmnibar: Binding<Bool>,
@@ -92,8 +93,8 @@ class KeyboardShortcutsManager {
                 }
                 return event
             case .flagsChanged:
-                if self.quitHoldState != .inactive && !event.modifierFlags.contains(.command) {
-                    self.terminateHoldBecauseModifierLost()
+                if self.quitHoldState == .holding && !event.modifierFlags.contains(.command) {
+                    self.handleQuitKeyRelease()
                 }
                 // Letting go of Control commits a ⌃Tab run, the same moment the
                 // macOS app switcher commits. Rebinding Next Tab to a chord
@@ -344,71 +345,36 @@ class KeyboardShortcutsManager {
 
     private func startQuitHold() {
         guard quitHoldState == .inactive else { return }
-        clearQuitHoldTimers()
         quitHoldState = .holding
         let duration = Self.quitHoldDuration
+        quitHoldDurationAtStart = duration
+        quitHoldStartUptime = ProcessInfo.processInfo.systemUptime
 
         // Do the slow part now, while the bar is still filling, instead of at
-        // the end: persisting per-tab page state is what used to make the app
-        // linger past a full bar. Front-loading it means the fixed delay below
-        // is the *only* wait once the bar reads full.
+        // release time: persisting per-tab page state is what used to make
+        // the app linger after the key came up.
         webViewManager?.persistInteractionStates()
 
-        // The HUD animates itself 0→1 over the hold (Core Animation, immune to
-        // main-thread jitter), so we no longer feed per-frame progress — that
-        // irregular 30fps feed was what made the bar jumpy. Just fire once at
-        // the end, in .common mode so a tracking run loop (menus, scrollbars)
-        // can't delay it.
-        let timer = Timer(timeInterval: duration, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                self?.openReleaseWindow()
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        quitHoldTimer = timer
+        // The HUD animates itself 0→1 over `duration` on its own clock
+        // (Core Animation, immune to main-thread jitter) — we don't feed it
+        // per-frame progress. Whether the hold actually counts as "full" is
+        // decided separately, on release, by comparing elapsed wall-clock
+        // time to `duration` directly.
         NotificationCenter.default.post(name: .browserQuitHoldProgress, object: nil,
             userInfo: ["progress": 1.0, "duration": duration])
     }
 
-    private func openReleaseWindow() {
-        guard quitHoldState == .holding else { return }
-        quitHoldState = .releaseWindowOpen
-
-        // If the key wasn't released during this window, quit at the end so a
-        // long hold still closes this app instead of leaking into the next one.
-        let releaseWindowTimer = Timer(timeInterval: Self.quitReleaseWindowDuration, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                self?.performQuitNow()
-            }
-        }
-        RunLoop.main.add(releaseWindowTimer, forMode: .common)
-        quitHoldReleaseTimer = releaseWindowTimer
-    }
-
     private func handleQuitKeyRelease() {
-        switch quitHoldState {
-        case .holding:
-            cancelQuitHold()
-        case .releaseWindowOpen:
+        guard quitHoldState == .holding else { return }
+        let elapsed = ProcessInfo.processInfo.systemUptime - quitHoldStartUptime
+        if elapsed >= quitHoldDurationAtStart {
             performQuitNow()
-        default:
-            break
-        }
-    }
-
-    private func terminateHoldBecauseModifierLost() {
-        switch quitHoldState {
-        case .releaseWindowOpen:
+        } else {
             cancelQuitHold()
-        case .holding:
-            cancelQuitHold()
-        default:
-            break
         }
     }
 
     private func performQuitNow() {
-        clearQuitHoldTimers()
         quitHoldState = .inactive
         NotificationCenter.default.post(name: .browserQuitHoldProgress, object: nil,
             userInfo: ["progress": 0.0, "duration": 0.0])
@@ -417,19 +383,9 @@ class KeyboardShortcutsManager {
     }
 
     private func cancelQuitHold() {
-        clearQuitHoldTimers()
         quitHoldState = .inactive
         NotificationCenter.default.post(name: .browserQuitHoldProgress, object: nil,
             userInfo: ["progress": 0.0, "duration": 0.0])
-    }
-
-    private func clearQuitHoldTimers(stopReleaseTimer: Bool = true) {
-        quitHoldTimer?.invalidate()
-        quitHoldTimer = nil
-        if stopReleaseTimer {
-            quitHoldReleaseTimer?.invalidate()
-            quitHoldReleaseTimer = nil
-        }
     }
 
     func teardown() {
