@@ -111,7 +111,8 @@ are the defaults:
 | `⌘⌥K` | Open a fresh tab from Quick Open |
 | `⌘⇧H` / `⌘⇧K` | Show keyboard shortcuts |
 | `⌘T` / `⌘N` | New tab (`⌘N` always creates a fresh tab) |
-| `⌘⌥N` / `⌘⇧N` | Save the current page to Newspaper |
+| `⌘⇧N` | Save the current page to Newspaper |
+| `⌘⌥N` | Scratch Pad |
 | `⌘⌥⇧N` | New incognito tab |
 | `⌘W` | Close current tab |
 | `⌘⇧T` | Reopen last closed tab |

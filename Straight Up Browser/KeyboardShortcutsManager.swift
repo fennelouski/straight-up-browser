@@ -155,11 +155,15 @@ class KeyboardShortcutsManager {
                 )
                 return nil
             }
-            // Both newspaper chords save the page behind the omnibar as well as
-            // the ordinarily focused page. They are fixed so websites cannot
-            // claim them and so the two aliases stay equivalent.
-            if (mods == [.command, .option] || mods == [.command, .shift]),
-               event.charactersIgnoringModifiers == "n" {
+            // ⇧⌘N saves the page behind the omnibar as well as the ordinarily
+            // focused page, and is fixed so websites cannot claim it.
+            // Two bugs used to live here. ⌥⌘N was a second alias, and a local
+            // monitor runs before menu key equivalents, so it silently ate
+            // Scratch Pad's ⌥⌘N and made that Settings row a lie. ⇧⌘N itself
+            // never fired: charactersIgnoringModifiers keeps Shift, so the
+            // comparison was "N" == "n". One chord per action, lowercased.
+            if mods == [.command, .shift],
+               event.charactersIgnoringModifiers?.lowercased() == "n" {
                 NotificationCenter.default.post(
                     name: .browserAddToNewspaper,
                     object: self.webViewManager?.activeWebView?.window
@@ -304,9 +308,30 @@ class KeyboardShortcutsManager {
     }
 
     #if DEBUG
-    // ponytail: the one thing that can silently rot — a command offered in
-    // Settings that the monitor has no way to dispatch.
+    // Chords claimed outside the rebindable store: this monitor's fixed
+    // aliases and the hardcoded menu items. ShortcutStore.selfCheck() proves
+    // no two *registered* defaults collide; nothing proved a registered
+    // default did not land on one of these until ⌥⌘N did.
+    static let fixedChords: [Shortcut: String] = [
+        Shortcut(key: "n", command: true): "New Tab (fixed alias)",
+        Shortcut(key: "n", command: true, shift: true): "Add to Newspaper",
+        Shortcut(key: "k", command: true, shift: true): "Keyboard Shortcuts (fixed alias)",
+        Shortcut(key: "i", command: true, option: true): "Developer Tools",
+        Shortcut(key: "j", command: true, option: true): "Developer Console",
+        Shortcut(key: "c", command: true, option: true): "Select Page Element",
+    ]
+
+    // ponytail: the two things that can silently rot — a command offered in
+    // Settings that the monitor has no way to dispatch, and one that lands on
+    // a chord something else already claims.
     static func selfCheck() {
+        for command in ShortcutCommand.all {
+            assert(
+                fixedChords[command.defaultShortcut] == nil,
+                "\(command.id) defaults to \(command.defaultShortcut.displayString), "
+                    + "already fixed for \(fixedChords[command.defaultShortcut] ?? "")"
+            )
+        }
         for command in ShortcutPriorityStore.contestable where command != .quickOpen {
             assert(action(for: command) != nil, "no dispatch for contested command \(command.id)")
         }

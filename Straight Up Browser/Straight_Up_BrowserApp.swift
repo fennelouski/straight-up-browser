@@ -618,7 +618,7 @@ struct Straight_Up_BrowserApp: App {
                 Button("Reader Mode") {
                     NotificationCenter.default.post(name: .browserToggleReader, object: nil)
                 }
-                .keyboardShortcut("r", modifiers: [.command, .option])
+                .keyboardShortcut(sc(.readerMode))
 
                 Divider()
 
@@ -661,7 +661,7 @@ struct Straight_Up_BrowserApp: App {
                         object: keyWindow
                     )
                 }
-                .keyboardShortcut("n", modifiers: [.command, .option])
+                .keyboardShortcut("n", modifiers: [.command, .shift])
 
                 Divider()
 
