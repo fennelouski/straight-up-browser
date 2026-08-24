@@ -1501,6 +1501,7 @@ struct ContentView: View {
 
                             ColorPicker("Group Color", selection: $newGroupColor)
                                 .padding(.horizontal)
+                                .onDisappear { NSColorPanel.shared.close() }
                         }
 
                         HStack(spacing: 16) {
@@ -1559,6 +1560,7 @@ struct ContentView: View {
 
                             ColorPicker("Container Color", selection: $newContainerColor)
                                 .padding(.horizontal)
+                                .onDisappear { NSColorPanel.shared.close() }
                         }
 
                         HStack(spacing: 16) {

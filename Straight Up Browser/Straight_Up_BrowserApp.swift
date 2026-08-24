@@ -39,6 +39,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Disable automatic window tabbing
         NSWindow.allowsAutomaticWindowTabbing = false
 
+        ColorPanelPositioning.install()
+
         // Initialize CLI interface
         _ = BrowserCLI.shared
     }
