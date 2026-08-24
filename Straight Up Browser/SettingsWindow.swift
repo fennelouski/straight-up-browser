@@ -12,6 +12,7 @@
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Design system
 
@@ -321,15 +322,57 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Sidebar reordering
+
+extension UTType {
+    static let straightUpBrowserSettingsPane = UTType(exportedAs: "com.nathanfennel.straight-up-browser.settings-pane")
+}
+
+private func settingsPaneDragItemProvider(for pane: SettingsPane) -> NSItemProvider {
+    let provider = NSItemProvider()
+    let data = Data(pane.rawValue.utf8)
+    provider.registerDataRepresentation(
+        forTypeIdentifier: UTType.straightUpBrowserSettingsPane.identifier,
+        visibility: .ownProcess
+    ) { completion in completion(data, nil); return nil }
+    return provider
+}
+
+private struct SettingsPaneDropDelegate: DropDelegate {
+    let target: SettingsPane
+    @Binding var draggedPane: SettingsPane?
+    let onReorder: (SettingsPane, SettingsPane) -> Void
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedPane = nil
+        return true
+    }
+    func dropEntered(info: DropInfo) {
+        guard let draggedPane else { return }
+        onReorder(draggedPane, target)
+    }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+}
+
 // MARK: - Container
 
 struct SettingsWindow: View {
     @AppStorage("settingsPane") private var paneRaw = SettingsPane.general.rawValue
+    // Comma-joined rawValues (no commas ever appear in a case name) — drag order the user set.
+    // Missing/unknown entries (first run, or a pane added since) fall back to enum order.
+    @AppStorage("settingsPaneOrder") private var paneOrderRaw = ""
     // Same "theme" key SettingsManager reads — one store, no desync. Reading it here (rather than
     // SettingsManager.shared.colorScheme) re-tints the window live when Theme changes.
     @AppStorage("theme") private var theme = "System"
+    @State private var draggedPane: SettingsPane?
 
     private var pane: SettingsPane { SettingsPane(rawValue: paneRaw) ?? .general }
+
+    private var paneOrder: [SettingsPane] {
+        let saved = paneOrderRaw.split(separator: ",").compactMap { SettingsPane(rawValue: String($0)) }
+        let missing = SettingsPane.allCases.filter { !saved.contains($0) }
+        return saved + missing
+    }
 
     private var colorScheme: ColorScheme? {
         switch theme {
@@ -345,9 +388,7 @@ struct SettingsWindow: View {
             // room was better spent saying what's in each pane.
             ScrollView {
                 VStack(spacing: 8) {
-                    ForEach(SettingsPane.allCases) { pane in
-                        card(pane)
-                    }
+                    ForEach(paneOrder) { card($0) }
                 }
                 .padding(10)
             }
@@ -356,8 +397,30 @@ struct SettingsWindow: View {
             detail
                 .navigationTitle(pane.title)
         }
+        .background(paneShortcuts)
         .frame(minWidth: 720, minHeight: 520)
         .preferredColorScheme(colorScheme)
+    }
+
+    // Live reorder on hover, same as tab-bar dragging (TabRowView) — commit happens as rows are
+    // crossed, the drop itself just clears the dragged marker.
+    private func reorderPane(_ dragged: SettingsPane, to target: SettingsPane) {
+        var order = paneOrder
+        guard let from = order.firstIndex(of: dragged), let to = order.firstIndex(of: target), from != to else { return }
+        order.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        paneOrderRaw = order.map(\.rawValue).joined(separator: ",")
+    }
+
+    // ⌘1...⌘9 jump straight to the pane in that position of the (user-ordered) sidebar.
+    @ViewBuilder
+    private var paneShortcuts: some View {
+        ForEach(Array(paneOrder.prefix(9).enumerated()), id: \.offset) { index, target in
+            Button("") { paneRaw = target.rawValue }
+                .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+        }
+        .allowsHitTesting(false)
     }
 
     private func card(_ target: SettingsPane) -> some View {
@@ -400,6 +463,14 @@ struct SettingsWindow: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(target.title). \(target.subtitle)")
+        .onDrag {
+            draggedPane = target
+            return settingsPaneDragItemProvider(for: target)
+        }
+        .onDrop(
+            of: [.straightUpBrowserSettingsPane],
+            delegate: SettingsPaneDropDelegate(target: target, draggedPane: $draggedPane, onReorder: reorderPane)
+        )
     }
 
     @ViewBuilder
