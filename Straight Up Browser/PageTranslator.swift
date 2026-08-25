@@ -24,7 +24,8 @@ final class PageTranslator: ObservableObject {
     @Published var configuration: TranslationSession.Configuration?
 
     private struct PendingRequest {
-        let webView: WKWebView
+        // nil webView = prefetch: download the pair's model, translate nothing.
+        let webView: WKWebView?
         let source: Locale.Language
         let target: Locale.Language
     }
@@ -95,6 +96,95 @@ final class PageTranslator: ObservableObject {
         tabManager.toggleSplitMembership(newTab, tabs: tabs + [newTab])
     }
 
+    // MARK: - Prefetch
+
+    // Languages you're likely to hit that aren't yours: CLDR likely-subtags
+    // gives the region's dominant language ("und-NL" → nl); this supplement
+    // covers regions with more than one everyday language.
+    // ponytail: short static list, extend if users report a missed region.
+    private static let extraRegionLanguages: [String: [String]] = [
+        "CA": ["fr"], "CH": ["fr", "it"], "BE": ["fr", "de"], "LU": ["fr", "de"],
+        "ES": ["ca"], "FI": ["sv"], "US": ["es"], "IE": ["ga"], "IL": ["ar"],
+        "IN": ["hi"], "ZA": ["af", "zu"], "SG": ["zh", "ms", "ta"], "HK": ["zh"],
+    ]
+
+    // Just-in-case packs for travel: the most-encountered web languages per
+    // continent, preselected in the onboarding picker. Each pair's model is
+    // ~100–200 MB, one-time. ponytail: flat lists, extend if users ask.
+    private static let europePack = ["fr", "de", "es", "it", "pt"]
+    private static let asiaPack = ["zh", "ja", "ko", "hi", "th"]
+
+    struct PackChoice: Identifiable {
+        let id: String       // language code
+        let name: String     // localized display name
+        var selected: Bool
+    }
+
+    // Non-nil → ContentView shows the one-time onboarding sheet.
+    @Published var packChoices: [PackChoice]?
+
+    // One-time onboarding: offer to pre-download translation models so the
+    // first real translation doesn't stall on a multi-minute download.
+    // Suggested (preselected) = region languages + travel packs; the full
+    // pickable list is everything the Translation framework supports that
+    // isn't installed already. Region comes from the device locale — no
+    // network/IP lookup.
+    func offerPackDownloadIfNeeded() async {
+        guard !UserDefaults.standard.bool(forKey: "translationPackPromptShown") else { return }
+        guard UserDefaults.standard.object(forKey: "autoTranslateEnabled") as? Bool ?? true else { return }
+        let region = Locale.current.region?.identifier
+        // maximalIdentifier applies CLDR likely subtags: "und-NL" → "nl-Latn-NL"
+        let dominant = region.flatMap { r -> String? in
+            let code = Locale.Language(identifier: "und-\(r)").maximalIdentifier
+                .split(separator: "-").first.map(String.init)
+            return code == "und" ? nil : code
+        }
+        let suggested = Set([dominant].compactMap { $0 }
+            + (region.flatMap { Self.extraRegionLanguages[$0] } ?? [])
+            + Self.europePack + Self.asiaPack)
+        let preferred = preferredLanguageCodes()
+        let target = Locale.Language(identifier: defaultTargetCode)
+
+        var choices: [PackChoice] = []
+        var seen = Set<String>()
+        for code in await Self.supportedLanguageCodes() {
+            guard seen.insert(code).inserted else { continue }
+            if preferred.contains(where: { code.hasPrefix($0) || $0.hasPrefix(code) }) { continue }
+            // Only .supported needs a download; .installed and .unsupported don't.
+            let language = Locale.Language(identifier: code)
+            guard await LanguageAvailability().status(from: language, to: target) == .supported else { continue }
+            let name = Locale.current.localizedString(forLanguageCode: code) ?? code
+            choices.append(PackChoice(id: code, name: name, selected: suggested.contains(code)))
+        }
+        guard !choices.isEmpty else {
+            UserDefaults.standard.set(true, forKey: "translationPackPromptShown")
+            return
+        }
+        packChoices = choices.sorted {
+            ($0.selected ? 0 : 1, $0.name) < ($1.selected ? 0 : 1, $1.name)
+        }
+    }
+
+    // LanguageAvailability is not Sendable; keep the instance inside a
+    // nonisolated call so only the [String] result crosses back to the actor.
+    @concurrent nonisolated private static func supportedLanguageCodes() async -> [String] {
+        await LanguageAvailability().supportedLanguages.compactMap { $0.languageCode?.identifier }
+    }
+
+    // Sheet dismissal: queue downloads for the checked languages (or nothing),
+    // and never show the prompt again.
+    func confirmPackDownload(download: Bool) {
+        UserDefaults.standard.set(true, forKey: "translationPackPromptShown")
+        let chosen = (packChoices ?? []).filter(\.selected).map(\.id)
+        packChoices = nil
+        guard download, !chosen.isEmpty else { return }
+        let target = Locale.Language(identifier: defaultTargetCode)
+        for code in chosen {
+            queue.append(PendingRequest(webView: nil, source: Locale.Language(identifier: code), target: target))
+        }
+        if configuration == nil { pump() }
+    }
+
     // MARK: - Detection + queue
 
     private func detectAndEnqueue(sample: String, webView: WKWebView, forceTarget: String?) async {
@@ -134,12 +224,25 @@ final class PageTranslator: ObservableObject {
     }
 
     private func runTranslation(_ request: PendingRequest, using session: sending TranslationSession) async {
-        guard let nodes = await extractNodes(from: request.webView), !nodes.isEmpty else { return }
+        guard let webView = request.webView else {
+            // Prefetch: pull down the language-pair model so the first real
+            // translation doesn't stall on a download.
+            try? await session.prepareTranslation()
+            return
+        }
+        guard let nodes = await extractNodes(from: webView), !nodes.isEmpty else { return }
+        // Models are per-pair downloads; without this, translations() throws
+        // (swallowed) and the feature silently does nothing. Shows the system
+        // download sheet the first time a pair is needed; no-op once installed.
+        do { try await session.prepareTranslation() } catch {
+            Logger.warning("language download declined or failed: \(error)", type: "PageTranslator")
+            return
+        }
         guard let map = await Self.translate(nodes: nodes, using: session) else { return }
         guard !map.isEmpty,
               let json = try? JSONSerialization.data(withJSONObject: map),
               let jsonString = String(data: json, encoding: .utf8) else { return }
-        _ = try? await request.webView.evaluateJavaScript("window.__subTranslate.apply(\(jsonString))")
+        _ = try? await webView.evaluateJavaScript("window.__subTranslate.apply(\(jsonString))")
     }
 
     // translationd runs the batch through a 4096-token context. Hand it a whole
@@ -200,5 +303,56 @@ final class PageTranslator: ObservableObject {
             guard let id = entry["id"], let text = entry["text"] else { return nil }
             return (id: id, text: text)
         }
+    }
+}
+
+// One-time onboarding sheet: pick which language packs to pre-download.
+// Presented by ContentView while `packChoices` is non-nil.
+struct TranslationPackSheet: View {
+    @ObservedObject var translator: PageTranslator
+
+    private func binding(for id: String) -> Binding<Bool> {
+        Binding(
+            get: { translator.packChoices?.first(where: { $0.id == id })?.selected ?? false },
+            set: { value in
+                guard let index = translator.packChoices?.firstIndex(where: { $0.id == id }) else { return }
+                translator.packChoices?[index].selected = value
+            }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Translate Pages Offline", comment: "Title of the language pack download onboarding sheet")
+                .font(.title2).bold()
+            Text("Download languages now so pages translate instantly — even on a slow connection while traveling. Languages common near you are preselected.",
+                 comment: "Explanation on the language pack download sheet")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            List(translator.packChoices ?? []) { choice in
+                Toggle(choice.name, isOn: binding(for: choice.id))
+            }
+            Text("Each language is a one-time download of roughly 100–200 MB. macOS may ask you to confirm each one.",
+                 comment: "Footnote on the language pack download sheet")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button {
+                    translator.confirmPackDownload(download: false)
+                } label: {
+                    Text("Not Now", comment: "Button dismissing the language pack sheet without downloading")
+                }
+                Spacer()
+                Button {
+                    translator.confirmPackDownload(download: true)
+                } label: {
+                    Text("Download", comment: "Button starting the language pack downloads")
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 400, height: 480)
     }
 }

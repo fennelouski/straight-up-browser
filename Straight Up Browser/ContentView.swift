@@ -2741,6 +2741,13 @@ struct ContentView: View {
 
     var body: some View {
         windowOverlays
+        // After contentViewTypeErased so it stays outside the type-check budget.
+        .sheet(isPresented: Binding(
+            get: { pageTranslator.packChoices != nil },
+            set: { if !$0 { pageTranslator.confirmPackDownload(download: false) } }
+        )) {
+            TranslationPackSheet(translator: pageTranslator)
+        }
         .onAppear {
             // One-time setup; onAppear can fire again (window reopen) and must
             // not recreate managers or stack observers
@@ -2776,6 +2783,15 @@ struct ContentView: View {
 
                 // Load favicons for all tabs BEFORE web views are loaded
                 preloadFaviconsForAllTabs()
+
+                // One-time onboarding: offer to pre-download translation models
+                // (region languages + travel packs preselected) so the first
+                // translation doesn't stall. Delayed so launch work and
+                // restored tabs win the disk/network.
+                Task { [pageTranslator] in
+                    try? await Task.sleep(for: .seconds(10))
+                    await pageTranslator.offerPackDownloadIfNeeded()
+                }
 
                 NotificationCenter.default.addMainActorObserver(
                     forName: .browserCaptureSource,
