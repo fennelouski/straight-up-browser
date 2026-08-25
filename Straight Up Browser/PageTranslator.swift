@@ -27,7 +27,9 @@ final class PageTranslator: ObservableObject {
         // nil webView = prefetch: download the pair's model, translate nothing.
         let webView: WKWebView?
         let source: Locale.Language
+        let sourceCode: String
         let target: Locale.Language
+        let targetCode: String
     }
 
     private var queue: [PendingRequest] = []
@@ -144,27 +146,43 @@ final class PageTranslator: ObservableObject {
         let suggested = Set([dominant].compactMap { $0 }
             + (region.flatMap { Self.extraRegionLanguages[$0] } ?? [])
             + Self.europePack + Self.asiaPack)
+
+        let downloadable = await languagePackStatuses().filter { $0.status == .supported }
+        guard !downloadable.isEmpty else {
+            UserDefaults.standard.set(true, forKey: "translationPackPromptShown")
+            return
+        }
+        let choices = downloadable.map { PackChoice(id: $0.id, name: $0.name, selected: suggested.contains($0.id)) }
+        packChoices = choices.sorted {
+            ($0.selected ? 0 : 1, $0.name) < ($1.selected ? 0 : 1, $1.name)
+        }
+    }
+
+    // MARK: - Language pack status (Settings > Content > Translation)
+
+    struct LanguagePackStatus: Identifiable {
+        let id: String       // language code
+        let name: String     // localized display name
+        let status: LanguageAvailability.Status
+    }
+
+    // Every language the Translation framework can pair with the user's target
+    // language, minus ones already in their preferred-reading list. Drives both
+    // the onboarding pack picker above and the Settings language manager.
+    func languagePackStatuses() async -> [LanguagePackStatus] {
         let preferred = preferredLanguageCodes()
         let target = Locale.Language(identifier: defaultTargetCode)
-
-        var choices: [PackChoice] = []
+        var result: [LanguagePackStatus] = []
         var seen = Set<String>()
         for code in await Self.supportedLanguageCodes() {
             guard seen.insert(code).inserted else { continue }
             if preferred.contains(where: { code.hasPrefix($0) || $0.hasPrefix(code) }) { continue }
-            // Only .supported needs a download; .installed and .unsupported don't.
-            let language = Locale.Language(identifier: code)
-            guard await LanguageAvailability().status(from: language, to: target) == .supported else { continue }
+            let status = await LanguageAvailability().status(from: Locale.Language(identifier: code), to: target)
+            guard status != .unsupported else { continue }
             let name = Locale.current.localizedString(forLanguageCode: code) ?? code
-            choices.append(PackChoice(id: code, name: name, selected: suggested.contains(code)))
+            result.append(LanguagePackStatus(id: code, name: name, status: status))
         }
-        guard !choices.isEmpty else {
-            UserDefaults.standard.set(true, forKey: "translationPackPromptShown")
-            return
-        }
-        packChoices = choices.sorted {
-            ($0.selected ? 0 : 1, $0.name) < ($1.selected ? 0 : 1, $1.name)
-        }
+        return result.sorted { $0.name < $1.name }
     }
 
     // LanguageAvailability is not Sendable; keep the instance inside a
@@ -180,10 +198,15 @@ final class PageTranslator: ObservableObject {
         let chosen = (packChoices ?? []).filter(\.selected).map(\.id)
         packChoices = nil
         guard download, !chosen.isEmpty else { return }
-        let target = Locale.Language(identifier: defaultTargetCode)
-        for code in chosen {
-            queue.append(PendingRequest(webView: nil, source: Locale.Language(identifier: code), target: target))
-        }
+        chosen.forEach(downloadLanguage)
+    }
+
+    // Queues a model-only prefetch for one language, e.g. from the Settings
+    // language manager's "Download" button.
+    func downloadLanguage(_ code: String) {
+        queue.append(PendingRequest(
+            webView: nil, source: Locale.Language(identifier: code), sourceCode: code,
+            target: Locale.Language(identifier: defaultTargetCode), targetCode: defaultTargetCode))
         if configuration == nil { pump() }
     }
 
@@ -207,7 +230,12 @@ final class PageTranslator: ObservableObject {
         // the async call instead of retaining it across actor boundaries.
         guard await LanguageAvailability().status(from: source, to: target) != .unsupported else { return }
 
-        queue.append(PendingRequest(webView: webView, source: source, target: target))
+        if let url = webView.url, let host = SiteHistory.normalizedHost(url) {
+            TranslationHistoryStore.shared.recordDetection(
+                host: host, title: webView.title ?? host, source: sourceCode, target: targetCode)
+        }
+
+        queue.append(PendingRequest(webView: webView, source: source, sourceCode: sourceCode, target: target, targetCode: targetCode))
         if configuration == nil { pump() }
     }
 
@@ -229,7 +257,9 @@ final class PageTranslator: ObservableObject {
         guard let webView = request.webView else {
             // Prefetch: pull down the language-pair model so the first real
             // translation doesn't stall on a download.
-            try? await session.prepareTranslation()
+            if (try? await session.prepareTranslation()) != nil {
+                TranslationLanguageUsage.shared.markInstalled(request.sourceCode)
+            }
             return
         }
         guard let nodes = await extractNodes(from: webView), !nodes.isEmpty else { return }
@@ -240,11 +270,17 @@ final class PageTranslator: ObservableObject {
             Logger.warning("language download declined or failed: \(error)", type: "PageTranslator")
             return
         }
+        TranslationLanguageUsage.shared.markInstalled(request.sourceCode)
         guard let map = await Self.translate(nodes: nodes, using: session) else { return }
         guard !map.isEmpty,
               let json = try? JSONSerialization.data(withJSONObject: map),
               let jsonString = String(data: json, encoding: .utf8) else { return }
         _ = try? await webView.evaluateJavaScript("window.__subTranslate.apply(\(jsonString))")
+        TranslationLanguageUsage.shared.markUsed(request.sourceCode)
+        if let url = webView.url, let host = SiteHistory.normalizedHost(url) {
+            TranslationHistoryStore.shared.recordTranslation(
+                host: host, title: webView.title ?? host, source: request.sourceCode, target: request.targetCode)
+        }
     }
 
     // translationd runs the batch through a 4096-token context. Hand it a whole

@@ -10,6 +10,7 @@
 import AppKit
 import SwiftData
 import SwiftUI
+import Translation
 import WebKit
 
 // MARK: - General
@@ -545,6 +546,12 @@ struct ContentSettingsView: View {
     @AppStorage("autoTranslateEnabled") private var autoTranslateEnabled = true
     @AppStorage("translationPreferredLanguages") private var translationPreferredLanguages = ""
 
+    // Owns only prefetch downloads triggered from this window — separate from
+    // the per-browser-window PageTranslator that actually translates pages.
+    @StateObject private var packDownloader = PageTranslator()
+    @State private var showLanguageManager = false
+    @State private var showTranslationHistory = false
+
     var body: some View {
         Form {
             CollapsibleSection {
@@ -579,6 +586,14 @@ struct ContentSettingsView: View {
                 LabeledContent("Languages you read") {
                     TokenField(text: $translationPreferredLanguages, placeholder: "en  es  fr")
                 }
+                Button("Manage Languages…") { showLanguageManager = true }
+                    .sheet(isPresented: $showLanguageManager) {
+                        LanguageManagerDialog(isPresented: $showLanguageManager, downloader: packDownloader)
+                    }
+                Button("Translation History…") { showTranslationHistory = true }
+                    .sheet(isPresented: $showTranslationHistory) {
+                        TranslationHistoryDialog(isPresented: $showTranslationHistory)
+                    }
             } header: {
                 SettingsLabel("Translation", systemImage: "character.bubble", tint: SettingsTint.content)
             } footer: {
@@ -587,6 +602,153 @@ struct ContentSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .translationTask(packDownloader.configuration) { session in
+            await packDownloader.perform(session: session)
+        }
+    }
+}
+
+// Every language macOS can translate into your language: which are already
+// installed, which are one tap away, plus a nudge to offload ones that have
+// sat installed and unused for a while. Apple's Translation framework has no
+// API for an app to delete a model itself, so "offload" opens System
+// Settings' own language manager instead of trying to do it in-process.
+struct LanguageManagerDialog: View {
+    @Binding var isPresented: Bool
+    @ObservedObject var downloader: PageTranslator
+
+    @State private var packs: [PageTranslator.LanguagePackStatus] = []
+    @State private var isLoading = true
+
+    private var staleUsage: [LanguagePackUsage] { TranslationLanguageUsage.shared.staleCandidates() }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Translation Languages", comment: "Title of the language pack management sheet")
+                .font(.title2).bold()
+
+            if !staleUsage.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "externaldrive.badge.exclamationmark")
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(staleUsage.count) language\(staleUsage.count == 1 ? "" : "s") installed for 60+ days and unused in the last 60 days.",
+                             comment: "Offload nudge on the language pack management sheet")
+                        Button("Manage in System Settings…") { openSystemLanguageSettings() }
+                            .buttonStyle(.link)
+                    }
+                    Spacer()
+                }
+                .padding(10)
+                .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            if isLoading {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if packs.isEmpty {
+                Text("No downloadable languages — your reading languages cover everything.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(packs) { pack in
+                    HStack {
+                        Text(pack.name)
+                        Spacer()
+                        switch pack.status {
+                        case .installed:
+                            Text("Installed", comment: "Language pack already downloaded")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        case .supported:
+                            Button("Download") { downloader.downloadLanguage(pack.id) }
+                                .buttonStyle(.borderless)
+                        case .unsupported:
+                            EmptyView()
+                        @unknown default:
+                            EmptyView()
+                        }
+                    }
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button("Done") { isPresented = false }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 420, height: 480)
+        .task {
+            packs = await downloader.languagePackStatuses()
+            isLoading = false
+        }
+    }
+
+    private func openSystemLanguageSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension") else { return }
+        NSWorkspace.shared.open(url)
+    }
+}
+
+// What auto-translate has noticed and done: pages it detected in another
+// language, and which of those it actually translated. Without this the
+// feature is invisible when it's working and unaccountable when it isn't.
+struct TranslationHistoryDialog: View {
+    @Binding var isPresented: Bool
+    @State private var records: [TranslationHistoryRecord] = TranslationHistoryStore.shared.recent
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Translation History", comment: "Title of the translation history sheet")
+                .font(.title2).bold()
+            Text("Pages this Mac noticed were in another language, and whether it translated them.",
+                 comment: "Explanation on the translation history sheet")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if records.isEmpty {
+                Text("No translation activity yet.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(records) { record in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(record.title).lineLimit(1)
+                            Text("\(record.host) · \(record.sourceLanguage) → \(record.targetLanguage)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Label(
+                                record.translatedAt != nil ? "Translated" : "Detected",
+                                systemImage: record.translatedAt != nil ? "checkmark.circle.fill" : "text.magnifyingglass"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(record.translatedAt != nil ? .green : .secondary)
+                            Text((record.translatedAt ?? record.detectedAt).formatted(date: .abbreviated, time: .omitted))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                Button("Clear History", role: .destructive) {
+                    TranslationHistoryStore.shared.clear()
+                    records = []
+                }
+                .buttonStyle(.borderless)
+            }
+
+            HStack {
+                Spacer()
+                Button("Done") { isPresented = false }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 420, height: 480)
     }
 }
 
