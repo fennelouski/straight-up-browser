@@ -130,6 +130,8 @@ final class PageTranslator: ObservableObject {
     // isn't installed already. Region comes from the device locale — no
     // network/IP lookup.
     func offerPackDownloadIfNeeded() async {
+        // Never during UI tests: the sheet appears ~10s in and steals key focus.
+        guard !ProcessInfo.processInfo.arguments.contains("-uiTesting") else { return }
         guard !UserDefaults.standard.bool(forKey: "translationPackPromptShown") else { return }
         guard UserDefaults.standard.object(forKey: "autoTranslateEnabled") as? Bool ?? true else { return }
         let region = Locale.current.region?.identifier
