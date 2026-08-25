@@ -12,7 +12,6 @@
 
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 // MARK: - Design system
 
@@ -364,47 +363,6 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - Sidebar reordering
-
-extension UTType {
-    static let straightUpBrowserSettingsPane = UTType(exportedAs: "com.nathanfennel.straight-up-browser.settings-pane")
-}
-
-/// Pulled out of the view so it's unit-testable without instantiating SettingsWindow.
-func reorderedSettingsPanes(_ order: [SettingsPane], moving dragged: SettingsPane, to target: SettingsPane) -> [SettingsPane] {
-    var order = order
-    guard let from = order.firstIndex(of: dragged), let to = order.firstIndex(of: target), from != to else { return order }
-    let item = order.remove(at: from)
-    order.insert(item, at: to)
-    return order
-}
-
-private func settingsPaneDragItemProvider(for pane: SettingsPane) -> NSItemProvider {
-    let provider = NSItemProvider()
-    let data = Data(pane.rawValue.utf8)
-    provider.registerDataRepresentation(
-        forTypeIdentifier: UTType.straightUpBrowserSettingsPane.identifier,
-        visibility: .ownProcess
-    ) { completion in completion(data, nil); return nil }
-    return provider
-}
-
-private struct SettingsPaneDropDelegate: DropDelegate {
-    let target: SettingsPane
-    @Binding var draggedPane: SettingsPane?
-    let onReorder: (SettingsPane, SettingsPane) -> Void
-
-    func performDrop(info: DropInfo) -> Bool {
-        draggedPane = nil
-        return true
-    }
-    func dropEntered(info: DropInfo) {
-        guard let draggedPane else { return }
-        onReorder(draggedPane, target)
-    }
-    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
-}
-
 // MARK: - Container
 
 struct SettingsWindow: View {
@@ -415,7 +373,6 @@ struct SettingsWindow: View {
     // Same "theme" key SettingsManager reads — one store, no desync. Reading it here (rather than
     // SettingsManager.shared.colorScheme) re-tints the window live when Theme changes.
     @AppStorage("theme") private var theme = "System"
-    @State private var draggedPane: SettingsPane?
 
     private var pane: SettingsPane { SettingsPane(rawValue: paneRaw) ?? .general }
 
@@ -435,14 +392,21 @@ struct SettingsWindow: View {
 
     var body: some View {
         NavigationSplitView {
-            // Cards rather than list rows: bare rows left most of the sidebar empty, and the
-            // room was better spent saying what's in each pane.
-            ScrollView {
-                VStack(spacing: 8) {
-                    ForEach(paneOrder) { card($0) }
-                }
-                .padding(10)
+            // Cards rather than bare list rows: bare rows left most of the sidebar empty, and
+            // the room was better spent saying what's in each pane. List (rather than a plain
+            // ScrollView) is what gives macOS native drag-to-reorder for free via onMove.
+            List {
+                ForEach(paneOrder) { card($0) }
+                    .onMove { offsets, destination in
+                        var order = paneOrder
+                        order.move(fromOffsets: offsets, toOffset: destination)
+                        paneOrderRaw = order.map(\.rawValue).joined(separator: ",")
+                    }
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10))
             }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
             .navigationSplitViewColumnWidth(min: 210, ideal: 230, max: 280)
         } detail: {
             detail
@@ -451,12 +415,6 @@ struct SettingsWindow: View {
         .background(paneShortcuts)
         .frame(minWidth: 720, minHeight: 520)
         .preferredColorScheme(colorScheme)
-    }
-
-    // Live reorder on hover, same as tab-bar dragging (TabRowView) — commit happens as rows are
-    // crossed, the drop itself just clears the dragged marker.
-    private func reorderPane(_ dragged: SettingsPane, to target: SettingsPane) {
-        paneOrderRaw = reorderedSettingsPanes(paneOrder, moving: dragged, to: target).map(\.rawValue).joined(separator: ",")
     }
 
     // ⌘1...⌘9 jump straight to the pane in that position of the (user-ordered) sidebar.
@@ -473,9 +431,7 @@ struct SettingsWindow: View {
 
     private func card(_ target: SettingsPane) -> some View {
         let selected = target == pane
-        return Button {
-            paneRaw = target.rawValue
-        } label: {
+        return Group {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: target.systemImage)
                     .font(.system(size: 14))
@@ -509,16 +465,12 @@ struct SettingsWindow: View {
             )
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
-        .buttonStyle(.plain)
+        // Plain tap gesture rather than Button: a Button's click tracking swallows the mouseDown
+        // that List needs to see to start a reorder drag, so onMove below never fires.
+        .onTapGesture { paneRaw = target.rawValue }
         .accessibilityLabel("\(target.title). \(target.subtitle)")
-        .onDrag {
-            draggedPane = target
-            return settingsPaneDragItemProvider(for: target)
-        }
-        .onDrop(
-            of: [.straightUpBrowserSettingsPane],
-            delegate: SettingsPaneDropDelegate(target: target, draggedPane: $draggedPane, onReorder: reorderPane)
-        )
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { paneRaw = target.rawValue }
     }
 
     @ViewBuilder
