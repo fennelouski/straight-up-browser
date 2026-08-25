@@ -19,8 +19,17 @@ struct CollapsibleSection<Content: View, Header: View, Footer: View>: View {
     @State private var isCollapsed = false
 
     var body: some View {
+        // Collapsing hides content/footer by clipping them to zero height rather than removing
+        // them from the Section, so the grouped box keeps drawing around just the header — an
+        // empty Section renders without its box, which drops the header's icon/text formatting
+        // and the spacing between sections.
         Section {
-            if !isCollapsed { content() }
+            content()
+                .frame(maxHeight: isCollapsed ? 0 : nil)
+                .clipped()
+                .opacity(isCollapsed ? 0 : 1)
+                .disabled(isCollapsed)
+                .accessibilityHidden(isCollapsed)
         } header: {
             Button {
                 withAnimation(.snappy(duration: 0.2)) { isCollapsed.toggle() }
@@ -37,7 +46,11 @@ struct CollapsibleSection<Content: View, Header: View, Footer: View>: View {
             }
             .buttonStyle(.plain)
         } footer: {
-            if !isCollapsed { footer() }
+            footer()
+                .frame(maxHeight: isCollapsed ? 0 : nil)
+                .clipped()
+                .opacity(isCollapsed ? 0 : 1)
+                .accessibilityHidden(isCollapsed)
         }
     }
 }
