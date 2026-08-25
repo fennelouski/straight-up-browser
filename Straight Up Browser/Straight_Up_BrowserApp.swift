@@ -274,8 +274,15 @@ struct Straight_Up_BrowserApp: App {
     @AppStorage(SettingsManager.aiFeaturesKey) private var aiFeaturesEnabled = true
     @State private var showStartupRecoveryNotice = true
     @Environment(\.openWindow) private var openWindow
+    // @AppStorage (not SettingsManager.shared.colorScheme) so the scene re-renders
+    // when Theme changes instead of waiting for an unrelated update.
+    @AppStorage("theme") private var themePreference = "System"
     private var colorScheme: ColorScheme? {
-        SettingsManager.shared.colorScheme
+        switch themePreference {
+        case "Light": return .light
+        case "Dark": return .dark
+        default: return nil
+        }
     }
 
     // Current shortcut for a command, read live from the store.

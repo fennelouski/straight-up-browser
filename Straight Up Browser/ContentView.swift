@@ -2530,8 +2530,16 @@ struct ContentView: View {
         }
     }
 
+    // Same "theme" key SettingsManager reads — @AppStorage (not SettingsManager.shared.colorScheme)
+    // so this view actually re-renders when Theme changes, instead of waiting for an unrelated update.
+    @AppStorage("theme") private var themePreference = "System"
+
     private var colorScheme: ColorScheme? {
-        SettingsManager.shared.colorScheme
+        switch themePreference {
+        case "Light": return .light
+        case "Dark": return .dark
+        default: return nil
+        }
     }
 
     // Inset from both ends by the window's corner radius: a 1pt line can't

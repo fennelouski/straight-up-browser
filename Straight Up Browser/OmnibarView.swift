@@ -295,9 +295,12 @@ struct OmnibarTextField: NSViewRepresentable {
 
             // Inline-complete to the top match and select the added suffix, so the
             // next keystroke replaces it and Return accepts the whole thing.
+            // Only when the caret sits at the end of the typed text — editing
+            // mid-string after arrowing around must not teleport the caret.
             if let completion = parent.completion?(typed),
                (completion as NSString).length > (typed as NSString).length,
-               let editor = textField.currentEditor() {
+               let editor = textField.currentEditor(),
+               editor.selectedRange == NSRange(location: (typed as NSString).length, length: 0) {
                 let typedLen = (typed as NSString).length
                 editor.string = completion
                 editor.selectedRange = NSRange(location: typedLen,
@@ -311,7 +314,11 @@ struct OmnibarTextField: NSViewRepresentable {
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             switch commandSelector {
             case #selector(NSResponder.deleteBackward(_:)),
-                 #selector(NSResponder.deleteForward(_:)):
+                 #selector(NSResponder.deleteForward(_:)),
+                 #selector(NSResponder.deleteWordBackward(_:)),
+                 #selector(NSResponder.deleteWordForward(_:)),
+                 #selector(NSResponder.deleteToBeginningOfLine(_:)),
+                 #selector(NSResponder.deleteToEndOfLine(_:)):
                 isDeleting = true
                 return false // let the default delete happen, sans re-completion
             case #selector(NSResponder.moveUp(_:)):

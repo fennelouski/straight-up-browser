@@ -7,9 +7,16 @@ import SwiftUI
 
 struct HelpWindow: View {
     @State private var selectedTab = 0
+    // @AppStorage (not SettingsManager.shared.colorScheme) so this window re-renders
+    // when Theme changes instead of waiting for an unrelated update.
+    @AppStorage("theme") private var themePreference = "System"
 
     private var colorScheme: ColorScheme? {
-        SettingsManager.shared.colorScheme
+        switch themePreference {
+        case "Light": return .light
+        case "Dark": return .dark
+        default: return nil
+        }
     }
 
     var body: some View {

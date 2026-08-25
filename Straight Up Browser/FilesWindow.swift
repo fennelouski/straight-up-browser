@@ -130,6 +130,17 @@ struct FilesWindow: View {
     @State private var selection: UUID?
     @State private var previewURL: URL?
     @State private var showClearConfirm = false
+    // @AppStorage (not SettingsManager.shared.colorScheme) so this window re-renders
+    // when Theme changes instead of waiting for an unrelated update.
+    @AppStorage("theme") private var themePreference = "System"
+
+    private var colorScheme: ColorScheme? {
+        switch themePreference {
+        case "Light": return .light
+        case "Dark": return .dark
+        default: return nil
+        }
+    }
 
     private var visibleRows: [FileRow] {
         rows.filter { row in
@@ -203,7 +214,7 @@ struct FilesWindow: View {
         .quickLookPreview($previewURL)
         .onAppear(perform: refresh)
         .onChange(of: manager.records) { _, _ in refresh() }
-        .preferredColorScheme(SettingsManager.shared.colorScheme)
+        .preferredColorScheme(colorScheme)
     }
 
     private var list: some View {
