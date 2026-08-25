@@ -410,9 +410,11 @@ struct WebsiteShortcutPriorityView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Text(command.title)
-                        Text(store.shortcut(for: command).displayString)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                        HStack(spacing: 3) {
+                            ForEach(Array(store.shortcut(for: command).displayTokens.enumerated()), id: \.offset) { _, token in
+                                keycap(token)
+                            }
+                        }
                     }
                 }
             }
