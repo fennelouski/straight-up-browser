@@ -49,6 +49,11 @@ final class LedgerStore {
         ))) ?? []
     }
 
+    /// Every workspace's references — the cross-workspace recall corpus.
+    func allReferences() -> [WorkspaceSourceRef] {
+        (try? modelContext.fetch(FetchDescriptor<WorkspaceSourceRef>())) ?? []
+    }
+
     /// Everything the seen-before surfaces need, in one fetch keyed on the
     /// canonical URL. Runs on every navigation, so it stays cheap.
     nonisolated struct PriorEncounter: Equatable, Sendable {
@@ -94,6 +99,10 @@ final class LedgerStore {
               ref.disposition == .open,
               let source = source(sourceKey: key)
         else { return false }
+        // An abstract page and its PDF share one source (arXiv canonicalizes
+        // /pdf/ to /abs/); opening the PDF upgrades the captured text to the
+        // full paper, so it is not "fully captured" until that has happened.
+        if SourceModality.inferred(from: url) == .pdf, source.modality != .pdf { return false }
         return source.captureState == .ready
     }
 

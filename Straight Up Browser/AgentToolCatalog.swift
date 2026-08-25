@@ -625,7 +625,11 @@ private extension AgentToolCatalog {
                 "sensitivity": .string(description: "Content classification.", allowedValues: ["preference", "personal", "sensitive"]),
                 "expiresAt": .string(description: "Optional ISO-8601 expiry."),
             ], required: ["text", "scope", "sensitivity"], capabilities: [.memoryWrite], risk: .mutateLocal, route: .internalTool, builtIn: true, origin: .internalTool, mcp: false),
-            descriptor("search_agent_memory", "Search the user's enabled, scoped Agent memory with bounded results.", properties: [
+            descriptor("search_research", "Search the user's own research ledger — captured sources, transcripts, paper notes, and workspace notes across every workspace — and return verbatim passages. Nothing leaves the device. Cite the returned sourceURL whenever a passage is used.", properties: [
+                "query": .string(description: "What to look for."),
+                "limit": .integer(description: "Maximum passages to return (1–20).", minimum: 1, maximum: 20),
+            ], required: ["query"], capabilities: [.memoryRead], risk: .observe, route: .internalTool, builtIn: true, origin: .internalTool, mcp: false),
+            descriptor("search_agent_memory","Search the user's enabled, scoped Agent memory with bounded results.", properties: [
                 "query": .string(description: "Optional text query."),
                 "limit": .integer(description: "Maximum entries.", minimum: 1, maximum: 50),
             ], capabilities: [.memoryRead], risk: .observe, route: .internalTool, builtIn: true, origin: .internalTool, mcp: false),

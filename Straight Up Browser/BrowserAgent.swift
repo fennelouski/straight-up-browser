@@ -3025,6 +3025,10 @@ final class BrowserAgent: ObservableObject {
                         parentRunID: runID,
                         sourceStepID: invocation.id
                     )
+                } else if name == ResearchRecall.toolName {
+                    result = executionPermit.toolName == name
+                        ? ResearchRecall.shared.call(arguments: arguments)
+                        : #"{"error":"The execution permit does not match this tool."}"#
                 } else if Self.memoryToolNames.contains(name) {
                     result = await AgentMemoryController.shared.call(
                         name,

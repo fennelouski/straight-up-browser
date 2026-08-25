@@ -2779,6 +2779,9 @@ struct ContentView: View {
                 let docStore = DocumentStore(modelContext: modelContext, ledgerStore: store)
                 documentStore = docStore
                 documentPaneManager.documentStore = docStore
+                settle.documentStore = docStore
+                ResearchRecall.shared.ledgerStore = store
+                ResearchRecall.shared.documentStore = docStore
                 // Scoped to the ACTIVE workspace (ADR 0008: pane ids resolve
                 // against the active workspace's documents) — a document id from
                 // a suspended workspace must not resolve as a pane.

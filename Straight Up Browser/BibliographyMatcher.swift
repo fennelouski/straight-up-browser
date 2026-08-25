@@ -182,9 +182,18 @@ enum BibliographyCorpus {
     /// windowed transcript segments. Dismissed sources are excluded; sources
     /// with no extracted text contribute nothing (open them once to fill in).
     static func passages(workspaceId: UUID, ledgerStore: LedgerStore) -> [BibliographyPassage] {
+        passages(references: ledgerStore.references(workspaceId: workspaceId), ledgerStore: ledgerStore)
+    }
+
+    /// Every workspace at once — the agent's recall corpus.
+    static func passages(ledgerStore: LedgerStore) -> [BibliographyPassage] {
+        passages(references: ledgerStore.allReferences(), ledgerStore: ledgerStore)
+    }
+
+    private static func passages(references: [WorkspaceSourceRef], ledgerStore: LedgerStore) -> [BibliographyPassage] {
         var passages: [BibliographyPassage] = []
         var seenSourceIds: Set<UUID> = []
-        for ref in ledgerStore.references(workspaceId: workspaceId) where ref.disposition != .dismissed {
+        for ref in references where ref.disposition != .dismissed {
             guard let article = ledgerStore.source(sourceKey: ref.sourceKey),
                   seenSourceIds.insert(article.id).inserted else { continue }
 

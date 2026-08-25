@@ -28,6 +28,9 @@ final class WorkspaceSettleCapture {
     /// Video sources get their caption track fetched at capture (Phase 2);
     /// async and failure-tolerant — never on the capture path's critical path.
     let transcriptFetcher: TranscriptFetcher
+    /// Paper notes land in the workspace's documents; set once iCloud documents
+    /// are wired up. Nil = the note still lives on the article, nothing lost.
+    weak var documentStore: DocumentStore?
 
     init(ledgerStore: LedgerStore, modelContext: ModelContext) {
         self.ledgerStore = ledgerStore
@@ -134,11 +137,16 @@ final class WorkspaceSettleCapture {
                   == SourceCanonicalizer.canonicalKey(for: expectedURL)
         else { return }
 
+        let workspaceId = article.firstWorkspaceId
         NewspaperCaptureCoordinator.capture(
             article,
             from: webView,
             expectedURL: expectedURL,
-            store: newspaper
+            store: newspaper,
+            onPaperNote: { [weak self] article, note in
+                guard let workspaceId else { return }
+                self?.filePaperNote(note, for: article, workspaceId: workspaceId)
+            }
         )
         archive(article: article, from: webView)
         if article.modality == .video {
@@ -147,6 +155,23 @@ final class WorkspaceSettleCapture {
                 _ = await fetcher.ensureTranscript(for: article, webView: webView)
             }
         }
+    }
+
+    /// One document per paper, anchored to its source like any other note so
+    /// the audit graph and bibliography search see it. Never overwrites: a
+    /// note the user has edited is theirs.
+    private func filePaperNote(_ note: String, for article: NewspaperArticle, workspaceId: UUID) {
+        guard let documentStore, let workspace = ledgerStore.workspace(id: workspaceId) else { return }
+        let title = article.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = DocumentStore.sanitize("Paper — " + title.prefix(60))
+        guard !documentStore.documents(workspaceId: workspaceId).contains(where: { $0.displayName == name }),
+              let row = documentStore.createDocument(in: workspace, name: name) else { return }
+        let anchor = ledgerStore.createAnchor(source: article, modality: .pdf, locator: .wholeSource, quote: title)
+        let base = URL(string: article.sourceKey) ?? article.url
+        let link = AnchorLink.markdown(
+            text: title, url: AnchorLocator.wholeSource.url(base: base, modality: .pdf), anchorId: anchor.id)
+        documentStore.append(line: "# \(title)\n\nSource: \(link)\n\n\(note)", to: row)
+        ledgerStore.recordEdge(documentId: row.id, anchorId: anchor.id, quote: title)
     }
 
     private func archive(article: NewspaperArticle, from webView: WKWebView) {

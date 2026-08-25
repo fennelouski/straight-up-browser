@@ -39,7 +39,8 @@ struct AgentToolCatalogTests {
             .descriptors(visibleIn: .browserOSMCP)
             .map { ($0.name, $0) })
 
-        #expect(builtIn.count == 45)
+        #expect(builtIn.count == 46)
+        #expect(builtIn.contains { $0.name == "search_research" })
         #expect(builtIn.contains { $0.name == "wait_for" })
         #expect(builtIn.contains { $0.name == "observe_webkit_signals" })
         #expect(builtIn.contains { $0.name == "wait_for_webkit_signal" })

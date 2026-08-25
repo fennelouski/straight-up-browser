@@ -100,6 +100,10 @@ final class DocumentStore: ObservableObject {
         }
     }
 
+    func allDocuments() -> [WorkspaceDocument] {
+        (try? modelContext.fetch(FetchDescriptor<WorkspaceDocument>())) ?? []
+    }
+
     func document(id: UUID) -> WorkspaceDocument? {
         var descriptor = FetchDescriptor<WorkspaceDocument>(predicate: #Predicate { $0.id == id })
         descriptor.fetchLimit = 1

@@ -34,6 +34,8 @@ nonisolated enum SourceModality: String, CaseIterable, Codable, Sendable {
         if host.hasSuffix("youtube.com") || host.hasSuffix("youtu.be") || host.hasSuffix("vimeo.com") {
             return .video
         }
+        // arxiv.org/pdf/2401.12345 serves a PDF with no extension.
+        if host.hasSuffix("arxiv.org"), url.path.hasPrefix("/pdf/") { return .pdf }
         switch url.pathExtension.lowercased() {
         case "pdf": return .pdf
         case "png", "jpg", "jpeg", "gif", "webp", "heic", "avif": return .image

@@ -922,7 +922,10 @@ final class NewspaperStore {
                 )
             )
         }
-        guard item.captureState == .ready, target.count(item.originalText) > target.maximum else {
+        // A paper gets an evidence note regardless of length; prose gets
+        // shortened only when it is over target.
+        let isPaper = item.modality == .pdf
+        guard item.captureState == .ready, isPaper || target.count(item.originalText) > target.maximum else {
             item.condensedPayloadData = nil
             item.condensedWordCount = 0
             item.condensedCharacterCount = 0
@@ -942,7 +945,7 @@ final class NewspaperStore {
         let id = item.id
         let source = item.originalText
         let sourceDigest = item.sourceDigest
-        let promptVersion = NewspaperCondensationService.promptVersion
+        let promptVersion = isPaper ? PaperNote.promptVersion : NewspaperCondensationService.promptVersion
         let requestID = UUID()
         let title = item.title
         let byline = item.byline
@@ -958,12 +961,14 @@ final class NewspaperStore {
         guard save("Start newspaper condensation") else { return }
 
         do {
-            let condensed = try await NewspaperCondensationService.condense(
-                source,
-                title: title,
-                byline: byline,
-                target: target
-            )
+            let condensed = isPaper
+                ? try await PaperNote.compose(source, title: title)
+                : try await NewspaperCondensationService.condense(
+                    source,
+                    title: title,
+                    byline: byline,
+                    target: target
+                )
             guard let current = article(id: id),
                   current.condensationRequestID == requestID,
                   current.condensationOwnerID == workerID,
@@ -1124,11 +1129,14 @@ enum NewspaperCaptureJavaScript {
 
 @MainActor
 enum NewspaperCaptureCoordinator {
+    /// `onPaperNote` fires once with the finished evidence note when the source
+    /// was a research paper (PDF) and the on-device model produced one.
     static func capture(
         _ item: NewspaperArticle,
         from webView: WKWebView,
         expectedURL: URL,
-        store: NewspaperStore
+        store: NewspaperStore,
+        onPaperNote: (@MainActor (NewspaperArticle, String) -> Void)? = nil
     ) {
         guard let requestID = store.beginCapture(item) else { return }
         continueCapture(
@@ -1137,7 +1145,8 @@ enum NewspaperCaptureCoordinator {
             from: webView,
             expectedKey: NewspaperStore.sourceKey(for: expectedURL),
             store: store,
-            waitAttempt: 0
+            waitAttempt: 0,
+            onPaperNote: onPaperNote
         )
     }
 
@@ -1147,7 +1156,8 @@ enum NewspaperCaptureCoordinator {
         from webView: WKWebView,
         expectedKey: String,
         store: NewspaperStore,
-        waitAttempt: Int
+        waitAttempt: Int,
+        onPaperNote: (@MainActor (NewspaperArticle, String) -> Void)?
     ) {
         guard store.isCaptureCurrent(articleID: item.id, requestID: requestID) else {
             return
@@ -1174,7 +1184,8 @@ enum NewspaperCaptureCoordinator {
                     from: webView,
                     expectedKey: expectedKey,
                     store: store,
-                    waitAttempt: waitAttempt + 1
+                    waitAttempt: waitAttempt + 1,
+                    onPaperNote: onPaperNote
                 )
             }
             return
@@ -1186,8 +1197,37 @@ enum NewspaperCaptureCoordinator {
                 requestID: requestID,
                 from: webView,
                 expectedKey: expectedKey,
-                store: store
+                store: store,
+                onPaperNote: onPaperNote
             )
+        }
+    }
+
+    /// WebKit's PDF viewer runs no page script, so a paper's text comes from
+    /// PDFKit instead. Same capture identity rules as the script path.
+    /// ponytail: detection is by URL shape only; a PDF served at an
+    /// extensionless URL still fails as `.unreadable` like before.
+    private static func extractPDF(
+        _ item: NewspaperArticle,
+        requestID: UUID,
+        from webView: WKWebView,
+        expectedKey: String,
+        store: NewspaperStore,
+        onPaperNote: (@MainActor (NewspaperArticle, String) -> Void)?
+    ) async {
+        guard let url = webView.url,
+              let article = await PaperNote.readerArticle(pdfAt: url, fallbackTitle: item.title),
+              store.isCaptureCurrent(articleID: item.id, requestID: requestID),
+              currentPageMatches(webView, expectedKey: expectedKey) else {
+            store.failCapture(articleID: item.id, requestID: requestID, error: .unreadable)
+            return
+        }
+        item.modality = .pdf
+        guard store.finishCapture(articleID: item.id, requestID: requestID, article: article) else { return }
+        guard SettingsManager.shared.aiFeaturesEnabled else { return }
+        await store.condense(item, target: NewspaperPreferences.lengthTarget)
+        if let note = item.condensedText, item.condensationPromptVersion == PaperNote.promptVersion {
+            onPaperNote?(item, note)
         }
     }
 
@@ -1196,8 +1236,15 @@ enum NewspaperCaptureCoordinator {
         requestID: UUID,
         from webView: WKWebView,
         expectedKey: String,
-        store: NewspaperStore
+        store: NewspaperStore,
+        onPaperNote: (@MainActor (NewspaperArticle, String) -> Void)?
     ) async {
+        if PaperNote.isPDF(webView.url) {
+            await extractPDF(
+                item, requestID: requestID, from: webView, expectedKey: expectedKey,
+                store: store, onPaperNote: onPaperNote)
+            return
+        }
         guard store.isCaptureCurrent(articleID: item.id, requestID: requestID),
               currentPageMatches(webView, expectedKey: expectedKey),
               let expectedDocumentToken = await documentToken(in: webView) else {
