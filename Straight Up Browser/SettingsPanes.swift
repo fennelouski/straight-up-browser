@@ -48,7 +48,7 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         Form {
-            CollapsibleSection {
+            CollapsibleSection(searchID: "general.sync") {
                 Toggle("Sync browser data across your devices", isOn: $tabSyncEnabled)
                     .disabled(iCloudAvailable != true && !tabSyncEnabled)
                 if tabSyncEnabled {
@@ -93,7 +93,7 @@ struct GeneralSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "general.fast-forward") {
                 Toggle("Fast Forward searches", isOn: $fastForwardEnabled)
                 SettingCaptionRow(
                     caption: "A search that means a destination opens it beside the results.",
@@ -108,7 +108,7 @@ struct GeneralSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "general.new-tab-links") {
                 Toggle("Show a mitosis animation in the sidebar", isOn: $automaticLinkMitosis)
                 Toggle("Open the new tab beside its source", isOn: $automaticLinkSplit)
             } header: {
@@ -118,7 +118,7 @@ struct GeneralSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "general.research-anchors") {
                 Picker("Anchor links open", selection: $anchorLinkOpenBehavior) {
                     Text("Peek first, then open beside the document").tag("peek")
                     Text("Beside the document").tag("split")
@@ -131,7 +131,7 @@ struct GeneralSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "general.head-start") {
                 Toggle("Start loading before you press Return", isOn: $prefetchEnabled)
             } header: {
                 SettingsLabel("Head Start", systemImage: "bolt.horizontal", tint: SettingsTint.general)
@@ -140,7 +140,7 @@ struct GeneralSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "general.site-nicknames") {
                 Toggle("Learn what you call your sites", isOn: $siteNicknamesUseAI)
             } header: {
                 SettingsLabel("Site Nicknames", systemImage: "text.magnifyingglass", tint: SettingsTint.general)
@@ -149,7 +149,7 @@ struct GeneralSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "general.search") {
                 Picker("Default search engine", selection: $searchEngine) {
                     ForEach(searchEngines, id: \.self) { Text($0) }
                 }
@@ -196,7 +196,7 @@ struct GeneralSettingsView: View {
                 SettingsLabel("Search", systemImage: "magnifyingglass", tint: SettingsTint.general)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "general.behavior") {
                 LabeledContent("Spacebar scrolls") {
                     HStack {
                         Slider(value: $spaceScrollPercent, in: 10...100, step: 5).frame(width: 180)
@@ -260,7 +260,7 @@ struct GeneralSettingsView: View {
                 SettingsLabel("Behavior", systemImage: "slider.horizontal.3", tint: SettingsTint.general)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "general.quit-safety") {
                 LabeledContent("Hold ⌘Q to quit") {
                     HStack {
                         Text("Quick").font(.caption).foregroundStyle(.secondary)
@@ -301,7 +301,7 @@ struct ShortcutsSettingsView: View {
         // a warning only appears once the user creates the overlap.
         let conflictIDs = Set(store.conflicts().map(\.id))
         Form {
-            CollapsibleSection {
+            CollapsibleSection(searchID: "shortcuts.keyboard") {
                 HStack(alignment: .top) {
                     Text("Click a shortcut and press the new keys. Esc cancels. Shortcuts need a modifier — ⌘, ⌥, ⌃, or ⇧.")
                         .font(.caption)
@@ -321,7 +321,7 @@ struct ShortcutsSettingsView: View {
                 SettingsLabel("Keyboard Shortcuts", systemImage: "keyboard", tint: SettingsTint.shortcuts)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "shortcuts.tab-switching") {
                 Toggle("⌃Tab cycles tabs in the order you used them", isOn: $recentTabCycling)
                 Text("Off, ⌃Tab steps down the sidebar. On, it works like ⌘Tab between apps: the tab you're on is first, the one you came from is second, and letting go of Control puts whatever you landed on back at the front.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -336,7 +336,7 @@ struct ShortcutsSettingsView: View {
             ForEach(ShortcutSection.allCases, id: \.self) { section in
                 let commands = ShortcutCommand.availableOnCurrentPlatform.filter { $0.section == section && matches($0) }
                 if !commands.isEmpty {
-                    CollapsibleSection {
+                    CollapsibleSection(searchID: "shortcuts.section.\(section.rawValue)") {
                         ForEach(commands) { command in
                             shortcutRow(command, conflicting: conflictIDs.contains(command.id))
                         }
@@ -388,7 +388,7 @@ struct WebsiteShortcutPriorityView: View {
     @State private var pendingHost: String?
 
     var body: some View {
-        CollapsibleSection {
+        CollapsibleSection(searchID: "shortcuts.website-priority") {
             Picker("These settings apply to", selection: $host) {
                 Text("All sites").tag(String?.none)
                 ForEach(hosts, id: \.self) { host in
@@ -554,7 +554,7 @@ struct ContentSettingsView: View {
 
     var body: some View {
         Form {
-            CollapsibleSection {
+            CollapsibleSection(searchID: "content.web-content") {
                 Toggle("Enable JavaScript", isOn: $javaScriptEnabled)
                     .onChange(of: javaScriptEnabled) { _, _ in
                         NotificationCenter.default.post(name: .javaScriptChanged, object: nil)
@@ -569,7 +569,7 @@ struct ContentSettingsView: View {
                 SettingsLabel("Web Content", systemImage: "curlybraces", tint: SettingsTint.content)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "content.zoom") {
                 Toggle("Pinch to zoom", isOn: $pinchToZoomEnabled)
                 SettingCaptionRow(
                     caption: "Trackpad pinch and two-finger double-tap zoom the page. ⌘0 resets it.",
@@ -581,7 +581,7 @@ struct ContentSettingsView: View {
                 SettingsLabel("Zoom", systemImage: "plus.magnifyingglass", tint: SettingsTint.content)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "content.translation") {
                 Toggle("Auto-translate pages", isOn: $autoTranslateEnabled)
                 LabeledContent("Languages you read") {
                     TokenField(text: $translationPreferredLanguages, placeholder: "en  es  fr")
@@ -765,7 +765,7 @@ struct DownloadsSettingsView: View {
 
     var body: some View {
         Form {
-            CollapsibleSection {
+            CollapsibleSection(searchID: "downloads.option-click") {
                 Toggle("Option-click downloads images", isOn: $optionClickDownloadEnabled)
 
                 if optionClickDownloadEnabled {
@@ -792,7 +792,7 @@ struct DownloadsSettingsView: View {
                 SettingsLabel("Option-Click Image Downloads", systemImage: "arrow.down.circle", tint: SettingsTint.downloads)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "downloads.folder") {
                 LabeledContent("Folder") {
                     HStack {
                         TextField("System Downloads folder", text: $downloadsFolder)
@@ -1040,7 +1040,7 @@ struct ScreenshotsSettingsView: View {
 
     var body: some View {
         Form {
-            CollapsibleSection {
+            CollapsibleSection(searchID: "screenshots.all") {
                 LabeledContent("Shared folder") {
                     HStack {
                         TextField("~/Pictures/Browser Screenshots", text: $sharedFolder)
@@ -1111,6 +1111,10 @@ struct ScreenshotsSettingsView: View {
                         value: .constant(kind)
                     ) { ScreenshotKindDemo(kind: $0.wrappedValue) }
                 }
+                // ponytail: scroll target only, no highlight glow here — this one's a raw
+                // Section (not CollapsibleSection), and duplicating the highlight styling for
+                // one dynamic call site isn't worth it.
+                .id("screenshots.kind.\(kind.rawValue)")
             }
         }
         .formStyle(.grouped)
@@ -1326,7 +1330,7 @@ struct AppearanceSettingsView: View {
 
     var body: some View {
         Form {
-            CollapsibleSection {
+            CollapsibleSection(searchID: "appearance.tabs") {
                 Picker("Tab sidebar side", selection: $tabSidebarSideRaw) {
                     ForEach(BrowserChromeSide.allCases) { side in
                         Label(side.title, systemImage: side.systemImage).tag(side.rawValue)
@@ -1372,7 +1376,7 @@ struct AppearanceSettingsView: View {
             }
 
             #if os(macOS)
-                CollapsibleSection {
+                CollapsibleSection(searchID: "appearance.developer-tools") {
                     Picker("Open Developer Tools", selection: $developerToolsPlacementRaw) {
                         ForEach(DeveloperToolsPlacement.allCases) { placement in
                             Label(placement.title, systemImage: placement.symbol).tag(placement.rawValue)
@@ -1385,7 +1389,7 @@ struct AppearanceSettingsView: View {
                 }
             #endif
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "appearance.window") {
                 Toggle("Place the window on launch", isOn: $launchLayoutEnabled)
                 Picker("Width", selection: $launchLayoutWidth) {
                     ForEach(WindowLayout.widths, id: \.id) { Text($0.label).tag($0.id) }
@@ -1407,7 +1411,7 @@ struct AppearanceSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "appearance.theme") {
                 Picker("Theme", selection: $theme) {
                     ForEach(themes, id: \.self) { Text($0) }
                 }
@@ -1423,7 +1427,7 @@ struct AppearanceSettingsView: View {
             }
 
             if aiFeaturesEnabled {
-                CollapsibleSection {
+                CollapsibleSection(searchID: "appearance.ai-search") {
                     ColorPicker("Effect color", selection: aiSearchEffectColorBinding, supportsOpacity: false)
                         .onDisappear { NSColorPanel.shared.close() }
                     Text("Used for the sparkles when AI Search is enabled. Defaults to the app logo blue.")
@@ -1434,7 +1438,7 @@ struct AppearanceSettingsView: View {
                 }
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "appearance.loading-progress") {
                 Text("Show the loading progress bar on these window edges:")
                     .font(.callout)
                 HStack(spacing: 16) {
@@ -1456,7 +1460,7 @@ struct AppearanceSettingsView: View {
                 SettingsLabel("Loading Progress", systemImage: "arrow.triangle.2.circlepath", tint: SettingsTint.appearance)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "appearance.page-fade") {
                 Toggle("Fade pages in once they've drawn", isOn: $fadeInPages)
                 if fadeInPages {
                     LabeledContent("Fade length") {
@@ -1476,7 +1480,7 @@ struct AppearanceSettingsView: View {
                 SettingsLabel("Page Fade", systemImage: "circle.lefthalf.filled", tint: SettingsTint.appearance)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "appearance.white-point") {
                 LabeledContent("Max page brightness") {
                     HStack {
                         Slider(value: $pageWhitePoint, in: whitePointRange, step: 5).frame(width: 180)
@@ -1495,7 +1499,7 @@ struct AppearanceSettingsView: View {
                 SettingsLabel("White Point", systemImage: "sun.max", tint: SettingsTint.appearance)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "appearance.black-point") {
                 LabeledContent("Black level") {
                     HStack {
                         Slider(value: $pageBlackPoint, in: blackPointRange, step: 1).frame(width: 180)
@@ -1513,7 +1517,7 @@ struct AppearanceSettingsView: View {
                 SettingsLabel("Black Point", systemImage: "circle.righthalf.filled", tint: SettingsTint.appearance)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "appearance.schedule") {
                 Picker("Apply", selection: $toneScheduleMode) {
                     Text("Always").tag("always")
                     Text("Between set times").tag("fixed")
@@ -1610,7 +1614,7 @@ struct SecuritySettingsView: View {
 
     var body: some View {
         Form {
-            CollapsibleSection {
+            CollapsibleSection(searchID: "security.ssl") {
                 Toggle("Refuse invalid certificates (strict SSL)", isOn: $sslStrictMode)
                 SettingCaptionRow(
                     caption: "When off, you're asked whether to proceed on certificate errors.",
@@ -1622,7 +1626,7 @@ struct SecuritySettingsView: View {
                 SettingsLabel("SSL / TLS", systemImage: "lock.shield", tint: SettingsTint.security)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "security.ad-blocking") {
                 Toggle("Block ads and trackers", isOn: $adBlockEnabled)
                     .onChange(of: adBlockEnabled) { _, _ in
                         NotificationCenter.default.post(name: .adBlockChanged, object: nil)
@@ -1637,7 +1641,7 @@ struct SecuritySettingsView: View {
                 SettingsLabel("Ad Blocking", systemImage: "shield.lefthalf.filled", tint: SettingsTint.security)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "security.agent-automation") {
                 Toggle("Enable agent automation (CLI & MCP)", isOn: $cliAutomationEnabled)
                 Toggle("Allow tab and page reading", isOn: $cliPageReadEnabled)
                     .disabled(!cliAutomationEnabled)
@@ -1657,7 +1661,7 @@ struct SecuritySettingsView: View {
                 SettingsLabel("Agent Automation", systemImage: "cpu", tint: SettingsTint.security)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "security.mcp") {
                 HStack {
                     Button(copiedMCPConfiguration ? "Copied" : "Copy MCP Configuration") {
                         NSPasteboard.general.clearContents()
@@ -1718,7 +1722,7 @@ struct MemorySettingsView: View {
 
     var body: some View {
         Form {
-            CollapsibleSection {
+            CollapsibleSection(searchID: "memory.saving") {
                 Toggle("Enable memory saving", isOn: $memorySaverEnabled)
                 SettingCaptionRow(
                     caption: "Release idle background tabs from RAM when your Mac runs low.",
@@ -1737,7 +1741,7 @@ struct MemorySettingsView: View {
                 SettingsLabel("Memory Saving", systemImage: "memorychip", tint: SettingsTint.memory)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "memory.pinned-sites") {
                 if pinnedHosts.isEmpty {
                     Text("No pinned sites.")
                         .font(.callout)
@@ -1775,7 +1779,7 @@ struct MemorySettingsView: View {
                 SettingsLabel("Never Release These Sites", systemImage: "pin", tint: SettingsTint.memory)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "memory.open-tabs") {
                 if tabs.isEmpty {
                     Text("No open tabs.")
                         .font(.callout)
@@ -1854,7 +1858,7 @@ struct PrivacySettingsView: View {
 
     var body: some View {
         Form {
-            CollapsibleSection {
+            CollapsibleSection(searchID: "privacy.incognito") {
                 Toggle("Switch a tab to incognito with a key command", isOn: $convertToIncognitoEnabled)
             } header: {
                 SettingsLabel("Incognito", systemImage: "eyeglasses", tint: SettingsTint.privacy)
@@ -1864,7 +1868,7 @@ struct PrivacySettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "privacy.signed-in") {
                 if signedInGroups.isEmpty {
                     Text("No sites appear to be signed in.")
                         .foregroundStyle(.secondary)
@@ -1908,7 +1912,7 @@ struct PrivacySettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "privacy.site-permissions") {
                 if permissionStore.records.isEmpty {
                     Text("No saved site permissions.")
                         .foregroundStyle(.secondary)
@@ -1951,7 +1955,7 @@ struct PrivacySettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            CollapsibleSection {
+            CollapsibleSection(searchID: "privacy.data") {
                 Button("Clear browsing data…") { showClearDataDialog = true }
                     .sheet(isPresented: $showClearDataDialog) {
                         ClearDataDialog(

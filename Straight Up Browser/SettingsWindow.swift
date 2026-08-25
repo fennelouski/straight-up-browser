@@ -332,6 +332,12 @@ struct SettingsWindow: View {
     // SettingsManager.shared.colorScheme) re-tints the window live when Theme changes.
     @AppStorage("theme") private var theme = "System"
 
+    // ⌘F search across every pane's settings, not just the one you're on — see
+    // SettingsSearch.swift for the index and CollapsibleSection for the per-section jump target.
+    @State private var searchQuery = ""
+    @FocusState private var searchFieldFocused: Bool
+    private var searchNav: SettingsSearchNavigation { .shared }
+
     private var pane: SettingsPane { SettingsPane(rawValue: paneRaw) ?? .general }
 
     private var paneOrder: [SettingsPane] {
@@ -367,23 +373,74 @@ struct SettingsWindow: View {
             .scrollContentBackground(.hidden)
             .navigationSplitViewColumnWidth(min: 210, ideal: 230, max: 280)
         } detail: {
-            detail
-                .navigationTitle(pane.title)
+            ScrollViewReader { proxy in
+                detail
+                    .navigationTitle(pane.title)
+                    .onChange(of: searchNav.pendingScrollID) { _, id in
+                        guard let id else { return }
+                        Task {
+                            // ponytail: switching panes needs a render pass before the new
+                            // pane's sections exist for scrollTo to find; a fixed short delay is
+                            // the known, pragmatic workaround rather than a real readiness signal.
+                            try? await Task.sleep(nanoseconds: 80_000_000)
+                            withAnimation { proxy.scrollTo(id, anchor: .top) }
+                            searchNav.highlightedID = id
+                            searchNav.pendingScrollID = nil
+                            try? await Task.sleep(nanoseconds: 1_500_000_000)
+                            if searchNav.highlightedID == id { searchNav.highlightedID = nil }
+                        }
+                    }
+            }
+        }
+        .searchable(text: $searchQuery, placement: .sidebar, prompt: Text("Search Settings"))
+        .searchFocused($searchFieldFocused)
+        .searchSuggestions {
+            ForEach(matchingSearchEntries) { entry in
+                Button {
+                    paneRaw = entry.pane.rawValue
+                    searchNav.pendingScrollID = entry.id
+                    searchQuery = ""
+                    searchFieldFocused = false
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: entry.pane.systemImage)
+                            .foregroundStyle(entry.pane.tint)
+                            .frame(width: 18)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entry.title)
+                            Text(entry.pane.title)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
         }
         .background(paneShortcuts)
         .frame(minWidth: 720, minHeight: 520)
         .preferredColorScheme(colorScheme)
     }
 
-    // ⌘1...⌘9 jump straight to the pane in that position of the (user-ordered) sidebar.
+    private var matchingSearchEntries: [SettingsSearchEntry] {
+        guard !searchQuery.isEmpty else { return [] }
+        return Array(SettingsSearchIndex.entries.filter { $0.matches(searchQuery) }.prefix(10))
+    }
+
+    // ⌘1...⌘9 jump straight to the pane in that position of the (user-ordered) sidebar. ⌘F
+    // focuses the search field above, ahead of the app-wide Find command (which targets in-page
+    // find) — a window-local shortcut wins the key while this window is key, same idiom as ⌘1-9.
     @ViewBuilder
     private var paneShortcuts: some View {
-        ForEach(Array(paneOrder.prefix(9).enumerated()), id: \.offset) { index, target in
-            Button("") { paneRaw = target.rawValue }
-                .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
-                .frame(width: 0, height: 0)
-                .opacity(0)
+        Group {
+            ForEach(Array(paneOrder.prefix(9).enumerated()), id: \.offset) { index, target in
+                Button("") { paneRaw = target.rawValue }
+                    .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+            }
+            Button("") { searchFieldFocused = true }
+                .keyboardShortcut("f", modifiers: .command)
         }
+        .frame(width: 0, height: 0)
+        .opacity(0)
         .allowsHitTesting(false)
     }
 

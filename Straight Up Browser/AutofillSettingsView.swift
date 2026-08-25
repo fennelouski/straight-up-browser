@@ -66,7 +66,7 @@ struct AutofillSettingsView: View {
     // MARK: Master switch
 
     private var masterSection: some View {
-        CollapsibleSection {
+        CollapsibleSection(searchID: "autofill.master") {
             Toggle("Offer saved information when filling out forms", isOn: $preferences.isEnabled)
             Toggle("Also offer in incognito tabs", isOn: $preferences.allowInIncognito)
                 .disabled(!preferences.isEnabled)
@@ -90,7 +90,7 @@ struct AutofillSettingsView: View {
     }
 
     private var contactsSection: some View {
-        CollapsibleSection {
+        CollapsibleSection(searchID: "autofill.contacts") {
             if people.count > 1 {
                 Picker("Suggest first", selection: activePersonBinding) {
                     ForEach(people) { person in
@@ -140,7 +140,7 @@ struct AutofillSettingsView: View {
     // MARK: Manual profiles
 
     private var profilesSection: some View {
-        CollapsibleSection {
+        CollapsibleSection(searchID: "autofill.profiles") {
             if profiles.isEmpty {
                 ContentUnavailableView {
                     Label("No profiles yet", systemImage: "person.crop.circle.badge.plus")
@@ -196,7 +196,7 @@ struct AutofillSettingsView: View {
     // MARK: Categories
 
     private var categoriesSection: some View {
-        CollapsibleSection {
+        CollapsibleSection(searchID: "autofill.categories") {
             ForEach(AutofillCategory.allCases, id: \.self) { category in
                 Toggle(isOn: categoryBinding(category)) {
                     Label(category.label, systemImage: category.systemImage)
@@ -214,7 +214,7 @@ struct AutofillSettingsView: View {
     // MARK: Per-site exceptions
 
     private var exceptionsSection: some View {
-        CollapsibleSection {
+        CollapsibleSection(searchID: "autofill.exceptions") {
             if preferences.disabledHostList.isEmpty {
                 Text("No sites excluded.")
                     .font(.caption)
