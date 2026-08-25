@@ -146,7 +146,11 @@ enum WindowLayout {
 
     private static var restoreFrames: [ObjectIdentifier: NSRect] = [:]
 
-    /// ⇧⌘F: snap to the configured size/position, or back to where it was.
+    /// ⇧⌘F: snap to the configured size/position, or back to where it was —
+    /// "where it was" meaning before *any* snap command (this or an arrow
+    /// key below) touched the window, not just the last one. Only captures
+    /// restoreFrames when it's empty, so a run of arrow-key snaps followed by
+    /// ⇧⌘F still remembers the original freeform frame.
     static func toggle(_ window: NSWindow) {
         guard let target = frame(for: window) else { return }
         let id = ObjectIdentifier(window)
@@ -157,11 +161,56 @@ enum WindowLayout {
                 dx: (target.width - min(target.width, 1200)) / 2,
                 dy: target.height * 0.1
             )
+            snapState.removeValue(forKey: id)
             window.setFrame(previous, display: true, animate: true)
         } else {
-            restoreFrames[id] = window.frame
+            if restoreFrames[id] == nil { restoreFrames[id] = window.frame }
+            snapState.removeValue(forKey: id)
             window.setFrame(target, display: true, animate: true)
         }
+    }
+
+    // ⇧⌘←/→/↑/↓: snap to a half of the screen at that edge. Left/right keep
+    // the full height, top/bottom keep the full width. Pressing the same
+    // arrow again cycles to the next ratio below at the same edge, so the
+    // four keys reach a dozen spots without touching the mouse.
+    enum SnapDirection: Equatable { case left, right, top, bottom }
+
+    static let snapRatios: [CGFloat] = [0.5, 1.0 / 3, 2.0 / 3]
+
+    static func snapFrame(in visible: NSRect, direction: SnapDirection, ratio: CGFloat) -> NSRect {
+        switch direction {
+        case .left:
+            let w = visible.width * ratio
+            return NSRect(x: visible.minX, y: visible.minY, width: w, height: visible.height)
+        case .right:
+            let w = visible.width * ratio
+            return NSRect(x: visible.maxX - w, y: visible.minY, width: w, height: visible.height)
+        case .top:
+            let h = visible.height * ratio
+            return NSRect(x: visible.minX, y: visible.maxY - h, width: visible.width, height: h)
+        case .bottom:
+            let h = visible.height * ratio
+            return NSRect(x: visible.minX, y: visible.minY, width: visible.width, height: h)
+        }
+    }
+
+    private static var snapState: [ObjectIdentifier: (direction: SnapDirection, step: Int)] = [:]
+
+    static func snap(_ window: NSWindow, direction: SnapDirection) {
+        guard let visible = (window.screen ?? NSScreen.main)?.visibleFrame else { return }
+        let id = ObjectIdentifier(window)
+        // Advance to the next ratio only if the window is still exactly where
+        // the last press of this same arrow put it — moved or resized by hand
+        // since, or a different edge, restarts the cycle at half.
+        var step = 0
+        if let state = snapState[id], state.direction == direction,
+           window.frame.equalTo(snapFrame(in: visible, direction: direction, ratio: snapRatios[state.step]), tolerance: 2) {
+            step = (state.step + 1) % snapRatios.count
+        }
+        if restoreFrames[id] == nil { restoreFrames[id] = window.frame }
+        snapState[id] = (direction, step)
+        window.setFrame(snapFrame(in: visible, direction: direction, ratio: snapRatios[step]), display: true, animate: true)
     }
 
     /// Removes `.titled` entirely, unconditionally — confirmed empirically

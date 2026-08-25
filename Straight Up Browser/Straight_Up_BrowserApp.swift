@@ -595,6 +595,34 @@ struct Straight_Up_BrowserApp: App {
                 }
                 .keyboardShortcut(sc(.fullScreen))
 
+                Button("Snap Window Left") {
+                    if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+                        WindowLayout.snap(window, direction: .left)
+                    }
+                }
+                .keyboardShortcut(sc(.windowSnapLeft))
+
+                Button("Snap Window Right") {
+                    if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+                        WindowLayout.snap(window, direction: .right)
+                    }
+                }
+                .keyboardShortcut(sc(.windowSnapRight))
+
+                Button("Snap Window Top") {
+                    if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+                        WindowLayout.snap(window, direction: .top)
+                    }
+                }
+                .keyboardShortcut(sc(.windowSnapTop))
+
+                Button("Snap Window Bottom") {
+                    if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+                        WindowLayout.snap(window, direction: .bottom)
+                    }
+                }
+                .keyboardShortcut(sc(.windowSnapBottom))
+
                 Divider()
 
                 Button("Zoom In") {

@@ -97,6 +97,10 @@ struct Shortcut: Codable, Equatable, Hashable {
         case "\t": return "⇥"
         case " ": return "Space"
         case "`": return "`"
+        case "\u{F700}": return "↑"
+        case "\u{F701}": return "↓"
+        case "\u{F702}": return "←"
+        case "\u{F703}": return "→"
         default: return key.uppercased()
         }
     }
@@ -272,6 +276,15 @@ extension ShortcutCommand {
     static let agentPanel = Self("agentPanel", "AI Agent", .app, Shortcut(key: "a", command: true, shift: true))
     #if os(macOS)
     static let windowLayout = Self("windowLayout", "Snap Window to Size", .app, Shortcut(key: "f", command: true, shift: true))
+    // Arrow-key half-screen snapping. The key strings are the private-use
+    // codes AppKit hands back via charactersIgnoringModifiers for the arrow
+    // keys (NSUpArrowFunctionKey and friends) — see Shortcut.keyGlyph for the
+    // matching display symbols. Repeat presses of the same arrow cycle
+    // through smaller sizes at the same edge; see WindowLayout.snap.
+    static let windowSnapLeft   = Self("windowSnapLeft", "Snap Window Left", .app, Shortcut(key: "\u{F702}", command: true, shift: true))
+    static let windowSnapRight  = Self("windowSnapRight", "Snap Window Right", .app, Shortcut(key: "\u{F703}", command: true, shift: true))
+    static let windowSnapTop    = Self("windowSnapTop", "Snap Window Top", .app, Shortcut(key: "\u{F700}", command: true, shift: true))
+    static let windowSnapBottom = Self("windowSnapBottom", "Snap Window Bottom", .app, Shortcut(key: "\u{F701}", command: true, shift: true))
     #endif
     static let showDownloads = Self("showDownloads", "Show Downloads", .app, Shortcut(key: "j", command: true, shift: true))
 
@@ -288,7 +301,8 @@ extension ShortcutCommand {
     #endif
 
     #if os(macOS)
-    private static let platformCommands: [ShortcutCommand] = [showDownloads, windowLayout]
+    private static let platformCommands: [ShortcutCommand] =
+        [showDownloads, windowLayout, windowSnapLeft, windowSnapRight, windowSnapTop, windowSnapBottom]
     #else
     private static let platformCommands: [ShortcutCommand] = [showDownloads]
     #endif
