@@ -405,8 +405,8 @@ struct WebsiteShortcutPriorityView: View {
             ForEach(ShortcutPriorityStore.contestable) { command in
                 Picker(selection: binding(for: command)) {
                     if host != nil { Text("Use setting for all sites").tag(Bool?.none) }
-                    Text("Browser").tag(Bool?.some(true))
-                    Text("Website").tag(Bool?.some(false))
+                    Label("Browser", systemImage: "command").tag(Bool?.some(true))
+                    Label("Website", systemImage: "safari").tag(Bool?.some(false))
                 } label: {
                     HStack(spacing: 8) {
                         Text(command.title)
