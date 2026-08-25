@@ -292,7 +292,7 @@ struct ShortcutsSettingsView: View {
     @State private var searchText = ""
 
     private func matches(_ command: ShortcutCommand) -> Bool {
-        searchText.isEmpty || command.title.localizedCaseInsensitiveContains(searchText)
+        searchText.isEmpty || String(localized: command.title).localizedCaseInsensitiveContains(searchText)
     }
 
     var body: some View {
