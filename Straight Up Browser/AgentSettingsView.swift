@@ -496,8 +496,6 @@ struct AgentSettingsView: View {
                 SettingsLabel("Timeline, Audit & Replay…", systemImage: "play.rectangle.on.rectangle", tint: SettingsTint.agent)
             }
 
-            Divider()
-
             Button("Delete All Agent History…", role: .destructive) {
                 showingDeleteAllAgentHistoryConfirmation = true
             }
