@@ -32,6 +32,7 @@ struct NewspaperView: View {
     private var layoutRaw = NewspaperPreferences.defaultLayout
     @AppStorage(NewspaperPreferences.Key.navigationStyle)
     private var navigationStyleRaw = NewspaperPreferences.defaultNavigationStyle
+    @AppStorage(NewspaperPreferences.Key.fontFamily) private var fontFamily = ""
 
     @State private var selectedSection = Self.allSections
     @State private var unreadOnly = false
@@ -138,10 +139,10 @@ struct NewspaperView: View {
             HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("THE DAILY READ")
-                        .font(.system(size: 11, weight: .bold, design: .serif))
+                        .font(NewspaperTypography.font(fontFamily, size: 11, weight: .bold))
                         .tracking(2.4)
                     Text("Newspaper")
-                        .font(.system(size: 34, weight: .black, design: .serif))
+                        .font(NewspaperTypography.font(fontFamily, size: 34, weight: .black))
                         .accessibilityAddTraits(.isHeader)
                 }
 
@@ -642,6 +643,7 @@ private struct NewspaperStoryCard: View {
 
     @AppStorage(NewspaperPreferences.Key.photoLimit)
     private var photoLimit = NewspaperPreferences.defaultPhotoLimit
+    @AppStorage(NewspaperPreferences.Key.fontFamily) private var fontFamily = ""
 
     private var showsImage: Bool {
         layout.usesImages && photoLimit > 0 && article.leadImage != nil
@@ -734,16 +736,16 @@ private struct NewspaperStoryCard: View {
 
     private var titleFont: Font {
         switch prominence {
-        case .page: .system(size: 38, design: .serif)
-        case .lead: .system(size: 27, design: .serif)
-        case .standard: .system(size: 20, design: .serif)
+        case .page: NewspaperTypography.font(fontFamily, size: 38)
+        case .lead: NewspaperTypography.font(fontFamily, size: 27)
+        case .standard: NewspaperTypography.font(fontFamily, size: 20)
         }
     }
 
     private var bodyFont: Font {
         prominence == .page
-            ? .system(size: 19, design: .serif)
-            : .system(size: 15, design: .serif)
+            ? NewspaperTypography.font(fontFamily, size: 19)
+            : NewspaperTypography.font(fontFamily, size: 15)
     }
 
     private var excerptLength: Int {
@@ -820,6 +822,7 @@ private struct NewspaperArticleView: View {
     private var targetCharacterCount = NewspaperPreferences.defaultTargetCharacterCount
     @AppStorage(NewspaperPreferences.Key.lengthUnit)
     private var lengthUnitRaw = NewspaperLengthUnit.words.rawValue
+    @AppStorage(NewspaperPreferences.Key.fontFamily) private var fontFamily = ""
 
     @State private var showsOriginal = false
     @State private var showsAllPhotos = false
@@ -908,7 +911,7 @@ private struct NewspaperArticleView: View {
             .tracking(1)
 
             Text(article.title)
-                .font(.system(size: 42, weight: .black, design: .serif))
+                .font(NewspaperTypography.font(fontFamily, size: 42, weight: .black))
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
 
@@ -1133,7 +1136,7 @@ private struct NewspaperArticleView: View {
         } else if !displayedText.isEmpty {
             ForEach(Array(NewspaperPresentation.paragraphs(displayedText).enumerated()), id: \.offset) { _, paragraph in
                 Text(paragraph)
-                    .font(.system(size: 19, design: .serif))
+                    .font(NewspaperTypography.font(fontFamily, size: 19))
                     .lineSpacing(6)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1199,6 +1202,7 @@ private struct NewspaperRemoteImage: View {
 
 private struct NewspaperDocumentBlockView: View {
     let block: ReaderBlock
+    @AppStorage(NewspaperPreferences.Key.fontFamily) private var fontFamily = ""
 
     @ViewBuilder
     var body: some View {
@@ -1211,7 +1215,7 @@ private struct NewspaperDocumentBlockView: View {
                 .padding(.top, level <= 2 ? 14 : 8)
         case .paragraph(let runs):
             Text(attributedText(runs))
-                .font(.system(size: 19, design: .serif))
+                .font(NewspaperTypography.font(fontFamily, size: 19))
                 .lineSpacing(6)
         case .listItem(let ordered, let ordinal, let depth, let runs):
             HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -1220,7 +1224,7 @@ private struct NewspaperDocumentBlockView: View {
                     .frame(width: 30, alignment: .trailing)
                     .accessibilityHidden(true)
                 Text(attributedText(runs))
-                    .font(.system(size: 19, design: .serif))
+                    .font(NewspaperTypography.font(fontFamily, size: 19))
             }
             .padding(.leading, CGFloat(depth) * 22)
             .accessibilityElement(children: .combine)
@@ -1231,7 +1235,7 @@ private struct NewspaperDocumentBlockView: View {
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
                 Text(attributedText(runs))
-                    .font(.system(size: 20, design: .serif))
+                    .font(NewspaperTypography.font(fontFamily, size: 20))
                     .italic()
                     .foregroundStyle(.secondary)
             }
@@ -1337,6 +1341,138 @@ private extension Color {
     }
 }
 
+// MARK: - Settings
+
+/// Section header with the Newspaper tint on the icon only (same idiom as
+/// SettingsLabel, which is macOS-only; this view is shared with iOS).
+private struct NewspaperSettingsHeader: View {
+    let title: LocalizedStringKey
+    let systemImage: String
+
+    var body: some View {
+        Label {
+            Text(title)
+        } icon: {
+            Image(systemName: systemImage).foregroundStyle(.brown)
+        }
+    }
+}
+
+private struct NewspaperTintedLabel: View {
+    let title: LocalizedStringKey
+    let systemImage: String
+    var tint: Color = .brown
+
+    var body: some View {
+        Label {
+            Text(title)
+        } icon: {
+            Image(systemName: systemImage).foregroundStyle(tint)
+        }
+    }
+}
+
+/// A postage-stamp sketch of each layout, drawn with shapes so it needs no
+/// articles to look right.
+struct NewspaperLayoutPreview: View {
+    let layout: NewspaperLayout
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6).fill(paper)
+            Group {
+                switch layout {
+                case .ink: ink
+                case .broadsheet: broadsheet
+                case .magazine: magazine
+                case .shelf: shelf
+                }
+            }
+            .padding(8)
+        }
+        .frame(width: 128, height: 88)
+        .accessibilityHidden(true)
+    }
+
+    private var paper: Color {
+        layout == .ink ? Color(red: 0.96, green: 0.945, blue: 0.90) : Color.primary.opacity(0.04)
+    }
+    private var inkColor: Color { layout == .ink ? .black : .primary }
+
+    private func line(_ width: CGFloat, height: CGFloat = 2, opacity: Double = 0.35) -> some View {
+        Capsule().fill(inkColor.opacity(opacity)).frame(width: width, height: height)
+    }
+    private func lines(_ count: Int, width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 2.5) {
+            ForEach(0..<count, id: \.self) { i in line(i == count - 1 ? width * 0.6 : width) }
+        }
+    }
+    private var photo: some View {
+        RoundedRectangle(cornerRadius: 3)
+            .fill(LinearGradient(colors: [.brown.opacity(0.55), .orange.opacity(0.45)], startPoint: .topLeading, endPoint: .bottomTrailing))
+    }
+
+    private var ink: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            line(60, height: 4, opacity: 0.85)
+            Rectangle().fill(inkColor.opacity(0.7)).frame(height: 1)
+            HStack(alignment: .top, spacing: 6) {
+                lines(6, width: 50)
+                lines(6, width: 50)
+            }
+        }
+    }
+
+    private var broadsheet: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            line(70, height: 4, opacity: 0.8)
+            HStack(spacing: 4) {
+                ForEach(0..<3, id: \.self) { _ in
+                    VStack(alignment: .leading, spacing: 2) {
+                        line(22, height: 3, opacity: 0.7)
+                        lines(4, width: 32)
+                    }
+                    .padding(4)
+                    .background(RoundedRectangle(cornerRadius: 2).stroke(inkColor.opacity(0.25), lineWidth: 0.5))
+                }
+            }
+        }
+    }
+
+    private var magazine: some View {
+        HStack(spacing: 5) {
+            ForEach(0..<2, id: \.self) { _ in
+                VStack(alignment: .leading, spacing: 3) {
+                    photo.frame(height: 30)
+                    line(30, height: 3, opacity: 0.7)
+                    lines(3, width: 44)
+                }
+                .padding(4)
+                .background(RoundedRectangle(cornerRadius: 5).fill(.regularMaterial))
+            }
+        }
+    }
+
+    private var shelf: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            line(44, height: 3, opacity: 0.7)
+            HStack(spacing: 4) {
+                ForEach(0..<3, id: \.self) { i in
+                    VStack(alignment: .leading, spacing: 2) {
+                        photo.frame(height: 26)
+                        line(24, height: 2.5, opacity: 0.7)
+                        lines(2, width: 28)
+                    }
+                    .padding(3)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(.regularMaterial))
+                    .offset(x: i == 2 ? 6 : 0)
+                }
+            }
+            .clipped()
+        }
+    }
+}
+
 struct NewspaperSettingsView: View {
     @AppStorage(NewspaperPreferences.Key.layout)
     private var layout = NewspaperPreferences.defaultLayout
@@ -1344,6 +1480,8 @@ struct NewspaperSettingsView: View {
     private var navigationStyle = NewspaperPreferences.defaultNavigationStyle
     @AppStorage(NewspaperPreferences.Key.photoLimit)
     private var photoLimit = NewspaperPreferences.defaultPhotoLimit
+    @AppStorage(NewspaperPreferences.Key.fontFamily)
+    private var fontFamily = ""
     @AppStorage(NewspaperPreferences.Key.condenseArticles)
     private var condenseArticles = false
     @AppStorage(NewspaperPreferences.Key.lengthUnit)
@@ -1358,31 +1496,57 @@ struct NewspaperSettingsView: View {
     var body: some View {
         Form {
             CollapsibleSection {
-                Picker("Layout", selection: $layout) {
-                    ForEach(NewspaperLayout.allCases) { layout in
-                        Label(layout.title, systemImage: layout.systemImage)
-                            .tag(layout.rawValue)
-                    }
-                }
-                Picker("Move through an issue", selection: $navigationStyle) {
+                layoutGallery
+                Picker(selection: $navigationStyle) {
                     ForEach(NewspaperNavigationStyle.allCases) { style in
                         Text(style.title).tag(style.rawValue)
                     }
+                } label: {
+                    NewspaperTintedLabel(title: "Move through an issue", systemImage: "book.pages")
                 }
-                Picker("Photos per article", selection: $photoLimit) {
+                Picker(selection: $photoLimit) {
                     Text("None").tag(0)
                     ForEach([1, 3, 5, 10], id: \.self) { count in
                         Text("Up to \(count)").tag(count)
                     }
+                } label: {
+                    NewspaperTintedLabel(title: "Photos per article", systemImage: "photo.on.rectangle", tint: .orange)
                 }
             } header: {
-                Text("Reading Experience")
+                NewspaperSettingsHeader(title: "Layout", systemImage: "rectangle.3.group")
             } footer: {
                 Text("Ink and Broadsheet stay image-free. Magazine and Shelf honor the photo limit; every article can reveal the rest on demand.")
             }
 
             CollapsibleSection {
-                Toggle("Shorten long articles on device", isOn: $condenseArticles)
+                Picker(selection: $fontFamily) {
+                    ForEach(NewspaperTypography.suggested) { choice in
+                        Text(choice.title).font(NewspaperTypography.font(choice.family, size: 13)).tag(choice.family)
+                    }
+                    Divider()
+                    ForEach(NewspaperTypography.installedFamilies, id: \.self) { family in
+                        Text(family).tag(family)
+                    }
+                } label: {
+                    NewspaperTintedLabel(title: "Font", systemImage: "textformat", tint: .indigo)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("The Quick Brown Fox Jumps Over the Lazy Dog")
+                        .font(NewspaperTypography.font(fontFamily, size: 22, weight: .black))
+                    Text("Every headline, excerpt, and article page in the Newspaper uses this face. Pick any installed family; the system serif is New York.")
+                        .font(NewspaperTypography.font(fontFamily, size: 15))
+                        .lineSpacing(4)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            } header: {
+                NewspaperSettingsHeader(title: "Typography", systemImage: "character.textbox")
+            }
+
+            CollapsibleSection {
+                Toggle(isOn: $condenseArticles) {
+                    NewspaperTintedLabel(title: "Shorten long articles on device", systemImage: "sparkles", tint: .purple)
+                }
                 if condenseArticles {
                     Picker("Limit by", selection: $lengthUnit) {
                         ForEach(NewspaperLengthUnit.allCases) { unit in
@@ -1408,30 +1572,183 @@ struct NewspaperSettingsView: View {
                     }
                 }
             } header: {
-                Text("Article Length")
+                NewspaperSettingsHeader(title: "Article Length", systemImage: "text.word.spacing")
             } footer: {
                 Text("The original is always kept. Shortening uses Apple Intelligence on device when available, preserves the article's voice, and never gives the article tools or authority. You can switch back to the saved full text at any time.")
             }
 
             CollapsibleSection {
-                TextField("Default section (Front Page)", text: $defaultSection)
+                HStack {
+                    NewspaperTintedLabel(title: "Default section", systemImage: "folder", tint: .teal)
+                    TextField("Front Page", text: $defaultSection)
+                        .multilineTextAlignment(.trailing)
+                }
             } header: {
-                Text("Filing")
+                NewspaperSettingsHeader(title: "Filing", systemImage: "tray.full")
             } footer: {
                 Text("A publisher's section takes precedence when the page provides one. You can move any saved article later.")
             }
 
+            NewspaperLibrarySection()
+
             CollapsibleSection {
-                Label("Readable text is retained for offline use", systemImage: "arrow.down.doc")
-                Label("Remote photos are loaded only when shown", systemImage: "photo")
-                Label("Newspaper follows the main browser-data sync switch", systemImage: "icloud")
+                NewspaperTintedLabel(title: "Readable text is retained for offline use", systemImage: "arrow.down.doc", tint: .green)
+                NewspaperTintedLabel(title: "Remote photos are loaded only when shown", systemImage: "photo", tint: .orange)
+                NewspaperTintedLabel(title: "Newspaper follows the main browser-data sync switch", systemImage: "icloud", tint: .blue)
+                NewspaperTintedLabel(title: "A starter article arrives each day you read nothing new", systemImage: "calendar.badge.plus", tint: .pink)
             } header: {
-                Text("Offline & Sync")
+                NewspaperSettingsHeader(title: "Offline & Sync", systemImage: "externaldrive.badge.icloud")
             } footer: {
                 Text("Saved article documents and reading state use your private iCloud database when browser sync is enabled. Incognito pages cannot be added. Changing the main sync switch still takes effect after relaunch.")
             }
         }
         .formStyle(.grouped)
         .navigationTitle("Newspaper")
+    }
+
+    private var layoutGallery: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                ForEach(NewspaperLayout.allCases) { option in
+                    let selected = option.rawValue == layout
+                    Button {
+                        layout = option.rawValue
+                    } label: {
+                        VStack(spacing: 6) {
+                            NewspaperLayoutPreview(layout: option)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(selected ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: selected ? 2.5 : 1)
+                                )
+                            Label(option.title, systemImage: option.systemImage)
+                                .font(.caption.weight(selected ? .semibold : .regular))
+                                .foregroundStyle(selected ? Color.accentColor : .primary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(option.title)
+                    .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+}
+
+/// Every article ever added or picked for the newspaper — including finished
+/// ones and sources dismissed from the feed — searchable and removable.
+private struct NewspaperLibrarySection: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \NewspaperArticle.addedAt, order: .reverse)
+    private var articles: [NewspaperArticle]
+    @State private var query = ""
+    @State private var showAll = false
+
+    private static let collapsedLimit = 8
+
+    private var filtered: [NewspaperArticle] {
+        let needle = query.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return articles }
+        return articles.filter {
+            $0.title.localizedCaseInsensitiveContains(needle)
+                || $0.section.localizedCaseInsensitiveContains(needle)
+                || ($0.url.host ?? "").localizedCaseInsensitiveContains(needle)
+                || ($0.byline ?? "").localizedCaseInsensitiveContains(needle)
+        }
+    }
+
+    var body: some View {
+        let hidden = LedgerStore(modelContext: modelContext).hiddenFromFeedKeys()
+        let visible = showAll || !query.isEmpty ? filtered : Array(filtered.prefix(Self.collapsedLimit))
+        CollapsibleSection {
+            if articles.isEmpty {
+                Text("Nothing saved yet. Use Add to Newspaper on any article.")
+                    .foregroundStyle(.secondary)
+            } else {
+                TextField("Search title, section, site, or byline", text: $query)
+                    .textFieldStyle(.roundedBorder)
+                ForEach(visible) { article in
+                    row(article, dismissed: hidden.contains(article.sourceKey))
+                }
+                if visible.count < filtered.count {
+                    Button("Show all \(filtered.count) articles") { showAll = true }
+                }
+            }
+        } header: {
+            HStack {
+                NewspaperSettingsHeader(title: "Library", systemImage: "books.vertical")
+                Text("\(articles.count)")
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .padding(.horizontal, 7).padding(.vertical, 2)
+                    .background(Color.brown.opacity(0.18), in: Capsule())
+            }
+        } footer: {
+            Text("\(articles.filter { !$0.isRead }.count) unread. Dismissed sources stay here so you can restore them from the Newspaper.")
+        }
+    }
+
+    private func row(_ article: NewspaperArticle, dismissed: Bool) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: statusSymbol(article))
+                .foregroundStyle(statusTint(article))
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(article.title).lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(article.section.uppercased()).fontWeight(.semibold)
+                    Text("·")
+                    Text(article.url.host ?? article.url.absoluteString)
+                    Text("·")
+                    Text(article.addedAt.formatted(date: .abbreviated, time: .omitted))
+                    if dismissed { Text("· Dismissed") }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+            Spacer()
+            if article.rating > 0 {
+                Label("\(article.rating)", systemImage: "star.fill")
+                    .font(.caption).foregroundStyle(.yellow)
+            }
+            Text("\(article.estimatedReadingMinutes) min")
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+        }
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button(article.isRead ? "Mark Unread" : "Mark Finished") {
+                NewspaperStore(modelContext: modelContext).markRead(article, isRead: !article.isRead)
+            }
+            Button("Open Web Page") {
+                NotificationCenter.default.post(
+                    name: .browserOpenURL, object: nil,
+                    userInfo: ["url": article.url.absoluteString, "newTab": true]
+                )
+            }
+            Divider()
+            Button("Remove from Newspaper", role: .destructive) {
+                NewspaperStore(modelContext: modelContext).remove(article)
+            }
+        }
+    }
+
+    private func statusSymbol(_ article: NewspaperArticle) -> String {
+        if article.isRead { return "checkmark.circle.fill" }
+        switch article.captureState {
+        case .capturing: return "arrow.down.circle.dotted"
+        case .failed: return "exclamationmark.triangle.fill"
+        case .deferred: return "text.badge.plus"
+        case .ready: return article.priority == .next ? "arrow.up.to.line.circle.fill" : "doc.text.fill"
+        }
+    }
+
+    private func statusTint(_ article: NewspaperArticle) -> Color {
+        if article.isRead { return .green }
+        switch article.captureState {
+        case .capturing: return .blue
+        case .failed: return .orange
+        case .deferred: return .secondary
+        case .ready: return article.priority == .next ? .pink : .brown
+        }
     }
 }

@@ -2761,6 +2761,20 @@ struct ContentView: View {
                 tabManager.settleCapture = settle
                 tabManager.activeWorkspaceId = TabManager.restoredActiveWorkspaceId()
 
+                // Newspaper seed + one-a-day pick; re-checked whenever the app
+                // comes back to the front so a long-running session still gets
+                // tomorrow's article.
+                NewspaperAutoFeed.runIfNeeded(modelContext: modelContext)
+                NotificationCenter.default.addObserver(
+                    forName: NSApplication.didBecomeActiveNotification,
+                    object: nil,
+                    queue: .main
+                ) { _ in
+                    MainActor.assumeIsolated {
+                        NewspaperAutoFeed.runIfNeeded(modelContext: modelContext)
+                    }
+                }
+
                 // Phase 2: documents, anchors, transcripts.
                 let docStore = DocumentStore(modelContext: modelContext, ledgerStore: store)
                 documentStore = docStore
@@ -4044,28 +4058,13 @@ struct ContentView: View {
         )
         playNewspaperSaveFlight()
 
-        // Render off-screen in the source's exact cookie/container context. It
-        // never becomes a user tab or a synced tab record.
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = sourceWebView.configuration.websiteDataStore
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        let captureWebView = WKWebView(frame: .zero, configuration: configuration)
-        captureWebView.loadURL(url)
-        NewspaperCaptureCoordinator.capture(
+        // Render off-screen in the source's exact cookie/container context.
+        NewspaperBackgroundCapture.capture(
             result.article,
-            from: captureWebView,
-            expectedURL: url,
-            store: store
+            url: url,
+            store: store,
+            dataStore: sourceWebView.configuration.websiteDataStore
         )
-        Task { @MainActor in
-            for _ in 0..<240 {
-                guard result.article.captureState == .capturing else { break }
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-            // Retaining the local through this task keeps the off-screen page
-            // alive until capture has either completed or timed out.
-            _ = captureWebView.url
-        }
     }
 
     private func playNewspaperSaveFlight() {

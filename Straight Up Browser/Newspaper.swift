@@ -1,7 +1,13 @@
 import Foundation
 import CryptoKit
 import SwiftData
+import SwiftUI
 import WebKit
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 
 #if canImport(FoundationModels)
 import FoundationModels
@@ -177,6 +183,14 @@ enum NewspaperPreferences {
         static let targetWordCount = "newspaperTargetWordCount"
         static let targetCharacterCount = "newspaperTargetCharacterCount"
         static let defaultSection = "newspaperDefaultSection"
+        static let fontFamily = "newspaperFontFamily"
+        static let seededCount = "newspaperSeededCount"
+        static let lastAutoAddDay = "newspaperLastAutoAddDay"
+    }
+
+    /// Empty means the system serif face (New York).
+    static var fontFamily: String {
+        UserDefaults.standard.string(forKey: Key.fontFamily) ?? ""
     }
 
     static let defaultLayout = NewspaperLayout.broadsheet.rawValue
@@ -230,6 +244,168 @@ enum NewspaperWorkIdentity {
         let generated = UUID().uuidString.lowercased()
         UserDefaults.standard.set(generated, forKey: key)
         return generated
+    }
+}
+
+/// One place that turns the font preference into SwiftUI fonts, so the issue
+/// cards, the article page, and the settings preview all agree.
+enum NewspaperTypography {
+    struct Choice: Identifiable, Hashable {
+        let family: String   // "" = system serif
+        let title: String
+        var id: String { family }
+    }
+
+    static let systemSerif = Choice(family: "", title: String(localized: "New York (System Serif)"))
+
+    /// A short, opinionated list first; the full installed list follows.
+    static let suggested: [Choice] = [systemSerif] + [
+        "Georgia", "Charter", "Iowan Old Style", "Palatino", "Baskerville",
+        "Times New Roman", "Hoefler Text", "Athelas", "Seravek",
+        "Helvetica Neue", "Avenir Next", "Optima"
+    ].map { Choice(family: $0, title: $0) }
+
+    static var installedFamilies: [String] {
+        #if os(macOS)
+        let names = NSFontManager.shared.availableFontFamilies
+        #else
+        let names = UIFont.familyNames
+        #endif
+        return names
+            .filter { !$0.hasPrefix(".") }
+        .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    static func font(_ family: String = NewspaperPreferences.fontFamily, size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        family.isEmpty
+            ? .system(size: size, weight: weight, design: .serif)
+            : .custom(family, size: size).weight(weight)
+    }
+}
+
+/// Curated evergreen, freely readable pages. The first few seed a fresh
+/// newspaper; the rest feed one-a-day when the reader adds nothing themselves.
+/// ponytail: static list, no ranking; a bigger pool or Apple Intelligence
+/// picking by reading history is the upgrade path once this runs dry.
+nonisolated enum NewspaperSeedCatalog {
+    struct Entry: Sendable {
+        let url: URL
+        let title: String
+        let section: String
+    }
+
+    static let initialCount = 5
+
+    static let entries: [Entry] = [
+        Entry(url: URL(string: "https://paulgraham.com/greatwork.html")!,
+              title: "How to Do Great Work", section: "Ideas"),
+        Entry(url: URL(string: "https://en.wikipedia.org/wiki/Voyager_Golden_Record")!,
+              title: "Voyager Golden Record", section: "Science"),
+        Entry(url: URL(string: "https://en.wikipedia.org/wiki/Antikythera_mechanism")!,
+              title: "Antikythera mechanism", section: "Technology"),
+        Entry(url: URL(string: "https://waitbutwhy.com/2014/05/fermi-paradox.html")!,
+              title: "The Fermi Paradox", section: "Science"),
+        Entry(url: URL(string: "https://en.wikipedia.org/wiki/Ada_Lovelace")!,
+              title: "Ada Lovelace", section: "Culture"),
+        Entry(url: URL(string: "https://paulgraham.com/ds.html")!,
+              title: "Do Things that Don't Scale", section: "Ideas"),
+        Entry(url: URL(string: "https://www.joelonsoftware.com/2000/04/06/things-you-should-never-do-part-i/")!,
+              title: "Things You Should Never Do, Part I", section: "Technology"),
+        Entry(url: URL(string: "https://en.wikipedia.org/wiki/Great_Molasses_Flood")!,
+              title: "Great Molasses Flood", section: "World"),
+        Entry(url: URL(string: "https://en.wikipedia.org/wiki/Library_of_Alexandria")!,
+              title: "Library of Alexandria", section: "Culture"),
+        Entry(url: URL(string: "https://jvns.ca/blog/2022/12/21/some-ways-to-get-better-at-debugging/")!,
+              title: "Some ways to get better at debugging", section: "Technology"),
+        Entry(url: URL(string: "https://en.wikipedia.org/wiki/Rosetta_Stone")!,
+              title: "Rosetta Stone", section: "World"),
+        Entry(url: URL(string: "https://paulgraham.com/think.html")!,
+              title: "How to Think for Yourself", section: "Ideas"),
+        Entry(url: URL(string: "https://en.wikipedia.org/wiki/Apollo_11")!,
+              title: "Apollo 11", section: "Science"),
+        Entry(url: URL(string: "https://en.wikipedia.org/wiki/Gutenberg_Bible")!,
+              title: "Gutenberg Bible", section: "Culture"),
+        Entry(url: URL(string: "https://waitbutwhy.com/2015/12/the-tail-end.html")!,
+              title: "The Tail End", section: "Life"),
+        Entry(url: URL(string: "https://en.wikipedia.org/wiki/Mariana_Trench")!,
+              title: "Mariana Trench", section: "Science"),
+        Entry(url: URL(string: "https://en.wikipedia.org/wiki/Silk_Road")!,
+              title: "Silk Road", section: "World"),
+        Entry(url: URL(string: "https://paulgraham.com/smart.html")!,
+              title: "Beyond Smart", section: "Ideas"),
+        Entry(url: URL(string: "https://en.wikipedia.org/wiki/Hubble_Space_Telescope")!,
+              title: "Hubble Space Telescope", section: "Science"),
+        Entry(url: URL(string: "https://en.wikipedia.org/wiki/Bauhaus")!,
+              title: "Bauhaus", section: "Culture")
+    ]
+
+    /// Pure planning step: how many catalog entries to add now.
+    /// - seeded: entries already taken from the catalog
+    /// - isEmpty: the newspaper has no articles at all
+    /// - addedToday: any article was added on `today`
+    /// - lastAutoAddDay / today: "yyyy-MM-dd" day stamps
+    static func plan(seeded: Int, isEmpty: Bool, addedToday: Bool, lastAutoAddDay: String?, today: String) -> Range<Int> {
+        let remaining = entries.count - seeded
+        guard remaining > 0 else { return seeded..<seeded }
+        if seeded == 0, isEmpty { return 0..<min(initialCount, remaining) }
+        if !addedToday, lastAutoAddDay != today { return seeded..<(seeded + 1) }
+        return seeded..<seeded
+    }
+}
+
+/// Renders a page off-screen and runs the normal capture path. Never becomes a
+/// user tab or a synced tab record.
+@MainActor
+enum NewspaperBackgroundCapture {
+    static func capture(
+        _ article: NewspaperArticle,
+        url: URL,
+        store: NewspaperStore,
+        dataStore: WKWebsiteDataStore = .default()
+    ) {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = dataStore
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        let captureWebView = WKWebView(frame: .zero, configuration: configuration)
+        captureWebView.loadURL(url)
+        NewspaperCaptureCoordinator.capture(article, from: captureWebView, expectedURL: url, store: store)
+        Task { @MainActor in
+            for _ in 0..<240 {
+                guard article.captureState == .capturing else { break }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            // Retaining the local through this task keeps the off-screen page
+            // alive until capture has either completed or timed out.
+            _ = captureWebView.url
+        }
+    }
+}
+
+@MainActor
+enum NewspaperAutoFeed {
+    /// Idempotent per day. Seeds a brand-new newspaper, then adds one catalog
+    /// article on any day the reader uses the browser without adding their own.
+    static func runIfNeeded(modelContext: ModelContext, now: Date = Date()) {
+        guard !ProcessInfo.processInfo.arguments.contains("-uiTesting"),
+              ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+        let defaults = UserDefaults.standard
+        let today = now.formatted(.iso8601.year().month().day())
+        let articles = (try? modelContext.fetch(FetchDescriptor<NewspaperArticle>())) ?? []
+        let range = NewspaperSeedCatalog.plan(
+            seeded: defaults.integer(forKey: NewspaperPreferences.Key.seededCount),
+            isEmpty: articles.isEmpty,
+            addedToday: articles.contains { Calendar.current.isDate($0.addedAt, inSameDayAs: now) },
+            lastAutoAddDay: defaults.string(forKey: NewspaperPreferences.Key.lastAutoAddDay),
+            today: today
+        )
+        guard !range.isEmpty else { return }
+        let store = NewspaperStore(modelContext: modelContext)
+        for entry in NewspaperSeedCatalog.entries[range] {
+            let result = store.enqueue(url: entry.url, title: entry.title, section: entry.section)
+            NewspaperBackgroundCapture.capture(result.article, url: entry.url, store: store)
+        }
+        defaults.set(range.upperBound, forKey: NewspaperPreferences.Key.seededCount)
+        defaults.set(today, forKey: NewspaperPreferences.Key.lastAutoAddDay)
     }
 }
 

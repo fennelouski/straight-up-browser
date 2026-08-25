@@ -375,6 +375,31 @@ struct NewspaperStoreTests {
     }
 }
 
+struct NewspaperSeedCatalogTests {
+    @Test func freshNewspaperSeedsFiveThenOnePerQuietDay() {
+        let plan = NewspaperSeedCatalog.plan
+        // Empty store, never seeded: the starter batch.
+        #expect(plan(0, true, false, nil, "2026-08-25") == 0..<5)
+        // Same day, already seeded: nothing more.
+        #expect(plan(5, false, true, "2026-08-25", "2026-08-25").isEmpty)
+        // New day, reader added nothing: exactly one.
+        #expect(plan(5, false, false, "2026-08-25", "2026-08-26") == 5..<6)
+        // New day, reader added their own: nothing.
+        #expect(plan(6, false, true, "2026-08-26", "2026-08-27").isEmpty)
+        // Catalog exhausted: nothing, never out of bounds.
+        let total = NewspaperSeedCatalog.entries.count
+        #expect(plan(total, false, false, nil, "2026-09-01").isEmpty)
+        // Store the user emptied on purpose is not re-seeded.
+        #expect(plan(5, true, false, "2026-08-25", "2026-08-25").isEmpty)
+    }
+
+    @Test func catalogEntriesHaveUniqueSourceKeys() {
+        let keys = NewspaperSeedCatalog.entries.map { NewspaperStore.sourceKey(for: $0.url) }
+        #expect(Set(keys).count == keys.count)
+        #expect(keys.count > NewspaperSeedCatalog.initialCount)
+    }
+}
+
 struct NewspaperURLNormalizationTests {
     @Test func sourceKeyRemovesFragmentsWithoutDiscardingTheQuery() {
         let first = URL(string: "HTTPS://Example.COM/story?edition=morning#opening")!
