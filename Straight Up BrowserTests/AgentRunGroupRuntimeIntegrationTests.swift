@@ -520,7 +520,7 @@ struct BrowserAgentRunGroupEndToEndTests {
         // suite or TSan — which is exactly when it was observed failing here on
         // `pendingApproval` still being nil. Matches waitForAgent's 20s wait.
         let approvalClock = ContinuousClock()
-        let approvalDeadline = approvalClock.now.advanced(by: .seconds(20))
+        let approvalDeadline = approvalClock.now.advanced(by: .seconds(120))
         while agent.pendingApproval == nil, approvalClock.now < approvalDeadline {
             try? await Task.sleep(for: .milliseconds(10))
         }
@@ -633,7 +633,9 @@ struct BrowserAgentRunGroupEndToEndTests {
         approvingPendingInvocations: Bool = false
     ) async {
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(20))
+        // 120s, not 20: parallel full-suite runs starve the main actor and a
+        // healthy run was observed needing >20s of wall clock there.
+        let deadline = clock.now.advanced(by: .seconds(120))
         while agent.isRunning, clock.now < deadline {
             if approvingPendingInvocations, agent.pendingApproval != nil {
                 agent.approvePendingInvocation(scope: .allowOnce)

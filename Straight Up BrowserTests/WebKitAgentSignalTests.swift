@@ -320,7 +320,9 @@ struct WebKitAgentSignalTests {
             scope: scope,
             condition: .dialog(.confirm),
             afterSequence: 0,
-            maximumTimeout: .seconds(1)
+            // The events are published below, so this only fires under load:
+            // parallel full-suite runs starve the main actor and 1s flakes.
+            maximumTimeout: .seconds(30)
         )
         let waiting = Task { try await waiter.wait(for: request) }
         await waitForSubscription(on: hub)
@@ -352,7 +354,7 @@ struct WebKitAgentSignalTests {
         let closeRequest = try WebKitAgentSignalWaitRequest(
             scope: scope,
             condition: .pageLifecycle(.closed),
-            maximumTimeout: .seconds(1)
+            maximumTimeout: .seconds(30)
         )
         let closeWait = Task { try await waiter.wait(for: closeRequest) }
         await waitForSubscription(on: hub)

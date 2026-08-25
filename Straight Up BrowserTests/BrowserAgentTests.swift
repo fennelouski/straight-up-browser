@@ -6,6 +6,22 @@ import Testing
 
 @MainActor
 struct BrowserAgentTests {
+    // Parallel full-suite runs contend for the main actor (the whole target
+    // defaults to MainActor isolation), so the agent loop can run an order of
+    // magnitude slower than in serial or isolated runs. Fixed spin counts sized
+    // to serial timing made these tests fail every parallel run; wait on
+    // wall-clock with a deadline far beyond any healthy run instead.
+    private func waitWhile(
+        upTo deadline: Duration = .seconds(120),
+        _ condition: () -> Bool
+    ) async throws {
+        let clock = ContinuousClock()
+        let start = clock.now
+        while condition(), clock.now - start < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
     @Test func assistantMarkdownRendererPreservesFormattingAndLinks() {
         let rendered = AgentMarkdownRenderer.attributedString(
             from: "A **useful** answer with [details](https://example.com) and `code`."
@@ -206,9 +222,7 @@ struct BrowserAgentTests {
                 )
             }
         )
-        for _ in 0..<2_400 where agent.isRunning {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await waitWhile { agent.isRunning }
 
         #expect(adapter.recordedRequests().count == 4)
         let researchToolNames = await recorder.toolNames
@@ -250,9 +264,7 @@ struct BrowserAgentTests {
                 await recorder.recordAndReturnPage(tool: tool)
             }
         )
-        for _ in 0..<800 where agent.isRunning {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await waitWhile { agent.isRunning }
 
         #expect(adapter.recordedRequests().count == 3)
         #expect(await recorder.toolNames == ["new_page", "new_page"])
@@ -319,9 +331,7 @@ struct BrowserAgentTests {
                 configuration: fixtureConfiguration(),
                 execute: { _, _, _, _ in "{}" }
             )
-            for _ in 0..<200 where agent.isRunning {
-                try await Task.sleep(for: .milliseconds(10))
-            }
+            try await waitWhile { agent.isRunning }
         }
 
         let requests = recorder.recordedRequests()
@@ -534,9 +544,7 @@ struct BrowserAgentTests {
             ),
             execute: { _, _, _, _ in "{\"ok\":true}" }
         )
-        for _ in 0..<100 where agent.isRunning {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await waitWhile { agent.isRunning }
 
         #expect(!agent.isRunning)
         #expect(agent.messages.map(\.role) == [.user, .error])
@@ -610,9 +618,7 @@ struct BrowserAgentTests {
             ).safeMetadata,
             execute: { _, _, _, _ in "{}" }
         )
-        for _ in 0..<600 where agent.isRunning {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await waitWhile { agent.isRunning }
 
         #expect(agent.messages.last?.role == .assistant)
         #expect(agent.messages.last?.text == "Hello")
@@ -663,9 +669,7 @@ struct BrowserAgentTests {
             incognito: true,
             execute: { _, _, _, _ in "{}" }
         )
-        for _ in 0..<200 where agent.isRunning {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await waitWhile { agent.isRunning }
 
         #expect(!agent.isRunning)
         #expect(agent.messages.first?.text == promptMarker)
@@ -731,14 +735,9 @@ struct BrowserAgentTests {
                 return "{}"
             }
         )
-        for _ in 0..<200 {
-            if agent.messages.last?.text == "Working" { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await waitWhile { agent.messages.last?.text != "Working" }
         agent.cancel()
-        for _ in 0..<200 where agent.isRunning {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await waitWhile { agent.isRunning }
 
         let executionCount = await counter.count
         let finalStatus = await store.listRuns().first?.status
