@@ -1357,7 +1357,7 @@ struct NewspaperSettingsView: View {
 
     var body: some View {
         Form {
-            Section {
+            CollapsibleSection {
                 Picker("Layout", selection: $layout) {
                     ForEach(NewspaperLayout.allCases) { layout in
                         Label(layout.title, systemImage: layout.systemImage)
@@ -1381,7 +1381,7 @@ struct NewspaperSettingsView: View {
                 Text("Ink and Broadsheet stay image-free. Magazine and Shelf honor the photo limit; every article can reveal the rest on demand.")
             }
 
-            Section {
+            CollapsibleSection {
                 Toggle("Shorten long articles on device", isOn: $condenseArticles)
                 if condenseArticles {
                     Picker("Limit by", selection: $lengthUnit) {
@@ -1413,7 +1413,7 @@ struct NewspaperSettingsView: View {
                 Text("The original is always kept. Shortening uses Apple Intelligence on device when available, preserves the article's voice, and never gives the article tools or authority. You can switch back to the saved full text at any time.")
             }
 
-            Section {
+            CollapsibleSection {
                 TextField("Default section (Front Page)", text: $defaultSection)
             } header: {
                 Text("Filing")
@@ -1421,7 +1421,7 @@ struct NewspaperSettingsView: View {
                 Text("A publisher's section takes precedence when the page provides one. You can move any saved article later.")
             }
 
-            Section {
+            CollapsibleSection {
                 Label("Readable text is retained for offline use", systemImage: "arrow.down.doc")
                 Label("Remote photos are loaded only when shown", systemImage: "photo")
                 Label("Newspaper follows the main browser-data sync switch", systemImage: "icloud")

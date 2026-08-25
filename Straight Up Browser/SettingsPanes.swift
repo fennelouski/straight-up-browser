@@ -47,7 +47,7 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         Form {
-            Section {
+            CollapsibleSection {
                 Toggle("Sync browser data across your devices", isOn: $tabSyncEnabled)
                     .disabled(iCloudAvailable != true && !tabSyncEnabled)
                 if tabSyncEnabled {
@@ -92,7 +92,7 @@ struct GeneralSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            Section {
+            CollapsibleSection {
                 Toggle("Fast Forward searches", isOn: $fastForwardEnabled)
                 SettingCaptionRow(
                     caption: "A search that means a destination opens it beside the results.",
@@ -107,7 +107,7 @@ struct GeneralSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            Section {
+            CollapsibleSection {
                 Toggle("Show a mitosis animation in the sidebar", isOn: $automaticLinkMitosis)
                 Toggle("Open the new tab beside its source", isOn: $automaticLinkSplit)
             } header: {
@@ -117,7 +117,7 @@ struct GeneralSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            Section {
+            CollapsibleSection {
                 Picker("Anchor links open", selection: $anchorLinkOpenBehavior) {
                     Text("Peek first, then open beside the document").tag("peek")
                     Text("Beside the document").tag("split")
@@ -130,7 +130,7 @@ struct GeneralSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            Section {
+            CollapsibleSection {
                 Toggle("Start loading before you press Return", isOn: $prefetchEnabled)
             } header: {
                 SettingsLabel("Head Start", systemImage: "bolt.horizontal", tint: SettingsTint.general)
@@ -139,7 +139,7 @@ struct GeneralSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            Section {
+            CollapsibleSection {
                 Toggle("Learn what you call your sites", isOn: $siteNicknamesUseAI)
             } header: {
                 SettingsLabel("Site Nicknames", systemImage: "text.magnifyingglass", tint: SettingsTint.general)
@@ -148,7 +148,7 @@ struct GeneralSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            Section {
+            CollapsibleSection {
                 Picker("Default search engine", selection: $searchEngine) {
                     ForEach(searchEngines, id: \.self) { Text($0) }
                 }
@@ -195,7 +195,7 @@ struct GeneralSettingsView: View {
                 SettingsLabel("Search", systemImage: "magnifyingglass", tint: SettingsTint.general)
             }
 
-            Section {
+            CollapsibleSection {
                 LabeledContent("Spacebar scrolls") {
                     HStack {
                         Slider(value: $spaceScrollPercent, in: 10...100, step: 5).frame(width: 180)
@@ -259,7 +259,7 @@ struct GeneralSettingsView: View {
                 SettingsLabel("Behavior", systemImage: "slider.horizontal.3", tint: SettingsTint.general)
             }
 
-            Section {
+            CollapsibleSection {
                 LabeledContent("Hold ⌘Q to quit") {
                     HStack {
                         Text("Quick").font(.caption).foregroundStyle(.secondary)
@@ -289,13 +289,18 @@ struct GeneralSettingsView: View {
 struct ShortcutsSettingsView: View {
     private var store: ShortcutStore { .shared }
     @AppStorage(SettingsManager.recentTabCyclingKey) private var recentTabCycling = false
+    @State private var searchText = ""
+
+    private func matches(_ command: ShortcutCommand) -> Bool {
+        searchText.isEmpty || command.title.localizedCaseInsensitiveContains(searchText)
+    }
 
     var body: some View {
         // Commands sharing a chord get flagged; nothing collides by default, so
         // a warning only appears once the user creates the overlap.
         let conflictIDs = Set(store.conflicts().map(\.id))
         Form {
-            Section {
+            CollapsibleSection {
                 HStack(alignment: .top) {
                     Text("Click a shortcut and press the new keys. Esc cancels. Shortcuts need a modifier — ⌘, ⌥, ⌃, or ⇧.")
                         .font(.caption)
@@ -315,7 +320,7 @@ struct ShortcutsSettingsView: View {
                 SettingsLabel("Keyboard Shortcuts", systemImage: "keyboard", tint: SettingsTint.shortcuts)
             }
 
-            Section {
+            CollapsibleSection {
                 Toggle("⌃Tab cycles tabs in the order you used them", isOn: $recentTabCycling)
                 Text("Off, ⌃Tab steps down the sidebar. On, it works like ⌘Tab between apps: the tab you're on is first, the one you came from is second, and letting go of Control puts whatever you landed on back at the front.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -323,19 +328,25 @@ struct ShortcutsSettingsView: View {
                 SettingsLabel("Tab Switching", systemImage: "arrow.left.arrow.right", tint: SettingsTint.shortcuts)
             }
 
-            WebsiteShortcutPriorityView()
+            if searchText.isEmpty {
+                WebsiteShortcutPriorityView()
+            }
 
             ForEach(ShortcutSection.allCases, id: \.self) { section in
-                Section {
-                    ForEach(ShortcutCommand.availableOnCurrentPlatform.filter { $0.section == section }) { command in
-                        shortcutRow(command, conflicting: conflictIDs.contains(command.id))
+                let commands = ShortcutCommand.availableOnCurrentPlatform.filter { $0.section == section && matches($0) }
+                if !commands.isEmpty {
+                    CollapsibleSection {
+                        ForEach(commands) { command in
+                            shortcutRow(command, conflicting: conflictIDs.contains(command.id))
+                        }
+                    } header: {
+                        Text(section.title)
                     }
-                } header: {
-                    Text(section.title)
                 }
             }
         }
         .formStyle(.grouped)
+        .searchable(text: $searchText, prompt: Text("Filter Shortcuts"))
     }
 
     private func shortcutRow(_ command: ShortcutCommand, conflicting: Bool) -> some View {
@@ -376,7 +387,7 @@ struct WebsiteShortcutPriorityView: View {
     @State private var pendingHost: String?
 
     var body: some View {
-        Section {
+        CollapsibleSection {
             Picker("These settings apply to", selection: $host) {
                 Text("All sites").tag(String?.none)
                 ForEach(hosts, id: \.self) { host in
@@ -534,7 +545,7 @@ struct ContentSettingsView: View {
 
     var body: some View {
         Form {
-            Section {
+            CollapsibleSection {
                 Toggle("Enable JavaScript", isOn: $javaScriptEnabled)
                     .onChange(of: javaScriptEnabled) { _, _ in
                         NotificationCenter.default.post(name: .javaScriptChanged, object: nil)
@@ -549,7 +560,7 @@ struct ContentSettingsView: View {
                 SettingsLabel("Web Content", systemImage: "curlybraces", tint: SettingsTint.content)
             }
 
-            Section {
+            CollapsibleSection {
                 Toggle("Pinch to zoom", isOn: $pinchToZoomEnabled)
                 SettingCaptionRow(
                     caption: "Trackpad pinch and two-finger double-tap zoom the page. ⌘0 resets it.",
@@ -561,7 +572,7 @@ struct ContentSettingsView: View {
                 SettingsLabel("Zoom", systemImage: "plus.magnifyingglass", tint: SettingsTint.content)
             }
 
-            Section {
+            CollapsibleSection {
                 Toggle("Auto-translate pages", isOn: $autoTranslateEnabled)
                 LabeledContent("Languages you read") {
                     TokenField(text: $translationPreferredLanguages, placeholder: "en  es  fr")
@@ -590,7 +601,7 @@ struct DownloadsSettingsView: View {
 
     var body: some View {
         Form {
-            Section {
+            CollapsibleSection {
                 Toggle("Option-click downloads images", isOn: $optionClickDownloadEnabled)
 
                 if optionClickDownloadEnabled {
@@ -617,7 +628,7 @@ struct DownloadsSettingsView: View {
                 SettingsLabel("Option-Click Image Downloads", systemImage: "arrow.down.circle", tint: SettingsTint.downloads)
             }
 
-            Section {
+            CollapsibleSection {
                 LabeledContent("Folder") {
                     HStack {
                         TextField("System Downloads folder", text: $downloadsFolder)
@@ -865,7 +876,7 @@ struct ScreenshotsSettingsView: View {
 
     var body: some View {
         Form {
-            Section {
+            CollapsibleSection {
                 LabeledContent("Shared folder") {
                     HStack {
                         TextField("~/Pictures/Browser Screenshots", text: $sharedFolder)
@@ -1151,7 +1162,7 @@ struct AppearanceSettingsView: View {
 
     var body: some View {
         Form {
-            Section {
+            CollapsibleSection {
                 Picker("Tab sidebar side", selection: $tabSidebarSideRaw) {
                     ForEach(BrowserChromeSide.allCases) { side in
                         Label(side.title, systemImage: side.systemImage).tag(side.rawValue)
@@ -1197,7 +1208,7 @@ struct AppearanceSettingsView: View {
             }
 
             #if os(macOS)
-                Section {
+                CollapsibleSection {
                     Picker("Open Developer Tools", selection: $developerToolsPlacementRaw) {
                         ForEach(DeveloperToolsPlacement.allCases) { placement in
                             Label(placement.title, systemImage: placement.symbol).tag(placement.rawValue)
@@ -1210,7 +1221,7 @@ struct AppearanceSettingsView: View {
                 }
             #endif
 
-            Section {
+            CollapsibleSection {
                 Toggle("Place the window on launch", isOn: $launchLayoutEnabled)
                 Picker("Width", selection: $launchLayoutWidth) {
                     ForEach(WindowLayout.widths, id: \.id) { Text($0.label).tag($0.id) }
@@ -1232,7 +1243,7 @@ struct AppearanceSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            Section {
+            CollapsibleSection {
                 Picker("Theme", selection: $theme) {
                     ForEach(themes, id: \.self) { Text($0) }
                 }
@@ -1248,7 +1259,7 @@ struct AppearanceSettingsView: View {
             }
 
             if aiFeaturesEnabled {
-                Section {
+                CollapsibleSection {
                     ColorPicker("Effect color", selection: aiSearchEffectColorBinding, supportsOpacity: false)
                         .onDisappear { NSColorPanel.shared.close() }
                     Text("Used for the sparkles when AI Search is enabled. Defaults to the app logo blue.")
@@ -1259,7 +1270,7 @@ struct AppearanceSettingsView: View {
                 }
             }
 
-            Section {
+            CollapsibleSection {
                 Text("Show the loading progress bar on these window edges:")
                     .font(.callout)
                 HStack(spacing: 16) {
@@ -1281,7 +1292,7 @@ struct AppearanceSettingsView: View {
                 SettingsLabel("Loading Progress", systemImage: "arrow.triangle.2.circlepath", tint: SettingsTint.appearance)
             }
 
-            Section {
+            CollapsibleSection {
                 Toggle("Fade pages in once they've drawn", isOn: $fadeInPages)
                 if fadeInPages {
                     LabeledContent("Fade length") {
@@ -1301,7 +1312,7 @@ struct AppearanceSettingsView: View {
                 SettingsLabel("Page Fade", systemImage: "circle.lefthalf.filled", tint: SettingsTint.appearance)
             }
 
-            Section {
+            CollapsibleSection {
                 LabeledContent("Max page brightness") {
                     HStack {
                         Slider(value: $pageWhitePoint, in: whitePointRange, step: 5).frame(width: 180)
@@ -1320,7 +1331,7 @@ struct AppearanceSettingsView: View {
                 SettingsLabel("White Point", systemImage: "sun.max", tint: SettingsTint.appearance)
             }
 
-            Section {
+            CollapsibleSection {
                 LabeledContent("Black level") {
                     HStack {
                         Slider(value: $pageBlackPoint, in: blackPointRange, step: 1).frame(width: 180)
@@ -1338,7 +1349,7 @@ struct AppearanceSettingsView: View {
                 SettingsLabel("Black Point", systemImage: "circle.righthalf.filled", tint: SettingsTint.appearance)
             }
 
-            Section {
+            CollapsibleSection {
                 Picker("Apply", selection: $toneScheduleMode) {
                     Text("Always").tag("always")
                     Text("Between set times").tag("fixed")
@@ -1435,7 +1446,7 @@ struct SecuritySettingsView: View {
 
     var body: some View {
         Form {
-            Section {
+            CollapsibleSection {
                 Toggle("Refuse invalid certificates (strict SSL)", isOn: $sslStrictMode)
                 SettingCaptionRow(
                     caption: "When off, you're asked whether to proceed on certificate errors.",
@@ -1447,7 +1458,7 @@ struct SecuritySettingsView: View {
                 SettingsLabel("SSL / TLS", systemImage: "lock.shield", tint: SettingsTint.security)
             }
 
-            Section {
+            CollapsibleSection {
                 Toggle("Block ads and trackers", isOn: $adBlockEnabled)
                     .onChange(of: adBlockEnabled) { _, _ in
                         NotificationCenter.default.post(name: .adBlockChanged, object: nil)
@@ -1462,7 +1473,7 @@ struct SecuritySettingsView: View {
                 SettingsLabel("Ad Blocking", systemImage: "shield.lefthalf.filled", tint: SettingsTint.security)
             }
 
-            Section {
+            CollapsibleSection {
                 Toggle("Enable agent automation (CLI & MCP)", isOn: $cliAutomationEnabled)
                 Toggle("Allow tab and page reading", isOn: $cliPageReadEnabled)
                     .disabled(!cliAutomationEnabled)
@@ -1482,7 +1493,7 @@ struct SecuritySettingsView: View {
                 SettingsLabel("Agent Automation", systemImage: "cpu", tint: SettingsTint.security)
             }
 
-            Section {
+            CollapsibleSection {
                 HStack {
                     Button(copiedMCPConfiguration ? "Copied" : "Copy MCP Configuration") {
                         NSPasteboard.general.clearContents()
@@ -1543,7 +1554,7 @@ struct MemorySettingsView: View {
 
     var body: some View {
         Form {
-            Section {
+            CollapsibleSection {
                 Toggle("Enable memory saving", isOn: $memorySaverEnabled)
                 SettingCaptionRow(
                     caption: "Release idle background tabs from RAM when your Mac runs low.",
@@ -1562,7 +1573,7 @@ struct MemorySettingsView: View {
                 SettingsLabel("Memory Saving", systemImage: "memorychip", tint: SettingsTint.memory)
             }
 
-            Section {
+            CollapsibleSection {
                 if pinnedHosts.isEmpty {
                     Text("No pinned sites.")
                         .font(.callout)
@@ -1600,7 +1611,7 @@ struct MemorySettingsView: View {
                 SettingsLabel("Never Release These Sites", systemImage: "pin", tint: SettingsTint.memory)
             }
 
-            Section {
+            CollapsibleSection {
                 if tabs.isEmpty {
                     Text("No open tabs.")
                         .font(.callout)
@@ -1679,7 +1690,7 @@ struct PrivacySettingsView: View {
 
     var body: some View {
         Form {
-            Section {
+            CollapsibleSection {
                 Toggle("Switch a tab to incognito with a key command", isOn: $convertToIncognitoEnabled)
             } header: {
                 SettingsLabel("Incognito", systemImage: "eyeglasses", tint: SettingsTint.privacy)
@@ -1689,7 +1700,7 @@ struct PrivacySettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section {
+            CollapsibleSection {
                 if signedInGroups.isEmpty {
                     Text("No sites appear to be signed in.")
                         .foregroundStyle(.secondary)
@@ -1733,7 +1744,7 @@ struct PrivacySettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section {
+            CollapsibleSection {
                 if permissionStore.records.isEmpty {
                     Text("No saved site permissions.")
                         .foregroundStyle(.secondary)
@@ -1776,7 +1787,7 @@ struct PrivacySettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section {
+            CollapsibleSection {
                 Button("Clear browsing data…") { showClearDataDialog = true }
                     .sheet(isPresented: $showClearDataDialog) {
                         ClearDataDialog(

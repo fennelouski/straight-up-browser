@@ -304,7 +304,7 @@ struct AgentSettingsView: View {
     // would be no way back. On-device Apple Intelligence has no UI of its own
     // and keeps its own toggles in General and Appearance.
     private var availabilitySection: some View {
-        Section {
+        CollapsibleSection {
             Toggle("Show AI features", isOn: $aiFeaturesEnabled)
             Text("Off hides the Agent panel, its ⇧⌘A shortcut and keyboard-shortcut entry, AI Search, and every other AI affordance in the app. Nothing is deleted — your provider, keys, and history are still here when you switch it back on. Apple Intelligence features that run on your Mac (visual tab names, site nicknames) have no interface of their own and are switched separately.")
                 .font(.caption)
@@ -315,7 +315,7 @@ struct AgentSettingsView: View {
     }
 
     private var interfaceSection: some View {
-        Section {
+        CollapsibleSection {
             Picker("Panel side", selection: $panelSideRaw) {
                 ForEach(BrowserChromeSide.allCases) { side in
                     Label(side.title, systemImage: side.systemImage).tag(side.rawValue)
@@ -336,7 +336,7 @@ struct AgentSettingsView: View {
     }
 
     private var providerSection: some View {
-        Section {
+        CollapsibleSection {
             Picker("Provider", selection: $providerRaw) {
                 ForEach(BrowserAgentProvider.allCases) { provider in
                     Text(provider.rawValue).tag(provider.rawValue)
@@ -383,7 +383,7 @@ struct AgentSettingsView: View {
     }
 
     private var providerPricingSection: some View {
-        Section {
+        CollapsibleSection {
             LabeledContent("Pricing applies to") {
                 Text(
                     pricingProviderID.isEmpty || pricingModel.isEmpty
@@ -437,7 +437,7 @@ struct AgentSettingsView: View {
     }
 
     private var coworkSection: some View {
-        Section {
+        CollapsibleSection {
             LabeledContent("Folder") {
                 Text(workspace.rootURL?.path ?? "Not selected")
                     .font(.caption.monospaced())
@@ -468,7 +468,7 @@ struct AgentSettingsView: View {
     }
 
     private var managementSection: some View {
-        Section {
+        CollapsibleSection {
             Picker("Run history retention", selection: $runHistoryRetention) {
                 Text("Do not retain").tag(AgentRetentionPolicy.never.rawValue)
                 Text("24 hours").tag(AgentRetentionPolicy.hours24.rawValue)
@@ -529,7 +529,7 @@ struct AgentSettingsView: View {
     }
 
     private var safetySection: some View {
-        Section {
+        CollapsibleSection {
             LabeledContent("Effect approvals") {
                 Text("Risk-scoped per run")
                     .foregroundStyle(.secondary)
@@ -617,7 +617,7 @@ struct AgentSettingsView: View {
     }
 
     private var delegationSection: some View {
-        Section {
+        CollapsibleSection {
             LabeledContent("Authority") {
                 Text("Least-privilege subsets")
                     .foregroundStyle(.secondary)
@@ -641,7 +641,7 @@ struct AgentSettingsView: View {
     }
 
     private var memorySection: some View {
-        Section {
+        CollapsibleSection {
             Toggle("Use scoped memory in agent runs", isOn: $agentMemoryEnabled)
             Toggle("Allow proposals for sensitive memory", isOn: $allowSensitiveMemoryProposals)
                 .disabled(!agentMemoryEnabled)
@@ -704,7 +704,7 @@ struct AgentSettingsView: View {
     }
 
     private var diagnosticsSection: some View {
-        Section {
+        CollapsibleSection {
             Toggle("Keep on-device run metrics", isOn: $localMetricsEnabled)
             Stepper(value: $metricRetentionDays, in: 1...365) {
                 LabeledContent("Metrics retention") {
@@ -817,7 +817,7 @@ struct AgentSettingsView: View {
     }
 
     private var syncSection: some View {
-        Section {
+        CollapsibleSection {
             Toggle(
                 "Sync scheduled task definitions",
                 isOn: syncBinding(for: .schedules)
