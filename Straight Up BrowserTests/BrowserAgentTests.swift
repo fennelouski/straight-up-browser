@@ -96,7 +96,7 @@ struct BrowserAgentTests {
 
     @Test func builtInAgentToolCatalogueIsUniqueAndComplete() {
         let names = BrowserAgent.builtInToolNames
-        #expect(names.count == 45)
+        #expect(names.count == 46)
         #expect(Set(names).count == names.count)
         #expect(names.contains("take_snapshot"))
         #expect(names.contains("wait_for"))

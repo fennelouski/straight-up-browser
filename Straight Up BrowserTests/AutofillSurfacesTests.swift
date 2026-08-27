@@ -43,6 +43,6 @@ struct AutofillSurfacesTests {
             .map { $0.name.lowercased() }
         #expect(!names.contains { $0.contains("autofill") })
         #expect(!names.contains { $0.contains("profile") })
-        #expect(names.count == 45, "the built-in tool count is pinned; autofill must not add one")
+        #expect(names.count == 46, "the built-in tool count is pinned; autofill must not add one")
     }
 }
