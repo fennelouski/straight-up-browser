@@ -75,6 +75,34 @@
 	     com.apple.security.network.client, which this one does. -->
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
+	<!-- Sidebar drag-to-reorder (TabRowView.swift) ships tabs and tab groups
+	     between rows as these custom types via onDrag/onDrop. Without an
+	     export declaration here, UTType(exportedAs:) is never registered
+	     with the system, so onDrop's conformance check silently rejects
+	     every drop and dropEntered/performDrop never fire. -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.nathanfennel.straight-up-browser.tab</string>
+			<key>UTTypeDescription</key>
+			<string>Browser Tab</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.nathanfennel.straight-up-browser.tabgroup</string>
+			<key>UTTypeDescription</key>
+			<string>Browser Tab Group</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSUbiquitousContainers</key>
 	<dict>
 		<key>iCloud.com.nathanfennel.Straight-Up-Browser</key>
