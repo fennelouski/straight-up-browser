@@ -60,7 +60,10 @@ struct WindowChrome: NSViewRepresentable {
 
             // SwiftUI restores the saved frame after this runs, so claim the
             // launch position on the next turn of the run loop or it's lost.
-            DispatchQueue.main.async { WindowLayout.applyOnLaunch(to: window) }
+            DispatchQueue.main.async {
+                WindowLayout.installFrameAutosave(on: window)
+                WindowLayout.applyOnLaunch(to: window)
+            }
         }
 
         deinit {
@@ -130,6 +133,14 @@ enum WindowLayout {
         return frame(in: visible,
                      width: d.string(forKey: Key.width) ?? "full",
                      position: d.string(forKey: Key.position) ?? "center")
+    }
+
+    // Binds the window to AppKit's built-in frame autosave: restores the
+    // last saved frame immediately, then keeps saving on every resize/move
+    // with no further code. Standalone from applyOnLaunch's opt-in preset
+    // layout below — this just remembers wherever the user last left it.
+    static func installFrameAutosave(on window: NSWindow) {
+        window.setFrameAutosaveName("BrowserWindow")
     }
 
     // ponytail: once per app launch, not per window — a second ⌘N window
