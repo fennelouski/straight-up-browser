@@ -281,10 +281,14 @@ extension ShortcutCommand {
     // keys (NSUpArrowFunctionKey and friends) — see Shortcut.keyGlyph for the
     // matching display symbols. Repeat presses of the same arrow cycle
     // through smaller sizes at the same edge; see WindowLayout.snap.
-    static let windowSnapLeft   = Self("windowSnapLeft", "Snap Window Left", .app, Shortcut(key: "\u{F702}", command: true, shift: true))
-    static let windowSnapRight  = Self("windowSnapRight", "Snap Window Right", .app, Shortcut(key: "\u{F703}", command: true, shift: true))
-    static let windowSnapTop    = Self("windowSnapTop", "Snap Window Top", .app, Shortcut(key: "\u{F700}", command: true, shift: true))
-    static let windowSnapBottom = Self("windowSnapBottom", "Snap Window Bottom", .app, Shortcut(key: "\u{F701}", command: true, shift: true))
+    // ⌘⌥⌃ (not ⌘⇧) because ⇧ collides with AppKit's own text-editing
+    // selection chords (⌘⇧←/→/↑/↓ select to line/document start/end) — a
+    // menu-bound shortcut always wins that race over a focused text field,
+    // native or in a web page, so the reserved arrow chords stay off ⇧.
+    static let windowSnapLeft   = Self("windowSnapLeft", "Snap Window Left", .app, Shortcut(key: "\u{F702}", command: true, option: true, control: true))
+    static let windowSnapRight  = Self("windowSnapRight", "Snap Window Right", .app, Shortcut(key: "\u{F703}", command: true, option: true, control: true))
+    static let windowSnapTop    = Self("windowSnapTop", "Snap Window Top", .app, Shortcut(key: "\u{F700}", command: true, option: true, control: true))
+    static let windowSnapBottom = Self("windowSnapBottom", "Snap Window Bottom", .app, Shortcut(key: "\u{F701}", command: true, option: true, control: true))
     #endif
     static let showDownloads = Self("showDownloads", "Show Downloads", .app, Shortcut(key: "j", command: true, shift: true))
 

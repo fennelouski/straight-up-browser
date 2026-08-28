@@ -170,7 +170,7 @@ enum WindowLayout {
         }
     }
 
-    // ⇧⌘←/→/↑/↓: snap to a half of the screen at that edge. Left/right keep
+    // ⌘⌥⌃←/→/↑/↓: snap to a half of the screen at that edge. Left/right keep
     // the full height, top/bottom keep the full width. Pressing the same
     // arrow again cycles to the next ratio below at the same edge, so the
     // four keys reach a dozen spots without touching the mouse.
