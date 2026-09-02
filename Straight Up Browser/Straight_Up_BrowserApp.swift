@@ -272,6 +272,7 @@ struct Straight_Up_BrowserApp: App {
     // cmdPExportsPDF toggle relies on.
     @AppStorage(ShortcutStore.revisionKey) private var shortcutsRevision = 0
     @AppStorage(SettingsManager.aiFeaturesKey) private var aiFeaturesEnabled = true
+    @ObservedObject private var translationLanguages = TranslationLanguages.shared
     @State private var showStartupRecoveryNotice = true
     @Environment(\.openWindow) private var openWindow
     // @AppStorage (not SettingsManager.shared.colorScheme) so the scene re-renders
@@ -646,6 +647,22 @@ struct Straight_Up_BrowserApp: App {
                     NotificationCenter.default.post(name: .browserToggleTranslation, object: nil)
                 }
                 .keyboardShortcut(sc(.toggleTranslation))
+
+                Menu("Translate Page To") {
+                    ForEach(translationLanguages.codes, id: \.self) { code in
+                        Button(TranslationLanguages.name(code)) {
+                            NotificationCenter.default.post(name: .browserTranslatePage, object: nil, userInfo: ["target": code])
+                        }
+                    }
+                }
+
+                Menu("Translate Page From") {
+                    ForEach(translationLanguages.codes, id: \.self) { code in
+                        Button(TranslationLanguages.name(code)) {
+                            NotificationCenter.default.post(name: .browserTranslatePage, object: nil, userInfo: ["source": code])
+                        }
+                    }
+                }
 
                 Button("Open Translation in Split Pane") {
                     NotificationCenter.default.post(name: .browserTranslateInSplit, object: nil)

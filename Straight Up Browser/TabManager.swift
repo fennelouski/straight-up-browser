@@ -879,10 +879,11 @@ class TabManager: NSObject, ObservableObject {
     }
 
 
-    func duplicateTab(_ tab: Tab) -> Tab {
+    func duplicateTab(_ tab: Tab, select: Bool = true) -> Tab {
         let newTab = createTab(
             inheriting: tab.browsingContext,
-            url: tab.url
+            url: tab.url,
+            select: select
         )
         newTab.memoryPolicy = tab.memoryPolicy
         // Update the title to use the domain name

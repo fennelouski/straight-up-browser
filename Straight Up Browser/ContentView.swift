@@ -2546,9 +2546,19 @@ struct ContentView: View {
     // trace the curve, so rather than run flush into it and vanish under the
     // clip (a straight bar has no pixels left inside a rounded corner), it
     // stops short and lands cleanly on the straight part of the edge.
+    // A translation in flight borrows the loading bar in purple: the page is
+    // loaded, but the Mac is still working on it (model download, then batches).
+    private var edgeBar: (progress: Double, color: Color)? {
+        if let webView = webViewManager?.activeWebView,
+           let translation = pageTranslator.progress[ObjectIdentifier(webView)] {
+            return (translation, .purple)
+        }
+        return showProgressBar ? (progressValue, .blue) : nil
+    }
+
     private var horizontalProgressBar: some View {
         GeometryReader { geometry in
-            if showProgressBar {
+            if let bar = edgeBar {
                 let barWidth = max(0, geometry.size.width - WindowLayout.windowCornerRadius * 2)
                 ZStack(alignment: .leading) {
                     // Background track
@@ -2558,22 +2568,22 @@ struct ContentView: View {
 
                     // Progress fill
                     Rectangle()
-                        .fill(Color.blue)
-                        .frame(width: max(0, progressValue * barWidth), height: 1)
-                        .animation(.linear(duration: max(0.02, 0.1)), value: progressValue)
+                        .fill(bar.color)
+                        .frame(width: max(0, bar.progress * barWidth), height: 1)
+                        .animation(.linear(duration: max(0.02, 0.1)), value: bar.progress)
                 }
                 .padding(.horizontal, WindowLayout.windowCornerRadius)
                 .transition(.opacity.animation(.easeIn(duration: max(0.02, 0.2))))
                 .frame(height: 1)
             }
         }
-        .frame(height: showProgressBar ? 1 : 0)
+        .frame(height: edgeBar != nil ? 1 : 0)
     }
 
     // Same bar rotated onto a side edge; fills top-down
     private var verticalProgressBar: some View {
         GeometryReader { geometry in
-            if showProgressBar {
+            if let bar = edgeBar {
                 let barHeight = max(0, geometry.size.height - WindowLayout.windowCornerRadius * 2)
                 ZStack(alignment: .top) {
                     Rectangle()
@@ -2581,16 +2591,16 @@ struct ContentView: View {
                         .frame(width: 1, height: barHeight)
 
                     Rectangle()
-                        .fill(Color.blue)
-                        .frame(width: 1, height: max(0, progressValue * barHeight))
-                        .animation(.linear(duration: max(0.02, 0.1)), value: progressValue)
+                        .fill(bar.color)
+                        .frame(width: 1, height: max(0, bar.progress * barHeight))
+                        .animation(.linear(duration: max(0.02, 0.1)), value: bar.progress)
                 }
                 .padding(.vertical, WindowLayout.windowCornerRadius)
                 .transition(.opacity.animation(.easeIn(duration: max(0.02, 0.2))))
                 .frame(width: 1)
             }
         }
-        .frame(width: showProgressBar ? 1 : 0)
+        .frame(width: edgeBar != nil ? 1 : 0)
     }
 
     // Read live rather than captured: the window can be resized between drags,

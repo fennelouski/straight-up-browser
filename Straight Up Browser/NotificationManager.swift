@@ -512,6 +512,17 @@ class NotificationManager {
         })
 
         observers.append(NotificationCenter.default.addMainActorObserver(
+            forName: .browserTranslatePage, object: nil, queue: .main
+        ) { [weak self] notification in
+            let source = notification.userInfo?["source"] as? String
+            let target = notification.userInfo?["target"] as? String
+            Task { @MainActor [weak self] in
+                guard let self, let webView = self.webViewManager.activeWebView else { return }
+                await self.pageTranslator.translate(webView: webView, source: source, target: target)
+            }
+        })
+
+        observers.append(NotificationCenter.default.addMainActorObserver(
             forName: .browserTranslateInSplit, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in

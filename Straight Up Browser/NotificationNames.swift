@@ -65,6 +65,8 @@ extension Notification.Name {
     static let browserExportPDF = Notification.Name("browserExportPDF")
     static let browserToggleTranslation = Notification.Name("browserToggleTranslation")
     static let browserTranslateInSplit = Notification.Name("browserTranslateInSplit")
+    // userInfo "source" / "target": ISO language code the user picked in the View menu.
+    static let browserTranslatePage = Notification.Name("browserTranslatePage")
 
     // Autofill focus signals from the page runtime, posted when a fillable field
     // gains or loses focus (userInfo["signal"]: AutofillFocusSignal,

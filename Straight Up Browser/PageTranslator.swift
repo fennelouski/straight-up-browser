@@ -12,22 +12,33 @@ import Translation
 import NaturalLanguage
 import WebKit
 
-// On-device page translation. NLLanguageRecognizer detects the loaded page's
-// language from a short text sample; if it isn't one of the user's preferred
-// languages, the page's visible text is extracted (WebViewManager's
-// __subTranslate JS), batch-translated via Apple's Translation framework, and
-// written back into the DOM. `configuration` drives a single `.translationTask`
-// (attached once at the window root in ContentView) — a FIFO queue serializes
-// translate requests since TranslationSession only runs one task at a time.
+// On-device page translation. The page's visible text nodes come out of
+// WebViewManager's __subTranslate JS; NLLanguageRecognizer detects the page's
+// language from the longest of them and drops nodes already in the target
+// language (a mail client's chrome around a foreign message). The rest is
+// batch-translated via Apple's Translation framework and written back into the
+// DOM. `configuration` drives a single `.translationTask` (attached once at the
+// window root in ContentView) — a FIFO queue serializes translate requests
+// since TranslationSession only runs one task at a time.
 @MainActor
 final class PageTranslator: ObservableObject {
     @Published var configuration: TranslationSession.Configuration?
 
+    // Per web view, 0…1 from the moment a translation is queued until it's
+    // applied. ContentView tints the window-edge loading bar with it, so a
+    // multi-minute model download or a long page visibly counts as work.
+    @Published private(set) var progress: [ObjectIdentifier: Double] = [:]
+
+    typealias TextNode = (id: String, text: String)
+
     private struct PendingRequest {
         // nil webView = prefetch: download the pair's model, translate nothing.
         let webView: WKWebView?
-        let source: Locale.Language
-        let sourceCode: String
+        let nodes: [TextNode]
+        // nil source = translationd identifies each string itself (a short
+        // selection the recognizer can't place).
+        let source: Locale.Language?
+        let sourceCode: String?
         let target: Locale.Language
         let targetCode: String
     }
@@ -61,27 +72,73 @@ final class PageTranslator: ObservableObject {
         let autoEnabled = UserDefaults.standard.object(forKey: "autoTranslateEnabled") as? Bool ?? true
         guard forced != nil || autoEnabled else { return }
         Task { @MainActor in
-            guard let sample = await sampleText(from: webView), sample.count > 40 else { return }
-            await detectAndEnqueue(sample: sample, webView: webView, forceTarget: forced)
+            await translate(webView: webView, target: forced, explicit: forced != nil)
         }
     }
 
     // MARK: - Toggle shortcut
 
-    // Flips original/translated if the page already has a translation;
-    // otherwise translates it into the user's top preferred language first
-    // (covers pages auto-translate skipped, or got the detection wrong).
+    // Translates whatever foreign text the page has gained since the last pass
+    // (a web app showing the next message) — or, with nothing new, flips
+    // original/translated. Ignores the auto-translate toggle and the "already
+    // in a preferred language" check: the user asked.
     func toggle(webView: WKWebView?) {
         guard let webView else { return }
         Task { @MainActor in
-            let raw = try? await webView.evaluateJavaScript(
-                "!!(window.__subTranslate && window.__subTranslate.hasTranslation())")
-            if (raw as? Bool) == true {
-                _ = try? await webView.evaluateJavaScript("window.__subTranslate.toggle()")
-                return
+            let showingOriginal = (try? await webView.evaluateJavaScript(
+                "!!(window.__subTranslate && window.__subTranslate.isShowingOriginal())")) as? Bool == true
+            if showingOriginal { _ = try? await webView.evaluateJavaScript("window.__subTranslate.toggle()") }
+            let queued = await translate(webView: webView, explicit: true)
+            if !queued, !showingOriginal {
+                _ = try? await webView.evaluateJavaScript(
+                    "window.__subTranslate && window.__subTranslate.hasTranslation() && window.__subTranslate.toggle()")
             }
-            guard let sample = await sampleText(from: webView), sample.count > 40 else { return }
-            await detectAndEnqueue(sample: sample, webView: webView, forceTarget: defaultTargetCode)
+        }
+    }
+
+    // MARK: - Explicit translation (menus, shortcuts)
+
+    // Detects, filters and queues the page's text. A forced source or target
+    // (View ▸ Translate Page From/To) re-offers every node, translated ones
+    // included, so the page can be redone from the language the user named
+    // or into a different one. Returns whether anything was queued.
+    @discardableResult
+    func translate(webView: WKWebView, source forcedSource: String? = nil, target forcedTarget: String? = nil,
+                   explicit: Bool = true) async -> Bool {
+        var all = forcedSource != nil || forcedTarget != nil
+        if !all, explicit {
+            all = (try? await webView.evaluateJavaScript(
+                "!(window.__subTranslate && window.__subTranslate.hasTranslation())")) as? Bool == true
+        }
+        let candidates = await extractNodes(from: webView, call: "extract(\(all))")
+        guard !candidates.isEmpty else { return false }
+        let targetCode = forcedTarget ?? defaultTargetCode
+        let sample = Self.sample(from: candidates)
+        guard let sourceCode = forcedSource ?? (sample.count > 40 ? Self.detectLanguage(sample) : nil) else { return false }
+        guard sourceCode != targetCode else { return false }
+        if !explicit, preferredLanguageCodes().contains(where: { sourceCode.hasPrefix($0) || $0.hasPrefix(sourceCode) }) {
+            return false
+        }
+        let nodes = forcedSource != nil ? candidates
+            : await Task.detached { Self.foreignNodes(candidates, target: targetCode) }.value
+        guard !nodes.isEmpty else { return false }
+        return await enqueue(webView: webView, nodes: nodes, sourceCode: sourceCode, targetCode: targetCode)
+    }
+
+    // Context menu: translate just the selected text, in place. A word or a
+    // sentence out of a paragraph keeps its surroundings as written, so the
+    // original language stays readable in context.
+    func translateSelection(webView: WKWebView, target forcedTarget: String? = nil) {
+        Task { @MainActor in
+            let nodes = await extractNodes(from: webView, call: "extractSelection()")
+            guard !nodes.isEmpty else { return }
+            let targetCode = forcedTarget ?? defaultTargetCode
+            // The recognizer guesses on short strings; when it's unsure, or
+            // sure the selection is already in the target language (the user
+            // disagrees), let translationd identify the text itself.
+            var sourceCode = Self.detectLanguage(nodes.map(\.text).joined(separator: " "), minimumConfidence: 0.5)
+            if sourceCode == targetCode { sourceCode = nil }
+            await enqueue(webView: webView, nodes: nodes, sourceCode: sourceCode, targetCode: targetCode)
         }
     }
 
@@ -91,7 +148,10 @@ final class PageTranslator: ObservableObject {
     // force-translate (to the top preferred language) once it loads.
     func translateIntoSplitPane(tab: Tab, tabManager: TabManager, webViewManager: WebViewManager, tabs: [Tab]) {
         guard tabManager.splitTabIds.count < TabManager.maxSplitTabs else { return }
-        let newTab = tabManager.duplicateTab(tab)
+        // Not selected: toggleSplitMembership pairs the new tab with the
+        // *selected* one, and selecting the copy first left nothing to pair
+        // with — the shortcut just opened a plain new tab.
+        let newTab = tabManager.duplicateTab(tab, select: false)
         let webView = webViewManager.getWebView(for: newTab.id)
         forcedTargets[ObjectIdentifier(webView)] = defaultTargetCode
         if let url = newTab.url { webView.loadURL(url) }
@@ -187,7 +247,7 @@ final class PageTranslator: ObservableObject {
 
     // LanguageAvailability is not Sendable; keep the instance inside a
     // nonisolated call so only the [String] result crosses back to the actor.
-    @concurrent nonisolated private static func supportedLanguageCodes() async -> [String] {
+    @concurrent nonisolated static func supportedLanguageCodes() async -> [String] {
         await LanguageAvailability().supportedLanguages.compactMap { $0.languageCode?.identifier }
     }
 
@@ -205,38 +265,66 @@ final class PageTranslator: ObservableObject {
     // language manager's "Download" button.
     func downloadLanguage(_ code: String) {
         queue.append(PendingRequest(
-            webView: nil, source: Locale.Language(identifier: code), sourceCode: code,
+            webView: nil, nodes: [], source: Locale.Language(identifier: code), sourceCode: code,
             target: Locale.Language(identifier: defaultTargetCode), targetCode: defaultTargetCode))
         if configuration == nil { pump() }
     }
 
     // MARK: - Detection + queue
 
-    private func detectAndEnqueue(sample: String, webView: WKWebView, forceTarget: String?) async {
+    nonisolated static func detectLanguage(_ text: String, minimumConfidence: Double = 0) -> String? {
         let recognizer = NLLanguageRecognizer()
-        recognizer.processString(sample)
-        guard let detected = recognizer.dominantLanguage else { return }
-        let sourceCode = detected.rawValue
-        let targetCode = forceTarget ?? defaultTargetCode
-        guard sourceCode != targetCode else { return }
-        if forceTarget == nil {
-            let preferred = preferredLanguageCodes()
-            if preferred.contains(where: { sourceCode.hasPrefix($0) || $0.hasPrefix(sourceCode) }) { return }
-        }
+        recognizer.processString(text)
+        guard let language = recognizer.dominantLanguage,
+              (recognizer.languageHypotheses(withMaximum: 1)[language] ?? 0) >= minimumConfidence else { return nil }
+        return language.rawValue
+    }
 
-        let source = Locale.Language(identifier: sourceCode)
+    // The longest strings on the page, not the first ones: a mail client's
+    // sidebar comes first in the DOM, but the message is where the prose is.
+    nonisolated static func sample(from nodes: [TextNode], limit: Int = 2000) -> String {
+        var out = ""
+        for node in nodes.sorted(by: { $0.text.count > $1.text.count }) {
+            if out.count >= limit { break }
+            out += node.text + "\n"
+        }
+        return String(out.prefix(limit))
+    }
+
+    // Pages mix languages: a mail client's chrome is in your language while the
+    // message isn't. Strings the recognizer confidently places in the target
+    // language stay put; everything else, including strings too short to judge,
+    // goes to the translator. ponytail: 24 chars / 0.6 confidence are guesses —
+    // tune if users report chrome getting mangled or paragraphs skipped.
+    nonisolated static func foreignNodes(_ nodes: [TextNode], target: String) -> [TextNode] {
+        let recognizer = NLLanguageRecognizer()
+        return nodes.filter { node in
+            guard node.text.count >= 24 else { return true }
+            recognizer.reset()
+            recognizer.processString(node.text)
+            guard let language = recognizer.dominantLanguage, language.rawValue.hasPrefix(target) else { return true }
+            return (recognizer.languageHypotheses(withMaximum: 1)[language] ?? 0) < 0.6
+        }
+    }
+
+    @discardableResult
+    private func enqueue(webView: WKWebView, nodes: [TextNode], sourceCode: String?, targetCode: String) async -> Bool {
+        let source = sourceCode.map { Locale.Language(identifier: $0) }
         let target = Locale.Language(identifier: targetCode)
         // LanguageAvailability is not Sendable, so keep each instance scoped to
         // the async call instead of retaining it across actor boundaries.
-        guard await LanguageAvailability().status(from: source, to: target) != .unsupported else { return }
+        if let source, await LanguageAvailability().status(from: source, to: target) == .unsupported { return false }
 
-        if let url = webView.url, let host = SiteHistory.normalizedHost(url) {
+        if let sourceCode, let url = webView.url, let host = SiteHistory.normalizedHost(url) {
             TranslationHistoryStore.shared.recordDetection(
                 host: host, title: webView.title ?? host, source: sourceCode, target: targetCode)
         }
 
-        queue.append(PendingRequest(webView: webView, source: source, sourceCode: sourceCode, target: target, targetCode: targetCode))
+        progress[ObjectIdentifier(webView)] = 0.02
+        queue.append(PendingRequest(webView: webView, nodes: nodes, source: source, sourceCode: sourceCode,
+                                    target: target, targetCode: targetCode))
         if configuration == nil { pump() }
+        return true
     }
 
     private func pump() {
@@ -257,29 +345,37 @@ final class PageTranslator: ObservableObject {
         guard let webView = request.webView else {
             // Prefetch: pull down the language-pair model so the first real
             // translation doesn't stall on a download.
-            if (try? await session.prepareTranslation()) != nil {
-                TranslationLanguageUsage.shared.markInstalled(request.sourceCode)
+            if (try? await session.prepareTranslation()) != nil, let code = request.sourceCode {
+                TranslationLanguageUsage.shared.markInstalled(code)
             }
             return
         }
-        guard let nodes = await extractNodes(from: webView), !nodes.isEmpty else { return }
+        let key = ObjectIdentifier(webView)
+        defer { progress.removeValue(forKey: key) }
+        progress[key] = 0.05
         // Models are per-pair downloads; without this, translations() throws
         // (swallowed) and the feature silently does nothing. Shows the system
         // download sheet the first time a pair is needed; no-op once installed.
-        do { try await session.prepareTranslation() } catch {
-            Logger.warning("language download declined or failed: \(error)", type: "PageTranslator")
-            return
+        // Nothing to prepare without a source: translationd identifies it.
+        if let sourceCode = request.sourceCode {
+            do { try await session.prepareTranslation() } catch {
+                Logger.warning("language download declined or failed: \(error)", type: "PageTranslator")
+                return
+            }
+            TranslationLanguageUsage.shared.markInstalled(sourceCode)
         }
-        TranslationLanguageUsage.shared.markInstalled(request.sourceCode)
-        guard let map = await Self.translate(nodes: nodes, using: session) else { return }
+        guard let map = await Self.translate(nodes: request.nodes, using: session, onProgress: { [weak self] fraction in
+            self?.progress[key] = 0.05 + 0.95 * fraction
+        }) else { return }
         guard !map.isEmpty,
               let json = try? JSONSerialization.data(withJSONObject: map),
               let jsonString = String(data: json, encoding: .utf8) else { return }
         _ = try? await webView.evaluateJavaScript("window.__subTranslate.apply(\(jsonString))")
-        TranslationLanguageUsage.shared.markUsed(request.sourceCode)
+        guard let sourceCode = request.sourceCode else { return }
+        TranslationLanguageUsage.shared.markUsed(sourceCode)
         if let url = webView.url, let host = SiteHistory.normalizedHost(url) {
             TranslationHistoryStore.shared.recordTranslation(
-                host: host, title: webView.title ?? host, source: request.sourceCode, target: request.targetCode)
+                host: host, title: webView.title ?? host, source: sourceCode, target: request.targetCode)
         }
     }
 
@@ -294,11 +390,12 @@ final class PageTranslator: ObservableObject {
     nonisolated private static let batchCharBudget = 2000
 
     nonisolated private static func translate(
-        nodes: [(id: String, text: String)],
-        using session: sending TranslationSession
+        nodes: [TextNode],
+        using session: sending TranslationSession,
+        onProgress: @MainActor @Sendable (Double) -> Void
     ) async -> [String: String]? {
-        var batches: [[(id: String, text: String)]] = []
-        var chunk: [(id: String, text: String)] = []
+        var batches: [[TextNode]] = []
+        var chunk: [TextNode] = []
         var chunkChars = 0
         for node in nodes {
             if !chunk.isEmpty && chunkChars + node.text.count > batchCharBudget {
@@ -312,7 +409,7 @@ final class PageTranslator: ObservableObject {
         if !chunk.isEmpty { batches.append(chunk) }
 
         var map: [String: String] = [:]
-        for batch in batches {
+        for (index, batch) in batches.enumerated() {
             let requests = batch.map {
                 TranslationSession.Request(sourceText: $0.text, clientIdentifier: $0.id)
             }
@@ -323,24 +420,38 @@ final class PageTranslator: ObservableObject {
             for response in responses {
                 if let id = response.clientIdentifier { map[id] = response.targetText }
             }
+            await onProgress(Double(index + 1) / Double(batches.count))
         }
         return map
     }
 
     // MARK: - JS bridge helpers
 
-    private func sampleText(from webView: WKWebView) async -> String? {
-        let result = try? await webView.evaluateJavaScript("window.__subTranslate ? window.__subTranslate.sampleText() : null")
-        return result as? String
-    }
-
-    private func extractNodes(from webView: WKWebView) async -> [(id: String, text: String)]? {
-        let result = try? await webView.evaluateJavaScript("window.__subTranslate ? window.__subTranslate.extract() : null")
-        guard let array = result as? [[String: String]] else { return nil }
-        return array.compactMap { entry in
+    private func extractNodes(from webView: WKWebView, call: String) async -> [TextNode] {
+        let result = try? await webView.evaluateJavaScript("window.__subTranslate ? window.__subTranslate.\(call) : []")
+        return (result as? [[String: String]])?.compactMap { entry in
             guard let id = entry["id"], let text = entry["text"] else { return nil }
             return (id: id, text: text)
+        } ?? []
+    }
+}
+
+// Every language the Translation framework knows, for the View menu's
+// Translate Page To / From submenus. Loaded once, off the menu's critical path.
+final class TranslationLanguages: ObservableObject {
+    static let shared = TranslationLanguages()
+
+    @Published private(set) var codes: [String] = []
+
+    init() {
+        Task { [weak self] in
+            let codes = Set(await PageTranslator.supportedLanguageCodes())
+            self?.codes = codes.sorted { Self.name($0) < Self.name($1) }
         }
+    }
+
+    static func name(_ code: String) -> String {
+        Locale.current.localizedString(forLanguageCode: code) ?? code
     }
 }
 

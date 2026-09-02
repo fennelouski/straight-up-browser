@@ -69,3 +69,27 @@ struct TranslationLanguageUsageTests {
         #expect(usage.packs["fr"]?.installedAt == original)
     }
 }
+
+struct PageTranslatorTextTests {
+
+    private let dutch = "Beste Nathan, hierbij stuur ik je de documenten die je gisteren hebt gevraagd. Laat het me weten als er nog iets ontbreekt."
+    private let english = "Please find attached the documents you asked for yesterday. Let me know if anything is missing from the set."
+
+    @Test func sampleTakesTheLongestNodesFirst() {
+        let nodes: [PageTranslator.TextNode] = [("a", "Inbox"), ("b", dutch), ("c", "Sent")]
+        #expect(PageTranslator.sample(from: nodes).hasPrefix(dutch))
+        #expect(PageTranslator.sample(from: nodes, limit: 10).count == 10)
+    }
+
+    @Test func foreignNodesKeepsWhatIsNotConfidentlyInTheTarget() {
+        let nodes: [PageTranslator.TextNode] = [("chrome", english), ("mail", dutch), ("short", "Inbox")]
+        #expect(PageTranslator.foreignNodes(nodes, target: "en").map(\.id) == ["mail", "short"])
+        #expect(PageTranslator.foreignNodes(nodes, target: "nl").map(\.id) == ["chrome", "short"])
+    }
+
+    @Test func detectLanguageHonorsConfidence() {
+        #expect(PageTranslator.detectLanguage(dutch) == "nl")
+        #expect(PageTranslator.detectLanguage(english) == "en")
+        #expect(PageTranslator.detectLanguage("ok", minimumConfidence: 0.99) == nil)
+    }
+}

@@ -597,7 +597,7 @@ struct ContentSettingsView: View {
             } header: {
                 SettingsLabel("Translation", systemImage: "character.bubble", tint: SettingsTint.content)
             } footer: {
-                Text("On-device — nothing leaves your Mac. A page in a language outside this list translates automatically. ⌥⌘T flips original/translated; hold ⌥ over any text to peek at the original; ⇧⌥⌘T opens a translated copy in a split pane. ISO codes — leave empty to use your system languages.")
+                Text("On-device — nothing leaves your Mac. A page in a language outside this list translates automatically. ⌥⌘T flips original/translated; hold ⌥ over any text to peek at the original; ⇧⌥⌘T opens a translated copy in a split pane; View ▸ Translate Page To/From picks the languages; right-click selected text to translate just that, in place. ISO codes — leave empty to use your system languages.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

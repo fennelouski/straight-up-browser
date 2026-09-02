@@ -396,54 +396,94 @@ class WebViewManager: NSObject, ObservableObject {
             var target = event.target;
             if (target && target.nodeType !== 1) target = target.parentElement;
             var link = target && target.closest ? target.closest('a[href]') : null;
+            var selection = window.getSelection();
             window.webkit.messageHandlers.sub.postMessage({
                 type: 'contextLink',
-                url: link && link.href ? link.href : null
+                url: link && link.href ? link.href : null,
+                hasSelection: !!(selection && !selection.isCollapsed)
             });
         }, true);
     })();
     """
 
     // On-device page translation (PageTranslator.swift is the Swift-side driver).
-    // window.__subTranslate.sampleText() feeds language detection; .extract()
-    // wraps visible text nodes in spans and returns {id, text} for translation;
-    // .apply(map) writes translated text back in; .toggle() flips every wrapped
-    // span between translated/original. Peek: holding Option anywhere on the
-    // page reveals the original text of just the element under the cursor, via
-    // a body class + CSS :hover/::before (no per-mousemove JS, so it can't
-    // collide with KeyboardShortcutsManager's global modifier monitor).
-    private static let translateScript = """
+    // window.__subTranslate.extract(all) hands PageTranslator the page's visible
+    // text nodes as {id, text} without touching the DOM (all=false: only nodes
+    // never offered before, so a web app that swaps in new content — the next
+    // email — offers just that; all=true: everything, translated nodes included,
+    // with their original text). .extractSelection() does the same for the
+    // selected text only. .apply(map) wraps each translated node in a span and
+    // writes the translation in; .toggle() flips every span between
+    // translated/original. Same-origin frames are walked too: webmail renders
+    // the message in one. Peek: holding Option anywhere on the page reveals the
+    // original text of just the element under the cursor, via a body class +
+    // CSS :hover/::before (no per-mousemove JS, so it can't collide with
+    // KeyboardShortcutsManager's global modifier monitor).
+    static let translateScript = """
     (function() {
-        var nextId = 0, nodeMap = new Map(), showOriginal = false;
+        var nextId = 0, pending = new Map(), offered = new WeakSet(), showOriginal = false;
 
         function isVisible(el) {
+            if (el.checkVisibility) return el.checkVisibility();
             var style = window.getComputedStyle(el);
             return style && style.display !== 'none' && style.visibility !== 'hidden';
         }
 
-        function collectTextNodes(root, limit) {
-            var out = [];
-            var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-                acceptNode: function(node) {
-                    if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
-                    var parent = node.parentElement;
-                    if (!parent || parent.isContentEditable) return NodeFilter.FILTER_REJECT;
-                    if (/^(SCRIPT|STYLE|NOSCRIPT|TEXTAREA)$/.test(parent.tagName)) return NodeFilter.FILTER_REJECT;
-                    if (!isVisible(parent)) return NodeFilter.FILTER_REJECT;
-                    return NodeFilter.FILTER_ACCEPT;
-                }
+        function documents() {
+            var docs = [document];
+            document.querySelectorAll('iframe').forEach(function(frame) {
+                try {
+                    if (frame.contentDocument && frame.contentDocument.body) docs.push(frame.contentDocument);
+                } catch (e) {}
             });
-            var node;
-            while (out.length < limit && (node = walker.nextNode())) out.push(node);
+            return docs;
+        }
+
+        function translatedSpan(node) {
+            var parent = node.parentElement;
+            return parent && parent.classList.contains('sub-translated') ? parent : null;
+        }
+
+        function acceptable(node, all) {
+            if (!node.nodeValue || !node.nodeValue.trim()) return false;
+            var parent = node.parentElement;
+            if (!parent || parent.isContentEditable) return false;
+            if (/^(SCRIPT|STYLE|NOSCRIPT|TEXTAREA)$/.test(parent.tagName)) return false;
+            if (!all && (offered.has(node) || translatedSpan(node))) return false;
+            return isVisible(parent);
+        }
+
+        function collectTextNodes(limit, all) {
+            var out = [];
+            documents().forEach(function(doc) {
+                var walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
+                    acceptNode: function(node) {
+                        return acceptable(node, all) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+                    }
+                });
+                var node;
+                while (out.length < limit && (node = walker.nextNode())) out.push(node);
+            });
             return out;
+        }
+
+        function stash(nodes) {
+            pending.forEach(function(node, id) { if (!node.isConnected) pending.delete(id); });
+            return nodes.map(function(node) {
+                var id = 'st' + (nextId++);
+                pending.set(id, node);
+                offered.add(node);
+                var span = translatedSpan(node);
+                return {id: id, text: span ? span.dataset.original : node.nodeValue};
+            });
         }
 
         // ponytail: position:absolute overlay for the peek/toggle swap - good
         // enough for prose text, can misalign on tightly-laid-out inline text.
         // Upgrade to an inline-reflow-safe technique if that's reported janky.
-        function injectStyle() {
-            if (document.getElementById('sub-translate-style')) return;
-            var style = document.createElement('style');
+        function injectStyle(doc) {
+            if (doc.getElementById('sub-translate-style')) return;
+            var style = doc.createElement('style');
             style.id = 'sub-translate-style';
             style.textContent =
                 '.sub-translated[data-original]{position:relative}' +
@@ -453,44 +493,75 @@ class WebViewManager: NSObject, ObservableObject {
                 'body.sub-show-original .sub-translated::before{' +
                 'content:attr(data-original);visibility:visible;position:absolute;' +
                 'left:0;top:0;width:max-content;max-width:100vw}';
-            (document.head || document.documentElement).appendChild(style);
-        }
-        if (document.head) { injectStyle(); } else {
-            document.addEventListener('DOMContentLoaded', injectStyle);
+            (doc.head || doc.documentElement).appendChild(style);
         }
 
         window.__subTranslate = {
-            sampleText: function() {
-                return document.body ? document.body.innerText.slice(0, 2000) : '';
-            },
             hasTranslation: function() {
-                return nodeMap.size > 0;
+                return documents().some(function(doc) { return !!doc.querySelector('.sub-translated'); });
             },
-            extract: function() {
-                if (!document.body) return [];
-                var results = [];
-                collectTextNodes(document.body, 500).forEach(function(node) {
-                    var span = document.createElement('span');
-                    span.className = 'sub-translated';
-                    var id = 'st' + (nextId++);
-                    span.dataset.tid = id;
-                    span.dataset.original = node.nodeValue;
-                    node.parentNode.replaceChild(span, node);
-                    span.appendChild(node);
-                    nodeMap.set(id, node);
-                    results.push({id: id, text: node.nodeValue});
-                });
-                return results;
+            isShowingOriginal: function() {
+                return showOriginal;
+            },
+            extract: function(all) {
+                return stash(collectTextNodes(2000, !!all));
+            },
+            // Partly selected text nodes are split at the selection edges, so one
+            // word out of a sentence translates while the rest stays as written.
+            extractSelection: function() {
+                var win = window, active = document.activeElement;
+                try {
+                    if (active && active.tagName === 'IFRAME' && active.contentWindow.getSelection().rangeCount) {
+                        win = active.contentWindow;
+                    }
+                } catch (e) {}
+                var sel = win.getSelection();
+                if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return [];
+                var range = sel.getRangeAt(0);
+                var root = range.commonAncestorContainer, nodes = [];
+                if (root.nodeType === 3) {
+                    nodes = [root];
+                } else {
+                    var walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+                        acceptNode: function(node) {
+                            return range.intersectsNode(node) && node.nodeValue.trim()
+                                ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+                        }
+                    });
+                    var node;
+                    while ((node = walker.nextNode())) nodes.push(node);
+                }
+                var start = range.startContainer, startOffset = range.startOffset;
+                var end = range.endContainer, endOffset = range.endOffset;
+                nodes = nodes.map(function(node) {
+                    if (node === end && node.nodeType === 3 && endOffset < node.length) node.splitText(endOffset);
+                    if (node === start && node.nodeType === 3 && startOffset > 0) node = node.splitText(startOffset);
+                    return node;
+                }).filter(function(node) { return node.nodeValue.trim(); });
+                return stash(nodes);
             },
             apply: function(map) {
                 Object.keys(map).forEach(function(id) {
-                    var node = nodeMap.get(id);
-                    if (node) node.nodeValue = map[id];
+                    var node = pending.get(id);
+                    pending.delete(id);
+                    if (!node || !node.parentNode) return;
+                    var span = translatedSpan(node);
+                    if (!span) {
+                        span = node.ownerDocument.createElement('span');
+                        span.className = 'sub-translated';
+                        span.dataset.original = node.nodeValue;
+                        injectStyle(node.ownerDocument);
+                        node.parentNode.replaceChild(span, node);
+                        span.appendChild(node);
+                    }
+                    node.nodeValue = map[id];
                 });
             },
             toggle: function() {
                 showOriginal = !showOriginal;
-                if (document.body) document.body.classList.toggle('sub-show-original', showOriginal);
+                documents().forEach(function(doc) {
+                    if (doc.body) doc.body.classList.toggle('sub-show-original', showOriginal);
+                });
             }
         };
 
@@ -509,6 +580,7 @@ class WebViewManager: NSObject, ObservableObject {
     // Store web views per tab ID
     private var webViews: [UUID: WKWebView] = [:]
     private var contextMenuLinks: [ObjectIdentifier: URL] = [:]
+    private var contextMenuSelections: Set<ObjectIdentifier> = []
     // Includes memory-unloaded tabs. Extensions still regard those as open,
     // and this ownership map keeps their window routing stable until real close.
     private var ownedTabIds: Set<UUID> = []
@@ -1166,6 +1238,10 @@ class WebViewManager: NSObject, ObservableObject {
         contextMenuLinks[ObjectIdentifier(webView)]
     }
 
+    func contextMenuHasSelection(for webView: WKWebView) -> Bool {
+        contextMenuSelections.contains(ObjectIdentifier(webView))
+    }
+
     // MARK: - Fade in on first paint
 
     // Between didCommit (old document gone) and the page's first paint there is
@@ -1476,6 +1552,11 @@ extension WebViewManager: WKScriptMessageHandler {
                 contextMenuLinks[key] = url
             } else {
                 contextMenuLinks.removeValue(forKey: key)
+            }
+            if body["hasSelection"] as? Bool == true {
+                contextMenuSelections.insert(key)
+            } else {
+                contextMenuSelections.remove(key)
             }
         case "downloadImage":
             if let urlString = body["url"] as? String,

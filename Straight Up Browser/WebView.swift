@@ -1243,7 +1243,29 @@ struct WebView: NSViewRepresentable {
                 menu.insertItem(anchorItem, at: copyIndex ?? menu.items.count)
             }
 
+            // In-place translation of just the selected text (WebKit's own
+            // "Translate" item opens the system popover instead).
+            if parent.pageTranslator != nil,
+               parent.webViewManager?.contextMenuHasSelection(for: webView) == true,
+               !menu.items.contains(where: { $0.action == #selector(translateSelectionFromContextMenu(_:)) }) {
+                contextMenuWebView = webView
+                let translateItem = NSMenuItem(
+                    title: String(localized: "Translate Selection in Place"),
+                    action: #selector(translateSelectionFromContextMenu(_:)),
+                    keyEquivalent: ""
+                )
+                translateItem.target = self
+                translateItem.image = menuImage(named: "character.bubble", description: translateItem.title)
+                let lookUpIndex = menu.items.firstIndex { $0.title.localizedCaseInsensitiveContains("look up") }
+                menu.insertItem(translateItem, at: lookUpIndex.map { $0 + 1 } ?? 0)
+            }
+
             decorateMenu(menu)
+        }
+
+        @objc private func translateSelectionFromContextMenu(_ sender: NSMenuItem) {
+            guard let webView = contextMenuWebView else { return }
+            parent.pageTranslator?.translateSelection(webView: webView)
         }
 
         @objc private func anchorSelectionFromContextMenu(_ sender: NSMenuItem) {
@@ -1285,6 +1307,7 @@ struct WebView: NSViewRepresentable {
             if title.contains("image") { return "photo" }
             if title.contains("search") || title.contains("find") { return "magnifyingglass" }
             if title.contains("look up") || title.contains("dictionary") { return "book" }
+            if title.contains("translat") { return "character.bubble" }
             if title.contains("inspect") { return "cursorarrow.rays" }
             if title.contains("reload") { return "arrow.clockwise" }
             if title.contains("back") { return "chevron.backward" }

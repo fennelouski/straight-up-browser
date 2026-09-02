@@ -1148,6 +1148,22 @@ struct SplitViewTests {
         UserDefaults.standard.removeObject(forKey: "splitTabIds")
     }
 
+    // ⇧⌥⌘T duplicates the tab and pairs the copy with the original. Selecting
+    // the copy first left it pairing with itself, and the shortcut opened a
+    // plain new tab instead of a split.
+    @Test func unselectedDuplicatePairsWithTheOriginal() {
+        let manager = TabManager()
+        let tabs = makeTabs(1)
+        manager.selectedTabId = tabs[0].id
+        defer { cleanup(manager) }
+
+        let copy = manager.duplicateTab(tabs[0], select: false)
+        #expect(manager.selectedTabId == tabs[0].id)
+        manager.toggleSplitMembership(copy, tabs: tabs + [copy])
+        #expect(manager.splitTabIds == [tabs[0].id, copy.id])
+        #expect(manager.selectedTabId == copy.id)
+    }
+
     @Test func toggleAddsRemovesAndCapsAtFour() {
         let manager = TabManager()
         let tabs = makeTabs(6)
