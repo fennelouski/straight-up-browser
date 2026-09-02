@@ -3923,6 +3923,31 @@ struct ContentView: View {
     // the tab's URL/title update via the navigation delegate.
     private func goBack() {
         guard let webViewManager else { return }
+        // Cmd+[ with the wrong split pane focused would drop a live call.
+        if let webView = webViewManager.activeWebView, webView.canGoBack,
+           BackGuardStore.shared.shouldConfirm(host: webView.url?.host, active: webView.activeBackGuardTriggers) {
+            let host = ShortcutPriorityStore.normalize(webView.url?.host)
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Go back from this page?")
+            alert.informativeText = String(localized: "This page may be in a call or playing full screen. Going back will interrupt it.")
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: String(localized: "Go Back"))
+            alert.addButton(withTitle: String(localized: "Stay"))
+            if let host {
+                alert.showsSuppressionButton = true
+                alert.suppressionButton?.title = String(localized: "Don't ask again for \(host)")
+            }
+            let handle: (NSApplication.ModalResponse) -> Void = { response in
+                if alert.suppressionButton?.state == .on { BackGuardStore.shared.set(false, host: host) }
+                if response == .alertFirstButtonReturn { webView.goBack() }
+            }
+            if let window = webView.window {
+                alert.beginSheetModal(for: window, completionHandler: handle)
+            } else {
+                handle(alert.runModal())
+            }
+            return
+        }
         if !webViewManager.canGoBack {
             var closedChild = false
             withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {

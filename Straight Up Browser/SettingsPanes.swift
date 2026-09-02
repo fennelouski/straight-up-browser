@@ -260,6 +260,8 @@ struct GeneralSettingsView: View {
                 SettingsLabel("Behavior", systemImage: "slider.horizontal.3", tint: SettingsTint.general)
             }
 
+            BackGuardSection()
+
             CollapsibleSection(searchID: "general.quit-safety") {
                 LabeledContent("Hold ⌘Q to quit") {
                     HStack {
@@ -286,6 +288,61 @@ struct GeneralSettingsView: View {
 }
 
 // MARK: - Shortcuts
+
+// Which page states make ⌘[ ask first, plus per-site always/never overrides.
+struct BackGuardSection: View {
+    @ObservedObject private var store = BackGuardStore.shared
+    @State private var newHost = ""
+
+    var body: some View {
+        CollapsibleSection(searchID: "general.back-guard") {
+            ForEach(BackGuardStore.Trigger.allCases) { trigger in
+                Toggle(trigger.title, isOn: Binding(
+                    get: { store.triggers.contains(trigger) },
+                    set: { store.set(trigger, enabled: $0) }
+                ))
+            }
+
+            ForEach(store.customizedHosts, id: \.self) { host in
+                HStack {
+                    Text(host).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 8)
+                    Picker("", selection: Binding(
+                        get: { store.override(for: host) ?? true },
+                        set: { store.set($0, host: host) }
+                    )) {
+                        Text("Always ask").tag(true)
+                        Text("Never ask").tag(false)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    Button { store.set(nil, host: host) } label: { Image(systemName: "minus.circle") }
+                        .buttonStyle(.borderless)
+                }
+            }
+            HStack {
+                TextField("Add a site (meet.google.com)", text: $newHost)
+                    .onSubmit(addHost)
+                Button("Add", action: addHost)
+                    .disabled(ShortcutPriorityStore.normalize(newHost) == nil)
+                Button("Reset") { store.resetAll() }
+                    .disabled(store.triggers == BackGuardStore.defaultTriggers && store.byHost.isEmpty)
+            }
+        } header: {
+            SettingsLabel("Confirm Before Going Back", systemImage: "arrow.uturn.backward.circle", tint: SettingsTint.general)
+        } footer: {
+            Text("With the wrong split pane focused, ⌘[ can drop you out of a meeting. When a page matches a checked state, Browser asks before going back. Sites listed here always or never ask, whatever the page is doing; “Don't ask again” in the dialog adds a site as Never.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func addHost() {
+        guard let host = ShortcutPriorityStore.normalize(newHost) else { return }
+        store.set(true, host: host)
+        newHost = ""
+    }
+}
 
 struct ShortcutsSettingsView: View {
     private var store: ShortcutStore { .shared }

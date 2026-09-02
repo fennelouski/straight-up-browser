@@ -57,6 +57,8 @@ enum SettingsSearchIndex {
                   keywords: "default search engine google duckduckgo bing yahoo omnibar position find bar position find emphasis"),
             .init(id: "general.behavior", pane: .general, title: "Behavior",
                   keywords: "spacebar scrolls cmd p creates a pdf print back forward navigate quick open override website shortcuts default browser nudge global omnibar hotkey"),
+            .init(id: "general.back-guard", pane: .general, title: "Confirm Before Going Back",
+                  keywords: "back guard call meeting camera microphone full screen video leave confirm split pane always ask never ask"),
             .init(id: "general.quit-safety", pane: .general, title: "Quit Safety",
                   keywords: "hold cmd q to quit safety"),
 
