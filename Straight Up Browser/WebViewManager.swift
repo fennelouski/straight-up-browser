@@ -1056,6 +1056,8 @@ class WebViewManager: NSObject, ObservableObject {
         configuration.applicationNameForUserAgent = Self.userAgentAppName
 
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        // Off by default in WebKit; without it sites can't fullscreen videos
+        configuration.preferences.isElementFullscreenEnabled = true
         // JS on/off is decided per navigation in the policy delegate - the
         // settings toggle read here wouldn't reliably stick
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
