@@ -179,6 +179,13 @@ struct OmnibarTextField: NSViewRepresentable {
         textField.isBordered = false
         textField.focusRingType = .none
         textField.backgroundColor = .clear
+        // Code-created fields default to wrap+clip, so a long URL "paginated"
+        // line by line as the caret moved. Single-line + scrollable makes the
+        // field editor scroll horizontally like a normal address bar.
+        textField.usesSingleLineMode = true
+        textField.cell?.isScrollable = true
+        textField.cell?.wraps = false
+        textField.lineBreakMode = .byClipping
         textField.delegate = context.coordinator
         context.coordinator.textField = textField
         context.coordinator.startMonitoringCommandReturn()
