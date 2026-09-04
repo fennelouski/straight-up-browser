@@ -464,6 +464,14 @@ struct TabWebView: UIViewRepresentable {
                 return
             }
 
+            // zoommtg:, msteams:, mailto:, tel:… belong to another app. WebKit
+            // can't load them, so without this the navigation just fails and the
+            // page that tried to hand off appears to do nothing.
+            if let url = navigationAction.request.url, handleExternalScheme(url, from: webView) {
+                decisionHandler(.cancel, preferences)
+                return
+            }
+
             // Keyboard/trackpad modifier clicks need iOS 18.4+; older iOS just
             // navigates normally.
             if #available(iOS 18.4, *),
@@ -649,6 +657,8 @@ struct TabWebView: UIViewRepresentable {
         // MARK: - Popups (window.open / target="_blank" → new tab)
 
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+            // A target="_blank" handoff link would otherwise leave a dead blank tab.
+            if let url = navigationAction.request.url, handleExternalScheme(url, from: webView) { return nil }
             guard let tabManager = tabManager, let webViewManager = parent.webViewManager else { return nil }
             let popupWebView = WKWebView(frame: .zero, configuration: configuration)
             let openerContext = webViewManager.tabId(for: webView)
@@ -757,6 +767,47 @@ struct TabWebView: UIViewRepresentable {
                 }
             )
             presenter.present(alert, animated: true)
+        }
+
+        // MARK: - External app handoff
+
+        /// Schemes WebKit loads itself; everything else is another app's.
+        private static let webSchemes: Set<String> = [
+            "http", "https", "file", "about", "data", "blob", "javascript", "ws", "wss"
+        ]
+
+        /// Returns true when `url` belongs to another app and the navigation
+        /// should be cancelled. iOS can't name the handler app without declaring
+        /// every scheme up front, so the prompt names the scheme instead; if
+        /// nothing is installed, `open` fails quietly and the page stays put.
+        private func handleExternalScheme(_ url: URL, from webView: WKWebView) -> Bool {
+            guard let scheme = url.scheme?.lowercased(),
+                  !Coordinator.webSchemes.contains(scheme)
+            else { return false }
+
+            let suppressionKey = "externalSchemeAlwaysAllow.\(scheme)"
+            if UserDefaults.standard.bool(forKey: suppressionKey) {
+                UIApplication.shared.open(url)
+                return true
+            }
+            guard let presenter = topPresenter() else { return true }
+
+            let host = webView.url?.host ?? String(localized: "This page")
+            let alert = UIAlertController(
+                title: String(localized: "Open in another app?"),
+                message: String(localized: "\(host) wants to open a \(scheme): link."),
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel))
+            alert.addAction(UIAlertAction(title: String(localized: "Open"), style: .default) { _ in
+                UIApplication.shared.open(url)
+            })
+            alert.addAction(UIAlertAction(title: String(localized: "Always Allow"), style: .default) { _ in
+                UserDefaults.standard.set(true, forKey: suppressionKey)
+                UIApplication.shared.open(url)
+            })
+            presenter.present(alert, animated: true)
+            return true
         }
 
         // MARK: - JS dialogs (file uploads use WKWebView's native iOS picker)

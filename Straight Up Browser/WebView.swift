@@ -703,6 +703,14 @@ struct WebView: NSViewRepresentable {
                 return
             }
 
+            // zoommtg:, msteams:, mailto:, tel:… belong to another app. WebKit
+            // can't load them, so without this the navigation just fails and the
+            // page that tried to hand off appears to do nothing.
+            if let url = navigationAction.request.url, handleExternalScheme(url, from: webView) {
+                decisionHandler(.cancel, preferences)
+                return
+            }
+
             if navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url {
                 let mods = navigationAction.modifierFlags
 
@@ -1141,6 +1149,9 @@ struct WebView: NSViewRepresentable {
         // as a new tab. Non-user-gesture popups are already blocked by
         // javaScriptCanOpenWindowsAutomatically = false, so no custom heuristics.
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+            // A target="_blank" handoff link (zoommtg:, msteams:…) would otherwise
+            // leave a dead blank tab behind.
+            if let url = navigationAction.request.url, handleExternalScheme(url, from: webView) { return nil }
             guard let tabManager = tabManager, let webViewManager = parent.webViewManager else { return nil }
 
             // WebKit drives the load; the tab's URL/title land via the navigation
@@ -1316,6 +1327,49 @@ struct WebView: NSViewRepresentable {
             if title.contains("save") { return "square.and.arrow.down" }
             if title.contains("open") { return "arrow.up.forward.square" }
             return "ellipsis.circle"
+        }
+
+        // MARK: - External app handoff
+
+        /// Schemes WebKit loads itself; everything else is another app's.
+        private static let webSchemes: Set<String> = [
+            "http", "https", "file", "about", "data", "blob", "javascript", "ws", "wss"
+        ]
+
+        /// Returns true when `url` was claimed by another app and the navigation
+        /// should be cancelled.
+        private func handleExternalScheme(_ url: URL, from webView: WKWebView) -> Bool {
+            guard let scheme = url.scheme?.lowercased(),
+                  !Coordinator.webSchemes.contains(scheme)
+            else { return false }
+            // Nothing installed to handle it: cancel quietly so the page's own
+            // "download the app" fallback stays on screen instead of an error page.
+            guard let app = NSWorkspace.shared.urlForApplication(toOpen: url) else { return true }
+
+            let name = FileManager.default.displayName(atPath: app.path)
+            let suppressionKey = "externalSchemeAlwaysAllow.\(scheme)"
+            if UserDefaults.standard.bool(forKey: suppressionKey) {
+                NSWorkspace.shared.open(url)
+                return true
+            }
+
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Open “\(name)”?")
+            alert.informativeText = String(
+                localized: "\(webView.url?.host ?? String(localized: "This page")) wants to open \(name)."
+            )
+            alert.addButton(withTitle: String(localized: "Open"))
+            alert.addButton(withTitle: String(localized: "Cancel"))
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = String(localized: "Always allow \(scheme): links")
+            presentSheet(alert, over: webView) { response in
+                guard response == .alertFirstButtonReturn else { return }
+                if alert.suppressionButton?.state == .on {
+                    UserDefaults.standard.set(true, forKey: suppressionKey)
+                }
+                NSWorkspace.shared.open(url)
+            }
+            return true
         }
 
         // MARK: - JS dialogs and file uploads
