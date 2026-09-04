@@ -1139,7 +1139,8 @@ struct ContentView: View {
         } else {
             nil
         }
-        return ScrollView {
+        return ScrollViewReader { proxy in
+        ScrollView {
             VStack(spacing: 0) {
                 // Add a spacer at the top to allow dragging without scroll interference.
                 // While a tab is being dragged it doubles as the "remove from group"
@@ -1230,6 +1231,14 @@ struct ContentView: View {
             // leading edge, so you see it land instead of guessing whether it opened.
             .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.8),
                        value: visibleTabOrder.map(\.id))
+        }
+        // Reopening the sidebar rebuilds this view, so land on the current tab
+        // instead of the top of the list.
+        .onAppear {
+            if let target = tabManager.selectedTabId ?? tabManager.splitTabIds.first {
+                proxy.scrollTo(target, anchor: .center)
+            }
+        }
         }
     }
 
