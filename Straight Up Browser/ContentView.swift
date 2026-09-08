@@ -1500,7 +1500,6 @@ struct ContentView: View {
                                 bookmarkSuggestions: bookmarkSuggestions,
                                 currentTabId: tabManager.selectedTabId,
                                 onSwitchToTab: { tabManager.selectedTabId = $0 },
-                                thumbnail: { webViewManager?.thumbnail(for: $0) },
                                 pageProtection: pageProtectionSummary,
                                 focusedDocumentName: focusedDocumentName
                             )

@@ -123,6 +123,7 @@ are the defaults:
 | `⌘D` | Add or remove bookmark |
 | `⌘⇧B` | Show bookmark Library |
 | `⌘Y` | Show history Library |
+| `⌥⌘Y` | Toggle history search while the omnibar is open |
 | `⌘⇧J` | Show Downloads |
 | `⌘⌥R` | Reader mode |
 | `⌘⌥A` | Turn autofill on or off |

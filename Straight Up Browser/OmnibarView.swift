@@ -60,6 +60,7 @@ private struct OmnibarSuggestionLabel: View {
                     Text(suggestion.title ?? suggestion.url.host ?? suggestion.url.absoluteString)
                         .font(.system(size: 14))
                         .foregroundColor(.primary)
+                        .lineLimit(1)
                     badge
                     if isReady { readyBadge }
                 }
@@ -134,7 +135,7 @@ private struct OmnibarSuggestionButton: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .frame(height: 68)
         .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
         .contentShape(Rectangle())
         .accessibilityLabel(accessibilityTitle)
@@ -167,7 +168,6 @@ struct OmnibarTextField: NSViewRepresentable {
     var onArrowDown: (() -> Void)?
     var onCommit: ((OmnibarCommit) -> Void)?
     var onCancel: (() -> Void)?
-    var onTab: (() -> Void)?
     func makeNSView(context: Context) -> NSTextField {
         let textField = NSTextField()
         textField.placeholderString = placeholder
@@ -197,6 +197,8 @@ struct OmnibarTextField: NSViewRepresentable {
     func updateNSView(_ nsView: NSTextField, context: Context) {
         context.coordinator.parent = self
         // Do not touch the field editor when a render merely echoes its text.
+        nsView.placeholderString = placeholder
+        if let editor = nsView.currentEditor() as? NSTextView, editor.hasMarkedText() { return }
         if nsView.stringValue != text {
             nsView.stringValue = text
         }
@@ -257,7 +259,7 @@ struct OmnibarTextField: NSViewRepresentable {
 
         func startMonitoringCommandReturn() {
             commandReturnMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                guard let self, let textField = self.textField, textField.currentEditor() != nil,
+                guard let self, let textField = self.textField, let editor = textField.currentEditor() as? NSTextView, !editor.hasMarkedText(),
                       event.keyCode == 36 else { // Return
                     return event
                 }
@@ -283,6 +285,14 @@ struct OmnibarTextField: NSViewRepresentable {
 
         func controlTextDidBeginEditing(_ obj: Notification) {
             if let textField = obj.object as? NSTextField {
+                if let editor = textField.currentEditor() as? NSTextView {
+                    editor.isAutomaticQuoteSubstitutionEnabled = false
+                    editor.isAutomaticDashSubstitutionEnabled = false
+                    editor.isAutomaticTextReplacementEnabled = false
+                    editor.isAutomaticSpellingCorrectionEnabled = false
+                    editor.isContinuousSpellCheckingEnabled = false
+                    editor.allowsUndo = true
+                }
                 if parent.autoSelectAll && !hasAutoSelected {
                     // Select all text when the omnibar first opens
                     textField.selectText(nil)
@@ -301,6 +311,8 @@ struct OmnibarTextField: NSViewRepresentable {
         }
 
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            // Let the input method handle candidate navigation and confirmation.
+            guard !textView.hasMarkedText() else { return false }
             switch commandSelector {
             case #selector(NSResponder.moveUp(_:)):
                 parent.onArrowUp?()
@@ -311,12 +323,6 @@ struct OmnibarTextField: NSViewRepresentable {
             case #selector(NSResponder.insertNewline(_:)):
                 let shift = NSApp.currentEvent?.modifierFlags.contains(.shift) == true
                 parent.onCommit?(shift ? .newTab : .navigate)
-                return true
-            case #selector(NSResponder.insertTab(_:)),
-                 #selector(NSResponder.insertBacktab(_:)):
-                // Consumed so Tab toggles history search instead of walking the
-                // key-view loop out of the omnibar.
-                parent.onTab?()
                 return true
             case #selector(NSResponder.cancelOperation(_:)):
                 parent.onCancel?()
@@ -343,21 +349,16 @@ struct OmnibarView: View {
     var bookmarkSuggestions: [(title: String, url: URL)]
     var currentTabId: UUID? = nil
     var onSwitchToTab: ((UUID) -> Void)? = nil
-    var thumbnail: ((UUID) -> NSImage?)? = nil
     var pageProtection: PageProtectionSummary? = nil
     /// Shown above the field when a workspace document owns focus — the omnibar
     /// then names the document rather than implying a page (Phase 2 deviation #9).
     var focusedDocumentName: String? = nil
 
-    // Below this, a match is too weak to hijack a plain Return into a tab switch —
-    // you can still arrow onto the suggestion at any length.
-    private static let switchOnReturnMinLength = 3
-
     @State private var inputText: String = ""
-    @State private var selectedSuggestionIndex: Int = -1
+    @State private var selection = OmnibarSelection()
+    @State private var suggestionsHovered = false
     @State private var shouldFocusTextField: Bool = false
-    // Tab flips the omnibar into searching everywhere you've been instead of
-    // guessing where you're going.
+    // History is an explicit mode; Tab retains native focus traversal.
     @State private var historyMode: Bool = false
 
     @State private var readyURL: URL?
@@ -366,9 +367,11 @@ struct OmnibarView: View {
         (historyMode || !inputText.isEmpty) && !filteredSuggestions.isEmpty
     }
 
-    // All unique history URLs, computed once when the omnibar opens - not per
-    // keystroke, which scanned every tab's full history on each character
+    // Load per-tab history lazily, only once a destination search needs it.
+    // Opening the current URL for editing never pays for this scan.
     @State private var allHistoryURLs: [URL] = []
+    @State private var hasLoadedHistory = false
+    @State private var hasPrimedPrefetch = false
 
     private func loadHistoryURLs() {
         var urls = Set<URL>()
@@ -376,6 +379,7 @@ struct OmnibarView: View {
             urls.formUnion(tab.history)
         }
         allHistoryURLs = Array(urls)
+        hasLoadedHistory = true
     }
 
     // What prefetch needs to know about the current window: never guess a page
@@ -395,61 +399,71 @@ struct OmnibarView: View {
         suggestions.results(for: inputText, historyMode: historyMode)
     }
 
-    private func pollSuggestions() {
-        suggestions.poll(query: inputText, historyMode: historyMode) {
+    private func requestSuggestions() {
+        let query = inputText
+        let history = historyMode
+        suggestions.request(query: query, historyMode: history) {
+            // Editing a full URL is not a destination search. In particular,
+            // selecting a path/query must not initialize stores or a hidden WebView.
+            guard OmnibarSuggestionSnapshot.shouldSuggest(query: query, historyMode: history) else { return [] }
+            if !history && !hasLoadedHistory { loadHistoryURLs() }
+            if !hasPrimedPrefetch {
+                hasPrimedPrefetch = true
+                Prefetcher.shared.prime()
+            }
             let snapshot = OmnibarSuggestionSnapshot(
-                inputText: inputText, historyMode: historyMode,
+                inputText: query, historyMode: history,
                 tabs: tabs.map { .init(id: $0.id, url: $0.url, title: $0.title, lastAccessed: $0.lastAccessed) },
                 currentTabId: currentTabId, sites: SiteHistory.shared.sites,
                 bookmarkSuggestions: bookmarkSuggestions, allHistoryURLs: allHistoryURLs,
                 visits: BrowsingHistoryStore.shared.visits
             )
-            return Task { @MainActor in
-                let worker = Task.detached(priority: .utility) { snapshot.undecoratedSuggestions }
-                var result = await withTaskCancellationHandler {
-                    await worker.value
-                } onCancel: { worker.cancel() }
-                guard !Task.isCancelled else { return [] }
-                if !snapshot.historyMode {
-                    result += await transcriptHits?(snapshot.inputText) ?? []
-                }
-                var seen: Set<String> = []
-                result = result.filter { seen.insert($0.id).inserted }
-                for index in result.indices {
-                    guard !Task.isCancelled else { return [] }
-                    result[index].ledgerNote = ledgerNote?(result[index].url) ?? result[index].ledgerNote
-                    await Task.yield()
-                }
-                return result
+            let worker = Task.detached(priority: .utility) { snapshot.undecoratedSuggestions }
+            var result = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: { worker.cancel() }
+            guard !Task.isCancelled else { return [] }
+            if !snapshot.historyMode {
+                result += await transcriptHits?(snapshot.inputText) ?? []
             }
+            var seen: Set<String> = []
+            result = result.filter { seen.insert($0.id).inserted }
+            for index in result.indices {
+                guard !Task.isCancelled else { return [] }
+                result[index].ledgerNote = ledgerNote?(result[index].url) ?? result[index].ledgerNote
+                await Task.yield()
+            }
+            return result
         }
+    }
+
+    private func pollSuggestions() {
+        suggestions.poll(query: inputText, historyMode: historyMode, deferPublication: suggestionsHovered)
+        guard hasPrimedPrefetch else { return }
         Prefetcher.shared.consider(filteredSuggestions, typed: inputText,
                                    openURLs: openURLs, session: activeSession)
         if readyURL != Prefetcher.shared.readyURL { readyURL = Prefetcher.shared.readyURL }
     }
 
-    // The open tab a plain Return should switch to, if any: whatever is arrowed to,
-    // else the top suggestion once enough has been typed to be sure.
-    private var switchTarget: Suggestion? {
-        if let selected = selectedSuggestion {
-            return selected.type == .openTab ? selected : nil
-        }
-        guard inputText.count >= Self.switchOnReturnMinLength,
-              let top = filteredSuggestions.first, top.type == .openTab else { return nil }
-        return top
-    }
-
-    // History search always has a row armed, so Return takes the top hit without
-    // arrowing to it first.
-    private var effectiveSelectionIndex: Int {
-        if selectedSuggestionIndex >= 0 { return selectedSuggestionIndex }
-        return historyMode && !filteredSuggestions.isEmpty ? 0 : -1
-    }
-
     private var selectedSuggestion: Suggestion? {
-        let index = effectiveSelectionIndex
-        guard index >= 0 && index < filteredSuggestions.count else { return nil }
-        return filteredSuggestions[index]
+        selection.selected(in: filteredSuggestions)
+    }
+
+    private func toggleHistory() {
+        historyMode.toggle()
+    }
+
+    private func commit(_ commit: OmnibarCommit) {
+        if let selected = selectedSuggestion {
+            if commit == .navigate, let tabId = selected.tabId {
+                onSwitchToTab?(tabId)
+                isPresented = false
+                return
+            }
+            navigate(commit, text: selected.url.absoluteString)
+        } else {
+            navigate(commit)
+        }
     }
 
     var body: some View {
@@ -477,15 +491,6 @@ struct OmnibarView: View {
                     .foregroundColor(historyMode ? .blue : .gray)
                     .padding(.leading, pageProtection == nil ? 12 : 0)
 
-                if historyMode {
-                    Text("History")
-                        .font(.system(size: 11, weight: .medium))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.15), in: Capsule())
-                        .foregroundColor(.blue)
-                }
-
                 OmnibarTextField(
                     text: $inputText,
                     placeholder: historyMode
@@ -493,46 +498,30 @@ struct OmnibarView: View {
                         : String(localized: "Search or enter address"),
                     autoSelectAll: true,
                     shouldFocus: shouldFocusTextField,
-                    onArrowUp: {
-                        if selectedSuggestionIndex > 0 {
-                            selectedSuggestionIndex -= 1
-                        }
-                    },
-                    onArrowDown: {
-                        if selectedSuggestionIndex < filteredSuggestions.count - 1 {
-                            selectedSuggestionIndex += 1
-                        }
-                    },
-                    onCommit: { commit in
-                        // Return on a site you already have open switches to that tab
-                        // instead of opening a second copy. Shift/Cmd+Return still
-                        // force a new tab / split pane.
-                        if commit == .navigate, let tabId = switchTarget?.tabId {
-                            onSwitchToTab?(tabId)
-                            isPresented = false
-                            return
-                        }
-                        if let selectedSuggestion = selectedSuggestion {
-                            inputText = selectedSuggestion.url.absoluteString
-                        }
-                        navigate(commit)
-                    },
-                    onCancel: {
-                        isPresented = false
-                    },
-                    onTab: {
-                        // The omnibar opens pre-filled with the current URL; that's a
-                        // terrible history query, so drop it if it's untouched.
-                        if !historyMode && inputText == urlString { inputText = "" }
-                        historyMode.toggle()
-                    }
+                    onArrowUp: { selection.move(-1, in: filteredSuggestions) },
+                    onArrowDown: { selection.move(1, in: filteredSuggestions) },
+                    onCommit: { commit($0) },
+                    onCancel: { isPresented = false }
                 )
                 .padding(.vertical, 12)
                 .padding(.horizontal, 8)
-                .onChange(of: inputText) { _, typed in
-                    selectedSuggestionIndex = -1
-
+                .onChange(of: inputText) { _, _ in
+                    selection = OmnibarSelection()
+                    requestSuggestions()
                 }
+
+                Button(action: toggleHistory) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .foregroundStyle(historyMode ? Color.blue : Color.secondary)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut("y", modifiers: [.command, .option])
+                .help("Search history (⌥⌘Y)")
+                .accessibilityLabel("Search history")
+                .accessibilityValue(historyMode ? "On" : "Off")
+                .accessibilityIdentifier("omnibar-history")
 
                 Button(action: { navigate() }) {
                     Image(systemName: "arrow.right.circle.fill")
@@ -553,75 +542,26 @@ struct OmnibarView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 20)
 
-            // Card preview of the tab Return would jump to, so you can see it's the
-            // one you meant before committing.
-            if let target = switchTarget, let tabId = target.tabId {
-                HStack(spacing: 12) {
-                    Group {
-                        if let image = thumbnail?(tabId) {
-                            Image(nsImage: image)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                        } else {
-                            Image(systemName: "macwindow")
-                                .font(.system(size: 20))
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .background(Color.gray.opacity(0.12))
-                        }
-                    }
-                    .frame(width: 120, height: 76)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(target.title ?? target.url.host ?? "")
-                            .font(.system(size: 13, weight: .medium))
-                            .lineLimit(1)
-                        Text(target.url.absoluteString)
-                            .font(.system(size: 11))
-                            .foregroundColor(.gray)
-                            .lineLimit(1)
-                        Text("Return to switch · ⇧Return for a new tab")
-                            .font(.system(size: 11))
-                            .foregroundColor(.blue)
-                    }
-                    Spacer()
-                }
-                .padding(10)
-                .background(Color(.windowBackgroundColor).opacity(0.95))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.blue.opacity(0.4), lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .shadow(radius: 4)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 8)
-                .padding(.top, -8)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Open tab: \(target.title ?? target.url.host ?? target.url.absoluteString)")
-                .accessibilityHint("Press Return to switch to this tab")
-            }
-
             // Suggestions dropdown
             if showSuggestions && !filteredSuggestions.isEmpty {
                 VStack(spacing: 0) {
-                    ForEach(Array(filteredSuggestions.enumerated()), id: \.element.id) { index, suggestion in
+                    ForEach(filteredSuggestions) { suggestion in
                         OmnibarSuggestionButton(
                             suggestion: suggestion,
-                            isSelected: effectiveSelectionIndex == index,
+                            isSelected: selection.id == suggestion.id,
                             isReady: suggestion.url == readyURL
                         ) {
                             if let tabId = suggestion.tabId {
                                 onSwitchToTab?(tabId)
                                 isPresented = false
                             } else {
-                                inputText = suggestion.url.absoluteString
-                                navigate()
+                                navigate(text: suggestion.url.absoluteString)
                             }
                         }
                     }
                 }
+                .onHover { suggestionsHovered = $0 }
+                .onDisappear { suggestionsHovered = false }
                 .background(Color(.windowBackgroundColor).opacity(0.95))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
@@ -644,13 +584,13 @@ struct OmnibarView: View {
         }
         .frame(minWidth: 0, idealWidth: 600, maxWidth: 600, alignment: .top)
         .onChange(of: historyMode) { _, _ in
-            selectedSuggestionIndex = -1
+            selection = OmnibarSelection()
+            requestSuggestions()
         }
         .onAppear {
             inputText = urlString
             shouldFocusTextField = true
-            loadHistoryURLs()
-            Prefetcher.shared.prime()
+            requestSuggestions()
         }
         .task {
             while !Task.isCancelled {
@@ -660,12 +600,12 @@ struct OmnibarView: View {
         }
         .onDisappear {
             suggestions.cancel()
-            Prefetcher.shared.cancel()
+            if hasPrimedPrefetch { Prefetcher.shared.cancel() }
         }
     }
 
-    private func navigate(_ commit: OmnibarCommit = .navigate) {
-        let trimmedText = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func navigate(_ commit: OmnibarCommit = .navigate, text: String? = nil) {
+        let trimmedText = (text ?? inputText).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
 
         var urlString = trimmedText
@@ -675,10 +615,6 @@ struct OmnibarView: View {
             // URL-ish: no spaces and either a dot (example.com) or a colon (localhost:3000)
             if !urlString.contains(" ") && (urlString.contains(".") || urlString.contains(":")) {
                 urlString = "https://" + urlString
-            } else if let habit = SiteHistory.shared.habit(for: urlString), let habitURL = habit.url {
-                // A bare word you've been going to for months isn't a search: "woot"
-                // means woot.com, "gmail" means mail.google.com.
-                urlString = habitURL.absoluteString
             } else {
                 urlString = NavigationManager.searchURL(for: urlString)
             }
@@ -686,7 +622,7 @@ struct OmnibarView: View {
 
         // A prefetch of this very page should finish — stopping it mid-flight would
         // throw away the head start. A guess at anywhere else gets dropped.
-        Prefetcher.shared.committed(to: urlString)
+        if hasPrimedPrefetch { Prefetcher.shared.committed(to: urlString) }
         onNavigate(urlString, commit)
         isPresented = false
     }
@@ -710,6 +646,10 @@ nonisolated struct OmnibarSuggestionSnapshot: Sendable {
     let bookmarkSuggestions: [(title: String, url: URL)]
     let allHistoryURLs: [URL]
     let visits: [HistoryVisit]
+
+    static func shouldSuggest(query: String, historyMode: Bool) -> Bool {
+        historyMode || (!query.isEmpty && !query.contains("://"))
+    }
 
     // Tabs already open that match what's being typed — ranked by how well the
     // typed text starts their host/title, best first. The tab you're already
@@ -739,7 +679,7 @@ nonisolated struct OmnibarSuggestionSnapshot: Sendable {
 
     // Filter suggestions based on input text
     var undecoratedSuggestions: [Suggestion] {
-        guard !Task.isCancelled else { return [] }
+        guard !Task.isCancelled, Self.shouldSuggest(query: inputText, historyMode: historyMode) else { return [] }
         if historyMode {
             return BrowsingHistoryStore.search(inputText, visits: visits).map {
                 Suggestion(url: $0.url, title: $0.title, type: .history)
@@ -820,7 +760,7 @@ final class OmnibarSuggestionUpdates: ObservableObject {
         let query: String
         let historyMode: Bool
     }
-    @Published private var published: [Suggestion] = []
+    private var published: [Suggestion] = []
     private var publishedRequest: Request?
     private var requested: Request?
     private var pending: (Request, [Suggestion])?
@@ -830,25 +770,29 @@ final class OmnibarSuggestionUpdates: ObservableObject {
         publishedRequest == Request(query: query, historyMode: historyMode) ? published : []
     }
 
-    func poll(query: String, historyMode: Bool,
-              start: () -> Task<[Suggestion], Never>) {
+    func poll(query: String, historyMode: Bool, deferPublication: Bool = false) {
+        guard !deferPublication, let (finished, values) = pending else { return }
+        pending = nil
+        guard finished == Request(query: query, historyMode: historyMode) else { return }
+        guard publishedRequest != finished || published != values else { return }
+        objectWillChange.send()
+        publishedRequest = finished
+        published = values
+    }
+
+    /// Schedule immediately, but never search synchronously in the editing callback.
+    /// Only poll() publishes; completing or cancelling a request cannot refresh the UI.
+    func request(query: String, historyMode: Bool,
+                 search: @escaping @MainActor () async -> [Suggestion]) {
         let request = Request(query: query, historyMode: historyMode)
-        if let (finished, values) = pending {
-            pending = nil
-            if finished == request {
-                publishedRequest = finished
-                if published != values { published = values }
-                else { objectWillChange.send() }
-            }
-        }
         guard requested != request else { return }
         task?.cancel()
+        pending = nil
         requested = request
-        let worker = start()
         task = Task { [weak self] in
-            let values = await withTaskCancellationHandler {
-                await worker.value
-            } onCancel: { worker.cancel() }
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            let values = await search()
             guard !Task.isCancelled else { return }
             self?.pending = (request, values)
         }
@@ -859,5 +803,21 @@ final class OmnibarSuggestionUpdates: ObservableObject {
         task = nil
         pending = nil
         requested = nil
+    }
+}
+
+/// Explicit selection survives reordered rows and can be cleared with Up.
+struct OmnibarSelection {
+    private(set) var id: Suggestion.ID?
+
+    func selected(in suggestions: [Suggestion]) -> Suggestion? {
+        suggestions.first { $0.id == id }
+    }
+
+    mutating func move(_ direction: Int, in suggestions: [Suggestion]) {
+        let current = suggestions.firstIndex { $0.id == id } ?? -1
+        let next = current + direction
+        if next < 0 { id = nil }
+        else if suggestions.indices.contains(next) { id = suggestions[next].id }
     }
 }
