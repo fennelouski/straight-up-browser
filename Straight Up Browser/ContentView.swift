@@ -951,31 +951,63 @@ struct ContentView: View {
         return newspaperArticles.contains { $0.sourceKey == key }
     }
 
-    // Four buttons, and the first one is optional. Workspaces, containers, and
-    // incognito all live inside the groups menu now — they are all "put these
-    // tabs somewhere", and none of them earned a permanent glyph of its own.
     private var tabBarHeaderButtons: some View {
-        HStack(spacing: 4) {
-            if showNewTabButton {
-                Button {
-                    NewTabButtonVisibility.noteUsed()
-                    createNewTab()
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 12))
-                        .frame(width: 20, height: 20)
-                        .contentShape(Rectangle())
+        Group {
+            // Four controls, including menu indicators and outer padding.
+            if effectiveTabSidebarWidth >= 140 {
+                HStack(spacing: 4) {
+                    if showNewTabButton { newTabHeaderButton }
+                    tabBarHeaderActions
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.plain)
-                .delayedHelp("New Tab · ⌘T")
-                .accessibilityLabel("New Tab")
+                .labelStyle(.iconOnly)
+            } else {
+                HStack(spacing: 4) {
+                    if showNewTabButton { newTabHeaderButton.labelStyle(.iconOnly) }
+                    Menu {
+                        newTabHeaderButton
+                        tabBarHeaderActions
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .delayedHelp("More Tab Actions")
+                    .accessibilityLabel("More Tab Actions")
+                }
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: 32)
+        .padding(.horizontal, 6)
+        .background(Color(.windowBackgroundColor))
+        .zIndex(10)
+    }
 
+    private var newTabHeaderButton: some View {
+        Button {
+            NewTabButtonVisibility.noteUsed()
+            createNewTab()
+        } label: {
+            Label("New Tab", systemImage: "plus")
+                .font(.system(size: 12))
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .delayedHelp("New Tab · ⌘T")
+        .accessibilityLabel("New Tab")
+    }
+
+    private var tabBarHeaderActions: some View {
+        Group {
             Button {
                 webViewManager?.captureThumbnail(for: tabManager.selectedTabId)
+                showOmnibar = false
                 showTabGrid = true
             } label: {
-                Image(systemName: "rectangle.grid.2x2")
+                Label("Visual Tabs", systemImage: "rectangle.grid.2x2")
                     .font(.system(size: 12))
                     .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
@@ -1025,7 +1057,7 @@ struct ContentView: View {
                     }
                 }
             } label: {
-                Image(systemName: "folder")
+                Label("Groups, Containers, and Workspaces", systemImage: "folder")
                     .font(.system(size: 12))
                     .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
@@ -1042,7 +1074,7 @@ struct ContentView: View {
                 )
                 .disabled(activeTab?.url == nil || activeTab?.sessionKind == .incognito)
             } label: {
-                Image(systemName: "newspaper")
+                Label("Newspaper", systemImage: "newspaper")
                     .font(.system(size: 12))
                     .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
@@ -1051,12 +1083,7 @@ struct ContentView: View {
             .delayedHelp("Newspaper · add page with ⌥⌘N or ⇧⌘N")
             .accessibilityLabel("Newspaper")
 
-            Spacer(minLength: 0)
         }
-        .frame(height: 32)
-        .padding(.horizontal, 6)
-        .background(Color(.windowBackgroundColor))
-        .zIndex(10) // Ensure buttons are above overlay
     }
 
     private func groupHeaderView(for group: TabGroup) -> some View {
@@ -1246,7 +1273,7 @@ struct ContentView: View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
                 // Tab bar header with buttons - only show when not in minimal mode
-                if tabBarWidth >= 120 {
+                if tabBarWidth > 30 {
                     tabBarHeaderButtons
                 }
 
@@ -1526,7 +1553,7 @@ struct ContentView: View {
                 onCommit: { _ in performFind() },
                 onCancel: { closeFindBar() }
             )
-            .frame(width: 180)
+            .frame(minWidth: 40, idealWidth: 180, maxWidth: 180)
 
             Text(findCountLabel)
                 .font(.caption)
@@ -2254,7 +2281,7 @@ struct ContentView: View {
                     BrowserAccessibility.backgroundIsHidden(
                         sidebarPresented: false,
                         omnibarPresented: showOmnibar,
-                        modalPresented: contentModal != nil
+                        modalPresented: contentModal != nil || showTabGrid
                     )
                 )
                 .accessibilityFocused(
@@ -2676,7 +2703,7 @@ struct ContentView: View {
     private var tabSidebarResizeOverlay: some View {
         VStack(spacing: 0) {
             Color.clear
-                .frame(height: tabBarWidth < 120 ? 0 : 38)
+                .frame(height: tabBarWidth <= 30 ? 0 : 38)
                 .allowsHitTesting(false)
             HStack(spacing: 0) {
                 if tabSidebarSide == .right {
@@ -3000,6 +3027,7 @@ struct ContentView: View {
                     // Snapshot the tab you're on first; every other tab was captured
                     // when you switched away from it.
                     webViewManager?.captureThumbnail(for: tabManager.selectedTabId)
+                    showOmnibar = false
                     showTabGrid.toggle()
                 }
 

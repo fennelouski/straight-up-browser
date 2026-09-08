@@ -1336,6 +1336,35 @@ struct PaneFocusTests {
         try? await Task.sleep(for: .milliseconds(50))
     }
 
+    @Test func splitFocusOutlineStaysRoundedAndFollowsTheFocusedPane() async throws {
+        let manager = WebViewManager()
+        let container = WebViewContainer(webViewManager: manager, coordinator: nil)
+        container.setFrameSize(NSSize(width: 800, height: 600))
+        let first = UUID(), second = UUID(), documentID = UUID()
+        let document = NSView()
+        container.documentPaneProvider = { $0 == documentID ? document : nil }
+        for focused in [first, second, documentID] {
+            container.setDisplayedTabs([first, second, documentID], focusedTabId: focused)
+            await drainMainQueue()
+            let outline = try #require(container.subviews.last)
+            let pane = try #require(focused == documentID ? document : manager.existingWebView(for: focused))
+            #expect(outline.frame == pane.frame)
+            #expect(outline.layer?.borderWidth == 2)
+            #expect(outline.layer?.cornerRadius == WindowLayout.windowCornerRadius)
+            #expect(outline.hitTest(NSPoint(x: outline.frame.midX, y: outline.frame.midY)) == nil)
+            #expect(pane.layer?.borderWidth == 0)
+        }
+        #expect(manager.existingWebView(for: documentID) == nil)
+        container.setFrameSize(NSSize(width: 480, height: 400))
+        #expect(container.subviews.last?.frame == document.frame)
+        container.setDisplayedTabs([documentID], focusedTabId: documentID)
+        await drainMainQueue()
+        #expect(!container.subviews.contains { $0.layer?.borderWidth == 2 })
+        container.setDisplayedTabs([], focusedTabId: nil)
+        await drainMainQueue()
+        #expect(!container.subviews.contains { $0.layer?.borderWidth == 2 })
+    }
+
     @Test func activeWebViewFollowsRequestedFocusBeforeApply() async {
         let webViewManager = WebViewManager()
         let container = WebViewContainer(webViewManager: webViewManager, coordinator: nil)

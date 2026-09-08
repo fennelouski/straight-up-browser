@@ -69,7 +69,7 @@ private struct AutomaticLinkMitosisModifier: ViewModifier {
             .opacity(role == .child && !childPresented ? 0.3 : 1)
             .overlay {
                 RoundedRectangle(cornerRadius: 5)
-                    .stroke(Color.accentColor.opacity(glowVisible ? 0.5 : 0), lineWidth: 1.5)
+                    .strokeBorder(Color.accentColor.opacity(glowVisible ? 0.5 : 0), lineWidth: 1.5)
                     .allowsHitTesting(false)
             }
             .onAppear { play() }
@@ -321,7 +321,7 @@ struct TabRowView: View {
                             Image(nsImage: thumbnail)
                                 .resizable()
                                 .scaledToFill()
-                                .frame(height: expandedHeight)
+                                .frame(width: max(0, availableWidth - 12), height: expandedHeight)
                                 .clipped()
                                 .overlay(
                                     LinearGradient(
@@ -349,7 +349,7 @@ struct TabRowView: View {
                                     .foregroundStyle(thumbnail == nil ? Color.primary : Color.white)
                                     .lineLimit(2)
                                 let detail = cardLabels?.detail ?? tab.url?.host ?? ""
-                                if !detail.isEmpty {
+                                if !detail.isEmpty, detail != (cardLabels?.title ?? displayTitle) {
                                     Text(detail)
                                         .font(.caption2)
                                         .foregroundStyle(thumbnail == nil ? Color.secondary : Color.white.opacity(0.72))
@@ -361,12 +361,12 @@ struct TabRowView: View {
                         }
                         .padding(10)
                     }
-                    .frame(height: expandedHeight)
+                    .frame(width: max(0, availableWidth - 12), height: expandedHeight)
                     .background(accent.opacity(isSelected ? 0.22 : 0.08))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .overlay {
                         RoundedRectangle(cornerRadius: 10)
-                            .stroke(isSelected ? accent.opacity(0.8) : Color.primary.opacity(0.08), lineWidth: isSelected ? 2 : 1)
+                            .strokeBorder(isSelected ? accent.opacity(0.8) : Color.primary.opacity(0.08), lineWidth: isSelected ? 2 : 1)
                     }
                     .padding(.horizontal, 6)
                     .contentShape(Rectangle())
@@ -447,7 +447,7 @@ struct TabRowView: View {
         .overlay {
             if isDropTarget {
                 RoundedRectangle(cornerRadius: 5)
-                    .stroke(accent.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                    .strokeBorder(accent.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
                     .padding(.vertical, 1)
                     .allowsHitTesting(false)
             }

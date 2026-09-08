@@ -1611,8 +1611,9 @@ class WebViewContainer: NSView {
         }
     }
 
-    private let whiteOverlay = ToneOverlay()
-    private let blackOverlay = ToneOverlay()
+    private let whiteOverlay = PageOverlay()
+    private let blackOverlay = PageOverlay()
+    private let focusOutline = PageOverlay()
 
     var activeWebView: WKWebView? {
         // The WebView for the focused tab, not necessarily the manager's
@@ -1661,6 +1662,8 @@ class WebViewContainer: NSView {
         self.wantsLayer = true
         self.layer?.backgroundColor = NSColor.clear.cgColor
         self.layer?.masksToBounds = true // Ensure subviews are clipped to bounds
+        focusOutline.layer?.borderWidth = 2
+        focusOutline.layer?.cornerRadius = WindowLayout.windowCornerRadius
     }
 
     required init?(coder: NSCoder) {
@@ -1725,6 +1728,7 @@ class WebViewContainer: NSView {
         visibleDocumentViews.removeAll()
 
         guard !ids.isEmpty, let webViewManager = webViewManager else {
+            focusOutline.removeFromSuperview()
             Logger.log("WebViewContainer setDisplayedTabs: no tabs or webViewManager", type: "WebView")
             return
         }
@@ -1734,8 +1738,6 @@ class WebViewContainer: NSView {
                 attachPane(documentView)
                 documentView.isHidden = false
                 visibleDocumentViews.insert(documentView)
-                documentView.layer?.borderWidth = (ids.count > 1 && id == focusedTabId) ? 2 : 0
-                documentView.layer?.borderColor = NSColor.controlAccentColor.cgColor
                 continue
             }
             let webView = webViewManager.getWebView(for: id)
@@ -1747,10 +1749,6 @@ class WebViewContainer: NSView {
             webView.allowsBackForwardNavigationGestures = true
             webView.allowsMagnification = SettingsManager.shared.pinchToZoomEnabled
             webView.allowsLinkPreview = true
-
-            // Subtle accent border marks the focused pane — only while split
-            webView.layer?.borderWidth = (ids.count > 1 && id == focusedTabId) ? 2 : 0
-            webView.layer?.borderColor = NSColor.controlAccentColor.cgColor
         }
 
         layoutPanes(animated: paneShapeChanged)
@@ -1837,16 +1835,21 @@ class WebViewContainer: NSView {
 
     private func placePanes(_ views: [NSView], target: (NSView) -> NSView) {
         let b = bounds
+        let focusedView = focusedTabId.flatMap { paneView(for: $0) }
+        func place(_ view: NSView, in frame: NSRect) {
+            target(view).frame = frame
+            if view === focusedView { target(focusOutline).frame = frame }
+        }
 
         if views.count == 4 {
             // Rigid 2×2 grid in reading order: dividers span the full grid.
             let leftWidth = floor(b.width * colFractions[0])
             let topHeight = floor(b.height * rowFraction)
             let topY = b.height - topHeight
-            target(views[0]).frame = NSRect(x: 0, y: topY, width: leftWidth, height: topHeight)
-            target(views[1]).frame = NSRect(x: leftWidth, y: topY, width: b.width - leftWidth, height: topHeight)
-            target(views[2]).frame = NSRect(x: 0, y: 0, width: leftWidth, height: topY)
-            target(views[3]).frame = NSRect(x: leftWidth, y: 0, width: b.width - leftWidth, height: topY)
+            place(views[0], in: NSRect(x: 0, y: topY, width: leftWidth, height: topHeight))
+            place(views[1], in: NSRect(x: leftWidth, y: topY, width: b.width - leftWidth, height: topHeight))
+            place(views[2], in: NSRect(x: 0, y: 0, width: leftWidth, height: topY))
+            place(views[3], in: NSRect(x: leftWidth, y: 0, width: b.width - leftWidth, height: topY))
             ensureDividers([true, false])
             dividers[0].frame = NSRect(x: leftWidth - 4, y: 0, width: 8, height: b.height)
             dividers[1].frame = NSRect(x: 0, y: topY - 4, width: b.width, height: 8)
@@ -1855,7 +1858,7 @@ class WebViewContainer: NSView {
             var x: CGFloat = 0
             for (index, view) in views.enumerated() {
                 let width = index == views.count - 1 ? b.width - x : floor(b.width * colFractions[index])
-                target(view).frame = NSRect(x: x, y: 0, width: width, height: b.height)
+                place(view, in: NSRect(x: x, y: 0, width: width, height: b.height))
                 x += width
             }
             ensureDividers(Array(repeating: true, count: views.count - 1))
@@ -1865,8 +1868,19 @@ class WebViewContainer: NSView {
                 divider.frame = NSRect(x: edge - 4, y: 0, width: 8, height: b.height)
             }
         } else {
-            target(views[0]).frame = b
+            place(views[0], in: b)
             ensureDividers([])
+        }
+
+        // Draw inside a rounded, mouse-transparent overlay. A rectangular
+        // WebKit border loses its corners under the window's rounded mask.
+        if views.count > 1, focusedView != nil {
+            focusOutline.layer?.borderColor = NSColor.controlAccentColor.cgColor
+            if subviews.last !== focusOutline {
+                addSubview(focusOutline, positioned: .above, relativeTo: nil)
+            }
+        } else {
+            focusOutline.removeFromSuperview()
         }
     }
 
@@ -1982,11 +1996,8 @@ class WebViewContainer: NSView {
     }
 }
 
-// The white-point veil. Transparent to the mouse so the page underneath still
-// gets every click.
-/// A pass-through veil over the web views: a flat colour composited onto whatever
-/// is underneath, optionally through a Core Image blend filter.
-final class ToneOverlay: NSView {
+/// A mouse-transparent page overlay for tone adjustments and the focus outline.
+final class PageOverlay: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true

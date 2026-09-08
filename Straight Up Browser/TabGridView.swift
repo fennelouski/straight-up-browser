@@ -171,13 +171,14 @@ struct TabGridView: View {
     @State private var keyMonitor: Any?
     @State private var previewRefresh = 0
     @State private var columns = 1
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(VisualTabPreferences.aspectRatioKey)
     private var aspectRatio = VisualTabPreferences.defaultAspectRatio
     @AppStorage(VisualTabPreferences.livePreviewsKey)
     private var livePreviews = true
 
-    private static let cardWidth: CGFloat = 220
-    private static let spacing: CGFloat = 16
+    nonisolated private static let cardWidth: CGFloat = 220
+    nonisolated private static let spacing: CGFloat = 16
     private static let gridPadding: CGFloat = 24
     private static let outerPadding: CGFloat = 40
     private var cardHeight: CGFloat {
@@ -186,10 +187,8 @@ struct TabGridView: View {
 
     // As many columns as fit the window, so the grid always fits on screen
     // and only the last row (if not full) leaves empty space.
-    private func columns(for availableWidth: CGFloat) -> Int {
-        let usable = availableWidth - 2 * (Self.outerPadding + Self.gridPadding)
-        let perCard = Self.cardWidth + Self.spacing
-        return max(1, Int((usable + Self.spacing) / perCard))
+    nonisolated static func columnCount(for width: CGFloat) -> Int {
+        max(1, Int((max(0, width) + spacing) / (cardWidth + spacing)))
     }
 
     private var gridWidth: CGFloat {
@@ -206,13 +205,21 @@ struct TabGridView: View {
 
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVGrid(columns: Array(repeating: GridItem(.fixed(Self.cardWidth), spacing: Self.spacing),
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0, maximum: Self.cardWidth), spacing: Self.spacing),
                                                  count: columns), spacing: Self.spacing) {
                             let _ = previewRefresh
                             ForEach(Array(tabs.enumerated()), id: \.element.id) { position, tab in
-                                card(for: tab, isFocused: position == index)
+                                Button { choose(tab.id) } label: {
+                                    card(for: tab, isFocused: position == index)
+                                }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(BrowserAccessibility.tabLabel(
+                                        title: labels?(tab).title ?? tab.title,
+                                        url: tab.url, sessionKind: tab.sessionKind,
+                                        isPinned: tab.isPinned, isMuted: tab.isMuted, isInSplit: false
+                                    ))
+                                    .accessibilityAddTraits(position == index ? .isSelected : [])
                                     .id(tab.id)
-                                    .onTapGesture { choose(tab.id) }
                                     .onHover { hovering in
                                         guard hovering else { return }
                                         index = position
@@ -224,21 +231,23 @@ struct TabGridView: View {
                     }
                     .onChange(of: index) { _, new in
                         if tabs.indices.contains(new) {
-                            withAnimation { proxy.scrollTo(tabs[new].id, anchor: .center) }
+                            withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo(tabs[new].id, anchor: .center) }
                         }
                     }
                 }
-                .frame(width: gridWidth,
-                       height: max(100, geometry.size.height - 2 * Self.outerPadding))
+                .frame(width: min(gridWidth, max(0, geometry.size.width - 2 * Self.outerPadding)),
+                       height: max(0, geometry.size.height - 2 * Self.outerPadding))
                 .background(Color(.windowBackgroundColor).opacity(0.95))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .shadow(radius: 16)
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .onChange(of: geometry.size.width, initial: true) { _, width in
-                columns = columns(for: width)
+                columns = Self.columnCount(for: width - 2 * (Self.outerPadding + Self.gridPadding))
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("All Tabs")
         .onAppear {
             index = tabs.firstIndex { $0.id == selectedTabId } ?? 0
             startMonitor()
@@ -255,12 +264,18 @@ struct TabGridView: View {
     }
 
     private func card(for tab: Tab, isFocused: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let label = labels?(tab)
+        let title = label?.title ?? (tab.title.isEmpty ? (tab.url?.host ?? String(localized: "New Tab")) : tab.title)
+        let detail = label?.detail ?? tab.url?.host ?? ""
+        return VStack(alignment: .leading, spacing: 0) {
             Group {
                 if let image = thumbnail(tab.id) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
+                    GeometryReader { geometry in
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                    }
                 } else {
                     // Never opened this session (or unloaded): favicon stands in.
                     Group {
@@ -276,27 +291,29 @@ struct TabGridView: View {
                     .background(Color.gray.opacity(0.12))
                 }
             }
-            .frame(width: Self.cardWidth, height: cardHeight)
+            .frame(height: cardHeight)
+            .frame(maxWidth: .infinity)
             .clipped()
 
-            let label = labels?(tab)
             VStack(alignment: .leading, spacing: 1) {
-                Text(label?.title ?? (tab.title.isEmpty ? (tab.url?.host ?? String(localized: "New Tab")) : tab.title))
+                Text(title)
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
-                Text(label?.detail ?? tab.url?.host ?? "")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                if !detail.isEmpty, detail != title {
+                    Text(detail)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
-            .frame(width: Self.cardWidth - 16, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(8)
         }
         .background(isFocused ? Color.blue.opacity(0.18) : Color.gray.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(isFocused ? Color.accentColor : Color.gray.opacity(0.25),
+                .strokeBorder(isFocused ? Color.accentColor : Color.gray.opacity(0.25),
                         lineWidth: isFocused ? 2 : 1)
         )
     }
@@ -311,16 +328,15 @@ struct TabGridView: View {
     private func startMonitor() {
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard !tabs.isEmpty else { return event }
             switch event.keyCode {
             case 53:  // Escape
                 isPresented = false
             case 36:  // Return
                 if tabs.indices.contains(index) { choose(tabs[index].id) }
             case 123: index = max(0, index - 1)                          // ←
-            case 124: index = min(tabs.count - 1, index + 1)             // →
-            case 126: index = max(0, index - columns)               // ↑
-            case 125: index = min(tabs.count - 1, index + columns)  // ↓
+            case 124: index = max(0, min(tabs.count - 1, index + 1))     // →
+            case 126: index = max(0, index - columns)                    // ↑
+            case 125: index = max(0, min(tabs.count - 1, index + columns)) // ↓
             default: return event
             }
             return nil

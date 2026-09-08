@@ -47,10 +47,9 @@ struct AgentPageLoadExpanderTests {
         _ = try await webView.evaluateJavaScript("scrollTo(0, 120)")
         let originalY = try #require(try await webView.evaluateJavaScript("scrollY") as? Double)
 
-        let report = try await AgentPageLoadExpander.expand(
-            webView,
-            policy: .test
-        )
+        // Use the shipping settle interval so real WebKit scroll events and
+        // lazy-load timers can run before the expansion checks for stability.
+        let report = try await AgentPageLoadExpander.expand(webView)
         let articleCount = try #require(
             try await webView.evaluateJavaScript("document.querySelectorAll('article').length") as? Int
         )
@@ -61,7 +60,7 @@ struct AgentPageLoadExpanderTests {
         #expect(report.didLoadMore)
         #expect(abs(finalY - originalY) < 1)
 
-        let cachedReport = try await AgentPageLoadExpander.expand(webView, policy: .test)
+        let cachedReport = try await AgentPageLoadExpander.expand(webView)
         #expect(cachedReport.cached)
         #expect(cachedReport.steps == 0)
     }
@@ -96,7 +95,7 @@ struct AgentPageLoadExpanderTests {
         )
         _ = try await webView.evaluateJavaScript("document.querySelector('#feed').scrollTop = 40")
 
-        let report = try await AgentPageLoadExpander.expand(webView, policy: .test)
+        let report = try await AgentPageLoadExpander.expand(webView)
         let articleCount = try #require(
             try await webView.evaluateJavaScript("document.querySelectorAll('article').length") as? Int
         )

@@ -29,15 +29,6 @@ struct Suggestion: Identifiable {
 // Turns raw omnibar text into a loadable URL string: adds https:// to a bare
 // domain, otherwise sends it to the configured search engine. Pure + testable.
 enum OmnibarInput {
-    static func searchURLPrefix(_ engine: String?) -> String {
-        switch engine {
-        case "DuckDuckGo": return "https://duckduckgo.com/?q="
-        case "Bing":       return "https://www.bing.com/search?q="
-        case "Yahoo":      return "https://search.yahoo.com/search?p="
-        default:           return "https://www.google.com/search?q="
-        }
-    }
-
     /// Resolve trimmed omnibar text to a URL string, or nil if empty.
     static func resolve(_ text: String, searchEngine: String? = UserDefaults.standard.string(forKey: "searchEngine")) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -47,8 +38,7 @@ enum OmnibarInput {
         if !trimmed.contains(" ") && (trimmed.contains(".") || trimmed.contains(":")) {
             return "https://" + trimmed
         }
-        let query = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmed
-        return searchURLPrefix(searchEngine) + query
+        return NavigationManager.searchURL(for: trimmed, engine: searchEngine)
     }
 
     #if DEBUG

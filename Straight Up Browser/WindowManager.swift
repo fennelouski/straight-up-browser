@@ -8,8 +8,8 @@
 import SwiftUI
 import AppKit
 
-// The single place window chrome is configured. Drops .titled entirely — see
-// WindowLayout.hideTitleBar for why keeping it isn't an option here.
+// The browser scene creates a native plain window. This bridge configures its
+// dragging, corners, and saved launch placement without replacing AppKit's frame.
 //
 // This resolves the window from the view hierarchy rather than guessing at
 // NSApplication.keyWindow / .windows.first, which is what made the traffic
@@ -34,7 +34,17 @@ struct WindowChrome: NSViewRepresentable {
             super.viewDidMoveToWindow()
             guard let window else { return }
 
-            WindowLayout.hideTitleBar(on: window)
+            // AppKit's plain window cannot receive text input by default.
+            // Keep SwiftUI's window and frame, but allow it to become key/main.
+            if !window.canBecomeKey, let cls = object_getClass(window) {
+                let canActivate: @convention(block) (AnyObject) -> Bool = { _ in true }
+                let implementation = imp_implementationWithBlock(canActivate)
+                class_replaceMethod(cls, #selector(getter: NSWindow.canBecomeKey), implementation, "B@:")
+                class_replaceMethod(cls, #selector(getter: NSWindow.canBecomeMain), implementation, "B@:")
+            }
+            window.isMovableByWindowBackground = true
+            window.styleMask.formUnion([.resizable, .fullSizeContentView])
+            window.setAccessibilitySubrole(.standardWindow)
             WindowLayout.applyCornerMask(to: window)
 
             // Square Corners takes effect immediately while the window is open,
@@ -61,8 +71,11 @@ struct WindowChrome: NSViewRepresentable {
             // SwiftUI restores the saved frame after this runs, so claim the
             // launch position on the next turn of the run loop or it's lost.
             DispatchQueue.main.async {
+                // SwiftUI's plain style also clears resizing during setup.
+                window.styleMask.insert(.resizable)
                 WindowLayout.installFrameAutosave(on: window)
                 WindowLayout.applyOnLaunch(to: window)
+                window.makeKeyAndOrderFront(nil)
             }
         }
 
@@ -224,67 +237,9 @@ enum WindowLayout {
         window.setFrame(snapFrame(in: visible, direction: direction, ratio: snapRatios[step]), display: true, animate: true)
     }
 
-    /// Removes `.titled` entirely, unconditionally — confirmed empirically
-    /// (live debugger inspection of a running window) that this is the only
-    /// thing that works: `NSWindow.contentLayoutRect` keeps reserving
-    /// title-bar height for any *titled* window on this OS even with
-    /// `.fullSizeContentView` inserted and `titlebarAppearsTransparent` set,
-    /// so the standard "hidden title bar" recipe (keep .titled, just make it
-    /// transparent) leaves a bare strip of window.backgroundColor where the
-    /// bar would be. Neither reordering when that recipe runs nor forcing a
-    /// style-mask round-trip (remove/reinsert .titled) budges it — only
-    /// actually dropping .titled does. Two consequences, both load-bearing:
-    ///
-    /// * It has to happen before the window's first layout pass. Removing
-    ///   `.titled` later swaps the theme frame out from under a laid-out
-    ///   SwiftUI window and AppKit crashes in `_layoutSubtreeWithOldSize:` on
-    ///   the next display cycle. Called twice on purpose: once from
-    ///   applicationDidFinishLaunching (before that first layout, for window
-    ///   #1 at cold launch) and again from WindowChrome's viewDidMoveToWindow
-    ///   (for any window that shows up later, e.g. a second window via ⌘N,
-    ///   which can't go through applicationDidFinishLaunching). The guard
-    ///   below makes the second call a no-op once the first has already run.
-    /// * A window without a title bar won't become key, so clicking away would
-    ///   leave the page permanently untypable. `canBecomeKey` can only be
-    ///   answered by the class, and this is SwiftUI's own window class, so
-    ///   patch the method on it. Every other window of that class is titled
-    ///   and already answers true, so nothing else changes.
-    ///
-    /// Costs native full screen (a window without `.titled` can't enter it) —
-    /// ⇧⌘F ("Snap Window to Size") is the replacement; see WindowLayout.toggle.
-    static func hideTitleBar(on window: NSWindow) {
-        guard window.styleMask.contains(.titled) else { return }
-
-        if let cls: AnyClass = object_getClass(window) {
-            let alwaysTrue: @convention(block) (AnyObject) -> Bool = { _ in true }
-            let imp = imp_implementationWithBlock(alwaysTrue)
-            class_replaceMethod(cls, #selector(getter: NSWindow.canBecomeKey), imp, "B@:")
-            class_replaceMethod(cls, #selector(getter: NSWindow.canBecomeMain), imp, "B@:")
-        }
-        window.styleMask.remove(.titled)
-        window.styleMask.insert(.fullSizeContentView)
-        window.isMovableByWindowBackground = true
-        window.titleVisibility = .hidden
-    }
-
-    /// Keeps the window's *real* silhouette and drop shadow matching what
-    /// ContentView draws (see its `.clipShape` comment). AppKit only
-    /// auto-rounds *titled* windows — hideTitleBar strips `.titled`, so
-    /// nothing rounds this window's actual edges or shadow unless it's done
-    /// by hand here.
-    ///
-    /// A CALayer corner mask alone only fixes the silhouette, not the
-    /// shadow: an opaque window's shadow is just its rectangular frame, full
-    /// stop, no matter how the content underneath is clipped. The only way
-    /// to get a shadow that hugs the rounded shape is to make the window
-    /// non-opaque with a clear background, so AppKit traces the shadow from
-    /// the actual drawn (opaque) pixels instead of the frame rect — the same
-    /// technique titled windows get for free from the system title bar.
-    ///
-    /// Called on every window at setup (from both `hideTitleBar` call
-    /// sites — see its doc comment) and again whenever Square Corners is
-    /// toggled live, since that's a plain `@AppStorage` write with no
-    /// dedicated notification of its own.
+    /// Plain windows need an explicit corner mask and a transparent background
+    /// so AppKit traces the shadow around the drawn content. Never replace a
+    /// titled window's theme frame during layout: AppKit still holds its views.
     static func applyCornerMask(to window: NSWindow) {
         let square = isSquareCorners
         window.isOpaque = square

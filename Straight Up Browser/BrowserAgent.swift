@@ -5596,6 +5596,7 @@ struct BrowserAgentPanel: View {
                 Button { showingHistory.toggle() } label: { Image(systemName: "clock") }
                     .buttonStyle(.plain)
                     .delayedHelp("Conversation history")
+                    .accessibilityLabel("Conversation History")
                     .accessibilityIdentifier("agent-history")
                     .popover(isPresented: $showingHistory) { historyView }
                 Button { showingScratchPad = true } label: { Image(systemName: "note.text") }
@@ -5606,18 +5607,23 @@ struct BrowserAgentPanel: View {
                 Button { showingConfiguration.toggle() } label: { Image(systemName: "slider.horizontal.3") }
                     .buttonStyle(.plain)
                     .delayedHelp("Model settings")
+                    .accessibilityLabel("Model Settings")
                 Button(action: onStartLasso) { Image(systemName: "lasso") }
                     .buttonStyle(.plain)
                     .delayedHelp("Circle something on the page")
+                    .accessibilityLabel("Circle Something on the Page")
                 Button { openWindow(id: "agent-tasks") } label: { Image(systemName: "clock.arrow.circlepath") }
                     .buttonStyle(.plain)
                     .delayedHelp("Scheduled Agent Tasks")
+                    .accessibilityLabel("Scheduled Agent Tasks")
                 Button { openWindow(id: "agent-audit") } label: { Image(systemName: "play.rectangle.on.rectangle") }
                     .buttonStyle(.plain)
                     .delayedHelp("Agent Audit & Replay")
+                    .accessibilityLabel("Agent Audit & Replay")
                 Button(action: onClose) { Image(systemName: "xmark") }
                     .buttonStyle(.plain)
                     .delayedHelp("Close Agent")
+                    .accessibilityLabel("Close Agent")
             }
             .padding(12)
 
@@ -5720,12 +5726,14 @@ struct BrowserAgentPanel: View {
                     Button(action: agent.cancel) { Image(systemName: "stop.fill") }
                         .buttonStyle(.borderless)
                         .delayedHelp("Stop")
+                        .accessibilityLabel("Stop Agent")
                         .accessibilityIdentifier("agent-stop")
                 } else {
                     Button(action: submit) { Image(systemName: "arrow.up.circle.fill").font(.title2) }
                         .buttonStyle(.borderless)
                     .disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isPreparingLocalContext)
                         .delayedHelp("Send")
+                        .accessibilityLabel("Send Message")
                 }
             }
             .padding(12)

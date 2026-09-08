@@ -82,6 +82,7 @@ struct DefaultBrowserPrompt: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
+            .accessibilityLabel("Dismiss Default Browser Prompt")
         }
         .padding(14)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))

@@ -1444,9 +1444,8 @@ class BrowserCLI {
             }
         case "search":
             if let query = parameter {
-                let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
                 NotificationCenter.default.post(name: .browserOpenURL, object: nil,
-                                                userInfo: ["url": "https://www.google.com/search?q=" + encoded])
+                                                userInfo: ["url": NavigationManager.searchURL(for: query)])
                 Self.writeResponse(["ok": true], to: responseFilePath)
             } else {
                 Self.writeResponse(["error": "search requires a query"], to: responseFilePath)
