@@ -213,15 +213,16 @@ class NotificationManager {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            if let urlString = notification.userInfo?["url"] as? String {
+            if let self, let urlString = notification.userInfo?["url"] as? String {
                 // The global omnibar asks for a new tab so it never clobbers
                 // the page the user was reading; CLI posts keep the old
                 // navigate-the-active-tab behavior.
                 if notification.userInfo?["newTab"] as? Bool == true, let url = URL(string: urlString) {
-                    self?.tabManager.createNewTab(url: url, select: true)
-                } else {
-                    _ = self?.navigationManager.navigateToURL(urlString, activeTab: self?.tabManager.getActiveTab(from: self?.tabs() ?? []))
+                    self.tabManager.createNewTab(url: url, select: true)
+                } else if self.navigationManager.navigateToURL(urlString, activeTab: self.tabManager.getActiveTab(from: self.tabs())) == nil {
+                    return
                 }
+                self.showOmnibar.wrappedValue = false
             }
         }
         observers.append(openURLOobserver)

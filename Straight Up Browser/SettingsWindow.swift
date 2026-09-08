@@ -446,43 +446,43 @@ struct SettingsWindow: View {
 
     private func card(_ target: SettingsPane) -> some View {
         let selected = target == pane
-        return Group {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: target.systemImage)
-                    .font(.system(size: 14))
-                    // Selected, the card is already the accent colour — a tinted glyph on top of
-                    // it would be unreadable.
-                    .foregroundStyle(selected ? Color.white : target.tint)
-                    .frame(width: 18)
+        return HStack(alignment: .top, spacing: 10) {
+            Image(systemName: target.systemImage)
+                .font(.system(size: 14))
+                // Selected, the card is already the accent colour — a tinted glyph on top of
+                // it would be unreadable.
+                .foregroundStyle(selected ? Color.white : target.tint)
+                .frame(width: 18)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(target.title)
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(target.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(selected ? Color.white.opacity(0.85) : Color.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.leading)
-                }
-
-                Spacer(minLength: 0)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(target.title)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(target.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(selected ? Color.white.opacity(0.85) : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
             }
-            .foregroundStyle(selected ? Color.white : Color.primary)
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(selected ? Color.accentColor : Color.primary.opacity(0.05))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(selected ? 0 : 0.10), lineWidth: 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            Spacer(minLength: 0)
         }
+        .foregroundStyle(selected ? Color.white : Color.primary)
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(selected ? Color.accentColor : Color.primary.opacity(0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.primary.opacity(selected ? 0 : 0.10), lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         // Plain tap gesture rather than Button: a Button's click tracking swallows the mouseDown
         // that List needs to see to start a reorder drag, so onMove below never fires.
         .onTapGesture { paneRaw = target.rawValue }
+        .accessibilityElement(children: .ignore)
+        .accessibilityIdentifier("settings-pane-\(target.rawValue)")
         .accessibilityLabel("\(target.title). \(target.subtitle)")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { paneRaw = target.rawValue }

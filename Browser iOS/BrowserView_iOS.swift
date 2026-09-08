@@ -1016,18 +1016,20 @@ struct BrowserView_iOS: View {
     // Floating omnibar summoned over the page (the Mac app's model) so the chrome
     // vanishes whenever you're not typing an address.
     private var omnibarOverlay: some View {
-        ZStack(alignment: .top) {
-            Color.black.opacity(0.12)
-                .ignoresSafeArea()
-                .onTapGesture { dismissOmnibar() }
-                .accessibilityHidden(true)
-            VStack(spacing: 8) {
-                omnibarCard
-                omnibarResults
+        GeometryReader { geometry in
+            ZStack(alignment: .top) {
+                Color.black.opacity(0.12)
+                    .ignoresSafeArea()
+                    .onTapGesture { dismissOmnibar() }
+                    .accessibilityHidden(true)
+                VStack(spacing: 8) {
+                    omnibarCard(availableWidth: min(640, geometry.size.width - 32))
+                    omnibarResults
+                }
+                .frame(maxWidth: 640)
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
             }
-            .frame(maxWidth: 640)
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Address and Search")
@@ -1038,53 +1040,23 @@ struct BrowserView_iOS: View {
         }
     }
 
-    private var omnibarCard: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 4) {
-                omnibarControlButton("Show Tabs", systemImage: "square.stack") {
-                    dismissOmnibar()
-                    withAnimation { showSidebar = true }
+    private func omnibarCard(availableWidth: CGFloat) -> some View {
+        let controlCount = 5 + (activeTab?.url == nil ? 0 : 1)
+            + (activeTab?.url != nil && activeTab?.sessionKind != .incognito ? 1 : 0)
+        let layout = availableWidth >= CGFloat(controlCount) * 44 + 16
+            ? AnyLayout(HStackLayout(spacing: 0))
+            : AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
+
+        return VStack(spacing: 4) {
+            layout {
+                HStack(spacing: 0) {
+                    omnibarNavigationControls
                 }
-                omnibarControlButton("Back", systemImage: "chevron.backward", disabled: !canGoBack) {
-                    webViewManager?.goBack()
-                    dismissOmnibar()
-                }
-                omnibarControlButton("Forward", systemImage: "chevron.forward", disabled: !canGoForward) {
-                    webViewManager?.goForward()
-                    dismissOmnibar()
-                }
-                omnibarControlButton(
-                    isLoading ? "Stop Loading" : "Reload",
-                    systemImage: isLoading ? "xmark" : "arrow.clockwise"
-                ) {
-                    reloadOrStop()
-                    dismissOmnibar()
-                }
-                Spacer(minLength: 0)
-                if activeTab?.url != nil, activeTab?.sessionKind != .incognito {
-                    omnibarControlButton(
-                        isCurrentInNewspaper ? "Refresh Saved Article" : "Add to Newspaper",
-                        systemImage: isCurrentInNewspaper ? "newspaper.fill" : "newspaper"
-                    ) {
-                        addCurrentPageToNewspaper()
-                    }
-                }
-                if activeTab?.url != nil {
-                    omnibarControlButton(
-                        isCurrentBookmarked ? "Remove Bookmark" : "Add Bookmark",
-                        systemImage: isCurrentBookmarked ? "star.fill" : "star"
-                    ) {
-                        toggleBookmark()
-                    }
-                }
-                omnibarControlButton(
-                    "Close Address and Search",
-                    systemImage: "xmark"
-                ) {
-                    dismissOmnibar()
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    omnibarPageControls
                 }
             }
-            .padding(.horizontal, 8)
 
             HStack(spacing: 10) {
                 if let pageProtectionSummary {
@@ -1135,6 +1107,55 @@ struct BrowserView_iOS: View {
         )
     }
 
+    @ViewBuilder
+    private var omnibarNavigationControls: some View {
+        omnibarControlButton("Show Tabs", systemImage: "square.stack") {
+            dismissOmnibar()
+            withAnimation { showSidebar = true }
+        }
+        omnibarControlButton("Back", systemImage: "chevron.backward", disabled: !canGoBack) {
+            webViewManager?.goBack()
+            dismissOmnibar()
+        }
+        omnibarControlButton("Forward", systemImage: "chevron.forward", disabled: !canGoForward) {
+            webViewManager?.goForward()
+            dismissOmnibar()
+        }
+        omnibarControlButton(
+            isLoading ? "Stop Loading" : "Reload",
+            systemImage: isLoading ? "xmark" : "arrow.clockwise"
+        ) {
+            reloadOrStop()
+            dismissOmnibar()
+        }
+    }
+
+    @ViewBuilder
+    private var omnibarPageControls: some View {
+        if activeTab?.url != nil, activeTab?.sessionKind != .incognito {
+            omnibarControlButton(
+                isCurrentInNewspaper ? "Refresh Saved Article" : "Add to Newspaper",
+                systemImage: isCurrentInNewspaper ? "newspaper.fill" : "newspaper"
+            ) {
+                addCurrentPageToNewspaper()
+            }
+        }
+        if activeTab?.url != nil {
+            omnibarControlButton(
+                isCurrentBookmarked ? "Remove Bookmark" : "Add Bookmark",
+                systemImage: isCurrentBookmarked ? "star.fill" : "star"
+            ) {
+                toggleBookmark()
+            }
+        }
+        omnibarControlButton(
+            "Close Address and Search",
+            systemImage: "xmark"
+        ) {
+            dismissOmnibar()
+        }
+    }
+
     private func omnibarControlButton(
         _ title: String,
         systemImage: String,
@@ -1143,7 +1164,7 @@ struct BrowserView_iOS: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .frame(width: 40, height: 40)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

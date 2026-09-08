@@ -17,13 +17,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // in Browser-Info.plist mean it's silent — downloads and installs on quit,
     // no prompt). "Check for Updates…" below just triggers an on-demand check.
     let updaterController = SPUStandardUpdaterController(
-        startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        startingUpdater: AppDelegate.startsUpdater, updaterDelegate: nil, userDriverDelegate: nil)
+
+    static var startsUpdater: Bool {
+        #if DEBUG
+        // An update replaces the app bundle, including the code under test and
+        // its coverage instrumentation. Development builds must stay local.
+        return false
+        #else
+        return !isRunningUnderTests
+        #endif
+    }
 
     // Keep in sync with EULA.md; bump the version to re-prompt existing users.
     private let eulaVersion = 1
-    private var isRunningUnderTests: Bool {
+    private static var isRunningUnderTests: Bool {
         let environment = ProcessInfo.processInfo.environment
-        return environment["XCTestConfigurationFilePath"] != nil
+        return ProcessInfo.processInfo.arguments.contains("-uiTesting")
+            || environment["XCTestConfigurationFilePath"] != nil
             || environment["XCInjectBundleInto"] != nil
     }
 
@@ -46,17 +57,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Has to land before the window's first layout pass — see the note on
-        // hideTitleBar for what happens if it doesn't.
-        if let window = NSApp.windows.first(where: { !($0 is NSPanel) && $0.contentView != nil }) {
-            WindowLayout.hideTitleBar(on: window)
-            WindowLayout.applyCornerMask(to: window)
-        }
         installURLHandler()
         // Test hosts cannot interact with this modal before the app finishes
         // bootstrapping. UI tests pass the accepted version explicitly; unit
         // test hosts use this environment-based bypass instead.
-        if !isRunningUnderTests && UserDefaults.standard.integer(forKey: "acceptedEULAVersion") < eulaVersion {
+        if !Self.isRunningUnderTests && UserDefaults.standard.integer(forKey: "acceptedEULAVersion") < eulaVersion {
             guard runEULAAlert() else {
                 NSApp.terminate(nil)
                 return
@@ -64,7 +69,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             UserDefaults.standard.set(eulaVersion, forKey: "acceptedEULAVersion")
         }
         registerGlobalHotkey()
-        if !isRunningUnderTests {
+        if !Self.isRunningUnderTests {
             Task { @MainActor in
                 await AgentDefinitionSyncService.shared.start()
             }
@@ -75,7 +80,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { Self.closeExtraBrowserWindows() }
     }
 
-    // Identified positively - .windowStyle(.hiddenTitleBar) is what marks a browser
+    // Identified positively - .windowStyle(.plain) is what marks a browser
     // window - so Settings/Downloads/Help, the omnibar panel, and Sparkle's update
     // windows are never candidates.
     static func closeExtraBrowserWindows() {
@@ -322,7 +327,8 @@ struct Straight_Up_BrowserApp: App {
                 )
             }
         }
-        .windowStyle(.hiddenTitleBar)
+        .windowStyle(.plain)
+        .windowResizability(.contentMinSize)
         .defaultSize(width: 1200, height: 800)
 
         Window("Settings", id: "settings") {
@@ -338,7 +344,6 @@ struct Straight_Up_BrowserApp: App {
         .windowStyle(.automatic)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 780, height: 560)
-        .windowResizability(.contentSize)
 
         Window("Developer Tools", id: "developer-tools") {
             DeveloperToolsDetachedWindow()

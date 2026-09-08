@@ -766,7 +766,7 @@ struct OmnibarView: View {
                     .padding(.bottom, 8)
             }
         }
-        .frame(width: 600, alignment: .top) // Sized to content so the dimmer owns clicks below the bar
+        .frame(minWidth: 0, idealWidth: 600, maxWidth: 600, alignment: .top)
         .onChange(of: historyMode) { _, _ in
             selectedSuggestionIndex = -1
         }
@@ -797,8 +797,7 @@ struct OmnibarView: View {
                 // means woot.com, "gmail" means mail.google.com.
                 urlString = habitURL.absoluteString
             } else {
-                let query = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString
-                urlString = searchURLPrefix + query
+                urlString = NavigationManager.searchURL(for: urlString)
             }
         }
 
@@ -809,12 +808,4 @@ struct OmnibarView: View {
         isPresented = false
     }
 
-    private var searchURLPrefix: String {
-        switch UserDefaults.standard.string(forKey: "searchEngine") {
-        case "DuckDuckGo": return "https://duckduckgo.com/?q="
-        case "Bing": return "https://www.bing.com/search?q="
-        case "Yahoo": return "https://search.yahoo.com/search?p="
-        default: return "https://www.google.com/search?q="
-        }
-    }
 }

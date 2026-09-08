@@ -49,10 +49,9 @@ struct SearchWebIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         try await waitForObservers()
         // Same funnel as BrowserCLI's "search" command
-        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         NotificationCenter.default.post(
             name: .browserOpenURL, object: nil,
-            userInfo: ["url": "https://www.google.com/search?q=" + encoded, "newTab": true]
+            userInfo: ["url": NavigationManager.searchURL(for: query), "newTab": true]
         )
         return .result()
     }

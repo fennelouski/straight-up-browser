@@ -20,6 +20,10 @@ struct BrowserIOSContractTests {
             OmnibarInput.resolve("straight up browser", searchEngine: "DuckDuckGo")
                 == "https://duckduckgo.com/?q=straight%20up%20browser"
         )
+        #expect(
+            OmnibarInput.resolve("C++ & C#", searchEngine: "DuckDuckGo")
+                == "https://duckduckgo.com/?q=C%2B%2B%20%26%20C%23"
+        )
     }
 
     @Test("Touch bar placement supports global and per-site choices")
