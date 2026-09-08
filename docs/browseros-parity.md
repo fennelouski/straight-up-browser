@@ -69,9 +69,9 @@ rather than the agent feature surface:
   console observations, not a complete subresource request waterfall. Missing
   CDP-style request IDs, cache internals, bodies, and timing details are
   returned as unsupported rather than synthesized.
-- Browser cannot expose passkeys until Apple grants the third-party-browser
-  WebAuthn entitlement, and it does not attempt to decrypt another browser's
-  password vault. Bookmarks can be imported normally.
+- Browser exposes passkeys under Apple's third-party-browser WebAuthn
+  entitlement, but does not attempt to decrypt another browser's password
+  vault. Bookmarks can be imported normally.
 - macOS owns agent execution, external MCP OAuth, scheduled automation, Cowork,
   and child-run Page control. iPhone and iPad can sync, retain, and review safe
   definitions but never attempt macOS-only execution. A receiving Mac must

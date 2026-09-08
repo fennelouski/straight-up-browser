@@ -36,6 +36,11 @@
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spki</string>
 	</array>
+	<!-- Apple-gated: lets WebKit run real WebAuthn ceremonies in our WKWebView
+	     (Touch ID, iCloud Keychain passkeys). Granted 2026-09-08 under capability
+	     request J8DW735MPL. Without it the API is present but inert. -->
+	<key>com.apple.developer.web-browser.public-key-credential</key>
+	<true/>
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>
 		<string>iCloud.com.nathanfennel.Straight-Up-Browser</string>
