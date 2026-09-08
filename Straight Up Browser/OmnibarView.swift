@@ -7,10 +7,11 @@
 
 import SwiftUI
 import AppKit
+import Combine
 
 // Ordered by how likely it is to be what you meant: a tab already open beats a
 // site you go to often, which beats a bookmark, which beats a raw history URL.
-enum SuggestionType: Int, Comparable {
+nonisolated enum SuggestionType: Int, Comparable, Sendable {
     case openTab = 0
     case site
     case bookmark
@@ -21,8 +22,8 @@ enum SuggestionType: Int, Comparable {
     static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
 }
 
-struct Suggestion: Identifiable {
-    let id = UUID()
+nonisolated struct Suggestion: Identifiable, Equatable, Sendable {
+    var id: String { "\(type.rawValue):\(tabId?.uuidString ?? ""):\(url.absoluteString)" }
     let url: URL
     let title: String?
     let type: SuggestionType
@@ -167,10 +168,6 @@ struct OmnibarTextField: NSViewRepresentable {
     var onCommit: ((OmnibarCommit) -> Void)?
     var onCancel: (() -> Void)?
     var onTab: (() -> Void)?
-    // Given what the user just typed, returns the full text to inline-complete to
-    // (or nil for no completion). The added suffix is auto-selected.
-    var completion: ((String) -> String?)?
-
     func makeNSView(context: Context) -> NSTextField {
         let textField = NSTextField()
         textField.placeholderString = placeholder
@@ -193,20 +190,20 @@ struct OmnibarTextField: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: NSTextField, coordinator: Coordinator) {
+        coordinator.parent.shouldFocus = false
         coordinator.stopMonitoringCommandReturn()
     }
 
     func updateNSView(_ nsView: NSTextField, context: Context) {
         context.coordinator.parent = self
-        // Guard the assignment so we don't stomp the field editor's selection —
-        // inline completion sets stringValue + a selected suffix, and an
-        // unconditional write here would collapse the caret to the end.
+        // Do not touch the field editor when a render merely echoes its text.
         if nsView.stringValue != text {
             nsView.stringValue = text
         }
 
         // Focus and select all text when shouldFocus becomes true (only on initial open)
-        if shouldFocus && !context.coordinator.hasFocused {
+        if shouldFocus && !context.coordinator.hasFocused && !context.coordinator.focusPending {
+            context.coordinator.focusPending = true
             DispatchQueue.main.async {
                 focusField(nsView, coordinator: context.coordinator, retriesLeft: 3)
             }
@@ -219,16 +216,23 @@ struct OmnibarTextField: NSViewRepresentable {
     // makeFirstResponder silently fails if the overlay's window isn't key yet,
     // leaving the caret nowhere - retry briefly instead of giving up
     private func focusField(_ nsView: NSTextField, coordinator: Coordinator, retriesLeft: Int) {
+        guard coordinator.parent.shouldFocus else {
+            coordinator.focusPending = false
+            return
+        }
         if let window = nsView.window, window.makeFirstResponder(nsView) {
             if autoSelectAll {
                 nsView.selectText(nil)
                 coordinator.hasAutoSelected = true
             }
             coordinator.hasFocused = true
+            coordinator.focusPending = false
         } else if retriesLeft > 0 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 focusField(nsView, coordinator: coordinator, retriesLeft: retriesLeft - 1)
             }
+        } else {
+            coordinator.focusPending = false
         }
     }
 
@@ -240,9 +244,7 @@ struct OmnibarTextField: NSViewRepresentable {
         var parent: OmnibarTextField
         var hasAutoSelected = false
         var hasFocused = false
-        // Set while the current edit is a delete, so we don't re-complete the
-        // suffix the user is trying to erase (which would trap them).
-        var isDeleting = false
+        var focusPending = false
         weak var textField: NSTextField?
         // Modified Return is most reliable at the event level. In particular,
         // NSTextField can clear currentEvent before doCommandBy runs, which made
@@ -291,43 +293,15 @@ struct OmnibarTextField: NSViewRepresentable {
 
         func controlTextDidChange(_ obj: Notification) {
             guard let textField = obj.object as? NSTextField else { return }
-            let typed = textField.stringValue
-
-            // A delete just updates the text; never re-complete over it.
-            if isDeleting {
-                isDeleting = false
-                parent.text = typed
-                return
-            }
-
-            // Inline-complete to the top match and select the added suffix, so the
-            // next keystroke replaces it and Return accepts the whole thing.
-            // Only when the caret sits at the end of the typed text — editing
-            // mid-string after arrowing around must not teleport the caret.
-            if let completion = parent.completion?(typed),
-               (completion as NSString).length > (typed as NSString).length,
-               let editor = textField.currentEditor(),
-               editor.selectedRange == NSRange(location: (typed as NSString).length, length: 0) {
-                let typedLen = (typed as NSString).length
-                editor.string = completion
-                editor.selectedRange = NSRange(location: typedLen,
-                                               length: (completion as NSString).length - typedLen)
-                parent.text = completion
-            } else {
-                parent.text = typed
+            // AppKit owns the text, caret, selection, undo, and marked text.
+            // Suggestions must never rewrite the field from this callback.
+            if parent.text != textField.stringValue {
+                parent.text = textField.stringValue
             }
         }
 
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             switch commandSelector {
-            case #selector(NSResponder.deleteBackward(_:)),
-                 #selector(NSResponder.deleteForward(_:)),
-                 #selector(NSResponder.deleteWordBackward(_:)),
-                 #selector(NSResponder.deleteWordForward(_:)),
-                 #selector(NSResponder.deleteToBeginningOfLine(_:)),
-                 #selector(NSResponder.deleteToEndOfLine(_:)):
-                isDeleting = true
-                return false // let the default delete happen, sans re-completion
             case #selector(NSResponder.moveUp(_:)):
                 parent.onArrowUp?()
                 return true
@@ -360,7 +334,7 @@ struct OmnibarView: View {
     /// Cross-transcript search: "said at 6:57 in <video>" rows for the typed
     /// text, opening the video seeked. A new suggestion SOURCE — Phase 1's
     /// single ledgerNote decoration point is unchanged.
-    var transcriptHits: ((String) -> [Suggestion])? = nil
+    var transcriptHits: ((String) async -> [Suggestion])? = nil
     @Binding var isPresented: Bool
     @Binding var urlString: String
     var onNavigate: (String, OmnibarCommit) -> Void
@@ -386,7 +360,7 @@ struct OmnibarView: View {
     // guessing where you're going.
     @State private var historyMode: Bool = false
 
-    @ObservedObject private var prefetcher = Prefetcher.shared
+    @State private var readyURL: URL?
 
     private var showSuggestions: Bool {
         (historyMode || !inputText.isEmpty) && !filteredSuggestions.isEmpty
@@ -415,116 +389,43 @@ struct OmnibarView: View {
         tabs.first { $0.id == currentTabId }?.sessionKind ?? .normal
     }
 
-    // Get bookmark URLs
-    private var bookmarkURLs: [URL] {
-        return bookmarkSuggestions.map { $0.url }
-    }
+    @StateObject private var suggestions = OmnibarSuggestionUpdates()
 
-    // Tabs already open that match what's being typed — ranked by how well the
-    // typed text starts their host/title, best first. The tab you're already
-    // looking at is never a suggestion.
-    private var openTabSuggestions: [Suggestion] {
-        typealias Ranked = (suggestion: Suggestion, rank: Double, used: Date)
-        let ranked: [Ranked] = tabs.compactMap { tab -> Ranked? in
-            guard tab.id != currentTabId, let url = tab.url,
-                  let host = SiteHistory.normalizedHost(url) else { return nil }
-            // A restored tab's title is just its domain, so fold in the last real page
-            // title we saw for that host — that's where "Gmail" lives — plus whatever
-            // nicknames the site has earned.
-            let known = SiteHistory.shared.sites[host]
-            guard let rank = SiteHistory.matchRank(host: host,
-                                                   title: tab.title + " " + (known?.title ?? ""),
-                                                   aliases: known?.nicknames ?? [],
-                                                   query: inputText) else { return nil }
-            let suggestion = Suggestion(url: url, title: tab.title, type: .openTab, tabId: tab.id)
-            return (suggestion, rank, tab.lastAccessed)
-        }
-        // Equally good matches (four "…google.com" tabs) order by the one you used
-        // last, so Return lands on the live one rather than a stale sign-in page.
-        return ranked
-            .sorted { $0.rank == $1.rank ? $0.used > $1.used : $0.rank > $1.rank }
-            .map(\.suggestion)
-    }
-
-    /// Every suggestion, decorated with any prior encounter in the research
-    /// ledger. One decoration point, so no suggestion source can forget it.
     private var filteredSuggestions: [Suggestion] {
-        guard let ledgerNote else { return undecoratedSuggestions }
-        return undecoratedSuggestions.map { suggestion in
-            var decorated = suggestion
-            decorated.ledgerNote = ledgerNote(suggestion.url)
-            return decorated
-        }
+        suggestions.results(for: inputText, historyMode: historyMode)
     }
 
-    // Filter suggestions based on input text
-    private var undecoratedSuggestions: [Suggestion] {
-        if historyMode {
-            return BrowsingHistoryStore.shared.search(inputText).map {
-                Suggestion(url: $0.url, title: $0.title, type: .history)
+    private func pollSuggestions() {
+        suggestions.poll(query: inputText, historyMode: historyMode) {
+            let snapshot = OmnibarSuggestionSnapshot(
+                inputText: inputText, historyMode: historyMode,
+                tabs: tabs.map { .init(id: $0.id, url: $0.url, title: $0.title, lastAccessed: $0.lastAccessed) },
+                currentTabId: currentTabId, sites: SiteHistory.shared.sites,
+                bookmarkSuggestions: bookmarkSuggestions, allHistoryURLs: allHistoryURLs,
+                visits: BrowsingHistoryStore.shared.visits
+            )
+            return Task { @MainActor in
+                let worker = Task.detached(priority: .utility) { snapshot.undecoratedSuggestions }
+                var result = await withTaskCancellationHandler {
+                    await worker.value
+                } onCancel: { worker.cancel() }
+                guard !Task.isCancelled else { return [] }
+                if !snapshot.historyMode {
+                    result += await transcriptHits?(snapshot.inputText) ?? []
+                }
+                var seen: Set<String> = []
+                result = result.filter { seen.insert($0.id).inserted }
+                for index in result.indices {
+                    guard !Task.isCancelled else { return [] }
+                    result[index].ledgerNote = ledgerNote?(result[index].url) ?? result[index].ledgerNote
+                    await Task.yield()
+                }
+                return result
             }
         }
-        guard !inputText.isEmpty else { return [] }
-
-        let lowercasedInput = inputText.lowercased()
-
-        let openTabs = openTabSuggestions
-        let openHosts = Set(openTabs.compactMap { SiteHistory.normalizedHost($0.url) })
-
-        // Sites visited often enough to have earned a nickname. Already-open ones
-        // are dropped — the tab suggestion above says the same thing, better.
-        let frequentSites = SiteHistory.shared.matches(inputText).compactMap { site -> Suggestion? in
-            guard !openHosts.contains(site.host), let url = site.url else { return nil }
-            return Suggestion(url: url, title: site.host, type: .site)
-        }
-
-        // Get matching bookmarks
-        let matchingBookmarks = bookmarkSuggestions.filter { bookmark in
-            let titleMatch = bookmark.title.lowercased().contains(lowercasedInput)
-            let urlMatch = bookmark.url.absoluteString.lowercased().contains(lowercasedInput)
-            let domainMatch = bookmark.url.host?.lowercased().contains(lowercasedInput) ?? false
-            return titleMatch || urlMatch || domainMatch
-        }.map { Suggestion(url: $0.url, title: $0.title, type: .bookmark) }
-
-        // Get matching history URLs (excluding bookmarked ones)
-        let bookmarkedURLs = Set(bookmarkSuggestions.map { $0.url.absoluteString })
-        let matchingHistory = allHistoryURLs.filter { url in
-            !bookmarkedURLs.contains(url.absoluteString) &&
-            (url.absoluteString.lowercased().contains(lowercasedInput) ||
-             (url.host?.lowercased().contains(lowercasedInput) ?? false))
-        }.map { Suggestion(historyURL: $0) }
-
-        // Open tabs and frequent sites are already ranked; bookmarks and raw history
-        // sort among themselves and fill in behind them.
-        let rest = (matchingBookmarks + matchingHistory).sorted { (suggestion1, suggestion2) -> Bool in
-            // Bookmarks come first
-            if suggestion1.type != suggestion2.type {
-                return suggestion1.type < suggestion2.type
-            }
-
-            // Within same type, sort by relevance
-            let url1String = suggestion1.url.absoluteString.lowercased()
-            let url2String = suggestion2.url.absoluteString.lowercased()
-            let url1Domain = suggestion1.url.host?.lowercased() ?? ""
-            let url2Domain = suggestion2.url.host?.lowercased() ?? ""
-
-            let url1StartsWith = url1String.hasPrefix(lowercasedInput) || url1Domain.hasPrefix(lowercasedInput)
-            let url2StartsWith = url2String.hasPrefix(lowercasedInput) || url2Domain.hasPrefix(lowercasedInput)
-
-            if url1StartsWith && !url2StartsWith {
-                return true
-            } else if !url1StartsWith && url2StartsWith {
-                return false
-            } else {
-                // If both start with or both don't, sort by length (shorter first)
-                return url1String.count < url2String.count
-            }
-        }
-
-        let ranked = Array((openTabs + frequentSites + rest).prefix(8)) // Limit to 8 suggestions
-        // Transcript recall rows ride BELOW the ranked list (at most 2), so they
-        // can never displace a URL you were typing toward.
-        return ranked + (transcriptHits?(inputText) ?? [])
+        Prefetcher.shared.consider(filteredSuggestions, typed: inputText,
+                                   openURLs: openURLs, session: activeSession)
+        if readyURL != Prefetcher.shared.readyURL { readyURL = Prefetcher.shared.readyURL }
     }
 
     // The open tab a plain Return should switch to, if any: whatever is arrowed to,
@@ -536,24 +437,6 @@ struct OmnibarView: View {
         guard inputText.count >= Self.switchOnReturnMinLength,
               let top = filteredSuggestions.first, top.type == .openTab else { return nil }
         return top
-    }
-
-    // Inline autocomplete target: the top prefix match, as a bare host where
-    // possible ("git" → "github.com"), else the full URL. nil when nothing the
-    // user could mean starts with what they typed (e.g. a multi-word search).
-    private func bestCompletion(for typed: String) -> String? {
-        let t = typed.lowercased()
-        guard !t.isEmpty, !t.contains(" "), !t.contains("://") else { return nil }
-        for s in filteredSuggestions {
-            if let host = s.url.host {
-                let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-                if bare.lowercased().hasPrefix(t) { return bare }
-                if host.lowercased().hasPrefix(t) { return host }
-            }
-            let full = s.url.absoluteString
-            if full.lowercased().hasPrefix(t) { return full }
-        }
-        return nil
     }
 
     // History search always has a row armed, so Return takes the top hit without
@@ -642,20 +525,13 @@ struct OmnibarView: View {
                         // terrible history query, so drop it if it's untouched.
                         if !historyMode && inputText == urlString { inputText = "" }
                         historyMode.toggle()
-                    },
-                    // Inline completion fights fuzzy matching — off in history mode.
-                    completion: { historyMode ? nil : bestCompletion(for: $0) }
+                    }
                 )
                 .padding(.vertical, 12)
                 .padding(.horizontal, 8)
                 .onChange(of: inputText) { _, typed in
                     selectedSuggestionIndex = -1
-                    Prefetcher.shared.consider(
-                        filteredSuggestions,
-                        typed: typed,
-                        openURLs: openURLs,
-                        session: activeSession
-                    )
+
                 }
 
                 Button(action: { navigate() }) {
@@ -734,7 +610,7 @@ struct OmnibarView: View {
                         OmnibarSuggestionButton(
                             suggestion: suggestion,
                             isSelected: effectiveSelectionIndex == index,
-                            isReady: suggestion.url == prefetcher.readyURL
+                            isReady: suggestion.url == readyURL
                         ) {
                             if let tabId = suggestion.tabId {
                                 onSwitchToTab?(tabId)
@@ -776,7 +652,14 @@ struct OmnibarView: View {
             loadHistoryURLs()
             Prefetcher.shared.prime()
         }
+        .task {
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .milliseconds(500)) } catch { break }
+                pollSuggestions()
+            }
+        }
         .onDisappear {
+            suggestions.cancel()
             Prefetcher.shared.cancel()
         }
     }
@@ -808,4 +691,173 @@ struct OmnibarView: View {
         isPresented = false
     }
 
+}
+
+/// Only value snapshots cross to the background worker; SwiftData tabs and stores
+/// remain on the main actor.
+nonisolated struct OmnibarSuggestionSnapshot: Sendable {
+    struct OpenTab: Sendable {
+        let id: UUID
+        let url: URL?
+        let title: String
+        let lastAccessed: Date
+    }
+    let inputText: String
+    let historyMode: Bool
+    let tabs: [OpenTab]
+    let currentTabId: UUID?
+    let sites: [String: SiteVisit]
+    let bookmarkSuggestions: [(title: String, url: URL)]
+    let allHistoryURLs: [URL]
+    let visits: [HistoryVisit]
+
+    // Tabs already open that match what's being typed — ranked by how well the
+    // typed text starts their host/title, best first. The tab you're already
+    // looking at is never a suggestion.
+    var openTabSuggestions: [Suggestion] {
+        typealias Ranked = (suggestion: Suggestion, rank: Double, used: Date)
+        let ranked: [Ranked] = tabs.compactMap { tab -> Ranked? in
+            guard tab.id != currentTabId, let url = tab.url,
+                  let host = SiteHistory.normalizedHost(url) else { return nil }
+            // A restored tab's title is just its domain, so fold in the last real page
+            // title we saw for that host — that's where "Gmail" lives — plus whatever
+            // nicknames the site has earned.
+            let known = sites[host]
+            guard let rank = SiteHistory.matchRank(host: host,
+                                                   title: tab.title + " " + (known?.title ?? ""),
+                                                   aliases: known?.nicknames ?? [],
+                                                   query: inputText) else { return nil }
+            let suggestion = Suggestion(url: url, title: tab.title, type: .openTab, tabId: tab.id)
+            return (suggestion, rank, tab.lastAccessed)
+        }
+        // Equally good matches (four "…google.com" tabs) order by the one you used
+        // last, so Return lands on the live one rather than a stale sign-in page.
+        return ranked
+            .sorted { $0.rank == $1.rank ? $0.used > $1.used : $0.rank > $1.rank }
+            .map(\.suggestion)
+    }
+
+    // Filter suggestions based on input text
+    var undecoratedSuggestions: [Suggestion] {
+        guard !Task.isCancelled else { return [] }
+        if historyMode {
+            return BrowsingHistoryStore.search(inputText, visits: visits).map {
+                Suggestion(url: $0.url, title: $0.title, type: .history)
+            }
+        }
+        guard !inputText.isEmpty else { return [] }
+
+        let lowercasedInput = inputText.lowercased()
+
+        let openTabs = openTabSuggestions
+        let openHosts = Set(openTabs.compactMap { SiteHistory.normalizedHost($0.url) })
+
+        // Sites visited often enough to have earned a nickname. Already-open ones
+        // are dropped — the tab suggestion above says the same thing, better.
+        let matches = sites.values.compactMap { site in
+            SiteHistory.score(site, query: inputText).map { (site, $0) }
+        }.sorted { $0.1 > $1.1 }.prefix(5).map(\.0)
+        let frequentSites = matches.compactMap { site -> Suggestion? in
+            guard !openHosts.contains(site.host), let url = site.url else { return nil }
+            return Suggestion(url: url, title: site.host, type: .site)
+        }
+
+        // Get matching bookmarks
+        let matchingBookmarks = bookmarkSuggestions.filter { bookmark in
+            let titleMatch = bookmark.title.lowercased().contains(lowercasedInput)
+            let urlMatch = bookmark.url.absoluteString.lowercased().contains(lowercasedInput)
+            let domainMatch = bookmark.url.host?.lowercased().contains(lowercasedInput) ?? false
+            return titleMatch || urlMatch || domainMatch
+        }.map { Suggestion(url: $0.url, title: $0.title, type: .bookmark) }
+
+        // Get matching history URLs (excluding bookmarked ones)
+        let bookmarkedURLs = Set(bookmarkSuggestions.map { $0.url.absoluteString })
+        let matchingHistory = allHistoryURLs.filter { url in
+            !bookmarkedURLs.contains(url.absoluteString) &&
+            (url.absoluteString.lowercased().contains(lowercasedInput) ||
+             (url.host?.lowercased().contains(lowercasedInput) ?? false))
+        }.map { Suggestion(historyURL: $0) }
+
+        // Open tabs and frequent sites are already ranked; bookmarks and raw history
+        // sort among themselves and fill in behind them.
+        let rest = (matchingBookmarks + matchingHistory).sorted { (suggestion1, suggestion2) -> Bool in
+            // Bookmarks come first
+            if suggestion1.type != suggestion2.type {
+                return suggestion1.type < suggestion2.type
+            }
+
+            // Within same type, sort by relevance
+            let url1String = suggestion1.url.absoluteString.lowercased()
+            let url2String = suggestion2.url.absoluteString.lowercased()
+            let url1Domain = suggestion1.url.host?.lowercased() ?? ""
+            let url2Domain = suggestion2.url.host?.lowercased() ?? ""
+
+            let url1StartsWith = url1String.hasPrefix(lowercasedInput) || url1Domain.hasPrefix(lowercasedInput)
+            let url2StartsWith = url2String.hasPrefix(lowercasedInput) || url2Domain.hasPrefix(lowercasedInput)
+
+            if url1StartsWith && !url2StartsWith {
+                return true
+            } else if !url1StartsWith && url2StartsWith {
+                return false
+            } else {
+                // If both start with or both don't, sort by length (shorter first)
+                return url1String.count < url2String.count
+            }
+        }
+
+        let ranked = Array((openTabs + frequentSites + rest).prefix(8)) // Limit to 8 suggestions
+        // Transcript recall rows ride BELOW the ranked list (at most 2), so they
+        // can never displace a URL you were typing toward.
+        return ranked
+    }
+
+}
+
+/// A mailbox, polled by the view. Finishing work does not invalidate SwiftUI.
+@MainActor
+final class OmnibarSuggestionUpdates: ObservableObject {
+    struct Request: Equatable {
+        let query: String
+        let historyMode: Bool
+    }
+    @Published private var published: [Suggestion] = []
+    private var publishedRequest: Request?
+    private var requested: Request?
+    private var pending: (Request, [Suggestion])?
+    private var task: Task<Void, Never>?
+
+    func results(for query: String, historyMode: Bool) -> [Suggestion] {
+        publishedRequest == Request(query: query, historyMode: historyMode) ? published : []
+    }
+
+    func poll(query: String, historyMode: Bool,
+              start: () -> Task<[Suggestion], Never>) {
+        let request = Request(query: query, historyMode: historyMode)
+        if let (finished, values) = pending {
+            pending = nil
+            if finished == request {
+                publishedRequest = finished
+                if published != values { published = values }
+                else { objectWillChange.send() }
+            }
+        }
+        guard requested != request else { return }
+        task?.cancel()
+        requested = request
+        let worker = start()
+        task = Task { [weak self] in
+            let values = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: { worker.cancel() }
+            guard !Task.isCancelled else { return }
+            self?.pending = (request, values)
+        }
+    }
+
+    func cancel() {
+        task?.cancel()
+        task = nil
+        pending = nil
+        requested = nil
+    }
 }

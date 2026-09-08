@@ -295,7 +295,7 @@ struct TranscriptTests {
         #expect(segments[1].endSeconds == 420)
     }
 
-    @Test func timestampSearchFindsTheMomentWithItsTime() throws {
+    @Test func timestampSearchFindsTheMomentWithItsTime() async throws {
         let (_, context, ledger, _, _) = try makePhase2Stores()
         let workspace = makeWorkspace(context)
         let article = captureSource(
@@ -308,6 +308,8 @@ struct TranscriptTests {
 
         let fetcher = TranscriptFetcher(ledgerStore: ledger)
         let hits = fetcher.search("gut bacteria")
+        let asynchronousHits = await fetcher.searchAsync("gut bacteria")
+        #expect(asynchronousHits == hits)
         #expect(hits.count == 1)
         #expect(hits.first?.segment.startSeconds == 417)
         #expect(hits.first?.sourceKey == article.sourceKey)

@@ -1469,7 +1469,7 @@ struct ContentView: View {
                                 .frame(height: geometry.size.height * omnibarTopFraction)
                             OmnibarView(
                                 ledgerNote: { ledgerNote(for: $0) },
-                                transcriptHits: { transcriptSuggestions(for: $0) },
+                                transcriptHits: { await transcriptSuggestions(for: $0) },
                                 isPresented: $showOmnibar,
                                 urlString: .constant(currentURL?.absoluteString ?? ""),
                                 onNavigate: { urlString, commit in
@@ -3777,9 +3777,9 @@ struct ContentView: View {
     /// Omnibar rows from stored video transcripts (design §8.3): the matched
     /// caption line, opening the watch URL with t= set so the video arrives
     /// seeked.
-    private func transcriptSuggestions(for query: String) -> [Suggestion] {
+    private func transcriptSuggestions(for query: String) async -> [Suggestion] {
         guard let fetcher = settleCapture?.transcriptFetcher, let ledgerStore else { return [] }
-        return fetcher.search(query).compactMap { hit -> Suggestion? in
+        return await fetcher.searchAsync(query).compactMap { hit -> Suggestion? in
             guard let article = ledgerStore.source(sourceKey: hit.sourceKey) else { return nil }
             let base = URL(string: article.sourceKey) ?? article.url
             let url = AnchorLocator.timestamp(start: hit.segment.startSeconds, end: nil)

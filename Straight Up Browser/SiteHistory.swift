@@ -17,7 +17,7 @@ import Foundation
 import FoundationModels
 #endif
 
-struct SiteVisit: Codable {
+nonisolated struct SiteVisit: Codable, Sendable {
     var host: String        // www-stripped, e.g. "mail.google.com"
     var title: String       // most recent page title — the nickname source
     var count: Int
@@ -132,7 +132,7 @@ final class SiteHistory {
     //   1 = a word of the page title does    ("gmail"  -> mail.google.com)
     //   1 = a nickname: the title's initials ("hn"     -> news.ycombinator.com)
     //       or one the model gave us         ("email"  -> mail.google.com)
-    static func matchRank(host: String, title: String,
+    nonisolated static func matchRank(host: String, title: String,
                           aliases: [String] = [], query: String) -> Double? {
         let q = query.lowercased()
         guard !q.isEmpty, !q.contains(" ") else { return nil }
@@ -151,7 +151,7 @@ final class SiteHistory {
     // their name at one end of the title or the other, so both ends get a candidate;
     // camel case counts as a word break so one-word names still yield an initialism.
     // Junk ("Inbox (3) - me@gmail.com - Gmail") self-filters on the length cap.
-    static func initialisms(of title: String) -> [String] {
+    nonisolated static func initialisms(of title: String) -> [String] {
         let segments = title.split(whereSeparator: { "-–—|·:".contains($0) })
             .map { $0.trimmingCharacters(in: .whitespaces) }
         return [segments.first, segments.last].compactMap { segment -> String? in
@@ -165,7 +165,7 @@ final class SiteHistory {
         }
     }
 
-    private static func splitCamelCase(_ word: Substring) -> [Substring] {
+    private nonisolated static func splitCamelCase(_ word: Substring) -> [Substring] {
         var parts: [Substring] = []
         var start = word.startIndex
         var previous: Character?
@@ -180,7 +180,7 @@ final class SiteHistory {
         return parts
     }
 
-    static func titleWords(_ title: String) -> [String] {
+    nonisolated static func titleWords(_ title: String) -> [String] {
         title.lowercased()
             .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
             .map(String.init)
@@ -189,7 +189,7 @@ final class SiteHistory {
 
     // Match quality scaled by how much of a habit the site is. Visits decay over
     // a month, so a site you used 50 times last year loses to one you use weekly.
-    static func score(_ site: SiteVisit, query: String, now: Date = Date()) -> Double? {
+    nonisolated static func score(_ site: SiteVisit, query: String, now: Date = Date()) -> Double? {
         guard let rank = matchRank(host: site.host, title: site.title,
                                    aliases: site.nicknames ?? [], query: query) else { return nil }
         let days = max(0, now.timeIntervalSince(site.lastVisit)) / 86400
