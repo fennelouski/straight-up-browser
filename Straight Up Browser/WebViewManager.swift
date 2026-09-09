@@ -90,12 +90,10 @@ class WebViewManager: NSObject, ObservableObject {
     // fill in the OS/WebKit versions itself.
     static let userAgentAppName = "Version/26.4 Safari/605.1.15"
 
-    // WebKit exposes the WebAuthn API in WKWebView but leaves it non-functional
-    // without the Apple-gated com.apple.developer.web-browser.public-key-credential
-    // entitlement: isUserVerifyingPlatformAuthenticatorAvailable() reports false and
-    // no ceremony can complete. Advertising an API we can't honor makes sites offer
-    // passkey sign-in that dead-ends (Google loops on it), so we hide it and let them
-    // fall back to password. navigator.credentials stays for password autofill.
+    #if !canImport(AppKit)
+    // The iOS target still lacks the browser capability. Hide WebAuthn on sites
+    // where passkey sign-in loops. macOS has the public-key-credential entitlement
+    // and must leave WebKit's native credential APIs intact.
     // Scoped to the sites that actually dead-end. Deleting a global real Safari
     // 26.4 ships (which our user agent claims to be) is a bot-detection tell:
     // Cloudflare's managed challenge scores the mismatch and hard-fails with no
@@ -108,6 +106,7 @@ class WebViewManager: NSObject, ObservableObject {
         delete window.AuthenticatorAssertionResponse;
     }
     """
+    #endif
 
     // A lightweight DevTools bridge. The wrappers are installed before page code,
     // but stay dormant until the user opens DevTools for that tab. This preserves
@@ -1199,11 +1198,13 @@ class WebViewManager: NSObject, ObservableObject {
         configuration.userContentController.addUserScript(
             WKUserScript(source: Self.translateScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         )
+        #if !canImport(AppKit)
         // Must run before any page code so feature detection sees the truth, and
         // in subframes because sign-in flows are often framed.
         configuration.userContentController.addUserScript(
             WKUserScript(source: Self.hideWebAuthnScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
         )
+        #endif
 
         // Attach the app-wide web extension controller so any loaded extension's
         // content scripts run in this tab. Inert when no extension is loaded, but

@@ -28,6 +28,7 @@ require_entitlement() {
 }
 
 require_entitlement 'com.apple.security.app-sandbox'
+require_entitlement 'com.apple.developer.web-browser.public-key-credential'
 require_entitlement 'com.apple.security.network.client'
 # MCP OAuth uses a one-shot, IPv4-loopback-only callback listener on an
 # OS-assigned ephemeral port. Keep the matching sandbox entitlement in the
