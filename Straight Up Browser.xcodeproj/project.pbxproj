@@ -98,6 +98,7 @@
 				BrowserIntents.swift,
 				ColorPanelPositioning.swift,
 				ContentView.swift,
+				CredentialAutofillBadge.swift,
 				DomainInitialsGenerator.swift,
 				FilesWindow.swift,
 				GlobalOmnibar.swift,
