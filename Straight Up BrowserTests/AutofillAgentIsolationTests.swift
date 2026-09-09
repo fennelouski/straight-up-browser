@@ -92,7 +92,17 @@ struct AutofillAgentIsolationTests {
         #expect(bootstrap.contains("const autofillApply = request =>"))
     }
 
-    @Test func passwordAndHiddenFieldsNeverEvenSignalFocus() {
-        #expect(SemanticPageJavaScript.bootstrap.contains("if (type === 'password' || type === 'hidden') return;"))
+    @Test func hiddenFieldsNeverSignalFocus() {
+        #expect(SemanticPageJavaScript.bootstrap.contains("if (type === 'hidden') return;"))
+    }
+
+    /// Password fields do signal focus now (for the one-click AutoFill
+    /// badge), but only as `credentialFieldFocused` — they must never become
+    /// `autofillFieldFocused` and reach the name/address suggestion pipeline.
+    /// The signal itself carries no value either way (see fieldHintsNeverReachTheAgentsSnapshotText).
+    @Test func passwordFieldsSignalOnlyTheCredentialBadge() {
+        let bootstrap = SemanticPageJavaScript.bootstrap
+        #expect(bootstrap.contains("const isCredential = type === 'password' || credentialTokens.includes(autocompleteToken);"))
+        #expect(bootstrap.contains("type: isCredential ? 'credentialFieldFocused' : 'autofillFieldFocused'"))
     }
 }
