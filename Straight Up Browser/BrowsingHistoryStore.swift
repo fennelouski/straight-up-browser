@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 
-struct HistoryVisit: Codable, Identifiable, Equatable {
+nonisolated struct HistoryVisit: Codable, Identifiable, Equatable, Sendable {
     let id: UUID
     let url: URL
     var title: String
@@ -62,7 +62,12 @@ final class BrowsingHistoryStore: ObservableObject {
     /// how cleanly they matched, how often you go there, and how recently.
     /// Empty query = your most recent pages.
     func search(_ query: String, limit: Int = 10) -> [HistoryVisit] {
-        let recents = recentVisits
+        Self.search(query, visits: visits, limit: limit)
+    }
+
+    nonisolated static func search(_ query: String, visits: [HistoryVisit], limit: Int = 10) -> [HistoryVisit] {
+        var seen: Set<String> = []
+        let recents = visits.filter { seen.insert($0.url.absoluteString).inserted }
         let needle = Array(query.lowercased().filter { !$0.isWhitespace })
         guard !needle.isEmpty else { return Array(recents.prefix(limit)) }
 
@@ -85,7 +90,7 @@ final class BrowsingHistoryStore: ObservableObject {
     // mid-word — so "ghpr" ranks github.com/…/pulls above a stray letter soup.
     // ponytail: greedy, not optimal alignment; swap in a real fuzzy lib only if
     // rankings actually feel wrong.
-    static func fuzzyScore(_ needle: [Character], in haystack: String) -> Double? {
+    nonisolated static func fuzzyScore(_ needle: [Character], in haystack: String) -> Double? {
         let hay = Array(haystack.lowercased())
         var score = 0.0
         var matched = 0

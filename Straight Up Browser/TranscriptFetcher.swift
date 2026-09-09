@@ -152,6 +152,28 @@ final class TranscriptFetcher {
         let segment: TranscriptSegment
     }
 
+    /// Fetch model values on their actor, then decode and scan away from editing.
+    func searchAsync(_ query: String, limit: Int = 2) async -> [TranscriptHit] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard needle.count >= 3, limit > 0 else { return [] }
+        let snapshots = ledgerStore.allTranscripts().map { ($0.sourceKey, $0.segmentsData) }
+        let worker = Task.detached(priority: .utility) { () -> [TranscriptHit] in
+            var hits: [TranscriptHit] = []
+            for (sourceKey, data) in snapshots {
+                guard !Task.isCancelled else { return [] }
+                guard let data,
+                      let segments = try? JSONDecoder().decode([TranscriptSegment].self, from: data),
+                      let segment = segments.first(where: { $0.t.lowercased().contains(needle) }) else { continue }
+                hits.append(TranscriptHit(sourceKey: sourceKey, segment: segment))
+                if hits.count >= limit { break }
+            }
+            return hits
+        }
+        return await withTaskCancellationHandler {
+            await worker.value
+        } onCancel: { worker.cancel() }
+    }
+
     func search(_ query: String, limit: Int = 2) -> [TranscriptHit] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard needle.count >= 3 else { return [] }

@@ -88,11 +88,9 @@ Global hotkeys, the terminal CLI, full scheduled automation, AppKit
 screenshot/window tools, Sparkle updater UI, and the unpacked-extension loader
 remain macOS-only.
 
-Browser does not currently expose passkey/WebAuthn sign-in. Apple gates
-third-party browser access behind the
-`com.apple.developer.web-browser.public-key-credential` entitlement; without
-that entitlement, Browser hides WebAuthn APIs so websites fall back instead of
-offering a passkey flow that cannot complete. Browser also does not ship a
+Browser supports passkey/WebAuthn sign-in (Touch ID, iCloud Keychain) under
+Apple's `com.apple.developer.web-browser.public-key-credential` entitlement,
+granted to this app in September 2026. Browser does not ship a
 password vault: form autofill covers saved names, contact details, and postal
 addresses only, never passwords or payment cards. Website camera and microphone requests
 use WebKit's permission prompt, and remembered per-site choices can be reviewed
@@ -125,6 +123,7 @@ are the defaults:
 | `⌘D` | Add or remove bookmark |
 | `⌘⇧B` | Show bookmark Library |
 | `⌘Y` | Show history Library |
+| `⌥⌘Y` | Toggle history search while the omnibar is open |
 | `⌘⇧J` | Show Downloads |
 | `⌘⌥R` | Reader mode |
 | `⌘⌥A` | Turn autofill on or off |

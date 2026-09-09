@@ -107,7 +107,6 @@ class WebViewManager: NSObject, ObservableObject {
     }
     """
     #endif
-
     // A lightweight DevTools bridge. The wrappers are installed before page code,
     // but stay dormant until the user opens DevTools for that tab. This preserves
     // normal console behaviour and avoids retaining page output while the tool is
@@ -1205,7 +1204,6 @@ class WebViewManager: NSObject, ObservableObject {
             WKUserScript(source: Self.hideWebAuthnScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
         )
         #endif
-
         // Attach the app-wide web extension controller so any loaded extension's
         // content scripts run in this tab. Inert when no extension is loaded, but
         // must be set before the web view exists — it can't be added later.

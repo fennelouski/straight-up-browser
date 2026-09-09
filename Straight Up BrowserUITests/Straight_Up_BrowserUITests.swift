@@ -33,6 +33,76 @@ final class Straight_Up_BrowserUITests: XCTestCase {
     }
 
     @MainActor
+    func testOmnibarLongURLSelectionUndoAndHistoryMode() throws {
+        let app = browserForUITesting()
+        launchBrowserForUITesting(app)
+        let field = app.textFields.element(
+            matching: NSPredicate(format: "placeholderValue == %@", "Search or enter address")
+        )
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.click()
+        let url = "https://example.com/" + String(repeating: "long-path/", count: 30) + "?q=café&emoji=🙂"
+        let pasteboard = NSPasteboard.general
+        let saved = (pasteboard.pasteboardItems ?? []).map { item in
+            Dictionary(uniqueKeysWithValues: item.types.compactMap { type in
+                item.data(forType: type).map { (type, $0) }
+            })
+        }
+        pasteboard.clearContents()
+        pasteboard.setString(url, forType: .string)
+        let testChangeCount = pasteboard.changeCount
+        defer {
+            if pasteboard.changeCount == testChangeCount {
+                pasteboard.clearContents()
+                pasteboard.writeObjects(saved.map { values in
+                    let item = NSPasteboardItem()
+                    for (type, data) in values { item.setData(data, forType: type) }
+                    return item
+                })
+            }
+        }
+        app.typeKey("a", modifierFlags: .command)
+        app.typeKey("v", modifierFlags: .command)
+        XCTAssertEqual(field.value as? String, url)
+        app.typeKey(.leftArrow, modifierFlags: .command)
+        for _ in 0..<8 { app.typeKey(.rightArrow, modifierFlags: []) }
+        field.typeText("edited.")
+        let edited = "https://edited." + String(url.dropFirst(8))
+        XCTAssertEqual(field.value as? String, edited)
+        app.typeKey("z", modifierFlags: .command)
+        XCTAssertEqual(field.value as? String, url)
+        app.typeKey("z", modifierFlags: [.command, .shift])
+        XCTAssertEqual(field.value as? String, edited)
+
+        // Leave a mid-URL selection in place across multiple publication ticks.
+        app.typeKey(.leftArrow, modifierFlags: .command)
+        for _ in 0..<8 { app.typeKey(.rightArrow, modifierFlags: []) }
+        for _ in 0..<7 { app.typeKey(.rightArrow, modifierFlags: .shift) }
+        let ticks = expectation(description: "Two suggestion publication ticks")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { ticks.fulfill() }
+        wait(for: [ticks], timeout: 3)
+        field.typeText("new.")
+        XCTAssertEqual(field.value as? String, "https://new." + String(url.dropFirst(8)))
+
+        app.typeKey(.tab, modifierFlags: [])
+        XCTAssertEqual(app.buttons["omnibar-history"].value as? String, "Off")
+        app.typeKey("y", modifierFlags: [.command, .option])
+        let historyField = app.textFields.element(
+            matching: NSPredicate(format: "placeholderValue == %@", "Search your history")
+        )
+        XCTAssertTrue(historyField.waitForExistence(timeout: 3))
+        XCTAssertEqual(historyField.value as? String, "https://new." + String(url.dropFirst(8)))
+        app.buttons["omnibar-history"].click()
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        field.click()
+        app.typeKey("a", modifierFlags: .command)
+        field.typeText("editable")
+        field.doubleClick()
+        field.typeText("replacement")
+        XCTAssertEqual(field.value as? String, "replacement")
+    }
+
+    @MainActor
     func testExternalLinkDismissesTheStartupAddressBar() {
         let app = browserForUITesting()
         launchBrowserForUITesting(app)
