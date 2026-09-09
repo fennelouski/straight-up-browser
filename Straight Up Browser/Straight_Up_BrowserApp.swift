@@ -601,6 +601,14 @@ struct Straight_Up_BrowserApp: App {
                 }
                 .keyboardShortcut(sc(.fullScreen))
 
+                Button("Toggle Full Screen (Alt)") {
+                    if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+                        WindowLayout.toggle(window)
+                    }
+                }
+                .keyboardShortcut("f", modifiers: [.command, .option, .control])
+                .hidden()
+
                 Button("Snap Window Left") {
                     if let window = NSApp.keyWindow ?? NSApp.mainWindow {
                         WindowLayout.snap(window, direction: .left)
