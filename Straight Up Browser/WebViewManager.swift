@@ -1438,7 +1438,7 @@ extension WebViewManager: WKScriptMessageHandler {
         guard message.frameInfo.isMainFrame else { return }
 
         switch type {
-        case "autofillFieldFocused":
+        case "autofillFieldFocused", "credentialFieldFocused":
             guard let webView = message.webView,
                   let tabID = tabId(for: webView),
                   let signal = try? AutofillFocusSignal.decode(body) else { return }
@@ -1455,7 +1455,7 @@ extension WebViewManager: WKScriptMessageHandler {
                 scale: scale
             )
             NotificationCenter.default.post(
-                name: .browserAutofillFieldFocused,
+                name: type == "credentialFieldFocused" ? .browserCredentialFieldFocused : .browserAutofillFieldFocused,
                 object: nil,
                 userInfo: [
                     "signal": signal,

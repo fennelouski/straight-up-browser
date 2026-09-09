@@ -76,6 +76,11 @@ extension Notification.Name {
     static let browserAutofillFieldFocused = Notification.Name("browserAutofillFieldFocused")
     static let browserAutofillDismissed = Notification.Name("browserAutofillDismissed")
 
+    // A username/password field gained focus (same userInfo shape as
+    // browserAutofillFieldFocused). Kept separate because credential fields
+    // never enter the name/address suggestion pipeline — see CredentialAutofillBadge.
+    static let browserCredentialFieldFocused = Notification.Name("browserCredentialFieldFocused")
+
     // Screenshot menu (macOS). Distinct from `browserScreenshot` below, which is
     // the CLI's own capture-to-a-response-file command.
     static let browserScreenshotVisible = Notification.Name("browserScreenshotVisible")

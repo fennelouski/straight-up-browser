@@ -782,7 +782,14 @@ nonisolated enum SemanticPageJavaScript {
         const element = event.target;
         if (!element || !/^(INPUT|TEXTAREA)$/.test(element.tagName || '')) return;
         const type = String(element.type || '').toLowerCase();
-        if (type === 'password' || type === 'hidden') return;
+        if (type === 'hidden') return;
+        const hints = fieldHints(element);
+        // Credential fields never reach the name/address suggestion list (see
+        // autofillApply's password guard above) — they get their own signal so
+        // Swift can offer WebKit's native Passwords AutoFill instead.
+        const credentialTokens = ['username', 'current-password', 'new-password'];
+        const autocompleteToken = String(hints.autocomplete || '').toLowerCase().trim().split(/\s+/).pop() || '';
+        const isCredential = type === 'password' || credentialTokens.includes(autocompleteToken);
         // Register the identity now so the localID we report can be resolved later.
         const identity = identityFor(element, []);
         // One frame of slack: focusing a field near the fold scrolls it into view,
@@ -791,14 +798,14 @@ nonisolated enum SemanticPageJavaScript {
           if (document.activeElement !== element || state.autofillSuppressed) return;
           const rect = element.getBoundingClientRect();
           postAutofill({
-            type: 'autofillFieldFocused',
+            type: isCredential ? 'credentialFieldFocused' : 'autofillFieldFocused',
             documentToken: state.documentToken,
             localID: identity.localID,
             role: roleFor(element),
             name: nameFor(element),
             geometryDigest: geometryFor(element),
             frameContext: [],
-            hints: fieldHints(element),
+            hints: hints,
             // CSS viewport pixels. Swift converts; see AutofillGeometry.
             rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height}
           });
