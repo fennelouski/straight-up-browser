@@ -102,7 +102,7 @@ struct AutofillAgentIsolationTests {
     /// The signal itself carries no value either way (see fieldHintsNeverReachTheAgentsSnapshotText).
     @Test func passwordFieldsSignalOnlyTheCredentialBadge() {
         let bootstrap = SemanticPageJavaScript.bootstrap
-        #expect(bootstrap.contains("const isCredential = type === 'password' || credentialTokens.includes(autocompleteToken);"))
+        #expect(bootstrap.contains("const isCredential = type === 'password' || credentialTokens.includes(autocompleteToken) ||"))
         #expect(bootstrap.contains("type: isCredential ? 'credentialFieldFocused' : 'autofillFieldFocused'"))
     }
 }

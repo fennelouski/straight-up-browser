@@ -264,3 +264,14 @@ struct AutofillGeometryTests {
         #expect(origin.y == expectedY)
     }
 }
+
+struct AutofillFlippedGeometryTests {
+    @Test func flippedWebViewDoesNotMirrorCSSBeforeAppKitConversion() {
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let css = CGRect(x: 80, y: 180, width: 260, height: 48)
+        let rect = AutofillGeometry.viewRect(css: css, in: bounds, scale: 1, isFlipped: true)
+        #expect(rect == css)
+        let zoomed = AutofillGeometry.viewRect(css: css, in: bounds, scale: 2, isFlipped: true)
+        #expect(zoomed == CGRect(x: 160, y: 360, width: 520, height: 96))
+    }
+}

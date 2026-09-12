@@ -161,21 +161,13 @@ nonisolated enum AutofillKeyAction: Equatable, Sendable {
 }
 
 nonisolated enum AutofillGeometry {
-    /// CSS viewport pixels → the web view's own (flipped, scaled) coordinates.
-    ///
-    /// Two conversions, both easy to get wrong:
-    ///   * CSS counts y downward from the top; AppKit counts upward from the
-    ///     bottom, so the rect is mirrored against the view height.
-    ///   * A CSS pixel is only a point at 100%. Page zoom (⌘+) and pinch
-    ///     magnification both scale it, and they multiply.
-    ///
-    /// ScreenshotManager does the same conversion but uses `magnification`
-    /// alone; that is wrong on a ⌘+ zoomed page. Don't copy it back.
-    static func viewRect(css: CGRect, in bounds: CGRect, scale: CGFloat) -> CGRect {
+    /// CSS viewport pixels → view coordinates. WKWebView can be flipped;
+    /// AppKit's subsequent convert(_:to:) handles the window-coordinate flip.
+    static func viewRect(css: CGRect, in bounds: CGRect, scale: CGFloat, isFlipped: Bool = false) -> CGRect {
         let scale = max(scale, 0.01)
         return CGRect(
-            x: css.minX * scale,
-            y: bounds.height - (css.minY + css.height) * scale,
+            x: bounds.minX + css.minX * scale,
+            y: isFlipped ? bounds.minY + css.minY * scale : bounds.maxY - css.maxY * scale,
             width: css.width * scale,
             height: css.height * scale
         )

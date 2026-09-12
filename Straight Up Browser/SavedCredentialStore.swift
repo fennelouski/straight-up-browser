@@ -20,29 +20,32 @@ nonisolated struct SavedCredential: Identifiable, Equatable, Sendable {
 }
 
 nonisolated enum SavedCredentialStore {
-    private static let service = "com.nathanfennel.Straight-Up-Browser.credentials"
+    // Internet-password items use security domain, not the generic-password
+    // service attribute. Include the bundle ID to isolate development vaults.
+    private static let service = (Bundle.main.bundleIdentifier ?? "com.nathanfennel.Straight-Up-Browser") + ".credentials"
 
     private static func identity(domain: String, username: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassInternetPassword,
-            kSecAttrService as String: service,
+            kSecAttrSecurityDomain as String: service,
             kSecAttrServer as String: domain,
             kSecAttrAccount as String: username,
         ]
     }
 
-    static func save(domain: String, username: String, password: String) {
-        guard !domain.isEmpty, !username.isEmpty, !password.isEmpty else { return }
+    @discardableResult
+    static func save(domain: String, username: String, password: String) -> OSStatus {
+        guard !domain.isEmpty, !username.isEmpty, !password.isEmpty else { return errSecParam }
         let data = Data(password.utf8)
         let status = SecItemUpdate(
             identity(domain: domain, username: username) as CFDictionary,
             [kSecValueData as String: data] as CFDictionary
         )
-        guard status == errSecItemNotFound else { return }
+        guard status == errSecItemNotFound else { return status }
         var item = identity(domain: domain, username: username)
         item[kSecValueData as String] = data
         item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        SecItemAdd(item as CFDictionary, nil)
+        return SecItemAdd(item as CFDictionary, nil)
     }
 
     static func password(domain: String, username: String) -> String? {
@@ -61,7 +64,7 @@ nonisolated enum SavedCredentialStore {
         guard !domain.isEmpty else { return [] }
         let query: [String: Any] = [
             kSecClass as String: kSecClassInternetPassword,
-            kSecAttrService as String: service,
+            kSecAttrSecurityDomain as String: service,
             kSecAttrServer as String: domain,
             kSecReturnAttributes as String: true,
             kSecMatchLimit as String: kSecMatchLimitAll,
@@ -69,7 +72,7 @@ nonisolated enum SavedCredentialStore {
         var result: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
               let items = result as? [[String: Any]] else { return [] }
-        return items.compactMap { $0[kSecAttrAccount as String] as? String }
+        return items.compactMap { $0[kSecAttrAccount as String] as? String }.sorted()
     }
 
     static func delete(domain: String, username: String) {
@@ -81,7 +84,7 @@ nonisolated enum SavedCredentialStore {
     static func all() -> [SavedCredential] {
         let query: [String: Any] = [
             kSecClass as String: kSecClassInternetPassword,
-            kSecAttrService as String: service,
+            kSecAttrSecurityDomain as String: service,
             kSecReturnAttributes as String: true,
             kSecMatchLimit as String: kSecMatchLimitAll,
         ]

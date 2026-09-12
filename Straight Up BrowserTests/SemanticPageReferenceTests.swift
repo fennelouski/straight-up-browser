@@ -810,3 +810,44 @@ private actor FakePageWaitEventSource: PageWaitEventSource {
         cleanups += 1
     }
 }
+
+@MainActor
+private final class CredentialFocusProbe: NSObject, WKScriptMessageHandler {
+    var messages: [[String: Any]] = []
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if let body = message.body as? [String: Any] { messages.append(body) }
+    }
+}
+
+struct CredentialFocusRuntimeTests {
+    @Test @MainActor func unannotatedLoginUsernameUsesCredentialChannelButOtherFormsDoNot() async throws {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let probe = CredentialFocusProbe()
+        configuration.userContentController.add(probe, contentWorld: .defaultClient, name: SemanticPageJavaScript.messageHandlerName)
+        configuration.userContentController.addUserScript(WKUserScript(
+            // Keep the geometry callback running in this offscreen test view.
+            source: "window.requestAnimationFrame = callback => setTimeout(callback, 0);\n" + SemanticPageJavaScript.bootstrap,
+            injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient
+        ))
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 800, height: 600), configuration: configuration)
+        let loader = SemanticWebViewLoader()
+        webView.navigationDelegate = loader
+        try await loader.load("""
+            <form><input id="search" name="search"></form>
+            <form><input id="username" name="username"><input type="password" value="test-secret"></form>
+            """, in: webView)
+        _ = try await webView.callAsyncJavaScript("document.getElementById('username').focus()", arguments: [:], in: nil, contentWorld: .defaultClient)
+        try await Task.sleep(for: .milliseconds(200))
+        let loginSignals = probe.messages.filter { ($0["type"] as? String)?.hasSuffix("FieldFocused") == true }
+        #expect(!loginSignals.isEmpty)
+        #expect(loginSignals.allSatisfy { $0["type"] as? String == "credentialFieldFocused" })
+        #expect(!String(describing: loginSignals).contains("test-secret"))
+        probe.messages.removeAll()
+        _ = try await webView.callAsyncJavaScript("document.getElementById('search').focus()", arguments: [:], in: nil, contentWorld: .defaultClient)
+        try await Task.sleep(for: .milliseconds(200))
+        let searchSignals = probe.messages.filter { ($0["type"] as? String)?.hasSuffix("FieldFocused") == true }
+        #expect(!searchSignals.isEmpty)
+        #expect(searchSignals.allSatisfy { $0["type"] as? String == "autofillFieldFocused" })
+    }
+}

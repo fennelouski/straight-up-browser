@@ -808,7 +808,18 @@ nonisolated enum SemanticPageJavaScript {
         // Swift can offer WebKit's native Passwords AutoFill instead.
         const credentialTokens = ['username', 'current-password', 'new-password'];
         const autocompleteToken = String(hints.autocomplete || '').toLowerCase().trim().split(/\s+/).pop() || '';
-        const isCredential = type === 'password' || credentialTokens.includes(autocompleteToken);
+        // Unannotated login forms still need suggestions on their username
+        // field. Stay within its owning form and inspect metadata only.
+        const formInputs = element.form ? Array.from(element.form.elements).filter(el => el.tagName === 'INPUT') : [];
+        const pairedPassword = formInputs.find(el => el.type === 'password' && !el.disabled && el.getClientRects().length);
+        const usernameCandidates = formInputs.filter(el =>
+          ['text', 'email', 'tel'].includes(el.type) && !el.disabled && !el.readOnly && el.getClientRects().length);
+        const passwordIndex = formInputs.indexOf(pairedPassword);
+        const pairedUsername = usernameCandidates.find(el =>
+          String(el.autocomplete || '').toLowerCase().split(/\s+/).includes('username')) ||
+          usernameCandidates.filter(el => formInputs.indexOf(el) < passwordIndex).pop() || usernameCandidates[0];
+        const isCredential = type === 'password' || credentialTokens.includes(autocompleteToken) ||
+          (!!pairedPassword && element === pairedUsername);
         // Register the identity now so the localID we report can be resolved later.
         const identity = identityFor(element, []);
         const report = () => {

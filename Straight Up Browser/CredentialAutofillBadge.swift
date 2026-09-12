@@ -23,6 +23,7 @@ import Combine
 import AppKit
 #endif
 import WebKit
+import Security
 
 @MainActor
 final class CredentialManager: ObservableObject {
@@ -39,11 +40,13 @@ final class CredentialManager: ObservableObject {
         let domain: String
         let username: String
         let password: String
+        let isUpdate: Bool
         var id: String { "\(tabID)\(domain)\(username)" }
     }
 
     @Published private(set) var presentation: Presentation?
     @Published private(set) var savePrompt: SavePrompt?
+    @Published private(set) var saveError: String?
     /// Set while the pointer is over the suggestion list, so the field's blur
     /// (which fires on mouseDown, before the click completes) doesn't dismiss
     /// it out from under the click. Same trick AutofillManager uses.
@@ -126,7 +129,8 @@ final class CredentialManager: ObservableObject {
                 in: nil,
                 contentWorld: .defaultClient
             )
-            guard let raw, let scan = try? AutofillPageScan.decode(raw) else { return }
+            guard Self.normalizedDomain(webView.url ?? URL(fileURLWithPath: "/")) == domain,
+                  let raw, let scan = try? AutofillPageScan.decode(raw) else { return }
             let (usernameField, passwordField) = Self.credentialFields(in: scan)
             guard let passwordField else { return }
 
@@ -186,17 +190,29 @@ final class CredentialManager: ObservableObject {
         else { return }
         let domain = rawDomain.lowercased()
         // Already saved with this exact password: nothing new to offer.
-        guard SavedCredentialStore.password(domain: domain, username: username) != password else { return }
-        savePrompt = SavePrompt(tabID: tabID, domain: domain, username: username, password: password)
+        let existing = SavedCredentialStore.password(domain: domain, username: username)
+        guard existing != password else {
+            savePrompt = nil
+            saveError = nil
+            return
+        }
+        saveError = nil
+        savePrompt = SavePrompt(tabID: tabID, domain: domain, username: username, password: password, isUpdate: existing != nil)
     }
 
     func acceptSavePrompt() {
         guard let savePrompt else { return }
-        SavedCredentialStore.save(domain: savePrompt.domain, username: savePrompt.username, password: savePrompt.password)
+        let status = SavedCredentialStore.save(domain: savePrompt.domain, username: savePrompt.username, password: savePrompt.password)
+        guard status == errSecSuccess else {
+            saveError = "Could not save password. Please try again. (\(status))"
+            return
+        }
+        saveError = nil
         self.savePrompt = nil
     }
 
     func dismissSavePrompt() {
+        saveError = nil
         savePrompt = nil
     }
 
@@ -268,9 +284,9 @@ struct SavePasswordBanner: View {
         if let prompt = manager.savePrompt {
             HStack(spacing: 10) {
                 Image(systemName: "key.fill")
-                Text("Save password for \(prompt.domain)?")
+                Text(manager.saveError ?? "\(prompt.isUpdate ? "Update" : "Save") password for \(prompt.username) on \(prompt.domain)?")
                     .lineLimit(1)
-                Button("Save") { manager.acceptSavePrompt() }
+                Button(prompt.isUpdate ? "Update" : "Save") { manager.acceptSavePrompt() }
                     .keyboardShortcut(.defaultAction)
                 Button("Not Now") { manager.dismissSavePrompt() }
                     .buttonStyle(.plain)

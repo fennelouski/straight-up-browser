@@ -1446,13 +1446,16 @@ extension WebViewManager: WKScriptMessageHandler {
             // AppKit-only; iPad has no autofill UI listening for this anyway.
             #if os(macOS)
             let scale = max(webView.pageZoom * webView.magnification, 0.01)
+            let isFlipped = webView.isFlipped
             #else
             let scale = max(webView.pageZoom, 0.01)
+            let isFlipped = true
             #endif
             let viewRect = AutofillGeometry.viewRect(
                 css: signal.rect,
                 in: webView.bounds,
-                scale: scale
+                scale: scale,
+                isFlipped: isFlipped
             )
             NotificationCenter.default.post(
                 name: type == "credentialFieldFocused" ? .browserCredentialFieldFocused : .browserAutofillFieldFocused,

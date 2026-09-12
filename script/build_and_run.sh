@@ -9,6 +9,8 @@ case "$MODE" in
 esac
 
 BUILD_ROOT="${DERIVED_DATA_ROOT:-$HOME/Library/Caches/straight-up-browser/development}"
+mkdir -p "$BUILD_ROOT"
+BUILD_ROOT="$(cd "$BUILD_ROOT" && pwd -P)"
 APP="$BUILD_ROOT/Build/Products/Debug/Browser.app"
 # A separate sandbox keeps development launches out of the shipping
 # browser's tabs, preferences, history, and LaunchServices registration.
@@ -17,9 +19,9 @@ if pgrep -f "^$APP/Contents/MacOS/Browser" >/dev/null; then
     osascript -e "tell application id \"$BUNDLE_ID\" to quit"
 fi
 
-mkdir -p "$BUILD_ROOT"
+# Ad-hoc verification builds cannot carry Apple-restricted capabilities.
 cp Browser.entitlements "$BUILD_ROOT/development.entitlements"
-for key in com.apple.developer.icloud-container-identifiers com.apple.developer.icloud-services com.apple.developer.ubiquity-container-identifiers; do
+for key in com.apple.developer.icloud-container-identifiers com.apple.developer.icloud-services com.apple.developer.ubiquity-container-identifiers com.apple.developer.web-browser.public-key-credential; do
     /usr/libexec/PlistBuddy -c "Delete :$key" "$BUILD_ROOT/development.entitlements"
 done
 xcodebuild build -quiet -onlyUsePackageVersionsFromResolvedFile \
