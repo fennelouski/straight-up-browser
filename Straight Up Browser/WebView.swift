@@ -1217,6 +1217,8 @@ struct WebView: NSViewRepresentable {
                 item.title = "Open Link in New Tab"
             }
 
+            flattenAutoFillMenu(menu)
+
             if let url = parent.webViewManager?.contextMenuLink(for: webView),
                !menu.items.contains(where: { $0.action == #selector(addContextLinkToNewspaper(_:)) }) {
                 contextMenuWebView = webView
@@ -1287,6 +1289,23 @@ struct WebView: NSViewRepresentable {
             guard let url = sender.representedObject as? URL,
                   let webView = contextMenuWebView else { return }
             parent.onSaveLinkToNewspaper?(url, webView)
+        }
+
+        /// WebKit nests the Passwords picker under "AutoFill" → "Passwords…" —
+        /// a right-click, then a hover, then a click. When that submenu holds
+        /// exactly one item, hoist it to the top level so the click reaches it
+        /// directly. Left nested when there's more than one (e.g. a strong
+        /// password suggestion sits alongside a saved credential) since then
+        /// there's a real choice to make.
+        private func flattenAutoFillMenu(_ menu: NSMenu) {
+            guard let index = menu.items.firstIndex(where: { $0.title.localizedCaseInsensitiveContains("autofill") }),
+                  let submenu = menu.items[index].submenu,
+                  submenu.items.count == 1,
+                  let leaf = submenu.items.first
+            else { return }
+            menu.removeItem(at: index)
+            submenu.removeItem(leaf)
+            menu.insertItem(leaf, at: index)
         }
 
         private func decorateMenu(_ menu: NSMenu) {

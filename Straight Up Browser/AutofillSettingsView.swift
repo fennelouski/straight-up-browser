@@ -26,6 +26,9 @@ struct AutofillSettingsView: View {
         ShortcutStore.shared.shortcut(for: .toggleAutofill).displayString
     }
 
+    @State private var savedCredentials: [SavedCredential] = []
+    @State private var pendingCredentialDeletion: SavedCredential?
+
     var body: some View {
         Form {
             masterSection
@@ -33,6 +36,7 @@ struct AutofillSettingsView: View {
             profilesSection
             categoriesSection
             exceptionsSection
+            savedPasswordsSection
             resetSection
         }
         .formStyle(.grouped)
@@ -60,7 +64,27 @@ struct AutofillSettingsView: View {
             }
             Button("Cancel", role: .cancel) { pendingProfileDeletion = nil }
         }
-        .onAppear { contactsRoster.refresh() }
+        .confirmationDialog(
+            "Delete this saved password?",
+            isPresented: Binding(
+                get: { pendingCredentialDeletion != nil },
+                set: { if !$0 { pendingCredentialDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let credential = pendingCredentialDeletion {
+                    SavedCredentialStore.delete(domain: credential.domain, username: credential.username)
+                    savedCredentials = SavedCredentialStore.all()
+                }
+                pendingCredentialDeletion = nil
+            }
+            Button("Cancel", role: .cancel) { pendingCredentialDeletion = nil }
+        }
+        .onAppear {
+            contactsRoster.refresh()
+            savedCredentials = SavedCredentialStore.all()
+        }
     }
 
     // MARK: Master switch
@@ -73,7 +97,7 @@ struct AutofillSettingsView: View {
         } header: {
             SettingsLabel("Autofill", systemImage: "text.append", tint: SettingsTint.autofill)
         } footer: {
-            Text("Focus a name, email, phone, or address field and Browser offers what you've saved. Nothing is ever written to a page until you pick a suggestion. Press \(shortcutDisplay) to turn autofill on and off without coming back here.\n\nIncognito is off by default so a private tab doesn't hand over your real details. Autofill never runs on local files, and never offers passwords or payment cards — passwords stay with whichever extension you've installed for them.")
+            Text("Focus a name, email, phone, or address field and Browser offers what you've saved. Nothing is ever written to a page until you pick a suggestion. Press \(shortcutDisplay) to turn autofill on and off without coming back here.\n\nIncognito is off by default so a private tab doesn't hand over your real details. Autofill never runs on local files, and never offers payment cards. Passwords are a separate, always-on feature — see Saved Passwords below.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -233,6 +257,38 @@ struct AutofillSettingsView: View {
             SettingsLabel("Excluded Sites", systemImage: "hand.raised", tint: SettingsTint.autofill)
         } footer: {
             Text("Choose \"Never Autofill on This Site\" from the autofill menu to add a site here. Subdomains count as separate sites.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: Saved passwords
+
+    private var savedPasswordsSection: some View {
+        CollapsibleSection(searchID: "autofill.passwords") {
+            if savedCredentials.isEmpty {
+                Text("No saved passwords yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(savedCredentials) { credential in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(credential.domain)
+                            Text(credential.username)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 8)
+                        Button("Delete") { pendingCredentialDeletion = credential }
+                            .buttonStyle(.borderless)
+                    }
+                }
+            }
+        } header: {
+            SettingsLabel("Saved Passwords", systemImage: "key.fill", tint: SettingsTint.autofill)
+        } footer: {
+            Text("Browser saves a password itself when you sign in somewhere new, and offers it back the next time — this is separate from the system Passwords app, which right-click → AutoFill still reaches for sites saved there instead.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

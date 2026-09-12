@@ -768,6 +768,25 @@ nonisolated enum SemanticPageJavaScript {
         }
         return {filled, failed};
       };
+      // ---- Credential manager ----------------------------------------------
+      // A separate write path for the browser's own saved-password store. The
+      // guard in autofillApply above is a deliberate invariant for THAT
+      // feature — profile values must never touch a password field — not a
+      // blanket rule. This one's whole job is writing a password, into
+      // exactly the two fields the caller names.
+      const credentialApply = request => {
+        state.autofillSuppressed = true;
+        try {
+          const usernameEl = request.username && request.username.reference
+            ? resolve(request.username.reference) : null;
+          const passwordEl = resolve(request.password.reference);
+          if (usernameEl) setValue(usernameEl, String(request.username.value || ''));
+          setValue(passwordEl, String(request.password.value || ''));
+        } finally {
+          state.autofillSuppressed = false;
+        }
+        return {filled: true};
+      };
 
       const postAutofill = payload => {
         try { window.webkit.messageHandlers.straightUpSemantic.postMessage(payload); } catch (_) {}
@@ -792,9 +811,7 @@ nonisolated enum SemanticPageJavaScript {
         const isCredential = type === 'password' || credentialTokens.includes(autocompleteToken);
         // Register the identity now so the localID we report can be resolved later.
         const identity = identityFor(element, []);
-        // One frame of slack: focusing a field near the fold scrolls it into view,
-        // and a rect read before that settles points at where the field WAS.
-        requestAnimationFrame(() => {
+        const report = () => {
           if (document.activeElement !== element || state.autofillSuppressed) return;
           const rect = element.getBoundingClientRect();
           postAutofill({
@@ -809,26 +826,67 @@ nonisolated enum SemanticPageJavaScript {
             // CSS viewport pixels. Swift converts; see AutofillGeometry.
             rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height}
           });
-        });
+        };
+        // A login field is disproportionately likely to sit behind a
+        // scroll-into-view or a modal's entrance transition, either of which
+        // is still moving well past one frame. Keep re-measuring for about a
+        // third of a second so the badge/list settles where the field
+        // actually ends up, not where it was when focus landed.
+        let framesLeft = 20;
+        const tick = () => {
+          report();
+          framesLeft -= 1;
+          if (framesLeft > 0 && document.activeElement === element) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
         // Attached only while a text field is focused, so no page pays for these
-        // unless the user is actually in a form.
-        const onScroll = () => dismissAutofill();
-        window.addEventListener('scroll', onScroll, {capture: true, passive: true, once: true});
-        window.addEventListener('resize', onScroll, {once: true});
+        // unless the user is actually in a form. A real scroll re-measures
+        // rather than closing — the field is still there, just moved.
+        const onScroll = () => report();
+        window.addEventListener('scroll', onScroll, {capture: true, passive: true});
+        window.addEventListener('resize', dismissAutofill, {once: true});
         autofillDetach = () => {
           window.removeEventListener('scroll', onScroll, {capture: true});
-          window.removeEventListener('resize', onScroll);
+          window.removeEventListener('resize', dismissAutofill);
         };
       }, true);
       document.addEventListener('focusout', () => {
         if (state.autofillSuppressed) return;
         dismissAutofill();
       }, true);
+      // A genuine form submission is the one moment every browser's built-in
+      // password manager reads a typed password — never on keystroke, never
+      // outside this handler. The values travel once, straight to the
+      // isolated-world message handler; nothing else in the runtime sees them.
+      document.addEventListener('submit', event => {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement)) return;
+        const inputs = Array.from(form.querySelectorAll('input'));
+        const passwordEl = inputs.find(el => String(el.type || '').toLowerCase() === 'password' && el.value);
+        if (!passwordEl) return;
+        const passwordIndex = inputs.indexOf(passwordEl);
+        const isUsernameish = el => {
+          const t = String(el.type || '').toLowerCase();
+          return ['text', 'email', 'tel', ''].includes(t) && !!el.value;
+        };
+        let usernameEl = inputs.find(el =>
+          String(el.getAttribute('autocomplete') || '').toLowerCase().includes('username') && el.value);
+        if (!usernameEl) usernameEl = inputs.slice(0, passwordIndex).reverse().find(isUsernameish);
+        if (!usernameEl) usernameEl = inputs.slice(passwordIndex + 1).find(isUsernameish);
+        if (!usernameEl) return;
+        postAutofill({
+          type: 'credentialSubmitted',
+          domain: String(location.hostname || ''),
+          username: String(usernameEl.value || ''),
+          password: String(passwordEl.value || '')
+        });
+      }, true);
 
       state.snapshot = scan;
       state.effect = effect;
       state.wait = wait;
       state.autofillApply = autofillApply;
+      state.credentialApply = credentialApply;
       state.autofillSuppressed = false;
       state.cancelWait = token => state.waits.get(String(token || ''))?.();
       Object.defineProperty(window, runtimeKey, {
@@ -880,6 +938,12 @@ nonisolated enum SemanticPageJavaScript {
     const runtime = window.__straightUpSemanticRuntimeV2;
     if (!runtime || runtime.ownerDocument !== document) throw new Error('semantic runtime is unavailable');
     return runtime.autofillApply(request);
+    """#
+
+    static let credentialApply = #"""
+    const runtime = window.__straightUpSemanticRuntimeV2;
+    if (!runtime || runtime.ownerDocument !== document) throw new Error('semantic runtime is unavailable');
+    return runtime.credentialApply(request);
     """#
 }
 

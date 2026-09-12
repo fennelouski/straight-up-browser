@@ -78,8 +78,13 @@ extension Notification.Name {
 
     // A username/password field gained focus (same userInfo shape as
     // browserAutofillFieldFocused). Kept separate because credential fields
-    // never enter the name/address suggestion pipeline — see CredentialAutofillBadge.
+    // never enter the name/address suggestion pipeline — see CredentialManager.
     static let browserCredentialFieldFocused = Notification.Name("browserCredentialFieldFocused")
+
+    // A form with a filled password field was submitted (userInfo["tabID"]:
+    // UUID, ["domain"]/["username"]/["password"]: String). Drives the "save
+    // this password?" prompt — see CredentialManager.
+    static let browserCredentialSubmitted = Notification.Name("browserCredentialSubmitted")
 
     // Screenshot menu (macOS). Distinct from `browserScreenshot` below, which is
     // the CLI's own capture-to-a-response-file command.

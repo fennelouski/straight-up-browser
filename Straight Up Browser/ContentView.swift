@@ -466,7 +466,7 @@ struct ContentView: View {
     @StateObject private var tabManager: TabManager
     @StateObject private var linkPreview = LinkPreviewManager()
     @StateObject private var autofill = AutofillManager()
-    @StateObject private var credentialAutofillBadge = CredentialAutofillBadge()
+    @StateObject private var credentialManager = CredentialManager()
     @StateObject private var pageTranslator = PageTranslator()
     @StateObject private var fastForward = FastForward()
     @StateObject private var browserAgent: BrowserAgent
@@ -2147,14 +2147,21 @@ struct ContentView: View {
                         y: geo.size.height - (origin.y + size.height / 2)
                     )
             }
-            if let badge = credentialAutofillBadge.presentation,
-               badge.tabID == tabManager.selectedTabId,
+            if let presentation = credentialManager.presentation,
+               presentation.tabID == tabManager.selectedTabId,
                !showOmnibar, contentModal == nil, !linkPreview.isShowing {
-                let inset: CGFloat = 6
-                let x = badge.fieldRect.maxX - inset - CredentialAutofillBadgeView.size / 2
-                let y = badge.fieldRect.midY
-                CredentialAutofillBadgeView(badge: credentialAutofillBadge)
-                    .position(x: x, y: geo.size.height - y)
+                let size = credentialListSize(fieldWidth: presentation.fieldRect.width, rows: presentation.usernames.count)
+                let origin = AutofillGeometry.listOrigin(
+                    fieldRect: presentation.fieldRect,
+                    listSize: size,
+                    windowHeight: geo.size.height
+                )
+                CredentialSuggestionList(manager: credentialManager)
+                    .frame(width: size.width, height: size.height)
+                    .position(
+                        x: origin.x + size.width / 2,
+                        y: geo.size.height - (origin.y + size.height / 2)
+                    )
             }
         }
     }
@@ -2163,6 +2170,13 @@ struct ContentView: View {
         CGSize(
             width: max(AutofillSuggestionList.minimumWidth, fieldWidth),
             height: AutofillSuggestionList.height(rows: autofill.suggestions.count)
+        )
+    }
+
+    private func credentialListSize(fieldWidth: CGFloat, rows: Int) -> CGSize {
+        CGSize(
+            width: max(CredentialSuggestionList.minimumWidth, fieldWidth),
+            height: CredentialSuggestionList.height(rows: rows)
         )
     }
 
@@ -3304,7 +3318,7 @@ struct ContentView: View {
                               tabs: { self.allTabs })
         bookmarkManager = BookmarkManager(modelContext: modelContext)
         autofill.configure(webViewManager: webViewManager, modelContext: modelContext)
-        credentialAutofillBadge.configure(webViewManager: webViewManager)
+        credentialManager.configure(webViewManager: webViewManager)
         managersInitialized = true
 
             notificationManager = NotificationManager(
@@ -3819,6 +3833,14 @@ struct ContentView: View {
     /// typed navigation.
     @ViewBuilder
     private var seenBeforeBanner: some View {
+        VStack(spacing: 6) {
+            SavePasswordBanner(manager: credentialManager)
+            seenBeforeNoteBanner
+        }
+    }
+
+    @ViewBuilder
+    private var seenBeforeNoteBanner: some View {
         if let note = seenBeforeNote {
             HStack(spacing: 10) {
                 Image(systemName: "clock.arrow.circlepath")

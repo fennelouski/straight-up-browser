@@ -1466,6 +1466,19 @@ extension WebViewManager: WKScriptMessageHandler {
             )
         case "autofillFieldDismissed":
             NotificationCenter.default.post(name: .browserAutofillDismissed, object: nil)
+        case "credentialSubmitted":
+            guard let webView = message.webView,
+                  let tabID = tabId(for: webView),
+                  !isPrivateTab(tabID),
+                  let domain = body["domain"] as? String, !domain.isEmpty,
+                  let username = body["username"] as? String, !username.isEmpty,
+                  let password = body["password"] as? String, !password.isEmpty
+            else { return }
+            NotificationCenter.default.post(
+                name: .browserCredentialSubmitted,
+                object: nil,
+                userInfo: ["tabID": tabID, "domain": domain, "username": username, "password": password]
+            )
         default:
             break
         }
