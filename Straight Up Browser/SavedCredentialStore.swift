@@ -16,7 +16,54 @@ import Security
 nonisolated struct SavedCredential: Identifiable, Equatable, Sendable {
     let domain: String
     let username: String
+    /// Ask for Touch ID (or the login password) before this one is filled.
+    var requiresAuthentication: Bool = false
     var id: String { "\(domain)\u{0}\(username)" }
+}
+
+/// How Browser behaves when a login form is submitted with a password it
+/// hasn't seen. Plain UserDefaults: three keys, read on every submit.
+nonisolated enum CredentialPreferences {
+    enum PromptStyle: String, CaseIterable, Identifiable {
+        /// A card next to the login fields, with favicon and a Touch ID toggle.
+        case card
+        /// The original one-line banner at the top of the window.
+        case banner
+        /// Never ask; `savesSilently` decides whether to save anyway.
+        case none
+        var id: String { rawValue }
+    }
+
+    static let styleKey = "credentialSavePromptStyle"
+    static let silentSaveKey = "credentialSavesSilently"
+    static let neverSaveHostsKey = "credentialNeverSaveHosts"
+
+    static var promptStyle: PromptStyle {
+        get { UserDefaults.standard.string(forKey: styleKey).flatMap(PromptStyle.init) ?? .card }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: styleKey) }
+    }
+
+    /// Only consulted when `promptStyle == .none`.
+    static var savesSilently: Bool {
+        get { UserDefaults.standard.bool(forKey: silentSaveKey) }
+        set { UserDefaults.standard.set(newValue, forKey: silentSaveKey) }
+    }
+
+    static var neverSaveHosts: [String] {
+        get { (UserDefaults.standard.stringArray(forKey: neverSaveHostsKey) ?? []).sorted() }
+        set { UserDefaults.standard.set(Array(Set(newValue)).sorted(), forKey: neverSaveHostsKey) }
+    }
+
+    static func setNeverSave(_ host: String, _ never: Bool) {
+        let host = host.lowercased()
+        var hosts = Set(neverSaveHosts)
+        if never { hosts.insert(host) } else { hosts.remove(host) }
+        neverSaveHosts = Array(hosts)
+    }
+
+    static func allowsSaving(host: String) -> Bool {
+        !neverSaveHosts.contains(host.lowercased())
+    }
 }
 
 nonisolated enum SavedCredentialStore {
@@ -33,19 +80,41 @@ nonisolated enum SavedCredentialStore {
         ]
     }
 
+    /// The "ask for Touch ID first" flag rides along as the item's comment
+    /// attribute, so it comes back with every attributes-only query.
+    private static let authenticationMarker = "requires-authentication"
+
     @discardableResult
-    static func save(domain: String, username: String, password: String) -> OSStatus {
+    static func save(domain: String, username: String, password: String, requiresAuthentication: Bool = false) -> OSStatus {
         guard !domain.isEmpty, !username.isEmpty, !password.isEmpty else { return errSecParam }
         let data = Data(password.utf8)
-        let status = SecItemUpdate(
-            identity(domain: domain, username: username) as CFDictionary,
-            [kSecValueData as String: data] as CFDictionary
-        )
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrComment as String: requiresAuthentication ? authenticationMarker : "",
+        ]
+        let status = SecItemUpdate(identity(domain: domain, username: username) as CFDictionary, attributes as CFDictionary)
         guard status == errSecItemNotFound else { return status }
-        var item = identity(domain: domain, username: username)
-        item[kSecValueData as String] = data
+        var item = identity(domain: domain, username: username).merging(attributes) { $1 }
         item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         return SecItemAdd(item as CFDictionary, nil)
+    }
+
+    @discardableResult
+    static func setRequiresAuthentication(_ requires: Bool, domain: String, username: String) -> OSStatus {
+        SecItemUpdate(
+            identity(domain: domain, username: username) as CFDictionary,
+            [kSecAttrComment as String: requires ? authenticationMarker : ""] as CFDictionary
+        )
+    }
+
+    static func requiresAuthentication(domain: String, username: String) -> Bool {
+        var query = identity(domain: domain, username: username)
+        query[kSecReturnAttributes as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let item = result as? [String: Any] else { return false }
+        return item[kSecAttrComment as String] as? String == authenticationMarker
     }
 
     static func password(domain: String, username: String) -> String? {
@@ -94,7 +163,11 @@ nonisolated enum SavedCredentialStore {
         return items.compactMap { item in
             guard let domain = item[kSecAttrServer as String] as? String,
                   let username = item[kSecAttrAccount as String] as? String else { return nil }
-            return SavedCredential(domain: domain, username: username)
+            return SavedCredential(
+                domain: domain,
+                username: username,
+                requiresAuthentication: item[kSecAttrComment as String] as? String == authenticationMarker
+            )
         }
         .sorted { $0.domain == $1.domain ? $0.username < $1.username : $0.domain < $1.domain }
     }

@@ -395,10 +395,20 @@ class WebViewManager: NSObject, ObservableObject {
             if (target && target.nodeType !== 1) target = target.parentElement;
             var link = target && target.closest ? target.closest('a[href]') : null;
             var selection = window.getSelection();
+            // A password field, or a text/email field that lives in a form
+            // with one: where the system Passwords picker is worth a top slot.
+            var isCredentialField = false;
+            if (target && target.tagName === 'INPUT') {
+                var t = String(target.type || '').toLowerCase();
+                var ac = String(target.getAttribute('autocomplete') || '').toLowerCase();
+                isCredentialField = t === 'password' || ac.indexOf('username') !== -1 ||
+                    (['text', 'email', ''].indexOf(t) !== -1 && !!target.form && !!target.form.querySelector('input[type=password]'));
+            }
             window.webkit.messageHandlers.sub.postMessage({
                 type: 'contextLink',
                 url: link && link.href ? link.href : null,
-                hasSelection: !!(selection && !selection.isCollapsed)
+                hasSelection: !!(selection && !selection.isCollapsed),
+                isCredentialField: isCredentialField
             });
         }, true);
     })();
@@ -578,6 +588,7 @@ class WebViewManager: NSObject, ObservableObject {
     // Store web views per tab ID
     private var webViews: [UUID: WKWebView] = [:]
     private var contextMenuLinks: [ObjectIdentifier: URL] = [:]
+    private var contextMenuCredentialFields: Set<ObjectIdentifier> = []
     private var contextMenuSelections: Set<ObjectIdentifier> = []
     // Includes memory-unloaded tabs. Extensions still regard those as open,
     // and this ownership map keeps their window routing stable until real close.
@@ -1237,6 +1248,11 @@ class WebViewManager: NSObject, ObservableObject {
         contextMenuLinks[ObjectIdentifier(webView)]
     }
 
+    /// Whether the last right-click landed on a username or password field.
+    func contextMenuIsCredentialField(for webView: WKWebView) -> Bool {
+        contextMenuCredentialFields.contains(ObjectIdentifier(webView))
+    }
+
     func contextMenuHasSelection(for webView: WKWebView) -> Bool {
         contextMenuSelections.contains(ObjectIdentifier(webView))
     }
@@ -1442,28 +1458,13 @@ extension WebViewManager: WKScriptMessageHandler {
             guard let webView = message.webView,
                   let tabID = tabId(for: webView),
                   let signal = try? AutofillFocusSignal.decode(body) else { return }
-            // Page zoom and pinch magnification multiply. `magnification` is
-            // AppKit-only; iPad has no autofill UI listening for this anyway.
-            #if os(macOS)
-            let scale = max(webView.pageZoom * webView.magnification, 0.01)
-            let isFlipped = webView.isFlipped
-            #else
-            let scale = max(webView.pageZoom, 0.01)
-            let isFlipped = true
-            #endif
-            let viewRect = AutofillGeometry.viewRect(
-                css: signal.rect,
-                in: webView.bounds,
-                scale: scale,
-                isFlipped: isFlipped
-            )
             NotificationCenter.default.post(
                 name: type == "credentialFieldFocused" ? .browserCredentialFieldFocused : .browserAutofillFieldFocused,
                 object: nil,
                 userInfo: [
                     "signal": signal,
                     "tabID": tabID,
-                    "rect": webView.convert(viewRect, to: nil),
+                    "rect": windowRect(css: signal.rect, in: webView),
                     "url": webView.url as Any,
                 ]
             )
@@ -1477,14 +1478,31 @@ extension WebViewManager: WKScriptMessageHandler {
                   let username = body["username"] as? String, !username.isEmpty,
                   let password = body["password"] as? String, !password.isEmpty
             else { return }
-            NotificationCenter.default.post(
-                name: .browserCredentialSubmitted,
-                object: nil,
-                userInfo: ["tabID": tabID, "domain": domain, "username": username, "password": password]
-            )
+            var userInfo: [String: Any] = ["tabID": tabID, "domain": domain, "username": username, "password": password]
+            if let raw = body["rect"] as? [String: Any],
+               let x = (raw["x"] as? NSNumber)?.doubleValue, let y = (raw["y"] as? NSNumber)?.doubleValue,
+               let w = (raw["width"] as? NSNumber)?.doubleValue, let h = (raw["height"] as? NSNumber)?.doubleValue {
+                userInfo["rect"] = windowRect(css: CGRect(x: x, y: y, width: w, height: h), in: webView)
+            }
+            NotificationCenter.default.post(name: .browserCredentialSubmitted, object: nil, userInfo: userInfo)
         default:
             break
         }
+    }
+
+    /// CSS viewport rect → AppKit window coordinates. Page zoom and pinch
+    /// magnification multiply. `magnification` is AppKit-only; iPad has no
+    /// autofill UI listening for this anyway.
+    private func windowRect(css: CGRect, in webView: WKWebView) -> CGRect {
+        #if os(macOS)
+        let scale = max(webView.pageZoom * webView.magnification, 0.01)
+        let isFlipped = webView.isFlipped
+        #else
+        let scale = max(webView.pageZoom, 0.01)
+        let isFlipped = true
+        #endif
+        let viewRect = AutofillGeometry.viewRect(css: css, in: webView.bounds, scale: scale, isFlipped: isFlipped)
+        return webView.convert(viewRect, to: nil)
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -1573,6 +1591,11 @@ extension WebViewManager: WKScriptMessageHandler {
             } else {
                 contextMenuSelections.remove(key)
             }
+            if body["isCredentialField"] as? Bool == true {
+                contextMenuCredentialFields.insert(key)
+            } else {
+                contextMenuCredentialFields.remove(key)
+            }
         case "downloadImage":
             if let urlString = body["url"] as? String,
                let url = URL(string: urlString),
@@ -1641,6 +1664,15 @@ extension WebViewManager: WKScriptMessageHandler {
 /// "Anchor" beside Copy is the one truly low-friction selection gesture iOS
 /// allows (Phase 2, design §6.1). A plain WKWebView everywhere else.
 final class BrowserWKWebView: WKWebView {
+    #if os(macOS)
+    /// AppKit's context-menu hook. `webView(_:willOpenMenu:with:)` is not a
+    /// WKUIDelegate method, so without this forward the coordinator's menu
+    /// customisation never runs.
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        super.willOpenMenu(menu, with: event)
+        (uiDelegate as? WebView.Coordinator)?.webView(self, willOpenMenu: menu, with: event)
+    }
+    #endif
     #if os(iOS)
     override func buildMenu(with builder: any UIMenuBuilder) {
         super.buildMenu(with: builder)

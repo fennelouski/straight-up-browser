@@ -885,11 +885,18 @@ nonisolated enum SemanticPageJavaScript {
         if (!usernameEl) usernameEl = inputs.slice(0, passwordIndex).reverse().find(isUsernameish);
         if (!usernameEl) usernameEl = inputs.slice(passwordIndex + 1).find(isUsernameish);
         if (!usernameEl) return;
+        // Union of the two fields, so the save prompt can sit right next to
+        // what it's offering to save instead of covering the sign-in button.
+        const a = usernameEl.getBoundingClientRect(), b = passwordEl.getBoundingClientRect();
+        const left = Math.min(a.left, b.left), top = Math.min(a.top, b.top);
+        const right = Math.max(a.right, b.right), bottom = Math.max(a.bottom, b.bottom);
         postAutofill({
           type: 'credentialSubmitted',
-          domain: String(location.hostname || ''),
+          // Bracket-free so it matches Swift's URL.host for IPv6 literals.
+          domain: String(location.hostname || '').replace(/^\[|\]$/g, ''),
           username: String(usernameEl.value || ''),
-          password: String(passwordEl.value || '')
+          password: String(passwordEl.value || ''),
+          rect: {x: left, y: top, width: right - left, height: bottom - top}
         });
       }, true);
 

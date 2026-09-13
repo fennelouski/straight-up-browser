@@ -28,6 +28,9 @@ struct AutofillSettingsView: View {
 
     @State private var savedCredentials: [SavedCredential] = []
     @State private var pendingCredentialDeletion: SavedCredential?
+    @State private var promptStyle = CredentialPreferences.promptStyle
+    @State private var savesSilently = CredentialPreferences.savesSilently
+    @State private var neverSaveHosts = CredentialPreferences.neverSaveHosts
 
     var body: some View {
         Form {
@@ -266,6 +269,30 @@ struct AutofillSettingsView: View {
 
     private var savedPasswordsSection: some View {
         CollapsibleSection(searchID: "autofill.passwords") {
+            Picker("When you sign in somewhere new", selection: $promptStyle) {
+                Text("Ask next to the login fields").tag(CredentialPreferences.PromptStyle.card)
+                Text("Ask with a small banner").tag(CredentialPreferences.PromptStyle.banner)
+                Text("Don't ask").tag(CredentialPreferences.PromptStyle.none)
+            }
+            .onChange(of: promptStyle) { _, style in CredentialPreferences.promptStyle = style }
+            if promptStyle == .none {
+                Toggle("Save passwords automatically", isOn: $savesSilently)
+                    .onChange(of: savesSilently) { _, on in CredentialPreferences.savesSilently = on }
+            }
+            if !neverSaveHosts.isEmpty {
+                ForEach(neverSaveHosts, id: \.self) { host in
+                    HStack {
+                        Text(host)
+                        Text("Never saved").font(.caption).foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        Button("Allow") {
+                            CredentialPreferences.setNeverSave(host, false)
+                            neverSaveHosts = CredentialPreferences.neverSaveHosts
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+            }
             if savedCredentials.isEmpty {
                 Text("No saved passwords yet.")
                     .font(.caption)
@@ -280,6 +307,19 @@ struct AutofillSettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 8)
+                        Toggle(isOn: Binding(
+                            get: { credential.requiresAuthentication },
+                            set: {
+                                SavedCredentialStore.setRequiresAuthentication($0, domain: credential.domain, username: credential.username)
+                                savedCredentials = SavedCredentialStore.all()
+                            }
+                        )) {
+                            Image(systemName: "touchid")
+                                .accessibilityLabel(Text("Ask before filling"))
+                        }
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .help("Ask for Touch ID or your password before filling this login")
                         Button("Delete") { pendingCredentialDeletion = credential }
                             .buttonStyle(.borderless)
                     }
@@ -288,7 +328,7 @@ struct AutofillSettingsView: View {
         } header: {
             SettingsLabel("Saved Passwords", systemImage: "key.fill", tint: SettingsTint.autofill)
         } footer: {
-            Text("Browser saves a password itself when you sign in somewhere new, and offers it back the next time — this is separate from the system Passwords app, which right-click → AutoFill still reaches for sites saved there instead.")
+            Text("Browser saves a password itself when you sign in somewhere new, and offers it back the next time — this is separate from the system Passwords app, which right-click → Passwords… still reaches for sites saved there instead. Choose \"Never for This Site\" on a save prompt to stop asking for one site; the switch on each saved login asks for Touch ID or your password before it's filled.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

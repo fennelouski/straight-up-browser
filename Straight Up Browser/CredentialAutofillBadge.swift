@@ -24,6 +24,7 @@ import AppKit
 #endif
 import WebKit
 import Security
+import LocalAuthentication
 
 @MainActor
 final class CredentialManager: ObservableObject {
@@ -41,8 +42,16 @@ final class CredentialManager: ObservableObject {
         let username: String
         let password: String
         let isUpdate: Bool
+        /// Union of the username + password fields, AppKit window coordinates.
+        /// Nil when the page didn't report one; the card then falls back to
+        /// the top of the window.
+        var fieldRect: CGRect? = nil
         var id: String { "\(tabID)\(domain)\(username)" }
     }
+
+    /// The Touch ID toggle on the save card. Defaults to what this
+    /// credential already had, so an Update doesn't silently drop it.
+    @Published var requireAuthenticationOnFill = false
 
     @Published private(set) var presentation: Presentation?
     @Published private(set) var savePrompt: SavePrompt?
@@ -120,9 +129,12 @@ final class CredentialManager: ObservableObject {
         else { return }
         let domain = presentation.domain
         self.presentation = nil
-        guard let password = SavedCredentialStore.password(domain: domain, username: username) else { return }
 
         Task { @MainActor in
+            if SavedCredentialStore.requiresAuthentication(domain: domain, username: username) {
+                guard await Self.authenticate(reason: String(localized: "fill your password for \(domain)")) else { return }
+            }
+            guard let password = SavedCredentialStore.password(domain: domain, username: username) else { return }
             let raw = try? await webView.callAsyncJavaScript(
                 SemanticPageJavaScript.snapshot,
                 arguments: ["selectors": [] as [String]],
@@ -180,6 +192,27 @@ final class CredentialManager: ObservableObject {
         return (username, password)
     }
 
+    // MARK: Touch ID
+
+    /// Touch ID / Face ID, falling back to the login password when biometrics
+    /// aren't enrolled. LocalAuthentication needs no entitlement on macOS.
+    static func authenticate(reason: String) async -> Bool {
+        let context = LAContext()
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) else { return true }
+        return (try? await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)) ?? false
+    }
+
+    /// "Touch ID", "Face ID", or "your password" for the toggle's label.
+    static var biometryName: String {
+        let context = LAContext()
+        _ = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+        switch context.biometryType {
+        case .touchID: return "Touch ID"
+        case .faceID: return "Face ID"
+        default: return String(localized: "your password")
+        }
+    }
+
     // MARK: Offering to save a new one
 
     private func credentialSubmitted(_ note: Notification) {
@@ -189,6 +222,7 @@ final class CredentialManager: ObservableObject {
               let password = note.userInfo?["password"] as? String
         else { return }
         let domain = rawDomain.lowercased()
+        guard CredentialPreferences.allowsSaving(host: domain) else { return }
         // Already saved with this exact password: nothing new to offer.
         let existing = SavedCredentialStore.password(domain: domain, username: username)
         guard existing != password else {
@@ -197,12 +231,26 @@ final class CredentialManager: ObservableObject {
             return
         }
         saveError = nil
-        savePrompt = SavePrompt(tabID: tabID, domain: domain, username: username, password: password, isUpdate: existing != nil)
+        let requires = existing != nil && SavedCredentialStore.requiresAuthentication(domain: domain, username: username)
+        if CredentialPreferences.promptStyle == .none {
+            if CredentialPreferences.savesSilently {
+                SavedCredentialStore.save(domain: domain, username: username, password: password, requiresAuthentication: requires)
+            }
+            return
+        }
+        requireAuthenticationOnFill = requires
+        savePrompt = SavePrompt(
+            tabID: tabID, domain: domain, username: username, password: password,
+            isUpdate: existing != nil, fieldRect: note.userInfo?["rect"] as? CGRect
+        )
     }
 
     func acceptSavePrompt() {
         guard let savePrompt else { return }
-        let status = SavedCredentialStore.save(domain: savePrompt.domain, username: savePrompt.username, password: savePrompt.password)
+        let status = SavedCredentialStore.save(
+            domain: savePrompt.domain, username: savePrompt.username, password: savePrompt.password,
+            requiresAuthentication: requireAuthenticationOnFill
+        )
         guard status == errSecSuccess else {
             saveError = "Could not save password. Please try again. (\(status))"
             return
@@ -214,6 +262,12 @@ final class CredentialManager: ObservableObject {
     func dismissSavePrompt() {
         saveError = nil
         savePrompt = nil
+    }
+
+    func neverSaveForThisSite() {
+        guard let savePrompt else { return }
+        CredentialPreferences.setNeverSave(savePrompt.domain, true)
+        dismissSavePrompt()
     }
 
     private static func normalizedDomain(_ url: URL) -> String? {
@@ -275,7 +329,93 @@ struct CredentialSuggestionList: View {
     }
 }
 
-// MARK: - Save-password prompt
+// MARK: - Save-password card
+
+/// The default prompt: sits right next to the login fields it's describing
+/// (above them, so the sign-in button underneath stays reachable), shows the
+/// site's favicon so there's no doubt which login this is, and offers to
+/// gate future fills behind Touch ID.
+struct SavePasswordCard: View {
+    @ObservedObject var manager: CredentialManager
+    let favicon: Data?
+
+    static let width: CGFloat = 320
+    static let height: CGFloat = 150
+
+    /// Above the fields when there's room, otherwise below; clamped to the
+    /// window either way. AppKit window coordinates, origin bottom-left.
+    static func origin(fieldRect: CGRect, windowSize: CGSize, gap: CGFloat = 8) -> CGPoint {
+        let above = fieldRect.maxY + gap
+        let below = fieldRect.minY - gap - height
+        let y = above + height <= windowSize.height ? above : max(below, 0)
+        let x = min(max(fieldRect.minX, 8), max(windowSize.width - width - 8, 8))
+        return CGPoint(x: x, y: y)
+    }
+
+    var body: some View {
+        if let prompt = manager.savePrompt {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    siteIcon
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(prompt.isUpdate ? "Update password?" : "Save password?")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(prompt.username).lineLimit(1).truncationMode(.middle)
+                        // Not .secondary: it resolves against the window's
+                        // appearance, not the material's, and vanishes.
+                        Text(prompt.domain).font(.caption).opacity(0.7).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                Toggle(isOn: $manager.requireAuthenticationOnFill) {
+                    Text("Ask for \(CredentialManager.biometryName) before filling")
+                }
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                if let error = manager.saveError {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                }
+                HStack {
+                    Button("Never for This Site") { manager.neverSaveForThisSite() }
+                        .buttonStyle(.plain).opacity(0.7)
+                    Spacer()
+                    Button("Not Now") { manager.dismissSavePrompt() }
+                        .keyboardShortcut(.cancelAction)
+                    Button(prompt.isUpdate ? "Update" : "Save") { manager.acceptSavePrompt() }
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+            .font(.system(size: 12))
+            .padding(12)
+            .frame(width: Self.width)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+            .shadow(radius: 10, y: 3)
+            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            .accessibilityElement(children: .contain)
+        }
+    }
+
+    /// The tab's favicon when it has one; otherwise a globe, so the card
+    /// never shows a stale icon from a different site.
+    @ViewBuilder
+    private var siteIcon: some View {
+        #if canImport(AppKit)
+        if let favicon, let image = NSImage(data: favicon) {
+            Image(nsImage: image).resizable().interpolation(.high)
+                .frame(width: 28, height: 28)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+        } else {
+            Image(systemName: "globe").font(.system(size: 20)).foregroundStyle(.secondary)
+                .frame(width: 28, height: 28)
+        }
+        #else
+        Image(systemName: "globe").font(.system(size: 20)).foregroundStyle(.secondary).frame(width: 28, height: 28)
+        #endif
+    }
+}
+
+// MARK: - Save-password banner (the "subtle" style)
 
 struct SavePasswordBanner: View {
     @ObservedObject var manager: CredentialManager

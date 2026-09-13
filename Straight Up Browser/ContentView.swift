@@ -2163,6 +2163,23 @@ struct ContentView: View {
                         y: geo.size.height - (origin.y + size.height / 2)
                     )
             }
+            if let prompt = credentialManager.savePrompt,
+               prompt.tabID == tabManager.selectedTabId,
+               CredentialPreferences.promptStyle == .card {
+                let origin = SavePasswordCard.origin(
+                    fieldRect: prompt.fieldRect ?? CGRect(x: 12, y: geo.size.height - 12, width: 0, height: 0),
+                    windowSize: geo.size
+                )
+                SavePasswordCard(
+                    manager: credentialManager,
+                    favicon: allTabs.first { $0.id == prompt.tabID }?.favicon
+                )
+                .frame(width: SavePasswordCard.width, height: SavePasswordCard.height)
+                .position(
+                    x: origin.x + SavePasswordCard.width / 2,
+                    y: geo.size.height - (origin.y + SavePasswordCard.height / 2)
+                )
+            }
         }
     }
 
@@ -3834,7 +3851,9 @@ struct ContentView: View {
     @ViewBuilder
     private var seenBeforeBanner: some View {
         VStack(spacing: 6) {
-            SavePasswordBanner(manager: credentialManager)
+            if CredentialPreferences.promptStyle == .banner {
+                SavePasswordBanner(manager: credentialManager)
+            }
             seenBeforeNoteBanner
         }
     }

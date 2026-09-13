@@ -1217,7 +1217,25 @@ struct WebView: NSViewRepresentable {
                 item.title = "Open Link in New Tab"
             }
 
-            flattenAutoFillMenu(menu)
+            if parent.webViewManager?.contextMenuIsCredentialField(for: webView) == true,
+               !menu.items.contains(where: { $0.action == #selector(showSystemPasswords(_:)) }) {
+                let passwords = NSMenuItem(title: "Passwords…", action: #selector(showSystemPasswords(_:)), keyEquivalent: "")
+                passwords.target = self
+                passwords.image = menuImage(named: "key.fill", description: passwords.title)
+                menu.insertItem(passwords, at: 0)
+                menu.insertItem(.separator(), at: 1)
+                // The system item this forwards to only exists once the menu is
+                // on screen: poll for it on a timer that keeps firing during
+                // menu tracking.
+                systemPasswordsItem = nil
+                autofillMenuTimer?.invalidate()
+                autofillMenuTicks = 0
+                let timer = Timer(timeInterval: 0.03, repeats: true) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.pollSystemPasswordsItem() }
+                }
+                RunLoop.main.add(timer, forMode: .eventTracking)
+                autofillMenuTimer = timer
+            }
 
             if let url = parent.webViewManager?.contextMenuLink(for: webView),
                !menu.items.contains(where: { $0.action == #selector(addContextLinkToNewspaper(_:)) }) {
@@ -1291,21 +1309,47 @@ struct WebView: NSViewRepresentable {
             parent.onSaveLinkToNewspaper?(url, webView)
         }
 
-        /// WebKit nests the Passwords picker under "AutoFill" → "Passwords…" —
-        /// a right-click, then a hover, then a click. When that submenu holds
-        /// exactly one item, hoist it to the top level so the click reaches it
-        /// directly. Left nested when there's more than one (e.g. a strong
-        /// password suggestion sits alongside a saved credential) since then
-        /// there's a real choice to make.
-        private func flattenAutoFillMenu(_ menu: NSMenu) {
-            guard let index = menu.items.firstIndex(where: { $0.title.localizedCaseInsensitiveContains("autofill") }),
-                  let submenu = menu.items[index].submenu,
-                  submenu.items.count == 1,
-                  let leaf = submenu.items.first
-            else { return }
-            menu.removeItem(at: index)
-            submenu.removeItem(leaf)
-            menu.insertItem(leaf, at: index)
+        /// The system Passwords picker sits under "AutoFill" → "Passwords…" —
+        /// a right-click, then a hover, then a click, dozens of times a day.
+        /// AppKit appends that AutoFill submenu as a context-menu plug-in, to a
+        /// *copy* of the menu the delegate saw, only once it's on screen — it
+        /// never appears in that menu's `items`, and editing the on-screen copy
+        /// doesn't re-lay it out. So the top-level "Passwords…" is our own
+        /// item, and its click is forwarded to the system item, which is
+        /// found through the popup window's item views.
+        private var autofillMenuTimer: Timer?
+        private var autofillMenuTicks = 0
+        private var systemPasswordsItem: NSMenuItem?
+
+        private func pollSystemPasswordsItem() {
+            autofillMenuTicks += 1
+            if captureSystemPasswordsItem() || autofillMenuTicks > 60 { autofillMenuTimer?.invalidate() }
+        }
+
+        private func captureSystemPasswordsItem() -> Bool {
+            let menuItemSelector = Selector(("menuItem"))
+            func find(in view: NSView, depth: Int) -> NSMenuItem? {
+                if view.responds(to: menuItemSelector),
+                   let item = view.perform(menuItemSelector)?.takeUnretainedValue() as? NSMenuItem,
+                   item.title.localizedCaseInsensitiveContains("autofill"),
+                   let passwords = item.submenu?.items.first(where: { $0.title.localizedCaseInsensitiveContains("password") }) {
+                    return passwords
+                }
+                guard depth < 8 else { return nil }
+                for sub in view.subviews { if let found = find(in: sub, depth: depth + 1) { return found } }
+                return nil
+            }
+            for window in NSApp.windows where String(describing: type(of: window)).contains("PopupMenuWindow") {
+                guard let content = window.contentView, let item = find(in: content, depth: 0) else { continue }
+                systemPasswordsItem = item
+                return true
+            }
+            return false
+        }
+
+        @objc private func showSystemPasswords(_ sender: NSMenuItem) {
+            guard let item = systemPasswordsItem, let action = item.action else { return }
+            NSApp.sendAction(action, to: item.target, from: item)
         }
 
         private func decorateMenu(_ menu: NSMenu) {

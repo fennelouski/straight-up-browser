@@ -22,6 +22,17 @@ struct SavedCredentialStoreTests {
         #expect(SavedCredentialStore.usernames(domain: domain) == ["bob"])
     }
 
+    @Test func authenticationFlagRoundTripsAndSurvivesPasswordUpdate() {
+        let domain = "vault-auth-\(UUID().uuidString).invalid"
+        defer { SavedCredentialStore.delete(domain: domain, username: "alice") }
+        #expect(SavedCredentialStore.save(domain: domain, username: "alice", password: "p", requiresAuthentication: true) == errSecSuccess)
+        #expect(SavedCredentialStore.requiresAuthentication(domain: domain, username: "alice"))
+        #expect(SavedCredentialStore.all().first { $0.domain == domain }?.requiresAuthentication == true)
+        #expect(SavedCredentialStore.setRequiresAuthentication(false, domain: domain, username: "alice") == errSecSuccess)
+        #expect(!SavedCredentialStore.requiresAuthentication(domain: domain, username: "alice"))
+        #expect(SavedCredentialStore.requiresAuthentication(domain: domain, username: "nobody") == false)
+    }
+
     @Test func doesNotReadOrOverwriteAnotherVault() {
         let domain = "vault-isolation-\(UUID().uuidString).invalid"
         let foreign: [String: Any] = [
@@ -49,6 +60,8 @@ struct SavedCredentialStoreTests {
     }
 }
 
+// Serialized: neverSaveHostAndSilentModeSkipThePrompt flips the global prompt-style preference.
+@Suite(.serialized)
 @MainActor
 struct CredentialSavePromptTests {
     @Test func changedPasswordOffersUpdateAndIdenticalSubmissionClearsStalePrompt() async throws {
@@ -76,5 +89,37 @@ struct CredentialSavePromptTests {
         #expect(manager.savePrompt != nil)
         try await submit("replacement")
         #expect(manager.savePrompt == nil)
+    }
+
+    @Test func neverSaveHostAndSilentModeSkipThePrompt() async throws {
+        let domain = "prompt-pref-\(UUID().uuidString.lowercased()).invalid"
+        let style = CredentialPreferences.promptStyle, silent = CredentialPreferences.savesSilently
+        defer {
+            CredentialPreferences.setNeverSave(domain, false)
+            CredentialPreferences.promptStyle = style
+            CredentialPreferences.savesSilently = silent
+            SavedCredentialStore.delete(domain: domain, username: "u")
+        }
+        let manager = CredentialManager()
+        func submit(_ password: String) async throws {
+            NotificationCenter.default.post(name: .browserCredentialSubmitted, object: nil, userInfo: [
+                "tabID": UUID(), "domain": domain, "username": "u", "password": password,
+            ])
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        CredentialPreferences.promptStyle = .card
+        CredentialPreferences.setNeverSave(domain, true)
+        try await submit("a")
+        #expect(manager.savePrompt == nil)
+        CredentialPreferences.setNeverSave(domain, false)
+        CredentialPreferences.promptStyle = .none
+        CredentialPreferences.savesSilently = false
+        try await submit("a")
+        #expect(manager.savePrompt == nil)
+        #expect(SavedCredentialStore.password(domain: domain, username: "u") == nil)
+        CredentialPreferences.savesSilently = true
+        try await submit("a")
+        #expect(manager.savePrompt == nil)
+        #expect(SavedCredentialStore.password(domain: domain, username: "u") == "a")
     }
 }
