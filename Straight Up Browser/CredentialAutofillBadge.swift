@@ -124,48 +124,55 @@ final class CredentialManager: ObservableObject {
     /// user is about to fill may not be the one that was focused (a username
     /// suggestion picked while the password field has focus, say).
     func pick(username: String) {
-        guard let presentation,
-              let webView = webViewManager?.getWebView(for: presentation.tabID)
-        else { return }
+        guard let presentation else { return }
         let domain = presentation.domain
+        let tabID = presentation.tabID
         self.presentation = nil
+        Task { await fill(domain: domain, username: username, tabID: tabID) }
+    }
 
-        Task { @MainActor in
-            if SavedCredentialStore.requiresAuthentication(domain: domain, username: username) {
-                guard await Self.authenticate(reason: String(localized: "fill your password for \(domain)")) else { return }
-            }
-            guard let password = SavedCredentialStore.password(domain: domain, username: username) else { return }
-            let raw = try? await webView.callAsyncJavaScript(
-                SemanticPageJavaScript.snapshot,
-                arguments: ["selectors": [] as [String]],
-                in: nil,
-                contentWorld: .defaultClient
-            )
-            guard Self.normalizedDomain(webView.url ?? URL(fileURLWithPath: "/")) == domain,
-                  let raw, let scan = try? AutofillPageScan.decode(raw) else { return }
-            let (usernameField, passwordField) = Self.credentialFields(in: scan)
-            guard let passwordField else { return }
+    /// The keyboard-driven picker (⌘\\): fills a saved credential into the
+    /// page's login form without requiring the field to already be focused.
+    func fillFromPicker(domain: String, username: String, tabID: UUID) {
+        Task { await fill(domain: domain, username: username, tabID: tabID) }
+    }
 
-            var payload: [String: Any] = [
-                "password": [
-                    "reference": passwordField.reference(documentToken: scan.documentToken),
-                    "value": password,
-                ],
-            ]
-            if let usernameField {
-                payload["username"] = [
-                    "reference": usernameField.reference(documentToken: scan.documentToken),
-                    "value": username,
-                ]
-            }
-            _ = try? await webView.callAsyncJavaScript(
-                SemanticPageJavaScript.credentialApply,
-                arguments: ["request": payload],
-                in: nil,
-                contentWorld: .defaultClient
-            )
-            Logger.log("credential manager: filled saved login on \(domain)")
+    private func fill(domain: String, username: String, tabID: UUID) async {
+        guard let webView = webViewManager?.getWebView(for: tabID) else { return }
+        if SavedCredentialStore.requiresAuthentication(domain: domain, username: username) {
+            guard await Self.authenticate(reason: String(localized: "fill your password for \(domain)")) else { return }
         }
+        guard let password = SavedCredentialStore.password(domain: domain, username: username) else { return }
+        let raw = try? await webView.callAsyncJavaScript(
+            SemanticPageJavaScript.snapshot,
+            arguments: ["selectors": [] as [String]],
+            in: nil,
+            contentWorld: .defaultClient
+        )
+        guard Self.normalizedDomain(webView.url ?? URL(fileURLWithPath: "/")) == domain,
+              let raw, let scan = try? AutofillPageScan.decode(raw) else { return }
+        let (usernameField, passwordField) = Self.credentialFields(in: scan)
+        guard let passwordField else { return }
+
+        var payload: [String: Any] = [
+            "password": [
+                "reference": passwordField.reference(documentToken: scan.documentToken),
+                "value": password,
+            ],
+        ]
+        if let usernameField {
+            payload["username"] = [
+                "reference": usernameField.reference(documentToken: scan.documentToken),
+                "value": username,
+            ]
+        }
+        _ = try? await webView.callAsyncJavaScript(
+            SemanticPageJavaScript.credentialApply,
+            arguments: ["request": payload],
+            in: nil,
+            contentWorld: .defaultClient
+        )
+        Logger.log("credential manager: filled saved login on \(domain)")
     }
 
     /// The password field plus its best-guess paired username field, from a

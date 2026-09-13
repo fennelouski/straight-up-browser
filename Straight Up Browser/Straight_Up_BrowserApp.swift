@@ -687,6 +687,11 @@ struct Straight_Up_BrowserApp: App {
                 }
                 .keyboardShortcut(sc(.readerMode))
 
+                Button("Fill Saved Password") {
+                    NotificationCenter.default.post(name: .browserShowPasswordPicker, object: nil)
+                }
+                .keyboardShortcut(sc(.passwordPicker))
+
                 Divider()
 
                 Button("Toggle Tab Bar") {

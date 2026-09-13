@@ -486,6 +486,7 @@ struct ContentView: View {
     // UI State
     @State private var showOmnibar = false
     @State private var showTabGrid = false
+    @State private var showPasswordPicker = false
     @State private var showAgentPanel = false
     @State private var showScratchPad = false
     @AppStorage(AgentSettingsRuntimeKey.adjustsPageLayout) private var agentAdjustsPageLayout = false
@@ -2321,7 +2322,7 @@ struct ContentView: View {
                     BrowserAccessibility.backgroundIsHidden(
                         sidebarPresented: false,
                         omnibarPresented: showOmnibar,
-                        modalPresented: contentModal != nil || showTabGrid
+                        modalPresented: contentModal != nil || showTabGrid || showPasswordPicker
                     )
                 )
                 .accessibilityFocused(
@@ -2344,6 +2345,7 @@ struct ContentView: View {
         .overlay(autofillHUDOverlay.zIndex(7))
         .overlay(shortcutCheatSheetOverlay.zIndex(8))
         .overlay(tabGridOverlay.zIndex(8))
+        .overlay(passwordPickerOverlay.zIndex(9))
         .overlay(alignment: .bottomTrailing, content: { defaultBrowserOverlay.zIndex(9) })
     }
 
@@ -2566,6 +2568,28 @@ struct ContentView: View {
                 )
             }
         }
+    }
+
+    // ⌘\: search every saved password and fill it in, no mouse required.
+    private var passwordPickerOverlay: some View {
+        GeometryReader { geo in
+            if showPasswordPicker {
+                let currentTabId = tabManager.selectedTabId
+                PasswordPickerView(
+                    isPresented: $showPasswordPicker,
+                    currentDomain: allTabs.first { $0.id == currentTabId }?.url?.host?.lowercased(),
+                    onPick: { credential in
+                        guard let currentTabId else { return }
+                        credentialManager.fillFromPicker(domain: credential.domain, username: credential.username, tabID: currentTabId)
+                    }
+                )
+                .frame(width: PasswordPickerView.width)
+                .position(x: geo.size.width / 2, y: geo.size.height * 0.3)
+                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            }
+        }
+        .allowsHitTesting(showPasswordPicker)
+        .animation(.easeOut(duration: 0.12), value: showPasswordPicker)
     }
 
     private var agentPanelOverlay: some View {
@@ -3069,6 +3093,11 @@ struct ContentView: View {
                     webViewManager?.captureThumbnail(for: tabManager.selectedTabId)
                     showOmnibar = false
                     showTabGrid.toggle()
+                }
+
+                NotificationCenter.default.addMainActorObserver(forName: .browserShowPasswordPicker, object: nil, queue: .main) { [self] _ in
+                    showOmnibar = false
+                    showPasswordPicker.toggle()
                 }
 
                 // Privacy & session commands (Privacy menu + ⇧⌘N / ⇧⌘E)

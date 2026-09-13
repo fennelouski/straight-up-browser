@@ -86,6 +86,10 @@ extension Notification.Name {
     // this password?" prompt — see CredentialManager.
     static let browserCredentialSubmitted = Notification.Name("browserCredentialSubmitted")
 
+    // ⌘\: the keyboard-driven password picker (search + arrows, never touches
+    // the mouse) — see PasswordPickerView.
+    static let browserShowPasswordPicker = Notification.Name("browserShowPasswordPicker")
+
     // Screenshot menu (macOS). Distinct from `browserScreenshot` below, which is
     // the CLI's own capture-to-a-response-file command.
     static let browserScreenshotVisible = Notification.Name("browserScreenshotVisible")
