@@ -35,6 +35,31 @@ struct AutofillSurfacesTests {
         #expect(!others.contains(ShortcutCommand.toggleAutofill.defaultShortcut))
     }
 
+    @Test func passwordPickerIsRegisteredAndReachable() {
+        #expect(ShortcutCommand.all.contains { $0.id == ShortcutCommand.passwordPicker.id })
+        // ⌥⌘\\, not 1Password's ⌘\\: Settings > General hands ⌘\\ to Go Forward by
+        // default and the local monitor swallows it, so the menu item shipped in
+        // 2.8.x never fired. That is the bug this pins shut.
+        let shortcut = ShortcutCommand.passwordPicker.defaultShortcut
+        #expect(shortcut.key == "\\")
+        #expect(shortcut.command)
+        #expect(shortcut.option)
+        #expect(!shortcut.shift)
+        #expect(!shortcut.control)
+    }
+
+    @Test func passwordPickerCollidesWithNothing() {
+        let chord = ShortcutCommand.passwordPicker.defaultShortcut
+        let others = ShortcutCommand.all
+            .filter { $0.id != ShortcutCommand.passwordPicker.id }
+            .map(\.defaultShortcut)
+        #expect(!others.contains(chord))
+        // The half the registered-command check misses, and the half that
+        // actually bit: chords claimed by the event monitor's fixed aliases.
+        #expect(KeyboardShortcutsManager.fixedChords[chord] == nil)
+        #expect(KeyboardShortcutsManager.fixedChords[Shortcut(key: "\\", command: true)] != nil)
+    }
+
     @Test func autofillHasNoAgentTool() {
         // Profile data must never be reachable by the agent. No tool may mention
         // it, under any name.

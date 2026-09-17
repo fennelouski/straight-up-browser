@@ -131,7 +131,13 @@ final class CredentialManager: ObservableObject {
         Task { await fill(domain: domain, username: username, tabID: tabID) }
     }
 
-    /// The keyboard-driven picker (⌘\\): fills a saved credential into the
+    /// Puts the focus-driven suggestion away — the keyboard path fills without
+    /// going through it, so it must not be left hanging over the filled field.
+    func dismissSuggestions() {
+        presentation = nil
+    }
+
+    /// The keyboard-driven picker (⌥⌘\\): fills a saved credential into the
     /// page's login form without requiring the field to already be focused.
     func fillFromPicker(domain: String, username: String, tabID: UUID) {
         Task { await fill(domain: domain, username: username, tabID: tabID) }
@@ -290,6 +296,8 @@ final class CredentialManager: ObservableObject {
 
 struct CredentialSuggestionList: View {
     @ObservedObject var manager: CredentialManager
+    /// The current tab's favicon, so the popup says which site it is for.
+    var favicon: Data? = nil
 
     static let rowHeight: CGFloat = 34
     static let verticalPadding: CGFloat = 6
@@ -297,6 +305,10 @@ struct CredentialSuggestionList: View {
 
     static func height(rows: Int) -> CGFloat {
         CGFloat(rows) * rowHeight + verticalPadding * 2
+    }
+
+    private var tint: Color {
+        SiteTint.color(domain: manager.presentation?.domain ?? "", favicon: favicon)
     }
 
     var body: some View {
@@ -310,7 +322,7 @@ struct CredentialSuggestionList: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                .strokeBorder(tint.opacity(0.5), lineWidth: 1)
         )
         .shadow(radius: 8, y: 2)
         .onHover { manager.pointerInsideList = $0 }
@@ -320,10 +332,7 @@ struct CredentialSuggestionList: View {
 
     private func row(_ username: String) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "key.fill")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .frame(width: 14)
+            SiteIcon(favicon: favicon, tint: tint)
             Text(username)
                 .lineLimit(1)
                 .truncationMode(.middle)

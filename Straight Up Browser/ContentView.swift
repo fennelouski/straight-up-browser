@@ -2150,14 +2150,17 @@ struct ContentView: View {
             }
             if let presentation = credentialManager.presentation,
                presentation.tabID == tabManager.selectedTabId,
-               !showOmnibar, contentModal == nil, !linkPreview.isShowing {
+               !showOmnibar, !showPasswordPicker, contentModal == nil, !linkPreview.isShowing {
                 let size = credentialListSize(fieldWidth: presentation.fieldRect.width, rows: presentation.usernames.count)
                 let origin = AutofillGeometry.listOrigin(
                     fieldRect: presentation.fieldRect,
                     listSize: size,
                     windowHeight: geo.size.height
                 )
-                CredentialSuggestionList(manager: credentialManager)
+                CredentialSuggestionList(
+                    manager: credentialManager,
+                    favicon: allTabs.first { $0.id == presentation.tabID }?.favicon
+                )
                     .frame(width: size.width, height: size.height)
                     .position(
                         x: origin.x + size.width / 2,
@@ -2575,12 +2578,16 @@ struct ContentView: View {
         GeometryReader { geo in
             if showPasswordPicker {
                 let currentTabId = tabManager.selectedTabId
+                let currentTab = allTabs.first { $0.id == currentTabId }
+                let domain = currentTab?.url?.host?.lowercased()
                 PasswordPickerView(
                     isPresented: $showPasswordPicker,
-                    currentDomain: allTabs.first { $0.id == currentTabId }?.url?.host?.lowercased(),
-                    onPick: { credential in
-                        guard let currentTabId else { return }
-                        credentialManager.fillFromPicker(domain: credential.domain, username: credential.username, tabID: currentTabId)
+                    domain: domain,
+                    favicon: currentTab?.favicon,
+                    onPick: { username in
+                        guard let currentTabId, let domain else { return }
+                        credentialManager.dismissSuggestions()
+                        credentialManager.fillFromPicker(domain: domain, username: username, tabID: currentTabId)
                     }
                 )
                 .frame(width: PasswordPickerView.width)
@@ -3096,6 +3103,17 @@ struct ContentView: View {
                 }
 
                 NotificationCenter.default.addMainActorObserver(forName: .browserShowPasswordPicker, object: nil, queue: .main) { [self] _ in
+                    guard let tabID = tabManager.selectedTabId else { return }
+                    let domain = allTabs.first { $0.id == tabID }?.url?.host?.lowercased()
+                    let usernames = domain.map { SavedCredentialStore.usernames(domain: $0) } ?? []
+                    // One saved login is not a choice to make: the key command
+                    // means exactly what clicking the suggestion under the field
+                    // means. The picker is for when there really is a choice.
+                    if let domain, usernames.count == 1 {
+                        credentialManager.dismissSuggestions()
+                        credentialManager.fillFromPicker(domain: domain, username: usernames[0], tabID: tabID)
+                        return
+                    }
                     showOmnibar = false
                     showPasswordPicker.toggle()
                 }

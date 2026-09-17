@@ -202,6 +202,13 @@ class KeyboardShortcutsManager {
                 NotificationCenter.default.post(name: .browserImportReport, object: nil)
                 return nil
             }
+            // Dispatched here rather than left to its menu item: the chord is
+            // pressed with a login field focused, which means WKWebView sees it
+            // first and a page that binds it would take the fill away.
+            if store.matches(event, .passwordPicker) {
+                NotificationCenter.default.post(name: .browserShowPasswordPicker, object: nil)
+                return nil
+            }
 
             // While the omnibar is open, every other key passes through so
             // editing shortcuts work in the text field.
@@ -320,6 +327,12 @@ class KeyboardShortcutsManager {
         Shortcut(key: "i", command: true, option: true): "Developer Tools",
         Shortcut(key: "j", command: true, option: true): "Developer Console",
         Shortcut(key: "c", command: true, option: true): "Select Page Element",
+        // Settings > General > "⌘P and ⌘\\ navigate Back/Forward" is ON by
+        // default, and this monitor swallows the chord, so a registered default
+        // landing here would never fire. Password Fill shipped on ⌘\\ and did
+        // exactly that. ⌘P is deliberately absent: Export as PDF shares it, and
+        // the same setting is what arbitrates between them.
+        Shortcut(key: "\\", command: true): "Go Forward (Settings > General alias)",
     ]
 
     // ponytail: the two things that can silently rot — a command offered in
