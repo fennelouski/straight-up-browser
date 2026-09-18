@@ -767,7 +767,12 @@ final class OmnibarSuggestionUpdates: ObservableObject {
     private var task: Task<Void, Never>?
 
     func results(for query: String, historyMode: Bool) -> [Suggestion] {
-        publishedRequest == Request(query: query, historyMode: historyMode) ? published : []
+        // The last results stay on screen while a newer query is in flight — blanking
+        // the list between keystrokes is what reads as flicker. Only a mode change or
+        // an emptied field clears it outright.
+        guard let publishedRequest, publishedRequest.historyMode == historyMode,
+              historyMode || !query.isEmpty else { return [] }
+        return published
     }
 
     func poll(query: String, historyMode: Bool, deferPublication: Bool = false) {
@@ -803,6 +808,8 @@ final class OmnibarSuggestionUpdates: ObservableObject {
         task = nil
         pending = nil
         requested = nil
+        published = []
+        publishedRequest = nil
     }
 }
 

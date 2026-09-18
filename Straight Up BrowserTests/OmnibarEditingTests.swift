@@ -22,7 +22,7 @@ struct OmnibarEditingTests {
         #expect(writes == 5)
     }
 
-    @Test func resultsOnlyPublishWhenPolledAndNeverMatchStaleText() async throws {
+    @Test func resultsOnlyPublishWhenPolledAndHoldSteadyWhileTyping() async throws {
         let updates = OmnibarSuggestionUpdates()
         let suggestion = Suggestion(url: URL(string: "https://example.com")!, type: .site)
         var starts = 0
@@ -43,13 +43,14 @@ struct OmnibarEditingTests {
         }
         #expect(updates.results(for: "exa", historyMode: false) == [suggestion])
         #expect(starts == 1)
-        #expect(updates.results(for: "edited", historyMode: false).isEmpty)
+        // Typing on does not blank the list: the last results hold until new ones land.
+        #expect(updates.results(for: "edited", historyMode: false) == [suggestion])
+        #expect(updates.results(for: "", historyMode: false).isEmpty)
         #expect(updates.results(for: "exa", historyMode: true).isEmpty)
         poll("old")
         try await Task.sleep(for: .milliseconds(20))
         poll("new")
-        #expect(updates.results(for: "old", historyMode: false).isEmpty)
-        #expect(updates.results(for: "new", historyMode: false).isEmpty)
+        #expect(updates.results(for: "new", historyMode: false) == [suggestion])
         updates.cancel()
         try await Task.sleep(for: .milliseconds(20))
         #expect(updates.results(for: "new", historyMode: false).isEmpty)
@@ -115,6 +116,7 @@ struct OmnibarEditingTests {
         #expect(completed)
         updates.poll(query: "exa", historyMode: false, deferPublication: true)
         #expect(updates.results(for: "exa", historyMode: false).isEmpty)
+        // nothing published yet, so the deferred poll still shows nothing
         updates.poll(query: "exa", historyMode: false)
         #expect(updates.results(for: "exa", historyMode: false) == [suggestion])
     }
