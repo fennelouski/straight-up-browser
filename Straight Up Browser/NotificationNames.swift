@@ -86,7 +86,11 @@ extension Notification.Name {
     // this password?" prompt — see CredentialManager.
     static let browserCredentialSubmitted = Notification.Name("browserCredentialSubmitted")
 
-    // ⌘\: the keyboard-driven password picker (search + arrows, never touches
+    // ⌘\ with no page to go forward to: fill the saved login AND sign in, the
+    // one-keystroke express lane. See CredentialManager.fillFromPicker(submit:).
+    static let browserFillAndSubmitPassword = Notification.Name("browserFillAndSubmitPassword")
+
+    // ⌥⌘\: the keyboard-driven password picker (search + arrows, never touches
     // the mouse) — see PasswordPickerView.
     static let browserShowPasswordPicker = Notification.Name("browserShowPasswordPicker")
 

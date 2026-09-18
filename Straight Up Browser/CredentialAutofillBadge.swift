@@ -139,11 +139,12 @@ final class CredentialManager: ObservableObject {
 
     /// The keyboard-driven picker (⌥⌘\\): fills a saved credential into the
     /// page's login form without requiring the field to already be focused.
-    func fillFromPicker(domain: String, username: String, tabID: UUID) {
-        Task { await fill(domain: domain, username: username, tabID: tabID) }
+    /// `submit` is the ⌘\\ express lane — fill and sign in in one keystroke.
+    func fillFromPicker(domain: String, username: String, tabID: UUID, submit: Bool = false) {
+        Task { await fill(domain: domain, username: username, tabID: tabID, submit: submit) }
     }
 
-    private func fill(domain: String, username: String, tabID: UUID) async {
+    private func fill(domain: String, username: String, tabID: UUID, submit: Bool = false) async {
         guard let webView = webViewManager?.getWebView(for: tabID) else { return }
         if SavedCredentialStore.requiresAuthentication(domain: domain, username: username) {
             guard await Self.authenticate(reason: String(localized: "fill your password for \(domain)")) else { return }
@@ -165,6 +166,7 @@ final class CredentialManager: ObservableObject {
                 "reference": passwordField.reference(documentToken: scan.documentToken),
                 "value": password,
             ],
+            "submit": submit,
         ]
         if let usernameField {
             payload["username"] = [
@@ -178,7 +180,7 @@ final class CredentialManager: ObservableObject {
             in: nil,
             contentWorld: .defaultClient
         )
-        Logger.log("credential manager: filled saved login on \(domain)")
+        Logger.log("credential manager: filled saved login on \(domain)\(submit ? " and signed in" : "")")
     }
 
     /// The password field plus its best-guess paired username field, from a

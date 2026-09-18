@@ -224,7 +224,13 @@ class KeyboardShortcutsManager {
                     return nil
                 }
                 if mods == .command && event.charactersIgnoringModifiers == "\\" {
-                    self.goForwardAction()
+                    // With nothing to go forward to the chord is dead weight, so
+                    // spend it on the login in front of you: fill and sign in.
+                    if self.webViewManager?.canGoForward == true {
+                        self.goForwardAction()
+                    } else {
+                        NotificationCenter.default.post(name: .browserFillAndSubmitPassword, object: nil)
+                    }
                     return nil
                 }
             }

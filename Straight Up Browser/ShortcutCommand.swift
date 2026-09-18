@@ -829,6 +829,19 @@ extension ShortcutStore {
             #endif
             rows.append(CheatRow(id: command.id, title: command.title, keys: keys, shortcut: s))
         }
+        #if os(macOS)
+        // A conditional alias with no menu item to advertise it: ⌘\ only means
+        // this when Settings > General's Back/Forward expansion is on AND there
+        // is no page to go forward to.
+        if section == .page, SettingsManager.shared.expandBackForwardShortcuts {
+            rows.append(CheatRow(
+                id: "fillAndSignIn",
+                title: "Fill Password and Sign In (when nothing is forward)",
+                keys: "⌘\\",
+                shortcut: nil
+            ))
+        }
+        #endif
         if section == .tabs {
             // Not rebindable commands — mouse gestures and the omnibar's modified
             // Return, documented here so they're discoverable

@@ -487,6 +487,9 @@ struct ContentView: View {
     @State private var showOmnibar = false
     @State private var showTabGrid = false
     @State private var showPasswordPicker = false
+    /// ⌘\ (fill and sign in) vs ⌥⌘\ (fill only), carried through the picker
+    /// for the case where several saved logins mean there is a choice to make.
+    @State private var passwordPickerSubmits = false
     @State private var showAgentPanel = false
     @State private var showScratchPad = false
     @AppStorage(AgentSettingsRuntimeKey.adjustsPageLayout) private var agentAdjustsPageLayout = false
@@ -2573,7 +2576,27 @@ struct ContentView: View {
         }
     }
 
-    // ⌘\: search every saved password and fill it in, no mouse required.
+    /// One saved login is not a choice to make: the key command means exactly
+    /// what clicking the suggestion under the field means. The picker is for
+    /// when there really is a choice — or nothing saved, so it can say so
+    /// instead of leaving the keystroke silent.
+    private func fillSavedPassword(submit: Bool) {
+        guard let tabID = tabManager.selectedTabId else { return }
+        let domain = allTabs.first { $0.id == tabID }?.url?.host?.lowercased()
+        let usernames = domain.map { SavedCredentialStore.usernames(domain: $0) } ?? []
+        if let domain, usernames.count == 1 {
+            credentialManager.dismissSuggestions()
+            credentialManager.fillFromPicker(
+                domain: domain, username: usernames[0], tabID: tabID, submit: submit
+            )
+            return
+        }
+        passwordPickerSubmits = submit
+        showOmnibar = false
+        showPasswordPicker.toggle()
+    }
+
+    // ⌥⌘\ fills; ⌘\ with no page forward fills and signs in.
     private var passwordPickerOverlay: some View {
         GeometryReader { geo in
             if showPasswordPicker {
@@ -2587,7 +2610,10 @@ struct ContentView: View {
                     onPick: { username in
                         guard let currentTabId, let domain else { return }
                         credentialManager.dismissSuggestions()
-                        credentialManager.fillFromPicker(domain: domain, username: username, tabID: currentTabId)
+                        credentialManager.fillFromPicker(
+                            domain: domain, username: username, tabID: currentTabId,
+                            submit: passwordPickerSubmits
+                        )
                     }
                 )
                 .frame(width: PasswordPickerView.width)
@@ -3103,19 +3129,11 @@ struct ContentView: View {
                 }
 
                 NotificationCenter.default.addMainActorObserver(forName: .browserShowPasswordPicker, object: nil, queue: .main) { [self] _ in
-                    guard let tabID = tabManager.selectedTabId else { return }
-                    let domain = allTabs.first { $0.id == tabID }?.url?.host?.lowercased()
-                    let usernames = domain.map { SavedCredentialStore.usernames(domain: $0) } ?? []
-                    // One saved login is not a choice to make: the key command
-                    // means exactly what clicking the suggestion under the field
-                    // means. The picker is for when there really is a choice.
-                    if let domain, usernames.count == 1 {
-                        credentialManager.dismissSuggestions()
-                        credentialManager.fillFromPicker(domain: domain, username: usernames[0], tabID: tabID)
-                        return
-                    }
-                    showOmnibar = false
-                    showPasswordPicker.toggle()
+                    fillSavedPassword(submit: false)
+                }
+
+                NotificationCenter.default.addMainActorObserver(forName: .browserFillAndSubmitPassword, object: nil, queue: .main) { [self] _ in
+                    fillSavedPassword(submit: true)
                 }
 
                 // Privacy & session commands (Privacy menu + ⇧⌘N / ⇧⌘E)

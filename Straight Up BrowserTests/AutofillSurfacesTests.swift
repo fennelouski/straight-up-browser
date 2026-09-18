@@ -60,6 +60,19 @@ struct AutofillSurfacesTests {
         #expect(KeyboardShortcutsManager.fixedChords[Shortcut(key: "\\", command: true)] != nil)
     }
 
+    @Test func fillingNeverSubmitsUnlessAsked() {
+        let bootstrap = SemanticPageJavaScript.bootstrap
+        // The safety property: a fill is a fill. Signing in happens only behind
+        // the explicit flag ⌘\\ sets, never as a side effect of ⌥⌘\\ or a click
+        // on the suggestion under the field.
+        #expect(bootstrap.contains("if (request.submit) submitted = submitCredentialForm(passwordEl);"))
+        #expect(bootstrap.contains("const submitCredentialForm = passwordEl =>"))
+        // form.submit() is deliberately absent: it skips the submit event, so
+        // every single-page login would silently do nothing.
+        #expect(!bootstrap.contains("form.submit()"))
+        #expect(bootstrap.contains("form.requestSubmit()"))
+    }
+
     @Test func autofillHasNoAgentTool() {
         // Profile data must never be reachable by the agent. No tool may mention
         // it, under any name.

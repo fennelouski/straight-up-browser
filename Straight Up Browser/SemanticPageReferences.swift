@@ -774,18 +774,47 @@ nonisolated enum SemanticPageJavaScript {
       // feature — profile values must never touch a password field — not a
       // blanket rule. This one's whole job is writing a password, into
       // exactly the two fields the caller names.
+      // Sign in with what was just filled. Ordered by how well each survives a
+      // single-page app: a real click runs the handler the page hung on its
+      // button, requestSubmit still fires the submit event (the bare legacy
+      // submit() call does not, which is why it is absent), and a synthetic
+      // Return is the only thing a formless login listens for.
+      const submitCredentialForm = passwordEl => {
+        const form = passwordEl.form;
+        const candidates = form
+          ? Array.from(form.querySelectorAll('button, input[type=submit], input[type=image]'))
+          : [];
+        const submitButton = candidates.find(el => {
+          if (el.disabled || !el.getClientRects().length) return false;
+          const type = String(el.type || '').toLowerCase();
+          return type === 'submit' || type === 'image';
+        });
+        if (submitButton) { submitButton.click(); return 'button'; }
+        if (form && form.requestSubmit) { form.requestSubmit(); return 'requestSubmit'; }
+        const view = passwordEl.ownerDocument?.defaultView || window;
+        const KeyboardEventType = view.KeyboardEvent || KeyboardEvent;
+        for (const type of ['keydown', 'keypress', 'keyup']) {
+          passwordEl.dispatchEvent(new KeyboardEventType(type, {
+            bubbles: true, cancelable: true,
+            key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+          }));
+        }
+        return 'return';
+      };
       const credentialApply = request => {
         state.autofillSuppressed = true;
+        let submitted = null;
         try {
           const usernameEl = request.username && request.username.reference
             ? resolve(request.username.reference) : null;
           const passwordEl = resolve(request.password.reference);
           if (usernameEl) setValue(usernameEl, String(request.username.value || ''));
           setValue(passwordEl, String(request.password.value || ''));
+          if (request.submit) submitted = submitCredentialForm(passwordEl);
         } finally {
           state.autofillSuppressed = false;
         }
-        return {filled: true};
+        return {filled: true, submitted};
       };
 
       const postAutofill = payload => {
