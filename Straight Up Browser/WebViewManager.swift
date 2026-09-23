@@ -107,6 +107,57 @@ class WebViewManager: NSObject, ObservableObject {
     }
     """
     #endif
+    // YouTube serves video ads from the same origin as the video, so the network
+    // rule list above can't touch them. Strip the ad fields out of the player
+    // response before the page reads it (same trick DuckDuckGo uses), with a DOM
+    // fallback for anything that slips through.
+    // ponytail: no filter-list plumbing, no per-site framework. If other sites
+    // ever need first-party ad stripping, generalise then.
+    static let youTubeAdBlockScript = """
+    (function() {
+        if (!/(^|\\.)youtube(-nocookie)?\\.com$/.test(location.hostname)) return;
+        if (window.__subYouTubeAdBlock) return;
+        window.__subYouTubeAdBlock = true;
+        var adKeys = ['adPlacements', 'playerAds', 'adSlots', 'adBreakHeartbeatParams'];
+
+        function strip(value) {
+            if (value && typeof value === 'object') {
+                if (value.playerResponse) strip(value.playerResponse);
+                if (value.streamingData || value.adPlacements || value.adSlots || value.playerAds) {
+                    adKeys.forEach(function(key) { delete value[key]; });
+                }
+            }
+            return value;
+        }
+
+        var parse = JSON.parse;
+        JSON.parse = function() { return strip(parse.apply(this, arguments)); };
+
+        var json = Response.prototype.json;
+        Response.prototype.json = function() { return json.apply(this, arguments).then(strip); };
+
+        // The watch page assigns ytInitialPlayerResponse from an inline object
+        // literal, which never passes through JSON.parse.
+        var initial;
+        Object.defineProperty(window, 'ytInitialPlayerResponse', {
+            configurable: true,
+            get: function() { return initial; },
+            set: function(value) { initial = strip(value); }
+        });
+
+        // ponytail: half-second poll instead of a MutationObserver on the player.
+        // Cheap, and it also catches ads the player starts without a DOM change.
+        setInterval(function() {
+            var player = document.getElementById('movie_player');
+            if (!player || !player.classList.contains('ad-showing')) return;
+            var skip = player.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button');
+            if (skip) { skip.click(); return; }
+            var video = player.querySelector('video');
+            if (video && isFinite(video.duration) && video.duration > 0) video.currentTime = video.duration;
+        }, 500);
+    })();
+    """
+
     // A lightweight DevTools bridge. The wrappers are installed before page code,
     // but stay dormant until the user opens DevTools for that tab. This preserves
     // normal console behaviour and avoids retaining page output while the tool is
@@ -847,6 +898,44 @@ class WebViewManager: NSObject, ObservableObject {
         }
     }
 
+    // Injected as a set, so toggling ad blocking can swap the whole set (WebKit
+    // only removes user scripts wholesale).
+    private static func installUserScripts(on controller: WKUserContentController) {
+        controller.addUserScript(
+            WKUserScript(source: Self.pageScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        )
+        controller.addUserScript(
+            WKUserScript(source: Self.contextMenuScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        )
+        controller.addUserScript(
+            WKUserScript(source: Self.developerToolsScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        )
+        controller.addUserScript(
+            WKUserScript(
+                source: SemanticPageJavaScript.bootstrap,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true,
+                in: .defaultClient
+            )
+        )
+        controller.addUserScript(
+            WKUserScript(source: Self.translateScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        )
+        if UserDefaults.standard.bool(forKey: "adBlockEnabled") {
+            // Must beat page code to JSON.parse, and embeds live in subframes.
+            controller.addUserScript(
+                WKUserScript(source: Self.youTubeAdBlockScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+            )
+        }
+        #if !canImport(AppKit)
+        // Must run before any page code so feature detection sees the truth, and
+        // in subframes because sign-in flows are often framed.
+        controller.addUserScript(
+            WKUserScript(source: Self.hideWebAuthnScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        )
+        #endif
+    }
+
     @objc private func adBlockSettingChanged() {
         if UserDefaults.standard.bool(forKey: "adBlockEnabled") {
             Self.compileAdBlockList { [weak self] list in
@@ -863,6 +952,8 @@ class WebViewManager: NSObject, ObservableObject {
                         let controller = webView.configuration.userContentController
                         controller.remove(list) // avoid double-add
                         controller.add(list)
+                        controller.removeAllUserScripts()
+                        Self.installUserScripts(on: controller)
                         Self.reportContentBlocking(true, for: tabId)
                     }
                     self.reloadAllTabs()
@@ -870,9 +961,12 @@ class WebViewManager: NSObject, ObservableObject {
             }
         } else {
             for (tabId, webView) in webViews {
+                let controller = webView.configuration.userContentController
                 if let list = Self.adBlockList {
-                    webView.configuration.userContentController.remove(list)
+                    controller.remove(list)
                 }
+                controller.removeAllUserScripts()
+                Self.installUserScripts(on: controller)
                 Self.reportContentBlocking(false, for: tabId)
             }
             reloadAllTabs()
@@ -1188,33 +1282,7 @@ class WebViewManager: NSObject, ObservableObject {
         } else {
             Self.reportContentBlocking(false, for: tabId)
         }
-        configuration.userContentController.addUserScript(
-            WKUserScript(source: Self.pageScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
-        )
-        configuration.userContentController.addUserScript(
-            WKUserScript(source: Self.contextMenuScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
-        )
-        configuration.userContentController.addUserScript(
-            WKUserScript(source: Self.developerToolsScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
-        )
-        configuration.userContentController.addUserScript(
-            WKUserScript(
-                source: SemanticPageJavaScript.bootstrap,
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: true,
-                in: .defaultClient
-            )
-        )
-        configuration.userContentController.addUserScript(
-            WKUserScript(source: Self.translateScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
-        )
-        #if !canImport(AppKit)
-        // Must run before any page code so feature detection sees the truth, and
-        // in subframes because sign-in flows are often framed.
-        configuration.userContentController.addUserScript(
-            WKUserScript(source: Self.hideWebAuthnScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
-        )
-        #endif
+        Self.installUserScripts(on: configuration.userContentController)
         // Attach the app-wide web extension controller so any loaded extension's
         // content scripts run in this tab. Inert when no extension is loaded, but
         // must be set before the web view exists — it can't be added later.
