@@ -167,7 +167,7 @@ those processes may do. See [CLI_USAGE.md](CLI_USAGE.md), or run
 AI tools that speak MCP can connect without another download or daemon:
 
 ```bash
-browser-cli install-mcp all       # Codex and/or Claude Code when installed
+browser-cli install-mcp all       # Codex, Claude Code, Claude Desktop when installed
 browser-cli mcp-config            # generic stdio configuration
 ```
 

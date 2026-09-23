@@ -123,9 +123,11 @@ AI-001 establishes a checked-in catalogue snapshot. CI must fail when:
 Additive optional properties are compatible. Description improvements are
 compatible but still reviewable because model behavior can change.
 
-The native built-in profile may contain more than 53 tools. The compatibility
-gate counts only the BrowserOS MCP visibility profile and separately checks that
-native additions do not collide with its public names.
+The native built-in profile may contain more than 53 tools, and so does the
+`localMCP` profile the shipped server actually serves (the 53 plus the research
+handoff). The compatibility gate counts only the `browserOSMCP` visibility
+profile and separately checks that native additions do not collide with its
+public names.
 
 ## Failure and recovery matrix
 

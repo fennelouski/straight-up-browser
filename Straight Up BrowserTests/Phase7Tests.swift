@@ -60,24 +60,28 @@ struct ReportParserTests {
     }
 }
 
+/// Shared by the import tests and the handoff tests below — the same real
+/// stores over an in-memory container and a throwaway documents folder.
+@MainActor
+private func makeStores() throws -> (ModelContainer, ModelContext, LedgerStore, DocumentStore, URL) {
+    let schema = Schema([
+        NewspaperArticle.self, Workspace.self, WorkspaceSourceRef.self,
+        WorkspaceDocument.self, LedgerAnchor.self, LedgerClaim.self,
+        LedgerEdge.self, LedgerArchive.self, SourceTranscript.self, Tab.self
+    ])
+    let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+    let container = try ModelContainer(for: schema, configurations: [configuration])
+    let context = ModelContext(container)
+    let ledger = LedgerStore(modelContext: context)
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("Phase7Tests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    return (container, context, ledger, DocumentStore(modelContext: context, ledgerStore: ledger, containerOverride: root), root)
+}
+
 @MainActor
 struct ReportImportTests {
 
-    private func makeStores() throws -> (ModelContainer, ModelContext, LedgerStore, DocumentStore, URL) {
-        let schema = Schema([
-            NewspaperArticle.self, Workspace.self, WorkspaceSourceRef.self,
-            WorkspaceDocument.self, LedgerAnchor.self, LedgerClaim.self,
-            LedgerEdge.self, LedgerArchive.self, SourceTranscript.self, Tab.self
-        ])
-        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: schema, configurations: [configuration])
-        let context = ModelContext(container)
-        let ledger = LedgerStore(modelContext: context)
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Phase7Tests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        return (container, context, ledger, DocumentStore(modelContext: context, ledgerStore: ledger, containerOverride: root), root)
-    }
 
     private let reportText = """
     # Fermentation Deep Dive
@@ -168,5 +172,76 @@ struct ReportImportTests {
             workspace: workspace, ledgerStore: ledger, documentStore: documents)
         #expect(summary == nil)
         #expect(ledger.references(workspaceId: workspace.id).isEmpty)
+    }
+}
+
+/// The outbound half (ResearchHandoff.swift): an external agent reads the
+/// workspace, then hands the finished report back through the same importer.
+@MainActor
+struct ResearchHandoffTests {
+
+    private func wire(_ ledger: LedgerStore, _ documents: DocumentStore) {
+        ResearchRecall.shared.ledgerStore = ledger
+        ResearchRecall.shared.documentStore = documents
+    }
+
+    @Test func briefCarriesNotesKeptSourcesAndRejections() async throws {
+        let (_, context, ledger, documents, _) = try makeStores()
+        wire(ledger, documents)
+        let workspace = Workspace(name: "Fermentation"); context.insert(workspace)
+
+        ledger.recordManualCapture(
+            url: URL(string: "https://a.example/paper")!, title: "The Gut Study",
+            workspaceId: workspace.id)
+        ledger.recordRejection(
+            url: URL(string: "https://spam.example/listicle")!, title: "17 Gut Hacks",
+            workspaceId: workspace.id)
+        let note = try #require(documents.createDocument(in: workspace, name: "Question"))
+        documents.append(line: "Does fermentation change gut diversity?", to: note)
+
+        let result = await ResearchHandoff.call(
+            "get_workspace_brief",
+            arguments: ["workspaceId": workspace.id.uuidString],
+            modelContext: context)
+        let brief = try #require(result["brief"] as? String)
+
+        #expect(brief.contains("Does fermentation change gut diversity?"), "the note is the question")
+        #expect(brief.contains("[The Gut Study](https://a.example/paper)"), "kept sources are citable")
+        #expect(brief.contains("do not revisit"))
+        #expect(brief.contains("17 Gut Hacks"))
+        #expect(!brief.contains("[17 Gut Hacks]"), "a rejection is never offered as a citation")
+    }
+
+    @Test func unknownWorkspaceFailsWithSomethingActionable() async throws {
+        let (_, context, ledger, documents, _) = try makeStores()
+        wire(ledger, documents)
+        let result = await ResearchHandoff.call(
+            "get_workspace_brief",
+            arguments: ["workspaceId": UUID().uuidString],
+            modelContext: context)
+        #expect((result["error"] as? String)?.contains("list_workspaces") == true)
+        #expect(result["brief"] == nil)
+    }
+
+    @Test func reportComesBackThroughTheImporter() async throws {
+        let (_, context, ledger, documents, _) = try makeStores()
+        wire(ledger, documents)
+        let workspace = Workspace(name: "Fermentation"); context.insert(workspace)
+
+        let result = await ResearchHandoff.call(
+            "import_report",
+            arguments: [
+                "workspaceId": workspace.id.uuidString,
+                "markdown": "# Findings\n\nDiversity rises, per [the gut study](https://a.example/paper).",
+            ],
+            modelContext: context)
+
+        #expect(result["ok"] as? Bool == true)
+        #expect(result["citedSources"] as? Int == 1)
+        #expect(result["documentName"] as? String == "Findings")
+        // The whole point of the round trip: the citation is a real source in
+        // this workspace, not prose.
+        let refs = ledger.references(workspaceId: workspace.id)
+        #expect(refs.contains { ledger.source(sourceKey: $0.sourceKey)?.url.host == "a.example" })
     }
 }

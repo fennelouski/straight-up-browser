@@ -216,12 +216,18 @@ nonisolated enum AgentCapability: String, Codable, CaseIterable, Hashable, Senda
     case coworkWrite
     case memoryRead
     case memoryWrite
+    case researchRead
+    case researchWrite
     case runDelegation
     case externalMCP
 }
 
 nonisolated enum AgentToolVisibility: String, Codable, CaseIterable, Hashable, Sendable {
+    /// The frozen BrowserOS-compatible 53-tool contract (docs/browseros-parity.md).
+    /// Nothing of ours is ever added here.
     case browserOSMCP
+    /// What the shipped MCP server actually serves: the 53 plus our own.
+    case localMCP
     case builtInAgent
     case scheduler
 }
@@ -439,10 +445,12 @@ private extension AgentToolCatalog {
             route: AgentToolRoute,
             builtIn: Bool = false,
             origin: AgentToolOrigin = .browser,
-            mcp: Bool = true
+            mcp: Bool = true,
+            localMCP: Bool = false
         ) -> AgentToolDescriptor {
             var visibility = Set<AgentToolVisibility>()
-            if mcp { visibility.insert(.browserOSMCP) }
+            if mcp { visibility.formUnion([.browserOSMCP, .localMCP]) }
+            if localMCP { visibility.insert(.localMCP) }
             if builtIn { visibility.formUnion([.builtInAgent, .scheduler]) }
             return AgentToolDescriptor(
                 name: name,
@@ -625,6 +633,17 @@ private extension AgentToolCatalog {
                 "sensitivity": .string(description: "Content classification.", allowedValues: ["preference", "personal", "sensitive"]),
                 "expiresAt": .string(description: "Optional ISO-8601 expiry."),
             ], required: ["text", "scope", "sensitivity"], capabilities: [.memoryWrite], risk: .mutateLocal, route: .internalTool, builtIn: true, origin: .internalTool, mcp: false),
+            // Research handoff (3) — the outbound half of Phase 7. MCP-only: the
+            // built-in agent is already inside the workspace and has search_research.
+            descriptor("list_workspaces", "List the user's research workspaces with their source counts, so a later call can name one. The active workspace is marked.", capabilities: [.researchRead], risk: .observe, route: .internalTool, origin: .internalTool, mcp: false, localMCP: true),
+            descriptor("get_workspace_brief", "Read one research workspace as a Markdown brief: the user's own notes (the question), every source they captured with its URL and anchored quotes, and the sources they already rejected. Read this before researching for them — never re-open a rejected source.", properties: [
+                "workspaceId": .string(description: "Workspace ID from list_workspaces. Omit for the active workspace."),
+            ], capabilities: [.researchRead], risk: .observe, route: .internalTool, origin: .internalTool, mcp: false, localMCP: true),
+            descriptor("import_report", "Hand a finished research report back to the browser. Markdown with inline [text](url) citations: the report becomes a workspace document and every citation becomes a source, an anchor, and a claim-citation edge the user can audit.", properties: [
+                "markdown": .string(description: "The report, as Markdown with inline links."),
+                "title": .string(description: "Document title. Defaults to the report's first heading."),
+                "workspaceId": .string(description: "Workspace ID from list_workspaces. Omit for the active workspace."),
+            ], required: ["markdown"], capabilities: [.researchWrite], risk: .mutateLocal, route: .internalTool, origin: .internalTool, mcp: false, localMCP: true),
             descriptor("search_research", "Search the user's own research ledger — captured sources, transcripts, paper notes, and workspace notes across every workspace — and return verbatim passages. Nothing leaves the device. Cite the returned sourceURL whenever a passage is used.", properties: [
                 "query": .string(description: "What to look for."),
                 "limit": .integer(description: "Maximum passages to return (1–20).", minimum: 1, maximum: 20),

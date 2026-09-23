@@ -7,7 +7,7 @@ import Foundation
 private let mcpProtocolVersion = "2025-06-18"
 
 var browserMCPTools: [[String: Any]] {
-    (try? AgentToolCatalog.canonical.mcpTools(profile: .browserOSMCP)) ?? []
+    (try? AgentToolCatalog.canonical.mcpTools(profile: .localMCP)) ?? []
 }
 private func mcpNormaliseArguments(_ arguments: [String: Any]) -> [String: Any] {
     let aliases = [
@@ -69,6 +69,10 @@ private func mcpCallBrowserTool(_ name: String, rawArguments: [String: Any]) -> 
     case "save_screenshot":
         guard let path = arguments["path"] as? String else { return ["error": "save_screenshot requires path"] }
         return mcpWriteBase64Result(mcpAppRequest(name, arguments: arguments, timeout: 60), path: path)
+    case "import_report":
+        // Creates a document in iCloud Drive and runs a full save pass; the
+        // 30s default is not enough when the container is cold.
+        return mcpAppRequest(name, arguments: arguments, timeout: 120)
     default:
         return mcpAppRequest(name, arguments: arguments)
     }
@@ -143,7 +147,7 @@ func runMCPServer() -> Never {
                     "protocolVersion": mcpProtocolVersion,
                     "capabilities": ["tools": ["listChanged": false]],
                     "serverInfo": ["name": "straight-up-browser", "version": mcpServerVersion()],
-                    "instructions": "Controls the user's real WebKit browser. Start with list_pages or take_snapshot. Background pages have stable IDs; do not act on a personal page unless the user asked you to.",
+                    "instructions": "Controls the user's real WebKit browser. Start with list_pages or take_snapshot. Background pages have stable IDs; do not act on a personal page unless the user asked you to. Researching for them? Call get_workspace_brief first — it carries their question, the sources they kept, and the ones they already rejected — and hand the finished report back with import_report.",
                 ],
             ])
         case "ping":

@@ -26,9 +26,12 @@ Scoped to one repo instead of everywhere:
 browser-cli install-skill /path/to/repo     # -> <repo>/.claude/skills/browser/
 ```
 
-The skill is deliberately thin: it points at `browser-cli docs` rather than
-restating it, so it cannot drift from the binary. Its source is `claudeSkill` in
-`browser-cli/main.swift`.
+That writes two skills: `browser` (driving a window) and `research-handoff`
+(researching inside one of the user's workspaces, below). Both are deliberately
+thin — the first points at `browser-cli docs` rather than restating it, the
+second teaches method and leaves the schemas to the MCP tool descriptions, so
+neither can drift from the binary. Their source is `claudeSkill` and
+`researchSkill` in `browser-cli/main.swift`.
 
 ## Codex, Gemini CLI, Cursor, and other shell-capable agents
 
@@ -42,8 +45,9 @@ file it reads (`AGENTS.md`, `GEMINI.md`, `.cursorrules`, and so on):
 ## MCP
 
 The app ships a dependency-free MCP server inside `browser-cli`. It exposes 53
-browser tools covering pages, semantic snapshots, DOM extraction, interaction,
-screenshots/PDFs, windows, tab groups, bookmarks, and history. It controls the
+BrowserOS-compatible tools covering pages, semantic snapshots, DOM extraction,
+interaction, screenshots/PDFs, windows, tab groups, bookmarks, and history —
+plus three of its own for research workspaces (below). It controls the
 real signed-in WebKit sessions through the same capability switches as the CLI.
 
 Connect every supported client found on the Mac:
@@ -56,14 +60,35 @@ Or install one explicitly:
 
 ```sh
 browser-cli install-mcp codex
-browser-cli install-mcp claude
+browser-cli install-mcp claude           # Claude Code
+browser-cli install-mcp claude-desktop   # merges into claude_desktop_config.json
 ```
+
+Claude Desktop has no CLI to register a server with, so that last one edits its
+JSON config directly. It merges — any other server already in there is left
+alone, and a config it cannot parse is reported rather than overwritten. Quit
+and reopen Claude Desktop afterwards.
 
 For another MCP client, `browser-cli mcp-config` prints the stdio configuration;
 the underlying command is simply `browser-cli mcp`. Each MCP process receives
 its own session ID and local audit timeline under the app's Application Support
 folder. Multiple agents can work at once because commands use stable composite
 window/page IDs rather than whichever tab happens to be focused.
+
+## Research handoff
+
+A research workspace can be handed to any MCP client — Claude Desktop, Codex,
+whatever the user prefers — and the report handed back:
+
+| Tool | Does |
+|---|---|
+| `list_workspaces` | every workspace with its source counts; the active one is marked |
+| `get_workspace_brief` | one workspace as Markdown: the user's own notes, every kept source with its URL and anchored quotes, and the sources they already rejected |
+| `import_report` | Markdown with inline `[text](url)` citations becomes a workspace document; every citation becomes a source, an anchor, and a claim-citation edge |
+
+The round trip is the point: what comes back is not pasted prose but a document
+whose every claim traces to a source in the ledger, auditable with ⌃⌘G. Reading
+is gated by the same page-read switch as the rest of the CLI.
 
 ## Built-in agent and app integrations
 

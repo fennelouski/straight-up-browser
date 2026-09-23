@@ -68,6 +68,15 @@ func runProcess(_ executable: String, _ arguments: [String]) -> (status: Int32, 
     }
 }
 
+/// `FileManager.homeDirectoryForCurrentUser` ignores $HOME, which is wrong for
+/// a CLI (and makes anything that writes into the home directory untestable).
+func homeDirectory() -> URL {
+    if let home = ProcessInfo.processInfo.environment["HOME"], !home.isEmpty {
+        return URL(fileURLWithPath: home)
+    }
+    return FileManager.default.homeDirectoryForCurrentUser
+}
+
 func executableExists(_ name: String) -> Bool {
     runProcess("/usr/bin/which", [name]).status == 0
 }
@@ -89,13 +98,61 @@ func installMCP(for client: String) -> [String: Any] {
         existing = runProcess(executable, ["claude", "mcp", "get", name])
         if existing.0 == 0 { return ["client": client, "ok": true, "status": "already configured"] }
         install = runProcess(executable, ["claude", "mcp", "add", "--scope", "user", name, "--", helper, "mcp"])
+    case "claude-desktop":
+        return installClaudeDesktopMCP(helper: helper, name: name)
     default:
-        return ["client": client, "error": "supported clients: codex, claude, all"]
+        return ["client": client, "error": "supported clients: codex, claude, claude-desktop, all"]
     }
     if install.0 == 0 {
         return ["client": client, "ok": true, "status": "installed"]
     }
     return ["client": client, "error": install.1.trimmingCharacters(in: .whitespacesAndNewlines)]
+}
+
+/// Claude Desktop has no CLI to register a server with, so this edits its JSON
+/// config the way a person would. It MERGES: an unreadable or non-JSON file is
+/// an error, never an overwrite — that file is the user's other servers.
+func installClaudeDesktopMCP(helper: String, name: String) -> [String: Any] {
+    let client = "claude-desktop"
+    let configURL = homeDirectory()
+        .appendingPathComponent("Library/Application Support/Claude/claude_desktop_config.json")
+    let installed = FileManager.default.fileExists(atPath: "/Applications/Claude.app")
+        || FileManager.default.fileExists(atPath: configURL.deletingLastPathComponent().path)
+    guard installed else { return ["client": client, "error": "Claude Desktop is not installed"] }
+
+    var root: [String: Any] = [:]
+    if let data = try? Data(contentsOf: configURL), !data.isEmpty {
+        guard let parsed = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return ["client": client, "error": "\(configURL.path) is not readable JSON — edit it by hand"]
+        }
+        root = parsed
+    }
+    var servers = root["mcpServers"] as? [String: Any] ?? [:]
+    let entry: [String: Any] = ["command": helper, "args": ["mcp"]]
+    if let existing = servers[name] as? [String: Any],
+       existing["command"] as? String == helper {
+        return ["client": client, "ok": true, "status": "already configured", "path": configURL.path]
+    }
+    let replacing = servers[name] != nil
+    servers[name] = entry
+    root["mcpServers"] = servers
+
+    do {
+        try FileManager.default.createDirectory(
+            at: configURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let data = try JSONSerialization.data(
+            withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        try data.write(to: configURL, options: .atomic)
+    } catch {
+        return ["client": client, "error": "could not write \(configURL.path): \(error.localizedDescription)"]
+    }
+    return [
+        "client": client,
+        "ok": true,
+        "status": replacing ? "updated" : "installed",
+        "path": configURL.path,
+        "note": "Quit and reopen Claude Desktop to pick up the server.",
+    ]
 }
 
 // MARK: - Transport
@@ -357,10 +414,12 @@ func printUsage() {
       help                     This overview
       docs                     Full guide for AI agents (schemas, patterns)
       mcp                      Run the bundled MCP server over stdio
-      install-mcp <client>     Connect Codex, Claude Code, or all installed clients
+      install-mcp <client>     Connect codex, claude (Claude Code),
+                               claude-desktop, or all installed clients
       mcp-config               Print a generic stdio MCP configuration snippet
-      install-skill            Install a Claude Code skill so Claude discovers
-                               this browser on its own (~/.claude/skills/browser)
+      install-skill            Install the Claude Code skills so Claude finds
+                               this browser and its research workspaces on its
+                               own (~/.claude/skills/)
 
     Examples:
       browser-cli open https://example.com && browser-cli wait
@@ -549,6 +608,59 @@ take over and hand it back.
   good guest.
 """#
 
+// The research counterpart to the browser skill: the browser one teaches
+// driving a window, this one teaches researching FOR someone whose own ledger
+// already knows what they kept and what they threw out. Deliberately about
+// method, not schemas — the MCP tool descriptions carry those.
+let researchSkill = #"""
+---
+name: research-handoff
+description: Research a question inside the user's own Straight Up Browser workspace — read the sources they already captured and already rejected, then hand back a cited report that lands in their notes with every claim traceable. Use when the user asks for research, a literature review, or a report and the straight-up-browser MCP server is connected.
+---
+
+# Research handoff
+
+The user has been reading. Their browser kept score: the pages they stayed
+with, the ones they closed, the notes they wrote. Start from that, not from a
+blank search box.
+
+## The loop
+
+1. `list_workspaces` — find theirs. The active one is marked.
+2. `get_workspace_brief` — their notes (the question), every source they kept
+   with its URL and anchored quotes, and the ones they rejected.
+3. Research. Their captured sources first; the open web only for the gaps the
+   brief actually leaves.
+4. `import_report` — Markdown back. It becomes a document in that workspace and
+   every citation becomes a real source they can audit.
+
+If the tools are missing, the server is not connected:
+`browser-cli install-mcp claude-desktop` (or `claude`, or `codex`).
+
+## Rules that matter here
+
+**Never re-open a rejected source.** In this browser, closing a tab IS the
+rejection. If it is in the rejected list, the user already read it and said no.
+Citing it back at them is the fastest way to be useless.
+
+**Cite inline, `[text](url)`, on the claim itself.** Every link becomes a
+source, an anchor, and a claim-citation edge. A bare URL in a footnote list
+joins the bundle but anchors nothing.
+
+**Point at the exact passage when you can.** A `#:~:text=` fragment, or `?t=`
+on a video, becomes a precise anchor instead of a whole-page one. That is the
+difference between "this page says so" and "this sentence says so".
+
+**Corroboration inside one bundle is not independent.** Twelve citations
+lifted from one review article are one source wearing twelve hats. The user's
+audit view (⌃⌘G) draws exactly that fan, so it will be obvious. Prefer sources
+that reached their conclusions separately, and say when you could not find any.
+
+**Leave the gaps visible.** An assertion you could not source stays uncited —
+their unsupported-claims view will surface it either way, and an honest gap is
+worth more than a citation that does not hold.
+"""#
+
 // MARK: - Main
 
 let arguments = CommandLine.arguments
@@ -580,7 +692,7 @@ case "mcp-config":
 
 case "install-mcp":
     let client = arguments.count > 2 ? arguments[2].lowercased() : "all"
-    let clients = client == "all" ? ["codex", "claude"] : [client]
+    let clients = client == "all" ? ["codex", "claude", "claude-desktop"] : [client]
     let results = clients.map(installMCP)
     let ok = results.contains { $0["ok"] as? Bool == true }
     let response: [String: Any] = ["ok": ok, "results": results]
@@ -598,17 +710,21 @@ case "install-skill":
     // project-scoped install (<repo>/.claude/skills).
     let skillsRoot = arguments.count >= 3
         ? URL(fileURLWithPath: arguments[2]).appendingPathComponent(".claude/skills")
-        : FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/skills")
-    let skillDir = skillsRoot.appendingPathComponent("browser")
-    let skillFile = skillDir.appendingPathComponent("SKILL.md")
-    do {
-        try FileManager.default.createDirectory(at: skillDir, withIntermediateDirectories: true)
-        try claudeSkill.write(to: skillFile, atomically: true, encoding: .utf8)
-    } catch {
-        fail("Error: could not write the skill to \(skillFile.path): \(error.localizedDescription)")
+        : homeDirectory().appendingPathComponent(".claude/skills")
+    var written: [String] = []
+    for (folder, contents) in [("browser", claudeSkill), ("research-handoff", researchSkill)] {
+        let skillDir = skillsRoot.appendingPathComponent(folder)
+        let skillFile = skillDir.appendingPathComponent("SKILL.md")
+        do {
+            try FileManager.default.createDirectory(at: skillDir, withIntermediateDirectories: true)
+            try contents.write(to: skillFile, atomically: true, encoding: .utf8)
+            written.append(skillFile.path)
+        } catch {
+            fail("Error: could not write the skill to \(skillFile.path): \(error.localizedDescription)")
+        }
     }
     printResponse(try! JSONSerialization.data(
-        withJSONObject: ["ok": true, "path": skillFile.path],
+        withJSONObject: ["ok": true, "path": written[0], "paths": written],
         options: [.prettyPrinted]
     ))
 

@@ -1174,6 +1174,7 @@ struct CLIAuthorization {
         }
         if !capabilities.intersection([
             .pageRead, .bookmarkRead, .historyRead, .tabGroups, .coworkRead,
+            .researchRead,
         ]).isEmpty {
             return .pageRead
         }

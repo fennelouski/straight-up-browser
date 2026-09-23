@@ -1403,6 +1403,13 @@ class NotificationManager {
         case "list_tab_groups", "group_tabs", "update_tab_group", "ungroup_tabs", "close_tab_group":
             performTabGroupTool(tool, arguments: arguments, responseFilePath: responseFilePath)
 
+        case "list_workspaces", "get_workspace_brief", "import_report":
+            Task { @MainActor in
+                let result = await ResearchHandoff.call(
+                    tool, arguments: arguments, modelContext: self.modelContext)
+                self.respond(result, to: responseFilePath)
+            }
+
         case "handle_dialog":
             handleAutomationDialog(arguments: arguments, responseFilePath: responseFilePath)
 

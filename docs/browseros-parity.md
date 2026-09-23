@@ -53,7 +53,13 @@ The native side-panel agent uses the same primitives and adds canonical tools
 for observable waits, staged Cowork transactions, delegated Runs, scoped
 memory, WebKit signals, and trusted connected apps. Those additions do not
 alter the public names or required arguments of the compatibility catalogue:
-the bundled browser MCP profile remains exactly 53 tools.
+the BrowserOS compatibility profile remains exactly 53 tools.
+
+The shipped MCP server serves a second, superset profile (`localMCP`): those 53
+plus `list_workspaces`, `get_workspace_brief`, and `import_report`, which hand a
+research workspace out to an external agent and its report back. They are ours,
+never BrowserOS's, which is why they are a separate profile — the compatibility
+count is asserted against `browserOSMCP` alone.
 
 ## Engine/platform boundary
 

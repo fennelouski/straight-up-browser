@@ -1735,7 +1735,7 @@ struct SecuritySettingsView: View {
                         NSWorkspace.shared.activateFileViewerSelecting([directory])
                     }
                 }
-                Text("Run `browser-cli install-mcp all` once to connect installed Codex and Claude Code clients. Other clients can use the copied stdio configuration. The server exposes 53 browser tools and each client session gets a local audit timeline.")
+                Text("Run `browser-cli install-mcp all` once to connect installed Codex, Claude Code, and Claude Desktop clients. Other clients can use the copied stdio configuration. The server exposes the 53 BrowserOS-compatible browser tools plus three for research workspaces — an outside agent can read a workspace brief and hand a cited report back — and each client session gets a local audit timeline. Reading either needs Page Content above.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)

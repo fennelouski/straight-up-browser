@@ -85,11 +85,16 @@ needs nothing installed. For Claude Code, one command teaches it the browser
 exists:
 
 ```bash
-browser-cli install-skill        # writes ~/.claude/skills/browser/SKILL.md
+browser-cli install-skill        # writes ~/.claude/skills/{browser,research-handoff}/
+browser-cli install-mcp all      # Codex, Claude Code, Claude Desktop
 ```
 
+The second skill is about research: an agent reads the workspace you have been
+reading in — your notes, the sources you kept, the ones you rejected — and hands
+a cited report back into it.
+
 See [integrations/](integrations/README.md) for notes on Codex, Gemini CLI,
-Cursor, and why there's no MCP server.
+Cursor, and the bundled MCP server.
 
 ## How it works
 

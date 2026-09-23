@@ -32,6 +32,15 @@ struct AgentToolCatalogTests {
         #expect(descriptors.allSatisfy { $0.version == 1 })
     }
 
+    /// The shipped server serves the frozen 53 plus our own research handoff —
+    /// and the compatibility contract above must not notice.
+    @Test func localMCPProfileIsTheCompatibilityContractPlusResearchHandoff() throws {
+        let catalog = AgentToolCatalog.canonical
+        let local = catalog.descriptors(visibleIn: .localMCP).map(\.name)
+        #expect(local == compatibilityNames + ["list_workspaces", "get_workspace_brief", "import_report"])
+        #expect(try catalog.mcpTools(profile: .localMCP).count == 56)
+    }
+
     @Test func builtInAndMCPRenderingsShareDescriptors() throws {
         let catalog = AgentToolCatalog.canonical
         let builtIn = catalog.descriptors(visibleIn: .builtInAgent)
