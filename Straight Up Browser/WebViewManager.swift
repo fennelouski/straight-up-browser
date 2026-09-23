@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import CryptoKit
 import WebKit
 import Combine
 #if canImport(AppKit)
@@ -867,29 +868,103 @@ class WebViewManager: NSObject, ObservableObject {
         "indexexchange.com",
     ]
 
-    // The same list the dashboard counts page requests against, so "ads blocked"
-    // and "ad requests seen" can never disagree about what an ad host is.
+    // What the dashboard counts page requests against. EasyList blocks far more
+    // than this, so "ad requests seen" is a floor, not the same number.
     static var adHostList: [String] { adHosts }
 
-    private static var adBlockList: WKContentRuleList?
+    // EasyList, already converted to Safari content-blocker JSON by Adblock Plus:
+    // ~46k rules covering ad/tracker requests and the empty boxes they leave
+    // behind (css-display-none). The host list above is the offline fallback
+    // until the first download lands.
+    // ponytail: one list, no user-managed subscriptions, no ABP-syntax parser.
+    // EasyPrivacy publishes no converted build; write a converter only if asked.
+    private static let filterListURL = URL(
+        string: "https://easylist-downloads.adblockplus.org/easylist_content_blocker.json")!
+    private static let filterListMaxAge: TimeInterval = 7 * 24 * 60 * 60
+    private static let filterListIdentifierKey = "adBlockFilterListIdentifier"
 
-    private static func compileAdBlockList(_ completion: @escaping (WKContentRuleList?) -> Void) {
-        if let list = adBlockList { completion(list); return }
+    private static var filterListFileURL: URL {
+        let directory = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Straight Up Browser", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent("easylist.json")
+    }
+
+    private static var builtInRuleListJSON: String {
         // Content-blocker regex has no alternation, so one block rule per host
         let rules = adHosts.map { host in
             let escaped = host.replacingOccurrences(of: ".", with: "\\\\.")
             return #"{"trigger":{"url-filter":"^https?://([^/]+\\.)?\#(escaped)[:/]","load-type":["third-party"]},"action":{"type":"block"}}"#
         }
-        WKContentRuleListStore.default().compileContentRuleList(
-            forIdentifier: "sub-adblock",
-            encodedContentRuleList: "[\(rules.joined(separator: ","))]"
-        ) { list, error in
-            if let error {
-                Logger.log("Ad block rule compile failed: \(error)", type: "WebViewManager")
+        return "[\(rules.joined(separator: ","))]"
+    }
+
+    /// A downloaded filter list is untrusted input on its way into WebKit's rule
+    /// compiler: take it only if it parses as a non-trivial rule array.
+    nonisolated static func validatedFilterList(_ data: Data) -> String? {
+        guard data.count > 100_000,
+              let rules = try? JSONSerialization.jsonObject(with: data) as? [Any],
+              rules.count > 1_000,
+              let text = String(data: data, encoding: .utf8) else { return nil }
+        return text
+    }
+
+    private static var adBlockList: WKContentRuleList?
+
+    private static func compileAdBlockList(_ completion: @escaping (WKContentRuleList?) -> Void) {
+        if let list = adBlockList { completion(list); return }
+        refreshFilterListIfStale()
+        let downloaded = (try? Data(contentsOf: filterListFileURL)).flatMap(validatedFilterList)
+        let json = downloaded ?? builtInRuleListJSON
+        // Content-addressed, so a refreshed list compiles under a new identifier
+        // instead of silently reusing the old compilation.
+        let identifier = downloaded == nil
+            ? "sub-adblock"
+            : "sub-easylist-\(SHA256.hash(data: Data(json.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined())"
+        guard let store = WKContentRuleListStore.default() else { completion(nil); return }
+        store.lookUpContentRuleList(forIdentifier: identifier) { found, _ in
+            if let found {
+                adBlockList = found
+                completion(found)
+                return
             }
-            adBlockList = list
-            completion(list)
+            // ~1s for the 46k-rule list, measured — but once per list version,
+            // because the store hands back the compilation after that.
+            store.compileContentRuleList(forIdentifier: identifier, encodedContentRuleList: json) { list, error in
+                if let error {
+                    Logger.log("Ad block rule compile failed: \(error)", type: "WebViewManager")
+                }
+                if list != nil {
+                    let defaults = UserDefaults.standard
+                    if let previous = defaults.string(forKey: filterListIdentifierKey), previous != identifier {
+                        store.removeContentRuleList(forIdentifier: previous) { _ in }
+                    }
+                    defaults.set(identifier, forKey: filterListIdentifierKey)
+                }
+                adBlockList = list
+                completion(list)
+            }
         }
+    }
+
+    // ponytail: the fresh list is used from the next launch — swapping it
+    // mid-session would mean recompiling and reloading every open tab.
+    private static func refreshFilterListIfStale() {
+        let destination = filterListFileURL
+        let modified = (try? destination.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate ?? .distantPast
+        guard Date().timeIntervalSince(modified) > filterListMaxAge else { return }
+        URLSession.shared.dataTask(with: filterListURL) { data, response, error in
+            guard let data, (response as? HTTPURLResponse)?.statusCode == 200,
+                  validatedFilterList(data) != nil else {
+                Logger.log("Filter list refresh failed: \(error?.localizedDescription ?? "rejected")",
+                           type: "WebViewManager")
+                return
+            }
+            try? data.write(to: destination, options: .atomic)
+            Logger.log("Filter list refreshed (\(data.count) bytes)", type: "WebViewManager")
+        }.resume()
     }
 
     private static func reportContentBlocking(_ active: Bool, for tabId: UUID) {
