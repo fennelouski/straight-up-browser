@@ -149,10 +149,17 @@ enum WindowLayout {
     }
 
     // Binds the window to AppKit's built-in frame autosave: restores the
-    // last saved frame immediately, then keeps saving on every resize/move
-    // with no further code. Standalone from applyOnLaunch's opt-in preset
-    // layout below — this just remembers wherever the user last left it.
+    // last saved frame, then keeps saving on every resize/move with no
+    // further code. Standalone from applyOnLaunch's opt-in preset layout
+    // below — this just remembers wherever the user last left it.
+    //
+    // setFrameAutosaveName only registers the name; it never reads the saved
+    // frame back, so on its own the window kept whatever size SwiftUI's own
+    // restoration guessed and then overwrote the saved entry with it. The
+    // explicit setFrameUsingName is what actually restores, and it has to run
+    // first so assigning the name can't clobber the value we're about to read.
     static func installFrameAutosave(on window: NSWindow) {
+        window.setFrameUsingName("BrowserWindow")
         window.setFrameAutosaveName("BrowserWindow")
     }
 
