@@ -2005,12 +2005,9 @@ class WebViewContainer: NSView {
 
     isolated deinit {
         if let monitor = clickMonitor { NSEvent.removeMonitor(monitor) }
-        // Subviews aren't removed on dealloc, so willRemoveSubview never runs for
-        // the panes still attached — an unregistered observer would crash later.
-        for webView in observedWebViews {
-            webView.removeObserver(self, forKeyPath: "estimatedProgress")
-            webView.removeObserver(self, forKeyPath: #keyPath(WKWebView.url))
-        }
+        // No KVO teardown here: NSView's own dealloc removes every subview, which
+        // runs willRemoveSubview for each attached pane. Unregistering here too
+        // made that second pass throw ("not registered as an observer").
     }
 
     override func setFrameSize(_ newSize: NSSize) {

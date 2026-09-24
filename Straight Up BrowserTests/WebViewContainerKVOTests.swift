@@ -18,4 +18,18 @@ struct WebViewContainerKVOTests {
         }
         #expect(webView.superview == nil)
     }
+
+    // NSView's dealloc removes the still-attached panes itself, so teardown must
+    // not unregister them a second time on the way out.
+    @Test func teardownWithPanesStillAttachedIsBalanced() async {
+        let webView = WKWebView()
+        do {
+            let container = WebViewContainer(webViewManager: nil, coordinator: nil)
+            container.addSubview(webView)
+        }
+        // isolated deinit hops to the executor, so dealloc lands a turn later —
+        // and the double unregistration it used to do threw from in there.
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(webView.superview == nil)
+    }
 }
