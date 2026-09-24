@@ -1847,6 +1847,11 @@ class WebViewContainer: NSView {
     // The one-time setup for a webview joining this container (delegates + KVO,
     // balanced in willRemoveSubview). Frames are owned by layoutPanes.
     private func attach(_ webView: WKWebView) {
+        // While an element is full screen WebKit owns the view: it lives in its
+        // own full-screen window on another Space and comes back here on exit.
+        // Adding it as a subview yanks it out of there mid-playback — the video
+        // drops back into the tab and the full-screen Space is left empty.
+        guard webView.fullscreenState == .notInFullscreen else { return }
         guard webView.superview !== self else { return }
         webView.autoresizingMask = []
         webView.wantsLayer = true
@@ -1897,6 +1902,8 @@ class WebViewContainer: NSView {
         let b = bounds
         let focusedView = focusedTabId.flatMap { paneView(for: $0) }
         func place(_ view: NSView, in frame: NSRect) {
+            // A pane WebKit has borrowed for full screen isn't ours to size.
+            guard view.superview === self else { return }
             target(view).frame = frame
             if view === focusedView { target(focusOutline).frame = frame }
         }
@@ -2025,6 +2032,11 @@ class WebViewContainer: NSView {
             webView.addObserver(self, forKeyPath: "estimatedProgress", options: .new, context: nil)
             webView.addObserver(self, forKeyPath: #keyPath(WKWebView.url), options: .new, context: nil)
         }
+        // WebKit hands a full-screened pane back with whatever frame it left
+        // with, and nothing else asks for a layout on the way out of full
+        // screen. Mid-attach this no-ops: layoutPanes bails until every pane
+        // of the current split is present.
+        if subview is WKWebView { layoutPanes() }
     }
 
     override func willRemoveSubview(_ subview: NSView) {
