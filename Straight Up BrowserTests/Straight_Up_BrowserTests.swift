@@ -2614,3 +2614,35 @@ struct TabProcessMetricsTests {
 
     }
 }
+
+@Suite("Saved window frame")
+struct SavedWindowFrameTests {
+    // A 1920x1050 visible area, origin at 0,0.
+    private let visible = NSRect(x: 0, y: 0, width: 1920, height: 1050)
+
+    @Test func keepsAFrameThatAlreadyFits() {
+        let rect = NSRect(x: 1280, y: 0, width: 640, height: 1050)
+        #expect(WindowLayout.clamped(rect, into: visible) == rect)
+    }
+
+    @Test func shrinksAFrameSavedOnALargerDisplay() {
+        let rect = NSRect(x: 0, y: 0, width: 3840, height: 2160)
+        #expect(WindowLayout.clamped(rect, into: visible) == visible)
+    }
+
+    @Test func slidesAnOffscreenFrameBackOntoTheScreen() {
+        let rect = NSRect(x: 2600, y: -400, width: 800, height: 600)
+        let result = WindowLayout.clamped(rect, into: visible)
+        #expect(result.size == rect.size)
+        #expect(visible.contains(result))
+    }
+
+    @Test func respectsAVisibleAreaThatDoesNotStartAtZero() {
+        // Second display to the right, menu bar inset at the top.
+        let secondary = NSRect(x: 1920, y: 25, width: 1440, height: 875)
+        let rect = NSRect(x: 0, y: 0, width: 400, height: 300)
+        let result = WindowLayout.clamped(rect, into: secondary)
+        #expect(result.origin == NSPoint(x: 1920, y: 25))
+        #expect(secondary.contains(result))
+    }
+}

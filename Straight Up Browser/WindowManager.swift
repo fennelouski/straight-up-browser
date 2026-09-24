@@ -29,6 +29,7 @@ struct WindowChrome: NSViewRepresentable {
         // NSObjectProtocol token there — otherwise every write stays MainActor.
         nonisolated(unsafe) private var defaultsObserver: NSObjectProtocol?
         nonisolated(unsafe) private var resizeObserver: NSObjectProtocol?
+        nonisolated(unsafe) private var moveObserver: NSObjectProtocol?
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -60,20 +61,37 @@ struct WindowChrome: NSViewRepresentable {
             }
             // A non-opaque window's shadow is traced from its actually-drawn
             // pixels, and AppKit doesn't always re-trace it on its own mid-drag.
+            // Doubles as the frame-save hook — see WindowLayout.restoreFrame.
             if resizeObserver == nil {
                 resizeObserver = NotificationCenter.default.addMainActorObserver(
                     forName: NSWindow.didResizeNotification, object: window, queue: .main
                 ) { [weak window] _ in
                     window?.invalidateShadow()
+                    if let window { WindowLayout.saveFrame(window) }
+                }
+            }
+            if moveObserver == nil {
+                moveObserver = NotificationCenter.default.addMainActorObserver(
+                    forName: NSWindow.didMoveNotification, object: window, queue: .main
+                ) { [weak window] _ in
+                    if let window { WindowLayout.saveFrame(window) }
                 }
             }
 
             // SwiftUI restores the saved frame after this runs, so claim the
             // launch position on the next turn of the run loop or it's lost.
+            //
+            // Do NOT touch window.frameAutosaveName here. SwiftUI's WindowGroup
+            // owns the frame: it saves under "NSWindow Frame browser-AppWindow-1"
+            // and its restore only lands if the window still carries that
+            // autosave name. Renaming it to a custom name left saving intact but
+            // silently killed restoring, so every launch fell back to
+            // .defaultSize — measured 2026-09-24: saved 960x1050, restored
+            // 1200x800.
             DispatchQueue.main.async {
                 // SwiftUI's plain style also clears resizing during setup.
                 window.styleMask.insert(.resizable)
-                WindowLayout.installFrameAutosave(on: window)
+                WindowLayout.restoreFrame(window)
                 WindowLayout.applyOnLaunch(to: window)
                 window.makeKeyAndOrderFront(nil)
             }
@@ -82,6 +100,7 @@ struct WindowChrome: NSViewRepresentable {
         deinit {
             if let defaultsObserver { NotificationCenter.default.removeObserver(defaultsObserver) }
             if let resizeObserver { NotificationCenter.default.removeObserver(resizeObserver) }
+            if let moveObserver { NotificationCenter.default.removeObserver(moveObserver) }
         }
     }
 }
@@ -148,19 +167,49 @@ enum WindowLayout {
                      position: d.string(forKey: Key.position) ?? "center")
     }
 
-    // Binds the window to AppKit's built-in frame autosave: restores the
-    // last saved frame, then keeps saving on every resize/move with no
-    // further code. Standalone from applyOnLaunch's opt-in preset layout
-    // below — this just remembers wherever the user last left it.
+    // Remembering where the user left the window.
     //
-    // setFrameAutosaveName only registers the name; it never reads the saved
-    // frame back, so on its own the window kept whatever size SwiftUI's own
-    // restoration guessed and then overwrote the saved entry with it. The
-    // explicit setFrameUsingName is what actually restores, and it has to run
-    // first so assigning the name can't clobber the value we're about to read.
-    static func installFrameAutosave(on window: NSWindow) {
-        window.setFrameUsingName("BrowserWindow")
-        window.setFrameAutosaveName("BrowserWindow")
+    // This is done by hand rather than with NSWindow's frame autosave because
+    // neither mechanism available here actually works on this window:
+    // setFrameAutosaveName("…") reports success and then persists nothing (no
+    // such key is ever written), and SwiftUI's own WindowGroup persistence
+    // saves the frame correctly but restores only the origin — .defaultSize
+    // wins over the saved size on every launch. Measured 2026-09-24: saved
+    // 960x1050, restored 1200x800. Saving explicitly on move/resize and
+    // re-applying after SwiftUI has finished laying out is the one path that
+    // survives both.
+    private static let frameKey = "browserWindowFrame"
+
+    static func saveFrame(_ window: NSWindow) {
+        // Full screen / miniaturised frames aren't where the user "left" it.
+        guard !window.isMiniaturized, !window.styleMask.contains(.fullScreen) else { return }
+        UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: frameKey)
+    }
+
+    static func restoreFrame(_ window: NSWindow) {
+        guard let saved = UserDefaults.standard.string(forKey: frameKey) else { return }
+        let rect = NSRectFromString(saved)
+        guard rect.width > 0, rect.height > 0 else { return }
+        // The frame may come from a machine or display that no longer exists
+        // (this store syncs across Macs), so clamp it back onto a real screen
+        // instead of opening a window that is offscreen or larger than the
+        // display. ponytail: clamps to whichever screen it most overlaps.
+        let screen = NSScreen.screens.max { a, b in
+            a.visibleFrame.intersection(rect).area < b.visibleFrame.intersection(rect).area
+        } ?? NSScreen.main
+        guard let visible = screen?.visibleFrame else { return }
+        window.setFrame(clamped(rect, into: visible), display: true)
+    }
+
+    /// Shrinks `rect` to fit `visible` and slides it back inside that screen,
+    /// keeping the size the user chose wherever it still fits.
+    static func clamped(_ rect: NSRect, into visible: NSRect) -> NSRect {
+        var target = rect
+        target.size.width = min(target.width, visible.width)
+        target.size.height = min(target.height, visible.height)
+        target.origin.x = min(max(target.minX, visible.minX), visible.maxX - target.width)
+        target.origin.y = min(max(target.minY, visible.minY), visible.maxY - target.height)
+        return target
     }
 
     // ponytail: once per app launch, not per window — a second ⌘N window
@@ -261,6 +310,8 @@ enum WindowLayout {
 }
 
 private extension NSRect {
+    var area: CGFloat { isNull ? 0 : width * height }
+
     func equalTo(_ other: NSRect, tolerance: CGFloat) -> Bool {
         abs(minX - other.minX) < tolerance && abs(minY - other.minY) < tolerance
             && abs(width - other.width) < tolerance && abs(height - other.height) < tolerance
