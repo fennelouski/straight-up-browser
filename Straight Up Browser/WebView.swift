@@ -1609,7 +1609,13 @@ class WebViewContainer: NSView {
     private weak var coordinator: WebView.Coordinator?
     private var focusedTabId: UUID?
     private var displayedTabIds: [UUID] = []
-    private var visibleWebViews: Set<WKWebView> = []
+    // Web views we hold KVO registrations on. Not the same as "our subviews":
+    // WebKit's element-fullscreen controller reparents the web view into its own
+    // full-screen window and hands it back on exit, without going through
+    // attach() either way. Registration therefore hangs off didAddSubview /
+    // willRemoveSubview, and this set keeps both sides balanced — removing an
+    // observer twice is a hard crash (enter fullscreen, Escape, enter again).
+    private var observedWebViews: Set<WKWebView> = []
     // Workspace document panes displayed beside (or instead of) web views
     // (ADR 0008). The provider decides which pane ids are documents; it must be
     // consulted BEFORE getWebView, which creates a web view as a side effect.
@@ -1780,11 +1786,12 @@ class WebViewContainer: NSView {
         let focusedIsDocument = focusedTabId.map { documentPaneProvider?($0) != nil } ?? false
         webViewManager?.setActiveTab(focusedIsDocument ? nil : focusedTabId)
 
-        // Hide all currently visible panes
-        for webView in visibleWebViews {
+        // Hide all currently visible panes. Read the hierarchy rather than a
+        // tracked set: WebKit takes the web view away for fullscreen and puts it
+        // back on its own, so a set would go stale and strand a page on screen.
+        for case let webView as WKWebView in subviews {
             webView.isHidden = true
         }
-        visibleWebViews.removeAll()
         for documentView in visibleDocumentViews {
             documentView.isHidden = true
         }
@@ -1806,7 +1813,6 @@ class WebViewContainer: NSView {
             let webView = webViewManager.getWebView(for: id)
             attach(webView)
             webView.isHidden = false
-            visibleWebViews.insert(webView)
 
             // Ensure WebView can accept user interactions
             webView.allowsBackForwardNavigationGestures = true
@@ -1849,16 +1855,7 @@ class WebViewContainer: NSView {
         webView.navigationDelegate = coordinator
         webView.uiDelegate = coordinator
 
-        // Observe real load progress; removed in willRemoveSubview
-        webView.addObserver(self, forKeyPath: "estimatedProgress", options: .new, context: nil)
-
-        // Observe the page rewriting its own URL (history.pushState/
-        // replaceState, hash jumps) - none of those fire a navigation
-        // delegate callback, so this is the only signal. The Obj-C
-        // keypath is "URL", not "url" - #keyPath gets it right.
-        webView.addObserver(self, forKeyPath: #keyPath(WKWebView.url), options: .new, context: nil)
-
-        self.addSubview(webView)
+        self.addSubview(webView) // KVO is set up in didAddSubview
     }
 
     // MARK: - Pane layout
@@ -2008,6 +2005,12 @@ class WebViewContainer: NSView {
 
     isolated deinit {
         if let monitor = clickMonitor { NSEvent.removeMonitor(monitor) }
+        // Subviews aren't removed on dealloc, so willRemoveSubview never runs for
+        // the panes still attached — an unregistered observer would crash later.
+        for webView in observedWebViews {
+            webView.removeObserver(self, forKeyPath: "estimatedProgress")
+            webView.removeObserver(self, forKeyPath: #keyPath(WKWebView.url))
+        }
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -2015,11 +2018,22 @@ class WebViewContainer: NSView {
         layoutPanes()
     }
 
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        // Observe real load progress, and the page rewriting its own URL
+        // (history.pushState/replaceState, hash jumps) - none of those fire a
+        // navigation delegate callback, so KVO is the only signal. The Obj-C
+        // keypath is "URL", not "url" - #keyPath gets it right.
+        if let webView = subview as? WKWebView, observedWebViews.insert(webView).inserted {
+            webView.addObserver(self, forKeyPath: "estimatedProgress", options: .new, context: nil)
+            webView.addObserver(self, forKeyPath: #keyPath(WKWebView.url), options: .new, context: nil)
+        }
+    }
+
     override func willRemoveSubview(_ subview: NSView) {
-        if let webView = subview as? WKWebView {
+        if let webView = subview as? WKWebView, observedWebViews.remove(webView) != nil {
             webView.removeObserver(self, forKeyPath: "estimatedProgress")
             webView.removeObserver(self, forKeyPath: #keyPath(WKWebView.url))
-            visibleWebViews.remove(webView)
         }
         super.willRemoveSubview(subview)
     }
