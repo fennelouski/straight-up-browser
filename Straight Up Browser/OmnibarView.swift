@@ -166,6 +166,8 @@ struct OmnibarTextField: NSViewRepresentable {
     var shouldFocus: Bool = false
     var onArrowUp: (() -> Void)?
     var onArrowDown: (() -> Void)?
+    var onTab: (() -> Void)?
+    var onBacktab: (() -> Void)?
     var onCommit: ((OmnibarCommit) -> Void)?
     var onCancel: (() -> Void)?
     func makeNSView(context: Context) -> NSTextField {
@@ -320,6 +322,14 @@ struct OmnibarTextField: NSViewRepresentable {
             case #selector(NSResponder.moveDown(_:)):
                 parent.onArrowDown?()
                 return true
+            case #selector(NSResponder.insertTab(_:)):
+                guard let onTab = parent.onTab else { return false }
+                onTab()
+                return true
+            case #selector(NSResponder.insertBacktab(_:)):
+                guard let onBacktab = parent.onBacktab else { return false }
+                onBacktab()
+                return true
             case #selector(NSResponder.insertNewline(_:)):
                 let shift = NSApp.currentEvent?.modifierFlags.contains(.shift) == true
                 parent.onCommit?(shift ? .newTab : .navigate)
@@ -445,8 +455,20 @@ struct OmnibarView: View {
         if readyURL != Prefetcher.shared.readyURL { readyURL = Prefetcher.shared.readyURL }
     }
 
+    @State private var isCompleting = false
+
     private var selectedSuggestion: Suggestion? {
         selection.selected(in: filteredSuggestions)
+    }
+
+    /// Tab fills the field with the next suggestion's URL, leaving it editable.
+    private func complete(_ direction: Int) {
+        let suggestions = filteredSuggestions
+        guard !suggestions.isEmpty else { return }
+        selection.cycle(direction, in: suggestions)
+        guard let url = selection.selected(in: suggestions)?.url.absoluteString else { return }
+        isCompleting = true
+        inputText = url
     }
 
     private func toggleHistory() {
@@ -500,12 +522,15 @@ struct OmnibarView: View {
                     shouldFocus: shouldFocusTextField,
                     onArrowUp: { selection.move(-1, in: filteredSuggestions) },
                     onArrowDown: { selection.move(1, in: filteredSuggestions) },
+                    onTab: { complete(1) },
+                    onBacktab: { complete(-1) },
                     onCommit: { commit($0) },
                     onCancel: { isPresented = false }
                 )
                 .padding(.vertical, 12)
                 .padding(.horizontal, 8)
                 .onChange(of: inputText) { _, _ in
+                    if isCompleting { isCompleting = false; return }
                     selection = OmnibarSelection()
                     requestSuggestions()
                 }
@@ -819,6 +844,18 @@ struct OmnibarSelection {
 
     func selected(in suggestions: [Suggestion]) -> Suggestion? {
         suggestions.first { $0.id == id }
+    }
+
+    /// Tab completion wraps instead of falling off the top, so repeated Tab
+    /// walks the whole list forever and Shift+Tab loops back round to the end.
+    mutating func cycle(_ direction: Int, in suggestions: [Suggestion]) {
+        guard !suggestions.isEmpty else { return }
+        guard let current = suggestions.firstIndex(where: { $0.id == id }) else {
+            id = suggestions[direction > 0 ? 0 : suggestions.count - 1].id
+            return
+        }
+        let next = (current + direction + suggestions.count) % suggestions.count
+        id = suggestions[next].id
     }
 
     mutating func move(_ direction: Int, in suggestions: [Suggestion]) {

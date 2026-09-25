@@ -103,6 +103,52 @@ struct OmnibarEditingTests {
         #expect(selection.selected(in: [first, second]) == nil)
     }
 
+    @Test func tabCyclesSuggestionsAndWrapsInBothDirections() {
+        let first = Suggestion(url: URL(string: "https://one.example")!, type: .site)
+        let second = Suggestion(url: URL(string: "https://two.example")!, type: .history)
+        let rows = [first, second]
+        var selection = OmnibarSelection()
+
+        selection.cycle(1, in: rows)
+        #expect(selection.selected(in: rows) == first, "Tab from nothing takes the first suggestion")
+        selection.cycle(1, in: rows)
+        #expect(selection.selected(in: rows) == second)
+        selection.cycle(1, in: rows)
+        #expect(selection.selected(in: rows) == first, "Tab past the end wraps to the top")
+        selection.cycle(-1, in: rows)
+        #expect(selection.selected(in: rows) == second, "Shift+Tab past the top wraps to the end")
+
+        var fromEmpty = OmnibarSelection()
+        fromEmpty.cycle(-1, in: rows)
+        #expect(fromEmpty.selected(in: rows) == second, "Shift+Tab from nothing takes the last suggestion")
+
+        var noRows = OmnibarSelection()
+        noRows.cycle(1, in: [])
+        #expect(noRows.selected(in: rows) == nil)
+    }
+
+    @Test func tabKeysReachTheOmnibarInsteadOfTheKeyViewLoop() {
+        var text = ""
+        var forward = 0
+        var backward = 0
+        let field = OmnibarTextField(text: Binding(get: { text }, set: { text = $0 }), placeholder: "",
+                                     onTab: { forward += 1 }, onBacktab: { backward += 1 })
+        let coordinator = field.makeCoordinator()
+        let native = NSTextField()
+        let editor = NSTextView()
+        #expect(coordinator.control(native, textView: editor,
+                                    doCommandBy: #selector(NSResponder.insertTab(_:))))
+        #expect(coordinator.control(native, textView: editor,
+                                    doCommandBy: #selector(NSResponder.insertBacktab(_:))))
+        #expect(forward == 1)
+        #expect(backward == 1)
+
+        // A field with no completion handler must still tab between controls.
+        let plain = OmnibarTextField(text: Binding(get: { text }, set: { text = $0 }), placeholder: "")
+        #expect(!plain.makeCoordinator().control(native, textView: editor,
+                                                 doCommandBy: #selector(NSResponder.insertTab(_:))))
+    }
+
     @Test func backgroundCompletionWaitsWhilePointerIsOverSuggestions() async throws {
         let updates = OmnibarSuggestionUpdates()
         let suggestion = Suggestion(url: URL(string: "https://example.com")!, type: .site)
