@@ -119,8 +119,15 @@ struct AdaptiveTabRail_iOS: View {
     private func rail(for placement: TabRailPlacement_iOS) -> some View {
         if placement.isHorizontal {
             HStack(spacing: 3) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 3) { tabItems }
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: 3) { tabItems }
+                    }
+                    .task(id: tabs.first(where: { $0.id == selectedTabId })?.id) {
+                        await Task.yield()
+                        guard !Task.isCancelled, let selectedTabId else { return }
+                        proxy.scrollTo(selectedTabId, anchor: .center)
+                    }
                 }
                 newTabButton
             }
@@ -130,8 +137,15 @@ struct AdaptiveTabRail_iOS: View {
             .frame(maxWidth: .infinity)
         } else {
             VStack(spacing: 3) {
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 3) { tabItems }
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        LazyVStack(spacing: 3) { tabItems }
+                    }
+                    .task(id: tabs.first(where: { $0.id == selectedTabId })?.id) {
+                        await Task.yield()
+                        guard !Task.isCancelled, let selectedTabId else { return }
+                        proxy.scrollTo(selectedTabId, anchor: .center)
+                    }
                 }
                 newTabButton
             }
@@ -163,6 +177,7 @@ struct AdaptiveTabRail_iOS: View {
                     in: RoundedRectangle(cornerRadius: 9)
                 )
             }
+            .id(tab.id)
             .buttonStyle(.plain)
             .accessibilityLabel(tab.title.isEmpty ? Tab.extractDomain(from: tab.url) : tab.title)
             .accessibilityValue(tab.id == selectedTabId ? "Selected" : "")

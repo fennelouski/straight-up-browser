@@ -10,15 +10,15 @@
 
 import SwiftUI
 
-enum SuggestionType {
+nonisolated enum SuggestionType: Sendable {
     case history
     case bookmark
     /// "said at 6:57 in <video>" — cross-transcript recall (Phase 2, design §8.3).
     case transcript
 }
 
-struct Suggestion: Identifiable {
-    let id = UUID()
+nonisolated struct Suggestion: Identifiable, Sendable {
+    var id: String { "\(type):\(url.absoluteString)" }
     let url: URL
     let title: String?
     let type: SuggestionType
@@ -57,17 +57,13 @@ enum OmnibarInput {
 
 // Ranked history + bookmark matches for the current omnibar text (ported from
 // the Mac OmnibarView.filteredSuggestions).
-func omnibarSuggestions(
+@concurrent func omnibarSuggestions(
     input: String,
-    tabs: [Tab],
+    tabHistory: [[String]],
     bookmarks: [(title: String, url: URL)],
-    durableHistory: [URL] = [],
-    /// Looks a URL up in the research ledger. Nil result = never seen.
-    ledgerNote: ((URL) -> String?)? = nil,
-    /// Cross-transcript search rows, appended below the ranked list (at most 2)
-    /// so they never displace a URL being typed toward.
-    transcriptHits: ((String) -> [Suggestion])? = nil
-) -> [Suggestion] {
+    durableHistory: [HistoryVisit] = []
+) async -> [Suggestion] {
+    assert(!Thread.isMainThread)
     let lowercased = input.lowercased()
     guard !lowercased.isEmpty else { return [] }
 
@@ -78,8 +74,11 @@ func omnibarSuggestions(
     }.map { Suggestion(url: $0.url, title: $0.title, type: .bookmark) }
 
     let bookmarkedURLs = Set(bookmarks.map { $0.url.absoluteString })
-    var historyURLs = Set(durableHistory)
-    for tab in tabs { historyURLs.formUnion(tab.history) }
+    var historyURLs = Set(durableHistory.map(\.url))
+    for history in tabHistory {
+        guard !Task.isCancelled else { return [] }
+        historyURLs.formUnion(history.compactMap(URL.init(string:)))
+    }
     let matchingHistory = historyURLs.filter { url in
         !bookmarkedURLs.contains(url.absoluteString)
             && (url.absoluteString.lowercased().contains(lowercased)
@@ -94,17 +93,10 @@ func omnibarSuggestions(
         let aStarts = aStr.hasPrefix(lowercased) || (a.url.host?.lowercased().hasPrefix(lowercased) ?? false)
         let bStarts = bStr.hasPrefix(lowercased) || (b.url.host?.lowercased().hasPrefix(lowercased) ?? false)
         if aStarts != bStarts { return aStarts }
-        return aStr.count < bStr.count
+        return aStr.count != bStr.count ? aStr.count < bStr.count : aStr < bStr
     }.prefix(8))
 
-    let transcriptRows = transcriptHits?(input) ?? []
-    // One decoration point, so no suggestion source can forget it.
-    guard let ledgerNote else { return ranked + transcriptRows }
-    return ranked.map { suggestion in
-        var decorated = suggestion
-        decorated.ledgerNote = ledgerNote(suggestion.url)
-        return decorated
-    } + transcriptRows
+    return Task.isCancelled ? [] : ranked
 }
 
 // The dropdown under the omnibar field. Selection is keyboard-navigable

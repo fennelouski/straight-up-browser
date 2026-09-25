@@ -38,6 +38,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             || environment["XCInjectBundleInto"] != nil
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        Task {
+            await BrowsingHistoryStore.shared.flush()
+            await DownloadManager.shared.flush()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         #if DEBUG
         ShortcutStore.selfCheck()

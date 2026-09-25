@@ -113,7 +113,7 @@ final class DocumentEditSession: ObservableObject {
             _ = await file.saveFile()
             // A save can surface iCloud versions that raced ours.
             if let url = file.presentedURL, let row = store?.document(id: documentId) {
-                store?.resolveVersionConflicts(at: url, displayName: row.displayName)
+                await store?.resolveVersionConflicts(at: url, displayName: row.displayName)
             }
         }
         ledgerStore.reconcileEdges(documentId: documentId, occurrences: result.occurrences)
@@ -142,7 +142,7 @@ final class DocumentEditSession: ObservableObject {
                 // Keep the user's buffer; today's disk bytes become a sibling,
                 // then our save wins the path. Never silently drop either.
                 if let row = self.store?.document(id: self.documentId) {
-                    self.store?.preserveDiskVersionAsSibling(for: row)
+                    await self.store?.preserveDiskVersionAsSibling(for: row)
                 }
                 await self.saveNow()
             } else {

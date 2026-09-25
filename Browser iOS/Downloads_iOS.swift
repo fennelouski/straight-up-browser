@@ -5,9 +5,10 @@ struct Downloads_iOS: View {
     @ObservedObject private var manager = DownloadManager.shared
     @State private var showClearConfirmation = false
 
-    private var completedDownloads: [FileRecord] {
-        manager.records.filter { $0.kind == .download }
-    }
+    @State private var completedDownloads: [FileRecord] = []
+    @State private var fileExists: [UUID: Bool] = [:]
+    @State private var metadataGeneration = 0
+    @State private var metadataLoader = FileMetadataLoader()
 
     var body: some View {
         NavigationStack {
@@ -37,6 +38,7 @@ struct Downloads_iOS: View {
                             }
                         }
                     }
+                    .refreshable { refresh() }
                 }
             }
             .navigationTitle("Downloads")
@@ -55,20 +57,29 @@ struct Downloads_iOS: View {
                 }
             }
         }
+        .onAppear(perform: refresh)
+        .onChange(of: manager.records, initial: true) { _, records in
+            completedDownloads = records.filter { $0.kind == .download }
+            let ids = Set(completedDownloads.map(\.id))
+            fileExists = fileExists.filter { ids.contains($0.key) }
+        }
         .confirmationDialog(
             "Clear download history?",
             isPresented: $showClearConfirmation,
             titleVisibility: .visible
         ) {
             Button("Clear History", role: .destructive) {
-                for record in completedDownloads {
-                    manager.remove(record)
-                }
+                manager.clear(kind: .download)
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Downloaded files remain in the app’s Downloads folder.")
         }
+    }
+
+    private func refresh() {
+        fileExists.removeAll()
+        metadataGeneration += 1
     }
 
     private func activeRow(_ transfer: ActiveDownload) -> some View {
@@ -129,15 +140,24 @@ struct Downloads_iOS: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            if FileManager.default.fileExists(atPath: record.path) {
+            if fileExists[record.id] == true {
                 ShareLink(item: record.url) {
                     Image(systemName: "square.and.arrow.up")
                 }
                 .accessibilityLabel("Share \(record.name)")
-            } else {
+            } else if fileExists[record.id] == false {
                 Text("Missing")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+        }
+        .task(id: metadataGeneration) {
+            guard fileExists[record.id] == nil else { return }
+            let generation = metadataGeneration
+            if let result = try? await metadataLoader.exists(record.url),
+               !Task.isCancelled, generation == metadataGeneration,
+               manager.records.contains(where: { $0.id == record.id }) {
+                fileExists[record.id] = result
             }
         }
         .swipeActions {

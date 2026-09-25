@@ -743,16 +743,11 @@ struct WebView: NSViewRepresentable {
                     return
                 }
 
-                // Cmd+click: open in a new tab (background; add Shift to focus it)
+                // Cmd+click opens and selects a tab immediately beside its source.
                 if mods.contains(.command) {
-                    let context = parent.webViewManager?.tabId(for: webView)
-                        .flatMap { id in tabs?.first(where: { $0.id == id })?.browsingContext }
-                        ?? .normalWebKit
-                    _ = tabManager?.createTab(
-                        inheriting: context,
-                        url: url,
-                        select: mods.contains(.shift)
-                    )
+                    let source = parent.webViewManager?.tabId(for: webView)
+                        .flatMap { id in tabs?.first(where: { $0.id == id }) }
+                    tabManager?.openLinkInNewTab(url, from: source)
                     decisionHandler(.cancel, preferences)
                     return
                 }
@@ -1170,7 +1165,8 @@ struct WebView: NSViewRepresentable {
             // joins the opener in a split: a popup that hides the page that opened it
             // reads as "nothing happened", so opener and popup both stay on screen.
             let isPopup = navigationAction.navigationType != .linkActivated
-            let newTab = tabManager.createTab(inheriting: openerContext, select: false)
+            let source = sourceTabId.flatMap { id in tabs?.first(where: { $0.id == id }) }
+            let newTab = tabManager.createTab(inheriting: openerContext, select: false, after: source)
             webViewManager.adoptWebView(
                 popupWebView,
                 for: newTab.id,
@@ -1215,6 +1211,12 @@ struct WebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, willOpenMenu menu: NSMenu, with event: NSEvent) {
             for item in menu.items where item.title == "Open Link in New Window" {
                 item.title = "Open Link in New Tab"
+                if let url = parent.webViewManager?.contextMenuLink(for: webView) {
+                    contextMenuWebView = webView
+                    item.target = self
+                    item.action = #selector(openContextLinkInNewTab(_:))
+                    item.representedObject = url
+                }
             }
 
             if parent.webViewManager?.contextMenuIsCredentialField(for: webView) == true,
@@ -1301,6 +1303,14 @@ struct WebView: NSViewRepresentable {
 
         @objc private func anchorSelectionFromContextMenu(_ sender: NSMenuItem) {
             NotificationCenter.default.post(name: .browserAnchorSelection, object: nil)
+        }
+
+        @objc private func openContextLinkInNewTab(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL, let webView = contextMenuWebView else { return }
+            if handleExternalScheme(url, from: webView) { return }
+            let source = parent.webViewManager?.tabId(for: webView)
+                .flatMap { id in tabs?.first(where: { $0.id == id }) }
+            tabManager?.openLinkInNewTab(url, from: source)
         }
 
         @objc private func addContextLinkToNewspaper(_ sender: NSMenuItem) {

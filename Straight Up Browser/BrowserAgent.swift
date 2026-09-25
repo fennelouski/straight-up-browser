@@ -887,7 +887,7 @@ private struct AgentStatusShimmerModifier: ViewModifier {
 
 @MainActor
 enum AgentRunStoreRegistry {
-    private static var stores: [String: AgentRunStore] = [:]
+    private static var stores: [String: Task<AgentRunStore, Error>] = [:]
     // The in-flight (or finished) recovery per store. It has to be the task
     // rather than a "done" flag: recovery ends by deleting every conversation
     // that has no runs yet, and a second caller that skipped ahead instead of
@@ -896,12 +896,21 @@ enum AgentRunStoreRegistry {
     // found". Submitting a prompt straight after launch did exactly that.
     private static var recoveries: [ObjectIdentifier: Task<Void, Error>] = [:]
 
-    static func store(baseDirectory: URL) throws -> AgentRunStore {
+    static func store(baseDirectory: URL) async throws -> AgentRunStore {
         let key = baseDirectory.standardizedFileURL.path
-        if let existing = stores[key] { return existing }
-        let created = try AgentRunStore(baseDirectory: baseDirectory)
-        stores[key] = created
-        return created
+        if let existing = stores[key] { return try await existing.value }
+        let loading = Task { try await load(baseDirectory: baseDirectory) }
+        stores[key] = loading
+        do { return try await loading.value }
+        catch {
+            stores.removeValue(forKey: key)
+            throw error
+        }
+    }
+
+    @concurrent private static func load(baseDirectory: URL) async throws -> AgentRunStore {
+        assert(!Thread.isMainThread)
+        return try AgentRunStore(baseDirectory: baseDirectory)
     }
 
     static func recoverIfNeeded(
@@ -1694,7 +1703,10 @@ final class BrowserAgent: ObservableObject {
         UUID: CheckedContinuation<AgentApprovalGrant?, Never>
     ] = [:]
     private var activeRunGroupRuntime: ActiveRunGroupRuntime?
-    private let runStore: AgentRunStore?
+    private let runStoreTask: Task<AgentRunStore, Error>
+    private var runStore: AgentRunStore? {
+        get async { try? await runStoreTask.value }
+    }
     private let storageDirectory: URL
     private let providerAdapterFactory: (@Sendable (BrowserAgentConfiguration) throws -> any AgentProviderAdapter)?
     private var storeInitializationError: Error?
@@ -1706,16 +1718,9 @@ final class BrowserAgent: ObservableObject {
     ) {
         self.storageDirectory = storageDirectory
         self.providerAdapterFactory = providerAdapterFactory
-        if let runStore {
-            self.runStore = runStore
-        } else {
-            do {
-                self.runStore = try AgentRunStoreRegistry.store(baseDirectory: storageDirectory)
-            } catch {
-                self.runStore = nil
-                storeInitializationError = error
-                historyError = error.localizedDescription
-            }
+        runStoreTask = Task {
+            if let runStore { return runStore }
+            return try await AgentRunStoreRegistry.store(baseDirectory: storageDirectory)
         }
         Task { [weak self] in
             guard let self else { return }
@@ -1781,7 +1786,7 @@ final class BrowserAgent: ObservableObject {
         guard !isRunning,
               let source = messages.first(where: { $0.id == messageID && $0.role == .assistant }),
               !source.text.isEmpty,
-              let runStore else { return false }
+              let runStore = await runStore else { return false }
         do {
             await refreshHistory()
             let existingTarget = conversations
@@ -1980,7 +1985,7 @@ final class BrowserAgent: ObservableObject {
             _ authorizedPageBindings: [BrowserAutomationPageDispatchBinding]
         ) async -> String
     ) async {
-        guard let runStore else {
+        guard let runStore = await runStore else {
             let detail = storeInitializationError?.localizedDescription ?? "The durable run store is unavailable."
             messages.append(BrowserAgentMessage(role: .error, text: detail))
             finishLiveRun()
@@ -3027,7 +3032,7 @@ final class BrowserAgent: ObservableObject {
                     )
                 } else if name == ResearchRecall.toolName {
                     result = executionPermit.toolName == name
-                        ? ResearchRecall.shared.call(arguments: arguments)
+                        ? await ResearchRecall.shared.call(arguments: arguments)
                         : #"{"error":"The execution permit does not match this tool."}"#
                 } else if Self.memoryToolNames.contains(name) {
                     result = await AgentMemoryController.shared.call(
@@ -3257,7 +3262,7 @@ final class BrowserAgent: ObservableObject {
         case .admitted:
             return
         case .limited(let limit):
-            let store = try requireRunStore()
+            let store = try await requireRunStore()
             if let run = await store.run(id: runID) {
                 let evidence = limit.makeStep(sequence: run.nextSequence)
                 _ = try await store.appendStep(
@@ -3529,7 +3534,7 @@ final class BrowserAgent: ObservableObject {
         _ contract: AgentChildRunContract,
         runtime: ActiveRunGroupRuntime
     ) async {
-        guard let runStore else { return }
+        guard let runStore = await runStore else { return }
         let session = contract.authority.allowedBrowserSessions.sorted(
             by: { Self.sessionName($0) < Self.sessionName($1) }
         ).first ?? .normal
@@ -4588,7 +4593,7 @@ final class BrowserAgent: ObservableObject {
         let state = object["commitState"] as? String
         guard transactionID != nil || artifactIDString != nil else { return }
 
-        let runStore = try requireRunStore()
+        let runStore = try await requireRunStore()
         // A missing Run must never make artifact retention more permissive.
         let incognito = await runStore.run(id: runID)?.incognito ?? true
 
@@ -5104,7 +5109,7 @@ final class BrowserAgent: ObservableObject {
     }
 
     func refreshHistory() async {
-        guard let runStore else { return }
+        guard let runStore = await runStore else { return }
         do {
             conversations = try await runStore.listConversations()
             if let selectedConversationID {
@@ -5125,7 +5130,7 @@ final class BrowserAgent: ObservableObject {
     }
 
     func openConversation(_ id: UUID) async {
-        guard !isRunning, let runStore else { return }
+        guard !isRunning, let runStore = await runStore else { return }
         do {
             let runs = await runStore.listRuns(matching: AgentRunQuery(conversationID: id))
             var projected: [BrowserAgentMessage] = []
@@ -5148,7 +5153,7 @@ final class BrowserAgent: ObservableObject {
     }
 
     func deleteConversation(_ id: UUID) async {
-        guard !isRunning, let runStore else { return }
+        guard !isRunning, let runStore = await runStore else { return }
         do {
             let runIDs = Set(await runStore.listRuns(matching: AgentRunQuery(
                 conversationID: id
@@ -5165,7 +5170,13 @@ final class BrowserAgent: ObservableObject {
     }
 
     private func prepareHistory() async {
-        guard let runStore else { return }
+        let runStore: AgentRunStore
+        do { runStore = try await runStoreTask.value }
+        catch {
+            storeInitializationError = error
+            historyError = error.localizedDescription
+            return
+        }
         do {
             try await AgentRunStoreRegistry.recoverIfNeeded(
                 runStore,
@@ -5189,7 +5200,7 @@ final class BrowserAgent: ObservableObject {
         conversationID: UUID,
         excludingRunID: UUID
     ) async throws -> [AgentModelMessage] {
-        guard let runStore else { return [] }
+        guard let runStore = await runStore else { return [] }
         let runs = await runStore.listRuns(matching: AgentRunQuery(
             conversationID: conversationID
         ))
@@ -5253,8 +5264,8 @@ final class BrowserAgent: ObservableObject {
         }
     }
 
-    private func requireRunStore() throws -> AgentRunStore {
-        guard let runStore else {
+    private func requireRunStore() async throws -> AgentRunStore {
+        guard let runStore = await runStore else {
             throw AgentError.configuration("The durable run store is unavailable.")
         }
         return runStore
@@ -7028,7 +7039,10 @@ final class BrowserAgentScheduler: ObservableObject {
     private let engine: AgentScheduledTaskEngine
     private let snapshotURL: URL
     private let legacyURL: URL
-    private let runStore: AgentRunStore?
+    private let runStoreTask: Task<AgentRunStore, Error>
+    private var runStore: AgentRunStore? {
+        get async { try? await runStoreTask.value }
+    }
     private var shouldRetireLegacyFile: Bool
     private var runningAgents: [UUID: BrowserAgent] = [:]
     private var runningOccurrences: [UUID: AgentTaskRunDirective] = [:]
@@ -7040,7 +7054,7 @@ final class BrowserAgentScheduler: ObservableObject {
         let directory = BrowserCLI.supportDirectory
         snapshotURL = directory.appendingPathComponent("agent/schedules.json")
         legacyURL = directory.appendingPathComponent("agent-tasks.json")
-        runStore = try? AgentRunStoreRegistry.store(baseDirectory: directory)
+        runStoreTask = Task { try await AgentRunStoreRegistry.store(baseDirectory: directory) }
         var snapshot: AgentTaskSchedulerSnapshot
         var legacyFileCanBeRetired = false
         let initialError: String?
@@ -7303,7 +7317,7 @@ final class BrowserAgentScheduler: ObservableObject {
 
     private func recoverOnLaunch() async {
         do {
-            if let runStore {
+            if let runStore = await runStore {
                 try await AgentRunStoreRegistry.recoverIfNeeded(
                     runStore,
                     baseDirectory: BrowserCLI.supportDirectory
@@ -7313,7 +7327,7 @@ final class BrowserAgentScheduler: ObservableObject {
                 at: Date(),
                 browserAvailability: browserAvailability
             )
-            if let runStore {
+            if let runStore = await runStore {
                 for runID in recovery.interruptedRunIDs {
                     guard let run = await runStore.run(id: runID), !run.status.isTerminal,
                           run.status != .interrupted else { continue }
@@ -7505,7 +7519,7 @@ final class BrowserAgentScheduler: ObservableObject {
         message: String
     ) async {
         let taskID = directive.definitionSnapshot.id
-        if let runStore {
+        if let runStore = await runStore {
             let values = directive.makeRun(
                 toolCatalogVersion: AgentToolCatalog.currentVersion
             )
@@ -7631,7 +7645,7 @@ final class BrowserAgentScheduler: ObservableObject {
     }
 
     private func recordBlocked(_ directive: AgentTaskRunDirective) async {
-        guard let runStore else { return }
+        guard let runStore = await runStore else { return }
         let values = directive.makeRun(toolCatalogVersion: AgentToolCatalog.currentVersion)
         do {
             _ = try await runStore.createRun(
@@ -7667,7 +7681,7 @@ final class BrowserAgentScheduler: ObservableObject {
     }
 
     private func applyRetention() async {
-        guard let runStore else { return }
+        guard let runStore = await runStore else { return }
         var changed = false
         for directive in await engine.retentionDirectives() {
             do {
@@ -9051,17 +9065,15 @@ private final class BrowserAgentTimelineStore: ObservableObject {
     @Published private(set) var errorMessage: String?
 
     private let baseDirectory: URL
-    private let runStore: AgentRunStore?
+    private let runStoreTask: Task<AgentRunStore, Error>
+    private var runStore: AgentRunStore? {
+        get async { try? await runStoreTask.value }
+    }
     private var artifactInputs: [AgentTimelineArtifactInput] = []
 
     init(baseDirectory: URL = BrowserCLI.supportDirectory) {
         self.baseDirectory = baseDirectory
-        do {
-            runStore = try AgentRunStoreRegistry.store(baseDirectory: baseDirectory)
-        } catch {
-            runStore = nil
-            errorMessage = error.localizedDescription
-        }
+        runStoreTask = Task { try await AgentRunStoreRegistry.store(baseDirectory: baseDirectory) }
     }
 
     var runsDirectory: URL {
@@ -9069,10 +9081,10 @@ private final class BrowserAgentTimelineStore: ObservableObject {
     }
 
     func reload() async {
-        guard let runStore else { return }
         isLoading = true
         defer { isLoading = false }
         do {
+            let runStore = try await runStoreTask.value
             try await AgentRunStoreRegistry.recoverIfNeeded(
                 runStore,
                 baseDirectory: baseDirectory
@@ -9091,7 +9103,7 @@ private final class BrowserAgentTimelineStore: ObservableObject {
     }
 
     func deleteRun(_ id: UUID) async {
-        guard let runStore else { return }
+        guard let runStore = await runStore else { return }
         do {
             try await BrowserAgentWorkspace.shared.removeTransactionWorkspaces(
                 for: [id]
@@ -9118,7 +9130,7 @@ private final class BrowserAgentTimelineStore: ObservableObject {
     }
 
     func exportDiagnostics(runID: UUID?) async throws -> Data {
-        guard let runStore else { throw TimelineUIError.storeUnavailable }
+        guard let runStore = await runStore else { throw TimelineUIError.storeUnavailable }
         let runs = await runStore.listRuns().filter { runID == nil || $0.id == runID }
         var steps: [UUID: [AgentStep]] = [:]
         for run in runs {

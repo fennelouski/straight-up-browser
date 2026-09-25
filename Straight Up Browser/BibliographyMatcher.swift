@@ -14,6 +14,7 @@
 
 import Foundation
 import NaturalLanguage
+import SwiftData
 
 // MARK: - Values
 
@@ -75,7 +76,11 @@ nonisolated struct LexicalPassageMatcher: PassageMatcher {
 
         // Document frequencies over the corpus.
         var documentFrequency: [String: Int] = [:]
-        let tokenized = passages.map { Set(Self.tokens($0.text)) }
+        var tokenized: [Set<String>] = []
+        for passage in passages {
+            guard !Task.isCancelled else { return [] }
+            tokenized.append(Set(Self.tokens(passage.text)))
+        }
         for passageTerms in tokenized {
             for term in passageTerms where queryTerms.contains(term) {
                 documentFrequency[term, default: 0] += 1
@@ -85,6 +90,7 @@ nonisolated struct LexicalPassageMatcher: PassageMatcher {
 
         var matches: [(match: PassageMatch, matched: Int)] = []
         for (index, passage) in passages.enumerated() {
+            guard !Task.isCancelled else { return [] }
             let passageTerms = tokenized[index]
             let matchedTerms = queryTerms.intersection(passageTerms)
             guard !matchedTerms.isEmpty else { continue }
@@ -181,39 +187,50 @@ enum BibliographyCorpus {
     /// The workspace's bibliography as passages: reader-extracted blocks plus
     /// windowed transcript segments. Dismissed sources are excluded; sources
     /// with no extracted text contribute nothing (open them once to fill in).
-    static func passages(workspaceId: UUID, ledgerStore: LedgerStore) -> [BibliographyPassage] {
-        passages(references: ledgerStore.references(workspaceId: workspaceId), ledgerStore: ledgerStore)
+    static func passages(workspaceId: UUID, ledgerStore: LedgerStore) async -> [BibliographyPassage] {
+        await load(workspaceId: workspaceId, container: ledgerStore.modelContainer)
     }
 
-    /// Every workspace at once — the agent's recall corpus.
-    static func passages(ledgerStore: LedgerStore) -> [BibliographyPassage] {
-        passages(references: ledgerStore.allReferences(), ledgerStore: ledgerStore)
+    static func passages(ledgerStore: LedgerStore) async -> [BibliographyPassage] {
+        await load(workspaceId: nil, container: ledgerStore.modelContainer)
     }
 
-    private static func passages(references: [WorkspaceSourceRef], ledgerStore: LedgerStore) -> [BibliographyPassage] {
+    // The context and all its models stay on this worker. In particular,
+    // reading externally stored payloads must not happen on the UI actor.
+    @concurrent private static func load(workspaceId: UUID?, container: ModelContainer) async -> [BibliographyPassage] {
+        assert(!Thread.isMainThread)
+        let context = ModelContext(container)
+        let descriptor: FetchDescriptor<WorkspaceSourceRef>
+        if let workspaceId {
+            descriptor = FetchDescriptor(predicate: #Predicate { $0.workspaceId == workspaceId })
+        } else { descriptor = FetchDescriptor() }
+        let references = (try? context.fetch(descriptor)) ?? []
+        let keys = Array(Set(references.filter { $0.disposition != .dismissed }.map(\.sourceKey)))
+        guard !keys.isEmpty, !Task.isCancelled else { return [] }
+        let transcripts = (try? context.fetch(FetchDescriptor<SourceTranscript>(
+            predicate: #Predicate { keys.contains($0.sourceKey) }))) ?? []
+        let byKey = Dictionary(transcripts.map { ($0.sourceKey, $0) }, uniquingKeysWith: { first, _ in first })
         var passages: [BibliographyPassage] = []
         var seenSourceIds: Set<UUID> = []
-        for ref in references where ref.disposition != .dismissed {
-            guard let article = ledgerStore.source(sourceKey: ref.sourceKey),
-                  seenSourceIds.insert(article.id).inserted else { continue }
-
+        try? context.enumerate(FetchDescriptor<NewspaperArticle>(
+            predicate: #Predicate { keys.contains($0.sourceKey) }), batchSize: 100) { article in
+            try Task.checkCancellation()
+            guard seenSourceIds.insert(article.id).inserted else { return }
             if let document = article.document {
                 for block in document.blocks {
                     let text = block.content.plainText.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard text.count >= minimumPassageCharacters else { continue }
                     passages.append(BibliographyPassage(
-                        id: "\(article.sourceKey)#\(block.id)",
-                        sourceId: article.id, sourceKey: article.sourceKey,
+                        id: "\(article.sourceKey)#\(block.id)", sourceId: article.id, sourceKey: article.sourceKey,
                         sourceTitle: article.title, sourceURL: article.url,
                         text: text, startSeconds: nil, endSeconds: nil))
                 }
             }
-            if let transcript = ledgerStore.transcript(sourceKey: article.sourceKey) {
-                passages.append(contentsOf: windowedTranscript(
-                    transcript.segments, article: article))
+            if let transcript = byKey[article.sourceKey] {
+                passages.append(contentsOf: windowedTranscript(transcript.segments, article: article))
             }
         }
-        return passages
+        return Task.isCancelled ? [] : passages
     }
 
     nonisolated static func windowedTranscript(
@@ -251,5 +268,16 @@ enum BibliographyCorpus {
             windows.append((currentText, start, end))
         }
         return windows.map { (text: $0.0, start: $0.1, end: $0.2) }
+    }
+}
+
+/// Serializes access to the cached NaturalLanguage models away from the UI.
+actor PassageRanking {
+    static let shared = PassageRanking()
+
+    func rank(query: String, passages: [BibliographyPassage], limit: Int = 8) -> [PassageMatch] {
+        assert(!Thread.isMainThread)
+        guard !Task.isCancelled else { return [] }
+        return EmbeddingPassageMatcher(limit: limit).rank(query: query, passages: passages)
     }
 }

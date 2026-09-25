@@ -194,6 +194,21 @@ struct AnchorRoundTripTests {
 
 @MainActor
 struct DocumentConflictTests {
+    @Test func metadataReconciliationAdoptsEachPathOnceAndTracksMissingFiles() async throws {
+        let (_, context, _, documents, root) = try makePhase2Stores()
+        let workspace = makeWorkspace(context)
+        let existing = try #require(documents.createDocument(in: workspace, name: "Existing"))
+        let folder = documents.folderName(for: workspace)
+        let updates = (0..<350).map { DocumentMetadataUpdate(relativePath: "\(folder)/Note \($0).md") }
+        let paths = Set(updates.map(\.relativePath))
+        await documents.reconcile(updates, presentPaths: paths, root: root)
+        await documents.reconcile(updates, presentPaths: paths, root: root)
+        let rows = documents.documents(workspaceId: workspace.id)
+        #expect(rows.count == 351)
+        #expect(Set(rows.map(\.orderIndex)).count == 351)
+        #expect(documents.missingDocumentIds == [existing.id])
+    }
+
 
     /// Dirty buffer + external change: the disk version becomes a sibling file,
     /// the buffer wins the path, and nothing is lost.
@@ -204,12 +219,19 @@ struct DocumentConflictTests {
         let fileURL = try #require(documents.url(for: row))
         try Data("From the iPad.\n".utf8).write(to: fileURL, options: .atomic)
 
-        #expect(documents.preserveDiskVersionAsSibling(for: row))
+        #expect(await documents.preserveDiskVersionAsSibling(for: row))
         let folder = fileURL.deletingLastPathComponent()
         let siblings = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
             .filter { $0.lastPathComponent.contains("conflict") }
         #expect(siblings.count == 1, "the losing version is an ordinary visible file")
         #expect(try String(contentsOf: siblings[0], encoding: .utf8) == "From the iPad.\n")
+        try Data("A later version.\n".utf8).write(to: fileURL, options: .atomic)
+        #expect(await documents.preserveDiskVersionAsSibling(for: row))
+        let copies = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.contains("conflict") }
+        #expect(copies.count == 2)
+        #expect(Set(try copies.map { try String(contentsOf: $0, encoding: .utf8) })
+            == ["From the iPad.\n", "A later version.\n"])
         _ = root
     }
 
@@ -218,7 +240,7 @@ struct DocumentConflictTests {
         let (_, context, _, documents, _) = try makePhase2Stores()
         let workspace = makeWorkspace(context)
         let row = try #require(documents.createDocument(in: workspace, name: "Draft"))
-        #expect(!documents.preserveDiskVersionAsSibling(for: row))
+        #expect(await !documents.preserveDiskVersionAsSibling(for: row))
     }
 
     /// The full dirty-buffer flow through the session: buffer B, disk C →

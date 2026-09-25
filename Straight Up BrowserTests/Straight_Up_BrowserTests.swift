@@ -63,7 +63,7 @@ struct PrivateTransferHistoryTests {
         ) == nil)
     }
 
-    @Test func privateTransfersNeverEnterPersistentHistory() {
+    @Test func privateTransfersNeverEnterPersistentHistory() async {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("private-transfer-\(UUID().uuidString).json")
         let manager = DownloadManager(storeURL: storeURL)
@@ -75,11 +75,12 @@ struct PrivateTransferHistoryTests {
             privacy: .privateSession
         )
 
+        await manager.flush()
         #expect(manager.records.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: storeURL.path))
     }
 
-    @Test func completedPrivateDownloadsDisappearWithoutAHistoryRecord() {
+    @Test func completedPrivateDownloadsDisappearWithoutAHistoryRecord() async {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("private-download-\(UUID().uuidString).json")
         let manager = DownloadManager(storeURL: storeURL)
@@ -92,11 +93,12 @@ struct PrivateTransferHistoryTests {
         manager.finish(transferId, at: URL(fileURLWithPath: "/tmp/secret.pdf"))
 
         #expect(manager.activeDownloads.isEmpty)
+        await manager.flush()
         #expect(manager.records.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: storeURL.path))
     }
 
-    @Test func incompleteStandardDownloadsSurviveManagerReload() {
+    @Test func incompleteStandardDownloadsSurviveManagerReload() async {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("incomplete-download-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: storeURL) }
@@ -115,7 +117,9 @@ struct PrivateTransferHistoryTests {
             canRestart: false
         )
 
+        await manager.flush()
         let reloaded = DownloadManager(storeURL: storeURL)
+        await reloaded.flush()
         #expect(reloaded.records.isEmpty)
         #expect(reloaded.activeDownloads.count == 1)
         #expect(reloaded.activeDownloads.first?.state == .failed)
@@ -126,7 +130,33 @@ struct PrivateTransferHistoryTests {
 
 @MainActor
 struct DurableBrowsingHistoryTests {
-    @Test func aNormalVisitSurvivesStoreRecreation() {
+    @Test func startupMutationsAndClearNeverResurrectHistory() async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let oldURL = URL(string: "https://old.example")!
+        let newURL = URL(string: "https://new.example")!
+        try JSONEncoder().encode([HistoryVisit(url: oldURL, title: "Old")]).write(to: file)
+        let store = BrowsingHistoryStore(storeURL: file)
+        store.remove(url: oldURL)
+        store.record(url: newURL, title: "New", sessionKind: .normal)
+        await store.flush()
+        #expect(store.visits.map(\.url) == [newURL])
+        let reopened = BrowsingHistoryStore(storeURL: file)
+        reopened.clear()
+        await reopened.flush()
+        #expect(reopened.visits.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        reopened.record(url: newURL, title: "Again", sessionKind: .normal)
+        reopened.clear()
+        reopened.record(url: oldURL, title: "Final", sessionKind: .normal)
+        await reopened.flush()
+        let final = BrowsingHistoryStore(storeURL: file)
+        await final.waitUntilLoaded()
+        #expect(final.visits.map(\.url) == [oldURL])
+        await final.flush()
+    }
+
+    @Test func aNormalVisitSurvivesStoreRecreation() async {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("browsing-history-\(UUID().uuidString).json")
         let url = URL(string: "https://example.com/kept-after-tab-close")!
@@ -134,7 +164,9 @@ struct DurableBrowsingHistoryTests {
 
         store.record(url: url, title: "Durable Visit", sessionKind: .normal)
 
+        await store.flush()
         let reopened = BrowsingHistoryStore(storeURL: storeURL)
+        await reopened.waitUntilLoaded()
         #expect(reopened.recentVisits.map(\.url) == [url])
         #expect(reopened.recentVisits.first?.title == "Durable Visit")
     }

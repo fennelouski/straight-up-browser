@@ -55,7 +55,7 @@ struct ShareQueueTests {
         let bytes = Data([0x89, 0x50, 0x4E, 0x47])
         #expect(ShareQueue.enqueue(item, fileData: bytes, container: group))
         let pending = ShareQueue.pending(container: group)
-        #expect(pending.first?.fileData == bytes)
+        #expect(try Data(contentsOf: #require(pending.first?.fileURL)) == bytes)
         ShareQueue.clear(item, container: group)
         let inbox = ShareQueue.inboxURL(container: group)
         #expect(((try? FileManager.default.contentsOfDirectory(atPath: inbox.path)) ?? []).isEmpty,
@@ -76,8 +76,19 @@ struct ShareQueueTests {
 
 @MainActor
 struct ShareIngestTests {
+    @Test func missingPayloadStaysQueuedForRetry() async throws {
+        let (_, context, ledger, group) = try makePhase3Stores()
+        let workspace = Workspace(name: "Retry")
+        context.insert(workspace)
+        ShareQueue.enqueue(.init(workspaceId: workspace.id, title: "missing", fileName: "missing.pdf"), container: group)
+        let result = await ShareIngest.drain(ledgerStore: ledger, container: group,
+                                            importsDirectory: group.appendingPathComponent("Imports"))
+        #expect(result.ingested == 0)
+        #expect(ShareQueue.pending(container: group).count == 1)
+    }
 
-    @Test func drainRecordsSharesAsOpenShareSheetReferences() throws {
+
+    @Test func drainRecordsSharesAsOpenShareSheetReferences() async throws {
         let (_, context, ledger, group) = try makePhase3Stores()
         let workspace = Workspace(name: "Fermentation")
         context.insert(workspace)
@@ -86,7 +97,7 @@ struct ShareIngestTests {
             url: URL(string: "https://example.com/paper?utm_source=x")!,
             title: "A Paper", fileName: nil), container: group)
 
-        let result = ShareIngest.drain(ledgerStore: ledger, container: group,
+        let result = await ShareIngest.drain(ledgerStore: ledger, container: group,
                                        importsDirectory: group.appendingPathComponent("Imports"))
         #expect(result.ingested == 1)
         #expect(result.workspaceName == "Fermentation")
@@ -118,12 +129,28 @@ struct ShareIngestTests {
         #expect(FileManager.default.fileExists(atPath: first.url.path), "bytes persisted to Imports")
     }
 
-    @Test func vanishedWorkspacesDropTheirItems() throws {
+    @Test func streamedAttachmentImportPreservesBytes() async throws {
+        let (_, context, ledger, group) = try makePhase3Stores()
+        let workspace = Workspace(name: "Files")
+        context.insert(workspace)
+        let bytes = Data(repeating: 42, count: 2_100_000)
+        ShareQueue.enqueue(.init(workspaceId: workspace.id, title: "large.bin", fileName: "large.bin"),
+                           fileData: bytes, container: group)
+        let result = await ShareIngest.drain(ledgerStore: ledger, container: group,
+                                             importsDirectory: group.appendingPathComponent("Imports"))
+        #expect(result.ingested == 1)
+        let reference = try #require(ledger.references(workspaceId: workspace.id).first)
+        let source = try #require(ledger.source(sourceKey: reference.sourceKey))
+        #expect(try Data(contentsOf: source.url) == bytes)
+        #expect(ShareQueue.pending(container: group).isEmpty)
+    }
+
+    @Test func vanishedWorkspacesDropTheirItems() async throws {
         let (_, _, ledger, group) = try makePhase3Stores()
         ShareQueue.enqueue(ShareQueue.SharedItem(
             workspaceId: UUID(), url: URL(string: "https://x.example")!,
             title: "Orphan", fileName: nil), container: group)
-        let result = ShareIngest.drain(ledgerStore: ledger, container: group,
+        let result = await ShareIngest.drain(ledgerStore: ledger, container: group,
                                        importsDirectory: group.appendingPathComponent("Imports"))
         #expect(result.ingested == 0)
         #expect(ShareQueue.pending(container: group).isEmpty, "no poison-pill queue")

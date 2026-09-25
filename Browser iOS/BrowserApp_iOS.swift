@@ -30,6 +30,7 @@ final class ExternalURLRouter_iOS: ObservableObject {
 @main
 struct BrowserApp: App {
     @UIApplicationDelegateAdaptor(BrowserAppDelegate_iOS.self) private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var externalURLRouter = ExternalURLRouter_iOS()
 
     // Same SwiftData schema as the Mac app (Straight_Up_BrowserApp.swift). `Tab`
@@ -80,6 +81,9 @@ struct BrowserApp: App {
             }
         }
         .commands { browserCommands }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { appDelegate.flushHistoryInBackground() }
+        }
     }
 
     // Keyboard commands surface in the hold-⌘ discoverability HUD and drive the

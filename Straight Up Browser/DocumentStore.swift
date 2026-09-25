@@ -34,6 +34,11 @@ final class DocumentStore: ObservableObject {
     private let modelContext: ModelContext
     private let ledgerStore: LedgerStore
     private var metadataQuery: NSMetadataQuery?
+    private let fileMaintenance = DocumentFileMaintenance()
+    private var reconciliation: Task<Void, Never>?
+    private var presentPaths: Set<String> = []
+    private var pendingMetadata: [String: DocumentMetadataUpdate] = [:]
+    private var metadataRevision = 0
     private var queryObservers: [NSObjectProtocol] = []
     /// Open edit sessions by document id, so appends reach a live buffer and
     /// panes share one session per document.
@@ -54,6 +59,7 @@ final class DocumentStore: ObservableObject {
     isolated deinit {
         for observer in queryObservers { NotificationCenter.default.removeObserver(observer) }
         metadataQuery?.stop()
+        reconciliation?.cancel()
     }
 
     // MARK: Container
@@ -309,60 +315,22 @@ final class DocumentStore: ObservableObject {
     /// then marks it resolved. The sibling is adopted as a row by the stray-file
     /// rule, so it is openable, comparable by eye, and deletable. No modal,
     /// nothing discarded.
-    func resolveVersionConflicts(at url: URL, displayName: String) {
-        let losers = NSFileVersion.unresolvedConflictVersionsOfItem(at: url) ?? []
-        guard !losers.isEmpty else { return }
-        for version in losers {
-            let device = version.localizedNameOfSavingComputer ?? String(localized: "another device")
-            let stamp = Self.conflictStampFormatter.string(from: version.modificationDate ?? Date())
-            let siblingName = String(
-                localized: "\(displayName) (conflict from \(device), \(stamp))"
-            )
-            let siblingURL = url.deletingLastPathComponent()
-                .appendingPathComponent(Self.sanitize(siblingName) + ".md")
-            var coordError: NSError?
-            NSFileCoordinator().coordinate(
-                readingItemAt: version.url, options: [],
-                writingItemAt: siblingURL, options: .forReplacing,
-                error: &coordError
-            ) { from, to in
-                try? FileManager.default.copyItem(at: from, to: to)
-            }
-            version.isResolved = true
+    func resolveVersionConflicts(at url: URL, displayName: String) async {
+        if await fileMaintenance.resolveConflicts(at: url, displayName: displayName) {
+            postNote(String(localized: "Kept both versions of “\(displayName)” — the other copy is beside it."))
         }
-        try? NSFileVersion.removeOtherVersionsOfItem(at: url)
-        postNote(String(localized: "Kept both versions of “\(displayName)” — the other copy is beside it."))
     }
 
-    /// The dirty-buffer external-change case funnels into the same shape: the
-    /// buffer will win the path, so preserve today's disk bytes as a sibling
-    /// first. Returns true when a sibling was written.
     @discardableResult
-    func preserveDiskVersionAsSibling(for row: WorkspaceDocument) -> Bool {
+    func preserveDiskVersionAsSibling(for row: WorkspaceDocument) async -> Bool {
         guard let url = url(for: row) else { return false }
-        var contents: String?
-        var coordError: NSError?
-        NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &coordError) { url in
-            contents = try? String(contentsOf: url, encoding: .utf8)
+        let name = row.displayName
+        let preserved = await fileMaintenance.preserveDiskVersion(at: url, displayName: name)
+        if preserved {
+            postNote(String(localized: "Kept both versions of “\(name)” — the other copy is beside it."))
         }
-        guard let contents, !contents.isEmpty else { return false }
-        let stamp = Self.conflictStampFormatter.string(from: Date())
-        let siblingName = String(localized: "\(row.displayName) (conflict, \(stamp))")
-        let siblingURL = url.deletingLastPathComponent()
-            .appendingPathComponent(Self.sanitize(siblingName) + ".md")
-        NSFileCoordinator().coordinate(writingItemAt: siblingURL, options: .forReplacing, error: &coordError) { url in
-            try? Data(contents.utf8).write(to: url, options: .atomic)
-        }
-        postNote(String(localized: "Kept both versions of “\(row.displayName)” — the other copy is beside it."))
-        return true
+        return preserved
     }
-
-    /// Colon-free (filename-safe) conflict timestamp.
-    private static let conflictStampFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d HH.mm"
-        return formatter
-    }()
 
     func postNote(_ text: String) {
         NotificationCenter.default.post(name: .browserDocumentNote, object: nil, userInfo: ["text": text])
@@ -377,69 +345,114 @@ final class DocumentStore: ObservableObject {
         query.predicate = NSPredicate(format: "%K LIKE '*.md'", NSMetadataItemFSNameKey)
         let center = NotificationCenter.default
         for name in [Notification.Name.NSMetadataQueryDidFinishGathering, .NSMetadataQueryDidUpdate] {
-            queryObservers.append(center.addObserver(forName: name, object: query, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.reconcileWithMetadata() }
+            queryObservers.append(center.addObserver(forName: name, object: query, queue: .main) { [weak self] notification in
+                // This observer is delivered synchronously on OperationQueue.main.
+                nonisolated(unsafe) let mainThreadNotification = notification
+                MainActor.assumeIsolated { self?.reconcileWithMetadata(mainThreadNotification) }
             })
         }
         metadataQuery = query
         query.start()
     }
 
-    private func reconcileWithMetadata() {
+    private func reconcileWithMetadata(_ notification: Notification) {
         guard let query = metadataQuery, let root = documentsRootURL else { return }
         query.disableUpdates()
         defer { query.enableUpdates() }
-
-        var presentPaths: Set<String> = []
-        for case let item as NSMetadataItem in query.results {
-            guard let url = item.value(forAttribute: NSMetadataItemURLKey) as? URL else { continue }
-            let path = url.path
-            guard path.hasPrefix(root.path + "/") else { continue }
-            let relative = String(path.dropFirst(root.path.count + 1))
-            presentPaths.insert(relative)
-
-            // Not-yet-local bytes: ask for them; the editor shows "waiting".
-            if let status = item.value(forAttribute: NSMetadataUbiquitousItemDownloadingStatusKey) as? String,
-               status == NSMetadataUbiquitousItemDownloadingStatusNotDownloaded {
-                try? FileManager.default.startDownloadingUbiquitousItem(at: url)
-            }
-            // iCloud flagged competing versions: resolve as siblings, silently.
-            if let hasConflicts = item.value(forAttribute: NSMetadataUbiquitousItemHasUnresolvedConflictsKey) as? Bool,
-               hasConflicts {
-                let name = document(relativePath: relative)?.displayName
-                    ?? url.deletingPathExtension().lastPathComponent
-                resolveVersionConflicts(at: url, displayName: name)
-            }
-            // Stray file with no row (dropped in from Files/Finder, or a conflict
-            // sibling): adopt it, if its folder maps to a workspace.
-            if document(relativePath: relative) == nil {
-                adoptStray(relativePath: relative)
+        let initial = notification.name == .NSMetadataQueryDidFinishGathering
+        let changed = initial ? query.results :
+            (notification.userInfo?[NSMetadataQueryUpdateAddedItemsKey] as? [NSMetadataItem] ?? []) +
+            (notification.userInfo?[NSMetadataQueryUpdateChangedItemsKey] as? [NSMetadataItem] ?? [])
+        let removed = notification.userInfo?[NSMetadataQueryUpdateRemovedItemsKey] as? [NSMetadataItem] ?? []
+        func relativePath(_ item: NSMetadataItem) -> String? {
+            guard let url = item.value(forAttribute: NSMetadataItemURLKey) as? URL,
+                  url.path.hasPrefix(root.path + "/") else { return nil }
+            return String(url.path.dropFirst(root.path.count + 1))
+        }
+        if initial { presentPaths.removeAll(keepingCapacity: true) }
+        for item in removed {
+            if let path = relativePath(item) {
+                presentPaths.remove(path)
+                pendingMetadata.removeValue(forKey: path)
             }
         }
-
-        // Rows whose file is nowhere in the cloud: mark missing (design accepts
-        // that an external move reads as missing + a fresh adoption).
-        let allRows = (try? modelContext.fetch(FetchDescriptor<WorkspaceDocument>())) ?? []
-        missingDocumentIds = Set(allRows.filter { !presentPaths.contains($0.relativePath) }.map(\.id))
+        let updates = changed.compactMap { value -> DocumentMetadataUpdate? in
+            guard let item = value as? NSMetadataItem, let path = relativePath(item) else { return nil }
+            presentPaths.insert(path)
+            return DocumentMetadataUpdate(relativePath: path,
+                needsDownload: item.value(forAttribute: NSMetadataUbiquitousItemDownloadingStatusKey) as? String
+                    == NSMetadataUbiquitousItemDownloadingStatusNotDownloaded,
+                hasConflicts: item.value(forAttribute: NSMetadataUbiquitousItemHasUnresolvedConflictsKey) as? Bool == true)
+        }
+        for update in updates { pendingMetadata[update.relativePath] = update }
+        metadataRevision += 1
+        guard reconciliation == nil else { return }
+        reconciliation = Task { [weak self] in
+            // Merge bursts from iCloud into one pass, including updates that
+            // arrive while a previous pass is coordinating files.
+            try? await Task.sleep(for: .milliseconds(100))
+            guard let self else { return }
+            defer { self.reconciliation = nil }
+            while !Task.isCancelled {
+                let revision = self.metadataRevision
+                let updates = self.pendingMetadata.values.sorted { $0.relativePath < $1.relativePath }
+                self.pendingMetadata.removeAll(keepingCapacity: true)
+                await self.reconcile(updates, presentPaths: self.presentPaths, root: root)
+                if revision == self.metadataRevision { break }
+            }
+        }
     }
 
-    private func adoptStray(relativePath: String) {
-        let components = relativePath.components(separatedBy: "/")
-        guard components.count >= 2, let folder = components.first else { return }
-        // Folder → workspace: an existing row's folder wins, else sanitized name.
+    // One fetch per model type, and one save per batch. Yield between batches so
+    // initial discovery of a large Drive folder does not monopolize the UI.
+    func reconcile(_ updates: [DocumentMetadataUpdate], presentPaths: Set<String>, root: URL) async {
+        let rows = allDocuments()
+        var byPath = Dictionary(rows.map { ($0.relativePath, $0) }, uniquingKeysWith: { first, _ in first })
         let workspaces = (try? modelContext.fetch(FetchDescriptor<Workspace>())) ?? []
-        let owner = workspaces.first { folderName(for: $0) == folder }
-        guard let owner else { return }
-        let name = (components.last! as NSString).deletingPathExtension
-        let siblings = documents(workspaceId: owner.id)
-        let row = WorkspaceDocument(
-            workspaceId: owner.id,
-            displayName: name,
-            relativePath: relativePath,
-            orderIndex: (siblings.map(\.orderIndex).max() ?? -1) + 1
-        )
-        modelContext.insert(row)
-        save("Adopt external document")
+        let workspaceRows = Dictionary(workspaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let grouped = Dictionary(grouping: rows, by: \.workspaceId)
+        var owners: [String: UUID] = [:]
+        for workspace in workspaces {
+            let existing = grouped[workspace.id]?.min { $0.orderIndex < $1.orderIndex }
+            if let folder = existing?.relativePath.components(separatedBy: "/").first {
+                owners[folder] = workspace.id
+            }
+        }
+        for workspace in workspaces where grouped[workspace.id] == nil {
+            var folder = Self.sanitize(workspace.name)
+            if let owner = owners[folder], owner != workspace.id {
+                folder += "-" + workspace.id.uuidString.prefix(4).lowercased()
+            }
+            if owners[folder] == nil { owners[folder] = workspace.id }
+        }
+        var nextOrder = grouped.mapValues { ($0.map(\.orderIndex).max() ?? -1) + 1 }
+        for (index, update) in updates.enumerated() {
+            let relative = update.relativePath
+            let url = root.appendingPathComponent(relative)
+            if update.needsDownload { await fileMaintenance.download(url) }
+            if update.hasConflicts {
+                await resolveVersionConflicts(at: url, displayName: byPath[relative]?.displayName
+                    ?? url.deletingPathExtension().lastPathComponent)
+            }
+            if byPath[relative] == nil {
+                let parts = relative.components(separatedBy: "/")
+                if parts.count >= 2, let folder = parts.first, let owner = owners[folder],
+                   workspaceRows[owner]?.isDeleted == false {
+                    let row = WorkspaceDocument(workspaceId: owner,
+                        displayName: url.deletingPathExtension().lastPathComponent,
+                        relativePath: relative, orderIndex: nextOrder[owner, default: 0])
+                    nextOrder[owner, default: 0] += 1
+                    modelContext.insert(row)
+                    byPath[relative] = row
+                }
+            }
+            if index % 100 == 99 {
+                save("Reconcile workspace documents")
+                await Task.yield()
+            }
+        }
+        save("Reconcile workspace documents")
+        missingDocumentIds = Set(allDocuments().filter { !presentPaths.contains($0.relativePath) }.map(\.id))
     }
 
     private func save(_ operation: String) {
@@ -448,5 +461,78 @@ final class DocumentStore: ObservableObject {
         } catch {
             PersistenceDiagnostics.shared.report(operation: operation, error: error)
         }
+    }
+}
+
+nonisolated struct DocumentMetadataUpdate: Sendable {
+    let relativePath: String
+    var needsDownload = false
+    var hasConflicts = false
+}
+
+private actor DocumentFileMaintenance {
+    func download(_ url: URL) {
+        assert(!Thread.isMainThread)
+        try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+    }
+
+    private let stampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d HH.mm"
+        return formatter
+    }()
+
+    private func siblingURL(for url: URL, name: String) -> URL {
+        let folder = url.deletingLastPathComponent()
+        let base = DocumentStore.sanitize(name)
+        var candidate = folder.appendingPathComponent(base + ".md")
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: candidate.path) {
+            candidate = folder.appendingPathComponent("\(base) \(suffix).md")
+            suffix += 1
+        }
+        return candidate
+    }
+
+    func resolveConflicts(at url: URL, displayName: String) -> Bool {
+        assert(!Thread.isMainThread)
+        let versions = NSFileVersion.unresolvedConflictVersionsOfItem(at: url) ?? []
+        var preserved = false
+        for version in versions {
+            let device = version.localizedNameOfSavingComputer ?? String(localized: "another device")
+            let stamp = stampFormatter.string(from: version.modificationDate ?? Date())
+            let name = String(localized: "\(displayName) (conflict from \(device), \(stamp))")
+            let sibling = siblingURL(for: url, name: name)
+            var error: NSError?
+            var copied = false
+            NSFileCoordinator().coordinate(readingItemAt: version.url, options: [],
+                writingItemAt: sibling, options: [], error: &error) { from, to in
+                do { try FileManager.default.copyItem(at: from, to: to); copied = true } catch {}
+            }
+            if copied && error == nil {
+                version.isResolved = true
+                preserved = true
+            }
+        }
+        // A failed copy must keep its original version available for retry.
+        if !versions.isEmpty && versions.allSatisfy({ $0.isResolved }) {
+            try? NSFileVersion.removeOtherVersionsOfItem(at: url)
+        }
+        return preserved
+    }
+
+    func preserveDiskVersion(at url: URL, displayName: String) -> Bool {
+        assert(!Thread.isMainThread)
+        let stamp = stampFormatter.string(from: Date())
+        let name = String(localized: "\(displayName) (conflict, \(stamp))")
+        let sibling = siblingURL(for: url, name: name)
+        var error: NSError?
+        var copied = false
+        NSFileCoordinator().coordinate(readingItemAt: url, options: [],
+            writingItemAt: sibling, options: [], error: &error) { from, to in
+            guard let size = try? from.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > 0 else { return }
+            do { try FileManager.default.copyItem(at: from, to: to); copied = true } catch {}
+        }
+        return copied && error == nil
     }
 }

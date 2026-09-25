@@ -5,7 +5,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 #endif
 
-struct ImportedLibraryBookmark: Equatable {
+nonisolated struct ImportedLibraryBookmark: Equatable, Sendable {
     let title: String
     let url: URL
     let category: String?
@@ -76,7 +76,18 @@ enum BrowserLibrary {
         """
     }
 
-    static func bookmarks(fromHTML html: String) -> [ImportedLibraryBookmark] {
+    @concurrent static func importBookmarksHTML(from url: URL) async throws -> [ImportedLibraryBookmark] {
+        assert(!Thread.isMainThread)
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        try Task.checkCancellation()
+        let html = try String(contentsOf: url, encoding: .utf8)
+        let result = bookmarks(fromHTML: html)
+        try Task.checkCancellation()
+        return result
+    }
+
+    nonisolated static func bookmarks(fromHTML html: String) -> [ImportedLibraryBookmark] {
         let pattern = #"<H3\b[^>]*>(.*?)</H3>|<A\b[^>]*HREF\s*=\s*["']([^"']+)["'][^>]*>(.*?)</A>"#
         guard let expression = try? NSRegularExpression(
             pattern: pattern,
@@ -87,6 +98,7 @@ enum BrowserLibrary {
         var result: [ImportedLibraryBookmark] = []
         let range = NSRange(html.startIndex..<html.endIndex, in: html)
         for match in expression.matches(in: html, range: range) {
+            guard !Task.isCancelled else { return [] }
             if let folderRange = Range(match.range(at: 1), in: html) {
                 currentFolder = decodedHTML(String(html[folderRange])).trimmedNonEmpty
                 continue
@@ -118,7 +130,7 @@ enum BrowserLibrary {
             .replacingOccurrences(of: ">", with: "&gt;")
     }
 
-    private static func decodedHTML(_ value: String) -> String {
+    nonisolated private static func decodedHTML(_ value: String) -> String {
         value
             .replacingOccurrences(
                 of: #"<[^>]+>"#,
@@ -135,7 +147,7 @@ enum BrowserLibrary {
 }
 
 private extension String {
-    var trimmedNonEmpty: String? {
+    nonisolated var trimmedNonEmpty: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }

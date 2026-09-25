@@ -254,16 +254,19 @@ class TabManager: NSObject, ObservableObject {
     func createNewTab(
         url: URL? = nil,
         select: Bool = true,
-        preferredEngine: BrowserEngine = .webKit
+        preferredEngine: BrowserEngine = .webKit,
+        after source: Tab? = nil
     ) -> Tab {
         #if os(macOS)
         if DefaultBrowser.shouldOffer { offerDefaultBrowser = true }
         #endif
         let newTab = Tab(title: String(localized: "New Tab"), url: url, isActive: false)
         newTab.preferredEngine = preferredEngine
-        newTab.openerId = selectedTabId
-        // New tabs join whatever workspace this window is showing.
-        newTab.workspaceId = activeWorkspaceId
+        newTab.openerId = source?.id ?? selectedTabId
+        // Link tabs stay with their source; other new tabs join the active workspace.
+        newTab.workspaceId = source == nil ? activeWorkspaceId : source?.workspaceId
+        newTab.groupId = source?.groupId
+        newTab.isPinned = source?.isPinned ?? false
         newTab.memoryPolicy = MemoryPolicy(rawValue:
             UserDefaults.standard.string(forKey: "memorySaverDefaultPolicy") ?? "") ?? .whenNeeded
         if url != nil {
@@ -275,11 +278,10 @@ class TabManager: NSObject, ObservableObject {
             // symptom — one would appear at the top of the list, nowhere near the
             // tab that opened it. Matches what createIncognitoTab already does.
             let existing = (try? modelContext.fetch(FetchDescriptor<Tab>())) ?? []
-            if let current = existing.first(where: { $0.id == selectedTabId }) {
-                // Land right after the tab you're on — and after any tabs already
-                // opened from it, so ⌘-clicking several links queues them in click
-                // order instead of reversing them.
-                let anchor = existing
+            if let current = source ?? existing.first(where: { $0.id == selectedTabId }) {
+                // Explicit links land immediately after their source. Other
+                // new-tab commands retain the existing child-queue ordering.
+                let anchor = source?.orderIndex ?? existing
                     .filter { $0.openerId == current.id && $0.orderIndex > current.orderIndex }
                     .map(\.orderIndex)
                     .max() ?? current.orderIndex
@@ -304,16 +306,25 @@ class TabManager: NSObject, ObservableObject {
     func createIncognitoTab(
         sessionId: UUID? = nil,
         select: Bool = true,
-        preferredEngine: BrowserEngine = .webKit
+        preferredEngine: BrowserEngine = .webKit,
+        after source: Tab? = nil
     ) -> Tab {
         let tab = Tab(title: String(localized: "New Tab"), url: nil, isActive: false)
         tab.preferredEngine = preferredEngine
         tab.sessionKind = .incognito
         tab.sessionId = sessionId ?? UUID()
-        tab.openerId = selectedTabId
+        tab.openerId = source?.id ?? selectedTabId
+        tab.workspaceId = source?.workspaceId
+        tab.groupId = source?.groupId
+        tab.isPinned = source?.isPinned ?? false
         // In-memory only: never unload (there's no SwiftData row to restore from).
         tab.memoryPolicy = .never
-        tab.orderIndex = (incognitoTabs.map(\.orderIndex).max() ?? 1_000_000) + 1
+        if let source {
+            for existing in incognitoTabs where existing.orderIndex > source.orderIndex { existing.orderIndex += 1 }
+            tab.orderIndex = source.orderIndex + 1
+        } else {
+            tab.orderIndex = (incognitoTabs.map(\.orderIndex).max() ?? 1_000_000) + 1
+        }
         incognitoTabs.append(tab)
         webViewManager?.registerSession(for: tab.id, kind: .incognito, sessionId: tab.sessionId)
         if select { selectedTabId = tab.id }
@@ -326,20 +337,23 @@ class TabManager: NSObject, ObservableObject {
     func createTab(
         inheriting context: BrowsingContext,
         url: URL? = nil,
-        select: Bool = true
+        select: Bool = true,
+        after source: Tab? = nil
     ) -> Tab {
         switch context.sessionKind {
         case .normal:
             return createNewTab(
                 url: url,
                 select: select,
-                preferredEngine: context.preferredEngine
+                preferredEngine: context.preferredEngine,
+                after: source
             )
         case .incognito:
             let tab = createIncognitoTab(
                 sessionId: context.sessionId,
                 select: select,
-                preferredEngine: context.preferredEngine
+                preferredEngine: context.preferredEngine,
+                after: source
             )
             if let url { tab.navigateTo(url); tab.updateTitleFromURL() }
             return tab
@@ -347,13 +361,21 @@ class TabManager: NSObject, ObservableObject {
             let tab = createNewTab(
                 url: url,
                 select: select,
-                preferredEngine: context.preferredEngine
+                preferredEngine: context.preferredEngine,
+                after: source
             )
             tab.sessionKind = .container
             tab.sessionId = context.sessionId
             webViewManager?.registerSession(for: tab.id, kind: .container, sessionId: context.sessionId)
             return tab
         }
+    }
+
+    /// Explicit link opens always select their destination, independent of chrome visibility.
+    @discardableResult
+    func openLinkInNewTab(_ url: URL, from source: Tab?) -> Tab {
+        createTab(inheriting: source?.browsingContext ?? .normalWebKit,
+                  url: url, select: true, after: source)
     }
 
     // Compatibility convenience for call sites that intentionally create a
