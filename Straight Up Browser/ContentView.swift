@@ -225,7 +225,9 @@ struct FloatingFaviconOverlay<ContextMenu: View>: View {
     @ViewBuilder var contextMenu: (BrowserTab) -> ContextMenu
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        ScrollViewReader { proxy in
+        ScrollView {
+        LazyVStack(alignment: .leading, spacing: 8) {
             ForEach(tabs) { tab in
                 let isSelected = (tabManager?.selectedTabId ?? selectedTabId) == tab.id
                 let isInSplit = tabManager?.splitTabIds.contains(tab.id) ?? false
@@ -246,6 +248,7 @@ struct FloatingFaviconOverlay<ContextMenu: View>: View {
                     onHover: { onHover?(tab) },
                     contextMenu: { contextMenu(tab) }
                 )
+                .id(tab.id)
                 .transition(.asymmetric(
                     insertion: .move(edge: .leading).combined(with: .opacity),
                     removal: .tabPoof
@@ -259,6 +262,13 @@ struct FloatingFaviconOverlay<ContextMenu: View>: View {
             reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.8),
             value: tabs.map(\.id)
         )
+        }
+        .task(id: tabs.first(where: { $0.id == selectedTabId })?.id) {
+            await Task.yield()
+            guard !Task.isCancelled, let selectedTabId else { return }
+            proxy.scrollTo(selectedTabId, anchor: .center)
+        }
+        }
     }
 }
 
@@ -829,7 +839,7 @@ struct ContentView: View {
             tabManager.reorderTabs(
                 sourceTabId: sourceTabId,
                 targetTabId: targetTabId,
-                tabs: tabBarWidth <= 30 ? allTabs : visibleTabOrder
+                tabs: visibleTabOrder
             )
         }
     }
@@ -1173,7 +1183,7 @@ struct ContentView: View {
         }
         return ScrollViewReader { proxy in
         ScrollView {
-            VStack(spacing: 0) {
+            LazyVStack(spacing: 0) {
                 // Add a spacer at the top to allow dragging without scroll interference.
                 // While a tab is being dragged it doubles as the "remove from group"
                 // zone, since a group with no ungrouped tabs otherwise has no row to
@@ -1259,17 +1269,18 @@ struct ContentView: View {
                 }
             }
             .padding(.vertical, 4)
-            // A tab opened in the background (Cmd+click) slides its row in from the
-            // leading edge, so you see it land instead of guessing whether it opened.
+            // New tabs slide in from the leading edge so their placement is visible.
             .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.8),
                        value: visibleTabOrder.map(\.id))
         }
-        // Reopening the sidebar rebuilds this view, so land on the current tab
-        // instead of the top of the list.
-        .onAppear {
-            if let target = tabManager.selectedTabId ?? tabManager.splitTabIds.first {
-                proxy.scrollTo(target, anchor: .center)
-            }
+        // Wait until SwiftData has published the selected row before scrolling.
+        // This also runs when a hidden sidebar is recreated.
+        .task(id: visibleTabOrder.first(where: { $0.id == tabManager.selectedTabId })?.id) {
+            guard let tab = visibleTabOrder.first(where: { $0.id == tabManager.selectedTabId }) else { return }
+            if let groupId = tab.groupId { collapsedGroupIds.remove(groupId) }
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            proxy.scrollTo(tab.id, anchor: .center)
         }
         }
     }
@@ -1286,7 +1297,7 @@ struct ContentView: View {
                 if tabBarWidth <= 30 {
                     // Vertical favicon stack for compact mode
                     FloatingFaviconOverlay(
-                        tabs: allTabs,
+                        tabs: visibleTabOrder,
                         selectedTabId: tabManager.selectedTabId,
                         onTabSelect: { tabId in
                             if NSApp.currentEvent?.modifierFlags.contains(.shift) == true,
@@ -4414,31 +4425,22 @@ struct ContentView: View {
 
     private func importBookmarks(from browser: BrowserType) {
         isImportBookmarksDialogPresented = false
-
-        let importedBookmarks = BookmarkImporter.importBookmarks(from: browser)
-        guard !importedBookmarks.isEmpty else {
-            let alert = NSAlert()
-            alert.messageText = String(localized: "No Bookmarks Found")
-            alert.informativeText = String(localized: "No bookmarks were found in \(browser.displayName).")
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: String(localized: "OK"))
-            alert.runModal()
-            return
+        Task {
+            do {
+                guard let imported = try await BookmarkImporter.importBookmarks(from: browser) else { return }
+                let added = try await bookmarkManager?.importBookmarks(
+                    imported.map { (title: $0.title, url: $0.url) }) ?? 0
+                let alert = NSAlert()
+                alert.messageText = String(localized: "Import Complete")
+                alert.informativeText = String(localized: "Imported \(added) new bookmarks from \(browser.displayName) (\(imported.count - added) already existed).")
+                alert.alertStyle = .informational
+                alert.addButton(withTitle: String(localized: "OK"))
+                alert.runModal()
+            } catch {
+                let alert = NSAlert(error: error)
+                alert.runModal()
+            }
         }
-
-        // Import the bookmarks (deduped, single save)
-        let addedCount = bookmarkManager?.importBookmarks(
-            importedBookmarks.map { (title: $0.title, url: $0.url) }
-        ) ?? 0
-
-        // Show success message
-        let alert = NSAlert()
-        alert.messageText = String(localized: "Import Complete")
-        // ponytail: simple %lld interpolation, not per-language plural rules — one-time import dialog; add plural variants if it matters
-        alert.informativeText = String(localized: "Imported \(addedCount) new bookmarks from \(browser.displayName) (\(importedBookmarks.count - addedCount) already existed).")
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: String(localized: "OK"))
-        alert.runModal()
     }
 
     private func switchToNextTab() {

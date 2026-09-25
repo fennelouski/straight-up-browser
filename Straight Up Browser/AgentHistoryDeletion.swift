@@ -113,7 +113,7 @@ final class AgentHistoryDeletionController: ObservableObject {
         isWorking = true
         defer { isWorking = false }
         do {
-            let store = try AgentRunStoreRegistry.store(
+            let store = try await AgentRunStoreRegistry.store(
                 baseDirectory: BrowserCLI.supportDirectory
             )
             try await AgentRunStoreRegistry.recoverIfNeeded(
@@ -145,7 +145,7 @@ final class AgentHistoryDeletionController: ObservableObject {
         isWorking = true
         defer { isWorking = false }
         do {
-            let store = try AgentRunStoreRegistry.store(
+            let store = try await AgentRunStoreRegistry.store(
                 baseDirectory: BrowserCLI.supportDirectory
             )
             try await AgentRunStoreRegistry.recoverIfNeeded(

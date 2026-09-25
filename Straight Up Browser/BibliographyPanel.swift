@@ -24,7 +24,6 @@ struct BibliographyPanel: View {
     @State private var loaded = false
     @State private var searchTask: Task<Void, Never>?
 
-    private let matcher = EmbeddingPassageMatcher()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -50,10 +49,13 @@ struct BibliographyPanel: View {
         #endif
         .task {
             query = initialQuery
-            corpus = BibliographyCorpus.passages(workspaceId: workspaceId, ledgerStore: ledgerStore)
+            let passages = await BibliographyCorpus.passages(workspaceId: workspaceId, ledgerStore: ledgerStore)
+            guard !Task.isCancelled else { return }
+            corpus = passages
             loaded = true
             runSearch()
         }
+        .onDisappear { searchTask?.cancel() }
     }
 
     private var header: some View {
@@ -147,21 +149,20 @@ struct BibliographyPanel: View {
 
     // MARK: Search
 
-    private func scheduleSearch() {
-        searchTask?.cancel()
-        searchTask = Task {
-            try? await Task.sleep(for: .milliseconds(250))
-            guard !Task.isCancelled else { return }
-            runSearch()
-        }
-    }
+    private func scheduleSearch() { runSearch(debounce: true) }
 
-    private func runSearch() {
+    private func runSearch(debounce: Bool = false) {
+        searchTask?.cancel()
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 3 else { matches = []; return }
         let corpus = corpus
-        let matcher = matcher
-        matches = matcher.rank(query: trimmed, passages: corpus)
+        searchTask = Task {
+            if debounce { try? await Task.sleep(for: .milliseconds(250)) }
+            guard !Task.isCancelled else { return }
+            let result = await PassageRanking.shared.rank(query: trimmed, passages: corpus)
+            guard !Task.isCancelled else { return }
+            matches = result
+        }
     }
 
     // MARK: Actions — the ONLY writes, and only on explicit user acceptance

@@ -73,6 +73,27 @@ final class OrientationLockController: ObservableObject {
 
 @MainActor
 final class BrowserAppDelegate_iOS: NSObject, UIApplicationDelegate {
+    private var historyFlushTask: UIBackgroundTaskIdentifier = .invalid
+
+    func flushHistoryInBackground() {
+        guard historyFlushTask == .invalid else { return }
+        historyFlushTask = UIApplication.shared.beginBackgroundTask(withName: "Save browser history") { [weak self] in
+            Task { @MainActor in self?.finishHistoryFlush() }
+        }
+        let identifier = historyFlushTask
+        Task {
+            await BrowsingHistoryStore.shared.flush()
+            await DownloadManager.shared.flush()
+            if historyFlushTask == identifier { finishHistoryFlush() }
+        }
+    }
+
+    private func finishHistoryFlush() {
+        guard historyFlushTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(historyFlushTask)
+        historyFlushTask = .invalid
+    }
+
     func application(
         _ application: UIApplication,
         supportedInterfaceOrientationsFor window: UIWindow?

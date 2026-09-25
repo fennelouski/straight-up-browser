@@ -37,7 +37,7 @@ struct WorkspaceDocumentSidebarRows: View {
     }
 
     var body: some View {
-        VStack(spacing: 1) {
+        LazyVStack(spacing: 1) {
             ForEach(documents) { document in
                 row(for: document)
             }

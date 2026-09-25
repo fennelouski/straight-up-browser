@@ -93,6 +93,13 @@ struct BrowserView_iOS: View {
 
     // Omnibar
     @State private var omnibarText = ""
+    @State private var cachedSuggestions: [Suggestion] = []
+    @State private var suggestionRevision = 0
+
+    private struct SuggestionRequest: Equatable {
+        let query: String
+        let revision: Int
+    }
     @State private var omnibarSelection: TextSelection?
     @State private var omnibarHasUserEdited = false
     @State private var selectedSuggestion = -1
@@ -232,15 +239,37 @@ struct BrowserView_iOS: View {
     }
 
     private var suggestions: [Suggestion] {
-        guard showOmnibar else { return [] }
-        return omnibarSuggestions(
-            input: omnibarText,
-            tabs: tabs,
-            bookmarks: bookmarkPairs,
-            durableHistory: browsingHistory.recentVisits.map(\.url),
-            ledgerNote: { ledgerNote(for: $0) },
-            transcriptHits: { transcriptSuggestions(for: $0) }
-        )
+        showOmnibar && !omnibarText.isEmpty ? cachedSuggestions : []
+    }
+
+    private func refreshSuggestions() async {
+        guard showOmnibar, !omnibarText.isEmpty else { cachedSuggestions = []; return }
+        let query = omnibarText
+        try? await Task.sleep(for: .milliseconds(100))
+        guard !Task.isCancelled else { return }
+        var bookmarkValues: [(title: String, url: URL)] = []
+        for (index, bookmark) in bookmarks.enumerated() {
+            bookmarkValues.append((bookmark.title, bookmark.url))
+            if index % 100 == 99 { await Task.yield() }
+            guard !Task.isCancelled else { return }
+        }
+        var histories: [[String]] = []
+        for (index, tab) in tabs.enumerated() {
+            histories.append(tab.historyStrings)
+            if index % 100 == 99 { await Task.yield() }
+            guard !Task.isCancelled else { return }
+        }
+        var result = await omnibarSuggestions(input: query, tabHistory: histories,
+            bookmarks: bookmarkValues, durableHistory: browsingHistory.visits)
+        guard !Task.isCancelled else { return }
+        result += await transcriptSuggestions(for: query)
+        guard !Task.isCancelled else { return }
+        for index in result.indices where result[index].type != .transcript {
+            result[index].ledgerNote = ledgerNote(for: result[index].url)
+        }
+        var seen: Set<String> = []
+        cachedSuggestions = result.filter { seen.insert($0.id).inserted }
+        if selectedSuggestion >= cachedSuggestions.count { selectedSuggestion = -1 }
     }
 
     private var matchingPaletteTabs: [Tab] {
@@ -408,6 +437,11 @@ struct BrowserView_iOS: View {
                 accessibilityFocus = isShowing ? .sidebar : .page
             }
         }
+        .task(id: SuggestionRequest(query: showOmnibar ? omnibarText : "", revision: suggestionRevision)) {
+            await refreshSuggestions()
+        }
+        .onChange(of: bookmarks) { _, _ in if showOmnibar { suggestionRevision += 1 } }
+        .onReceive(browsingHistory.$visits) { _ in if showOmnibar { suggestionRevision += 1 } }
         .onChange(of: showOmnibar) { _, isShowing in
             DispatchQueue.main.async {
                 accessibilityFocus = isShowing ? .omnibar : .page
@@ -415,6 +449,7 @@ struct BrowserView_iOS: View {
         }
         .onChange(of: isLoading) { _, loading in withAnimation { showProgressBar = loading } }
         .onChange(of: tabs) { _, newTabs in
+            if showOmnibar { suggestionRevision += 1 }
             // Keep restored container tabs' sessions registered, and keep a valid
             // selection across the merged working set (incognito included).
             webViewManager?.syncSessions(from: newTabs)
@@ -534,7 +569,7 @@ struct BrowserView_iOS: View {
                     )
                 },
                 onDeleteBookmark: { bookmarkManager?.removeBookmark($0) },
-                onImportBookmarks: { bookmarkManager?.importBookmarks($0) ?? 0 },
+                onImportBookmarks: { try await bookmarkManager?.importBookmarks($0) ?? 0 },
                 onDeleteHistory: removeHistory,
                 onClearHistory: clearHistory
             )
@@ -756,10 +791,12 @@ struct BrowserView_iOS: View {
     private func drainSharedItems() {
         ShareIngest.updateMirror(workspaces: workspaces, activeWorkspaceId: tabManager.activeWorkspaceId)
         guard let ledgerStore else { return }
-        let result = ShareIngest.drain(ledgerStore: ledgerStore)
-        guard result.ingested > 0 else { return }
-        if let name = result.workspaceName {
-            showNote(String(localized: "Added ^[\(result.ingested) shared item](inflect: true) to \(name)"))
+        Task {
+            let result = await ShareIngest.drain(ledgerStore: ledgerStore)
+            guard result.ingested > 0 else { return }
+            if let name = result.workspaceName {
+                showNote(String(localized: "Added ^[\(result.ingested) shared item](inflect: true) to \(name)"))
+            }
         }
     }
 
@@ -1465,9 +1502,11 @@ struct BrowserView_iOS: View {
     }
 
     /// Omnibar rows from stored video transcripts (design §8.3).
-    private func transcriptSuggestions(for query: String) -> [Suggestion] {
+    private func transcriptSuggestions(for query: String) async -> [Suggestion] {
         guard let fetcher = tabManager.settleCapture?.transcriptFetcher, let ledgerStore else { return [] }
-        return fetcher.search(query).compactMap { hit -> Suggestion? in
+        let hits = await fetcher.searchAsync(query)
+        guard !Task.isCancelled else { return [] }
+        return hits.compactMap { hit -> Suggestion? in
             guard let article = ledgerStore.source(sourceKey: hit.sourceKey) else { return nil }
             let base = URL(string: article.sourceKey) ?? article.url
             let url = AnchorLocator.timestamp(start: hit.segment.startSeconds, end: nil)

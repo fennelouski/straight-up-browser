@@ -18,11 +18,11 @@ final class ResearchRecall {
     var ledgerStore: LedgerStore?
     var documentStore: DocumentStore?
 
-    func call(arguments: [String: Any]) -> String {
+    func call(arguments: [String: Any]) async -> String {
         let query = (arguments["query"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return json(["error": "A query is required."]) }
         let limit = min(max(arguments["limit"] as? Int ?? 8, 1), 20)
-        let matches = search(query: query, limit: limit)
+        let matches = await search(query: query, limit: limit)
         return json([
             "count": matches.count,
             "passages": matches.map { match in
@@ -38,30 +38,47 @@ final class ResearchRecall {
         ])
     }
 
-    func search(query: String, limit: Int) -> [PassageMatch] {
+    func search(query: String, limit: Int) async -> [PassageMatch] {
         guard let ledgerStore else { return [] }
-        var passages = BibliographyCorpus.passages(ledgerStore: ledgerStore)
-        passages.append(contentsOf: notePassages())
-        return EmbeddingPassageMatcher(limit: limit).rank(query: query, passages: passages)
+        var passages = await BibliographyCorpus.passages(ledgerStore: ledgerStore)
+        passages.append(contentsOf: await notePassages())
+        return await PassageRanking.shared.rank(query: query, passages: passages, limit: limit)
     }
 
     /// Workspace notes are Markdown on disk; one passage per paragraph. Rows
     /// whose file has not synced down yet simply contribute nothing.
-    private func notePassages() -> [BibliographyPassage] {
+    private func notePassages() async -> [BibliographyPassage] {
         guard let documentStore else { return [] }
-        return documentStore.allDocuments().flatMap { row -> [BibliographyPassage] in
-            guard let url = documentStore.url(for: row),
-                  let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
-            return text.components(separatedBy: "\n\n").enumerated().compactMap { index, paragraph in
+        let notes = documentStore.allDocuments().compactMap { row -> Note? in
+            guard let url = documentStore.url(for: row) else { return nil }
+            return Note(id: row.id, path: row.relativePath, title: row.displayName, url: url)
+        }
+        return await Self.readNotes(notes)
+    }
+
+    nonisolated struct Note: Sendable {
+        let id: UUID
+        let path: String
+        let title: String
+        let url: URL
+    }
+
+    @concurrent static func readNotes(_ notes: [Note]) async -> [BibliographyPassage] {
+        assert(!Thread.isMainThread)
+        var passages: [BibliographyPassage] = []
+        for note in notes {
+            guard !Task.isCancelled else { return [] }
+            guard let text = try? String(contentsOf: note.url, encoding: .utf8) else { continue }
+            for (index, paragraph) in text.components(separatedBy: "\n\n").enumerated() {
                 let trimmed = paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard trimmed.count >= BibliographyCorpus.minimumPassageCharacters else { return nil }
-                return BibliographyPassage(
-                    id: "note:\(row.id.uuidString)#\(index)",
-                    sourceId: row.id, sourceKey: row.relativePath,
-                    sourceTitle: "Note: \(row.displayName)", sourceURL: nil,
-                    text: trimmed, startSeconds: nil, endSeconds: nil)
+                guard trimmed.count >= BibliographyCorpus.minimumPassageCharacters else { continue }
+                passages.append(BibliographyPassage(
+                    id: "note:\(note.id.uuidString)#\(index)", sourceId: note.id, sourceKey: note.path,
+                    sourceTitle: "Note: \(note.title)", sourceURL: nil,
+                    text: trimmed, startSeconds: nil, endSeconds: nil))
             }
         }
+        return passages
     }
 
     private func json(_ value: Any) -> String {

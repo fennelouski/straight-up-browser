@@ -5,6 +5,16 @@ import Testing
 
 @Suite("Universal iOS contracts")
 struct BrowserIOSContractTests {
+    @MainActor @Test func suggestionsRankLargeHistoriesOffMainWithStableIDs() async {
+        let url = URL(string: "https://example.com")!
+        let history = (0..<10_000).map { "https://example.com/item/\($0)" }
+        let first = await omnibarSuggestions(input: "example", tabHistory: [history], bookmarks: [("Example", url)])
+        let second = await omnibarSuggestions(input: "example", tabHistory: [history], bookmarks: [("Example", url)])
+        #expect(first.count == 8)
+        #expect(first.first?.type == .bookmark)
+        #expect(first.map(\.id) == second.map(\.id))
+    }
+
     @Test("The omnibar distinguishes addresses from searches")
     func omnibarResolutionIsDeterministic() {
         #expect(OmnibarInput.resolve("  ", searchEngine: nil) == nil)

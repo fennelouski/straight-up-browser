@@ -1061,7 +1061,7 @@ struct AgentSettingsView: View {
         diagnosticMessage = nil
         Task {
             do {
-                let store = try AgentRunStoreRegistry.store(
+                let store = try await AgentRunStoreRegistry.store(
                     baseDirectory: BrowserCLI.supportDirectory
                 )
                 let runs = await store.listRuns()

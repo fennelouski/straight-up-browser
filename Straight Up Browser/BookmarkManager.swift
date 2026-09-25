@@ -10,6 +10,7 @@ import SwiftData
 
 class BookmarkManager {
     private let modelContext: ModelContext
+    private var importTask: Task<Int, Error>?
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
@@ -71,30 +72,44 @@ class BookmarkManager {
         return allBookmarks.contains { $0.url.absoluteString == url.absoluteString }
     }
 
-    /// Bulk import: dedups against existing bookmarks, one save at the end.
-    /// Returns how many were actually added.
-    func importBookmarks(_ items: [(title: String, url: URL)]) -> Int {
-        var existing = Set(fetchAllBookmarks().map { $0.url.absoluteString })
-        var added = 0
-        for item in items where !existing.contains(item.url.absoluteString) {
-            modelContext.insert(Bookmark(title: item.title, url: item.url))
-            existing.insert(item.url.absoluteString)
-            added += 1
-        }
-        return save("Import bookmarks") ? added : 0
+    /// Imports are serialized, with bounded saves and a yield between batches.
+    func importBookmarks(_ items: [(title: String, url: URL)]) async throws -> Int {
+        try await importBookmarks(items.map { ImportedLibraryBookmark(title: $0.title, url: $0.url, category: nil) })
     }
 
-    func importBookmarks(_ items: [ImportedLibraryBookmark]) -> Int {
-        var existing = Set(fetchAllBookmarks().map { $0.url.absoluteString })
-        var added = 0
-        for item in items where !existing.contains(item.url.absoluteString) {
-            modelContext.insert(
-                Bookmark(title: item.title, url: item.url, category: item.category)
-            )
-            existing.insert(item.url.absoluteString)
-            added += 1
+    func importBookmarks(_ items: [ImportedLibraryBookmark]) async throws -> Int {
+        let previous = importTask
+        let task = Task {
+            _ = try? await previous?.value
+            var existing = Set(fetchAllBookmarks().map { $0.url.absoluteString })
+            var added = 0
+            var pending = 0
+            for (index, item) in items.enumerated() {
+                if existing.insert(item.url.absoluteString).inserted {
+                    modelContext.insert(Bookmark(title: item.title, url: item.url, category: item.category))
+                    pending += 1
+                }
+                if index % 100 == 99 {
+                    try saveImportBatch()
+                    added += pending
+                    pending = 0
+                    await Task.yield()
+                }
+            }
+            try saveImportBatch()
+            return added + pending
         }
-        return save("Import bookmarks") ? added : 0
+        importTask = task
+        return try await task.value
+    }
+
+    private func saveImportBatch() throws {
+        do { try modelContext.save() }
+        catch {
+            modelContext.rollback()
+            PersistenceDiagnostics.shared.report(operation: "Import bookmarks", error: error)
+            throw error
+        }
     }
 
     @discardableResult

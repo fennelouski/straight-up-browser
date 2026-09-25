@@ -58,7 +58,9 @@ struct BrowserUsabilityTests {
     @Test func concurrentStartupWaitsForRecoveryBeforeCreatingConversations() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = try AgentRunStoreRegistry.store(baseDirectory: root)
+        let store = try await AgentRunStoreRegistry.store(baseDirectory: root)
+        async let sameStore = AgentRunStoreRegistry.store(baseDirectory: root)
+        #expect(try await sameStore === store)
         let startup = Task { try await AgentRunStoreRegistry.recoverIfNeeded(store, baseDirectory: root) }
         await Task.yield()
         try await AgentRunStoreRegistry.recoverIfNeeded(store, baseDirectory: root)

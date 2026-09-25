@@ -1992,7 +1992,7 @@ class NotificationManager {
     }
 
     private func agentRunCapabilities(_ runID: UUID) async -> Set<AgentCapability>? {
-        guard let store = try? AgentRunStoreRegistry.store(baseDirectory: BrowserCLI.supportDirectory),
+        guard let store = try? await AgentRunStoreRegistry.store(baseDirectory: BrowserCLI.supportDirectory),
               let run = await store.run(id: runID) else { return nil }
         return run.configuration.enabledCapabilities
     }

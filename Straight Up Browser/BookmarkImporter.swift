@@ -10,7 +10,7 @@ import AppKit
 
 // Safari (needs manual HTML export) and Firefox (places.sqlite) are not
 // supported - only browsers we can actually import from are offered.
-enum BrowserType: String, CaseIterable {
+nonisolated enum BrowserType: String, CaseIterable, Sendable {
     case chrome = "Google Chrome"
     case edge = "Microsoft Edge"
 
@@ -41,7 +41,7 @@ enum BrowserType: String, CaseIterable {
     }
 }
 
-struct ImportedBookmark {
+nonisolated struct ImportedBookmark: Sendable {
     let title: String
     let url: URL
     let dateAdded: Date?
@@ -60,7 +60,7 @@ class BookmarkImporter {
         return availableBrowsers
     }
 
-    static func importBookmarks(from browser: BrowserType) -> [ImportedBookmark] {
+    static func importBookmarks(from browser: BrowserType) async throws -> [ImportedBookmark]? {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
@@ -72,7 +72,12 @@ class BookmarkImporter {
         panel.prompt = String(localized: "Import")
         panel.directoryURL = browser.suggestedBookmarkFileURL
             .deletingLastPathComponent()
-        guard panel.runModal() == .OK, let fileURL = panel.url else { return [] }
+        guard await panel.begin() == .OK, let fileURL = panel.url else { return nil }
+        return try await importChromeBookmarks(from: fileURL)
+    }
+
+    @concurrent static func importChromeBookmarks(from fileURL: URL) async throws -> [ImportedBookmark] {
+        assert(!Thread.isMainThread)
         let accessed = fileURL.startAccessingSecurityScopedResource()
         defer {
             if accessed {
@@ -80,34 +85,25 @@ class BookmarkImporter {
             }
         }
 
-        switch browser {
-        case .chrome, .edge:
-            return importChromeBookmarks(from: fileURL)
-        }
-    }
-
-    private static func importChromeBookmarks(from fileURL: URL) -> [ImportedBookmark] {
         var bookmarks: [ImportedBookmark] = []
 
-        do {
-            let data = try Data(contentsOf: fileURL)
-            if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
-                if let roots = json["roots"] as? [String: Any] {
-                    for (_, rootValue) in roots {
-                        if let rootDict = rootValue as? [String: Any] {
-                            parseChromeBookmarks(rootDict, bookmarks: &bookmarks)
-                        }
-                    }
+        let data = try Data(contentsOf: fileURL)
+        try Task.checkCancellation()
+        if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let roots = json["roots"] as? [String: Any] {
+            for key in roots.keys.sorted() {
+                if let root = roots[key] as? [String: Any] {
+                    parseChromeBookmarks(root, bookmarks: &bookmarks)
                 }
             }
-        } catch {
-            Logger.log("Error importing Chrome bookmarks: \(error)", type: "BookmarkImporter")
         }
+        try Task.checkCancellation()
 
         return bookmarks
     }
 
-    private static func parseChromeBookmarks(_ item: [String: Any], bookmarks: inout [ImportedBookmark]) {
+    nonisolated private static func parseChromeBookmarks(_ item: [String: Any], bookmarks: inout [ImportedBookmark]) {
+        guard !Task.isCancelled else { return }
         if let type = item["type"] as? String, type == "url" {
             if let title = item["name"] as? String,
                let urlString = item["url"] as? String,

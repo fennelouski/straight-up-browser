@@ -43,9 +43,9 @@ enum AgentReplayCaptureCoordinator {
         operation: () async -> Result
     ) async -> Result {
         let authorizedTarget = authorizedBinding.target
-        let store = providedStore ?? (try? AgentRunStoreRegistry.store(
-            baseDirectory: BrowserCLI.supportDirectory
-        ))
+        let store: AgentRunStore?
+        if let providedStore { store = providedStore }
+        else { store = try? await AgentRunStoreRegistry.store(baseDirectory: BrowserCLI.supportDirectory) }
         let meter: AgentRunMeter?
         if let providedMeter {
             meter = providedMeter

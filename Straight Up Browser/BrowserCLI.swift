@@ -675,7 +675,7 @@ final class BrowserAutomationRegistry {
             arguments["incognito"] as? Bool == true
         }
         do {
-            let store = try AgentRunStoreRegistry.store(baseDirectory: BrowserCLI.supportDirectory)
+            let store = try await AgentRunStoreRegistry.store(baseDirectory: BrowserCLI.supportDirectory)
             let run = try await store.createRun(
                 conversationID: nil,
                 entryPoint: .localMCP,

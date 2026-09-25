@@ -477,16 +477,11 @@ struct TabWebView: UIViewRepresentable {
             if #available(iOS 18.4, *),
                navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url {
                 let mods = navigationAction.modifierFlags
-                // ⌘-click: open in a new tab; add Shift to focus it.
+                // ⌘-click opens and selects a tab immediately beside its source.
                 if mods.contains(.command) {
-                    let context = parent.webViewManager?.tabId(for: webView)
-                        .flatMap { id in tabs?.first(where: { $0.id == id })?.browsingContext }
-                        ?? .normalWebKit
-                    _ = tabManager?.createTab(
-                        inheriting: context,
-                        url: url,
-                        select: mods.contains(.shift)
-                    )
+                    let source = parent.webViewManager?.tabId(for: webView)
+                        .flatMap { id in tabs?.first(where: { $0.id == id }) }
+                    tabManager?.openLinkInNewTab(url, from: source)
                     decisionHandler(.cancel, preferences)
                     return
                 }
@@ -667,7 +662,8 @@ struct TabWebView: UIViewRepresentable {
             let isPopup = navigationAction.navigationType != .linkActivated
             let newTab = tabManager.createTab(
                 inheriting: openerContext,
-                select: !isPopup
+                select: !isPopup,
+                after: webViewManager.tabId(for: webView).flatMap { id in tabs?.first(where: { $0.id == id }) }
             )
             webViewManager.adoptWebView(
                 popupWebView,

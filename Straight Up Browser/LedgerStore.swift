@@ -21,6 +21,11 @@ final class LedgerStore {
         newspaper = NewspaperStore(modelContext: modelContext)
     }
 
+    var modelContainer: ModelContainer { modelContext.container }
+
+    /// Used before acknowledging an external inbox item.
+    func flush() throws { try modelContext.save() }
+
     // MARK: Lookups
 
     func workspace(id: UUID) -> Workspace? {
@@ -199,7 +204,21 @@ final class LedgerStore {
         } catch {
             return nil
         }
-        let article = enqueueSource(url: fileURL, title: cleanedName, workspaceId: workspaceId)
+        return recordPreparedFileImport(url: fileURL, hash: hash, name: cleanedName,
+                                        workspaceId: workspaceId, method: method)
+    }
+
+    @discardableResult
+    func recordPreparedFileImport(url: URL, hash: String, name: String, workspaceId: UUID,
+                                  method: SourceCaptureMethod = .shareSheet) -> NewspaperArticle {
+        let sourceKey = "hash:" + hash
+        if let existing = source(sourceKey: sourceKey) {
+            upsertReference(workspaceId: workspaceId, article: existing, method: method, disposition: .open)
+            save("Record shared file")
+            return existing
+        }
+        let ext = (name as NSString).pathExtension
+        let article = enqueueSource(url: url, title: name, workspaceId: workspaceId)
         // Content identity, not path identity: re-key onto the hash so the same
         // bytes from any path collapse to one source.
         article.sourceKey = sourceKey

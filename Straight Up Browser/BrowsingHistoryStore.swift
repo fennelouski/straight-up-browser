@@ -24,32 +24,43 @@ final class BrowsingHistoryStore: ObservableObject {
 
     @Published private(set) var visits: [HistoryVisit] = []
 
-    private let storeURL: URL
+    private let file: JSONHistoryFile<[HistoryVisit]>
+    private var loadingTask: Task<Void, Never>?
+    private var persistenceTask: Task<Void, Never>?
+    private var isLoaded = false
+    private var needsSave = false
+    private var startupMutations: [(inout [HistoryVisit]) -> Void] = []
     private let maxVisits: Int
 
     init(storeURL: URL? = nil, maxVisits: Int = 5_000) {
-        if let storeURL {
-            self.storeURL = storeURL
-        } else {
-            let directory = FileManager.default
-                .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("Straight Up Browser", isDirectory: true)
-            do {
-                try FileManager.default.createDirectory(
-                    at: directory,
-                    withIntermediateDirectories: true,
-                    attributes: [.posixPermissions: 0o700]
-                )
-            } catch {
-                PersistenceDiagnostics.shared.report(
-                    operation: "Create browsing history folder",
-                    error: error
-                )
-            }
-            self.storeURL = directory.appendingPathComponent("browsing-history.json")
-        }
+        let url = storeURL ?? FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Straight Up Browser", isDirectory: true)
+            .appendingPathComponent("browsing-history.json")
+        file = JSONHistoryFile(url: url)
         self.maxVisits = max(1, maxVisits)
-        load()
+        let file = file
+        let limit = self.maxVisits
+        loadingTask = Task { [weak self] in
+            var loaded: [HistoryVisit] = []
+            var hadFile = false
+            do {
+                if let values = try await file.load(transform: {
+                    Array($0.sorted { $0.visitedAt > $1.visitedAt }.prefix(limit))
+                }) {
+                    loaded = values
+                    hadFile = true
+                }
+            } catch {
+                PersistenceDiagnostics.shared.report(operation: "Load browsing history", error: error)
+            }
+            guard let self else { return }
+            for mutation in self.startupMutations { mutation(&loaded) }
+            self.startupMutations.removeAll()
+            self.visits = loaded
+            self.isLoaded = true
+            if hadFile || self.needsSave { self.save() }
+        }
     }
 
     var recentVisits: [HistoryVisit] {
@@ -120,67 +131,88 @@ final class BrowsingHistoryStore: ObservableObject {
     ) {
         guard sessionKind != .incognito,
               url.scheme == "http" || url.scheme == "https" else { return }
-        visits.insert(
-            HistoryVisit(
-                url: url,
-                title: title?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
-                    ?? url.host
-                    ?? url.absoluteString,
-                visitedAt: visitedAt
-            ),
-            at: 0
-        )
-        if visits.count > maxVisits {
-            visits.removeLast(visits.count - maxVisits)
+        let visit = HistoryVisit(url: url,
+            title: title?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+                ?? url.host ?? url.absoluteString, visitedAt: visitedAt)
+        let limit = maxVisits
+        mutate { visits in
+            visits.insert(visit, at: 0)
+            if visits.count > limit { visits.removeLast(visits.count - limit) }
         }
-        save()
     }
 
     func remove(url: URL) {
-        visits.removeAll { $0.url.absoluteString == url.absoluteString }
-        save()
+        mutate { $0.removeAll { $0.url.absoluteString == url.absoluteString } }
     }
 
     func remove(from start: Date?, through end: Date?) {
-        visits.removeAll { visit in
-            let afterStart = start.map { visit.visitedAt >= $0 } ?? true
-            let beforeEnd = end.map { visit.visitedAt <= $0 } ?? true
-            return afterStart && beforeEnd
+        mutate { visits in
+            visits.removeAll { visit in
+                let afterStart = start.map { visit.visitedAt >= $0 } ?? true
+                let beforeEnd = end.map { visit.visitedAt <= $0 } ?? true
+                return afterStart && beforeEnd
+            }
         }
+    }
+
+    func clear() { mutate { $0.removeAll() } }
+
+    private func mutate(_ mutation: @escaping (inout [HistoryVisit]) -> Void) {
+        mutation(&visits)
+        if !isLoaded { startupMutations.append(mutation) }
         save()
     }
 
-    func clear() {
-        visits.removeAll()
-        guard FileManager.default.fileExists(atPath: storeURL.path) else { return }
-        do {
-            try FileManager.default.removeItem(at: storeURL)
-        } catch {
-            PersistenceDiagnostics.shared.report(operation: "Clear browsing history", error: error)
-        }
-    }
+    func waitUntilLoaded() async { await loadingTask?.value }
 
-    private func load() {
-        guard FileManager.default.fileExists(atPath: storeURL.path) else { return }
-        do {
-            let data = try Data(contentsOf: storeURL)
-            let decoded = try JSONDecoder().decode([HistoryVisit].self, from: data)
-            visits = Array(decoded.sorted { $0.visitedAt > $1.visitedAt }.prefix(maxVisits))
-        } catch {
-            PersistenceDiagnostics.shared.report(operation: "Load browsing history", error: error)
-        }
+    func flush() async {
+        await waitUntilLoaded()
+        await persistenceTask?.value
     }
 
     private func save() {
-        do {
-            let data = try JSONEncoder().encode(visits)
-            try data.write(to: storeURL, options: [.atomic, .completeFileProtection])
-        } catch {
-            PersistenceDiagnostics.shared.report(operation: "Save browsing history", error: error)
+        needsSave = true
+        guard isLoaded, persistenceTask == nil else { return }
+        persistenceTask = Task {
+            // Coalesce rapid changes while a write is in flight. One task owns
+            // the writes, so a slow older snapshot cannot replace a newer one.
+            while needsSave {
+                needsSave = false
+                let snapshot = visits
+                do { try await file.write(snapshot.isEmpty ? nil : snapshot) }
+                catch { PersistenceDiagnostics.shared.report(operation: "Save browsing history", error: error) }
+            }
+            persistenceTask = nil
         }
     }
+
 }
 
 private extension String {
     var nonEmpty: String? { isEmpty ? nil : self }
+}
+
+/// Disk access for the two local history files. Values crossing this actor are
+/// immutable Codable snapshots; UI state stays with its main-actor owner.
+actor JSONHistoryFile<Value: Codable & Sendable> {
+    private let url: URL
+    init(url: URL) { self.url = url }
+
+    func load(transform: @Sendable (Value) -> Value = { $0 }) throws -> Value? {
+        assert(!Thread.isMainThread)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return transform(try JSONDecoder().decode(Value.self, from: Data(contentsOf: url)))
+    }
+
+    func write(_ value: Value?) throws {
+        assert(!Thread.isMainThread)
+        guard let value else {
+            if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+            return
+        }
+        let data = try JSONEncoder().encode(value)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try data.write(to: url, options: [.atomic, .completeFileProtection])
+    }
 }

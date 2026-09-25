@@ -9,7 +9,7 @@ struct BrowserLibrary_iOS: View {
     let onOpen: (URL) -> Void
     let onUpdateBookmark: (Bookmark, String, URL, String?) -> Void
     let onDeleteBookmark: (Bookmark) -> Void
-    let onImportBookmarks: ([ImportedLibraryBookmark]) -> Int
+    let onImportBookmarks: ([ImportedLibraryBookmark]) async throws -> Int
     let onDeleteHistory: (URL) -> Void
     let onClearHistory: () -> Void
     @ObservedObject private var historyStore: BrowsingHistoryStore
@@ -30,7 +30,7 @@ struct BrowserLibrary_iOS: View {
         onOpen: @escaping (URL) -> Void,
         onUpdateBookmark: @escaping (Bookmark, String, URL, String?) -> Void,
         onDeleteBookmark: @escaping (Bookmark) -> Void,
-        onImportBookmarks: @escaping ([ImportedLibraryBookmark]) -> Int,
+        onImportBookmarks: @escaping ([ImportedLibraryBookmark]) async throws -> Int,
         onDeleteHistory: @escaping (URL) -> Void,
         onClearHistory: @escaping () -> Void
     ) {
@@ -267,22 +267,18 @@ struct BrowserLibrary_iOS: View {
     }
 
     private func importBookmarks(_ result: Result<[URL], Error>) {
-        do {
-            guard let url = try result.get().first else { return }
-            let didAccess = url.startAccessingSecurityScopedResource()
-            defer {
-                if didAccess { url.stopAccessingSecurityScopedResource() }
+        Task {
+            do {
+                guard let url = try result.get().first else { return }
+                let parsed = try await BrowserLibrary.importBookmarksHTML(from: url)
+                let added = try await onImportBookmarks(parsed)
+                statusMessage = String(localized: "Imported \(added) of \(parsed.count) bookmarks.")
+            } catch {
+                statusMessage = error.localizedDescription
             }
-            let html = try String(contentsOf: url, encoding: .utf8)
-            let parsed = BrowserLibrary.bookmarks(fromHTML: html)
-            let added = onImportBookmarks(parsed)
-            statusMessage = String(
-                localized: "Imported \(added) of \(parsed.count) bookmarks."
-            )
-        } catch {
-            statusMessage = error.localizedDescription
         }
     }
+
 }
 
 private struct BookmarkHTMLDocument: FileDocument {

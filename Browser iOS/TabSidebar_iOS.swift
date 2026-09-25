@@ -47,6 +47,7 @@ struct TabSidebar_iOS: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
         List(selection: Binding(
             get: { tabManager.selectedTabId },
             set: { if let id = $0 { tabManager.selectedTabId = id } }
@@ -108,6 +109,12 @@ struct TabSidebar_iOS: View {
                 }
                 .accessibilityLabel("Browser Menu")
             }
+        }
+        .task(id: tabs.first(where: { $0.id == tabManager.selectedTabId })?.id) {
+            await Task.yield()
+            guard !Task.isCancelled, let selected = tabManager.selectedTabId else { return }
+            proxy.scrollTo(selected, anchor: .center)
+        }
         }
     }
 

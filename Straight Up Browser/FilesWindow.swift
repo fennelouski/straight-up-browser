@@ -49,35 +49,10 @@ enum HumanDate {
 
 struct FileRow: Identifiable {
     let record: FileRecord
-    let icon: NSImage
-    let exists: Bool
-    let sizeText: String?
-    let typeText: String?
-    let created: Date?
-    let accessed: Date?
+    let metadata: FileMetadata?
 
     var id: UUID { record.id }
-
-    static func make(from record: FileRecord) -> FileRow {
-        let url = record.url
-        let exists = FileManager.default.fileExists(atPath: url.path)
-        let icon = NSWorkspace.shared.icon(forFile: url.path)
-        icon.size = NSSize(width: 32, height: 32)
-
-        var sizeText: String?, typeText: String?, created: Date?, accessed: Date?
-        if exists, let v = try? url.resourceValues(forKeys: [
-            .totalFileSizeKey, .fileSizeKey, .contentTypeKey, .creationDateKey, .contentAccessDateKey,
-        ]) {
-            if let size = v.totalFileSize ?? v.fileSize {
-                sizeText = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
-            }
-            typeText = v.contentType?.localizedDescription
-            created = v.creationDate
-            accessed = v.contentAccessDate
-        }
-        return FileRow(record: record, icon: icon, exists: exists,
-                       sizeText: sizeText, typeText: typeText, created: created, accessed: accessed)
-    }
+    var exists: Bool { metadata?.exists == true }
 
     var whereText: String {
         (record.url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
@@ -92,8 +67,8 @@ struct FileRow: Identifiable {
 
     var subtitle: String {
         var parts: [String] = []
-        if let typeText { parts.append(typeText) }
-        if let sizeText { parts.append(sizeText) }
+        if let typeText = metadata?.typeText { parts.append(typeText) }
+        if let sizeText = metadata?.sizeText { parts.append(sizeText) }
         parts.append(whereText)
         if let sourceText { parts.append(sourceText) }
         return parts.joined(separator: " · ")
@@ -101,15 +76,15 @@ struct FileRow: Identifiable {
 
     var detail: String? {
         var parts: [String] = []
-        if let created { parts.append(String(localized: "Created \(HumanDate.compact(created))")) }
-        if let accessed { parts.append(String(localized: "Opened \(HumanDate.compact(accessed))")) }
+        if let created = metadata?.created { parts.append(String(localized: "Created \(HumanDate.compact(created))")) }
+        if let accessed = metadata?.accessed { parts.append(String(localized: "Opened \(HumanDate.compact(accessed))")) }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 
 // MARK: - Window
 
-enum KindFilter: String, CaseIterable, Identifiable {
+nonisolated enum KindFilter: String, CaseIterable, Identifiable, Sendable {
     case all, downloads, uploads
     var id: String { rawValue }
     var label: String {
@@ -121,10 +96,47 @@ enum KindFilter: String, CaseIterable, Identifiable {
     }
 }
 
+nonisolated struct FileDay: Identifiable, Sendable {
+    let day: Date
+    let records: [FileRecord]
+    var id: Date { day }
+}
+
+nonisolated struct FileListQuery: Equatable, Sendable {
+    let records: [FileRecord]
+    let search: String
+    let filter: KindFilter
+
+    @concurrent
+    func groupedDays() async throws -> [FileDay] {
+        try Task.checkCancellation()
+        let query = search.lowercased()
+        let matching = records.filter { record in
+            switch filter {
+            case .downloads where record.kind != .download: return false
+            case .uploads where record.kind != .upload: return false
+            default: break
+            }
+            return query.isEmpty || record.name.lowercased().contains(query)
+                || (record.source?.lowercased().contains(query) ?? false)
+        }
+        let calendar = Calendar.current
+        let groups = Dictionary(grouping: matching) { calendar.startOfDay(for: $0.date) }
+        let result = groups.keys.sorted(by: >).map { day in
+            FileDay(day: day, records: groups[day]!.sorted { $0.date > $1.date })
+        }
+        try Task.checkCancellation()
+        return result
+    }
+}
+
 struct FilesWindow: View {
     @ObservedObject private var manager = DownloadManager.shared
 
-    @State private var rows: [FileRow] = []
+    @State private var metadata: [UUID: FileMetadata] = [:]
+    @State private var metadataGeneration = 0
+    @State private var metadataLoader = FileMetadataLoader()
+    @State private var groupedDays: [FileDay] = []
     @State private var search = ""
     @State private var filter: KindFilter = .all
     @State private var selection: UUID?
@@ -142,26 +154,8 @@ struct FilesWindow: View {
         }
     }
 
-    private var visibleRows: [FileRow] {
-        rows.filter { row in
-            switch filter {
-            case .all: break
-            case .downloads where row.record.kind != .download: return false
-            case .uploads where row.record.kind != .upload: return false
-            default: break
-            }
-            guard !search.isEmpty else { return true }
-            let q = search.lowercased()
-            return row.record.name.lowercased().contains(q)
-                || (row.record.source?.lowercased().contains(q) ?? false)
-        }
-    }
-
-    private var groupedDays: [(day: Date, rows: [FileRow])] {
-        let groups = Dictionary(grouping: visibleRows) { Calendar.current.startOfDay(for: $0.record.date) }
-        return groups.keys.sorted(by: >).map { day in
-            (day, groups[day]!.sorted { $0.record.date > $1.record.date })
-        }
+    private var query: FileListQuery {
+        FileListQuery(records: manager.records, search: search, filter: filter)
     }
 
     private var visibleActiveDownloads: [ActiveDownload] {
@@ -207,13 +201,21 @@ struct FilesWindow: View {
             }
         }
         .confirmationDialog("Clear this list?", isPresented: $showClearConfirm) {
-            Button("Clear", role: .destructive) { manager.clear(); refresh() }
+            Button("Clear", role: .destructive) { manager.clear() }
         } message: {
             Text("This only clears the list. Your files stay exactly where they are.")
         }
         .quickLookPreview($previewURL)
         .onAppear(perform: refresh)
-        .onChange(of: manager.records) { _, _ in refresh() }
+        .onChange(of: manager.records) { _, records in
+            let ids = Set(records.map(\.id))
+            metadata = metadata.filter { ids.contains($0.key) }
+        }
+        .task(id: query) {
+            if let days = try? await query.groupedDays(), !Task.isCancelled {
+                groupedDays = days
+            }
+        }
         .preferredColorScheme(colorScheme)
     }
 
@@ -232,10 +234,21 @@ struct FilesWindow: View {
                     }
                 }
             }
-            ForEach(groupedDays, id: \.day) { group in
+            ForEach(groupedDays) { group in
                 Section(HumanDate.day(group.day)) {
-                    ForEach(group.rows) { row in
+                    ForEach(group.records) { record in
+                        let row = FileRow(record: record, metadata: metadata[record.id])
                         FileRowView(row: row)
+                            .tag(record.id)
+                            .task(id: metadataGeneration) {
+                                guard metadata[record.id] == nil else { return }
+                                let generation = metadataGeneration
+                                if let result = try? await metadataLoader.load(record.url),
+                                   !Task.isCancelled, generation == metadataGeneration,
+                                   manager.records.contains(where: { $0.id == record.id }) {
+                                    metadata[record.id] = result
+                                }
+                            }
                             .contextMenu { menu(for: row) }
                             .simultaneousGesture(TapGesture(count: 2).onEnded { open(row) })
                     }
@@ -243,8 +256,9 @@ struct FilesWindow: View {
             }
         }
         .onKeyPress(.space) {
-            if let row = visibleRows.first(where: { $0.id == selection }), row.exists {
-                previewURL = row.record.url
+            if let record = groupedDays.lazy.flatMap(\.records).first(where: { $0.id == selection }),
+               metadata[record.id]?.exists == true {
+                previewURL = record.url
                 return .handled
             }
             return .ignored
@@ -270,7 +284,7 @@ struct FilesWindow: View {
         }
         Divider()
         Button("Move to Trash", role: .destructive) { moveToTrash(row) }.disabled(!row.exists)
-        Button("Remove from List", role: .destructive) { manager.remove(row.record); refresh() }
+        Button("Remove from List", role: .destructive) { manager.remove(row.record) }
     }
 
     private func open(_ row: FileRow) {
@@ -305,7 +319,8 @@ struct FilesWindow: View {
     }
 
     private func refresh() {
-        rows = manager.records.map { FileRow.make(from: $0) }
+        metadata.removeAll()
+        metadataGeneration += 1
     }
 }
 
@@ -387,10 +402,16 @@ private struct FileRowView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(nsImage: row.icon)
-                .resizable().aspectRatio(contentMode: .fit)
-                .frame(width: 32, height: 32)
-                .opacity(row.exists ? 1 : 0.4)
+            Group {
+                if let icon = row.metadata?.icon {
+                    Image(decorative: icon, scale: 1)
+                        .resizable().aspectRatio(contentMode: .fit)
+                } else {
+                    Image(systemName: "doc")
+                }
+            }
+            .frame(width: 32, height: 32)
+            .opacity(row.metadata?.exists == false ? 0.4 : 1)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -400,8 +421,8 @@ private struct FileRowView: View {
                     Text(row.record.name)
                         .fontWeight(.medium)
                         .lineLimit(1).truncationMode(.middle)
-                        .opacity(row.exists ? 1 : 0.5)
-                    if !row.exists {
+                        .opacity(row.metadata?.exists == false ? 0.5 : 1)
+                    if row.metadata?.exists == false {
                         Text("missing")
                             .font(.caption2)
                             .padding(.horizontal, 5).padding(.vertical, 1)

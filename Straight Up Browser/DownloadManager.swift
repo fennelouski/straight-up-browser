@@ -31,7 +31,7 @@ struct DownloadNavigationHistory {
     }
 }
 
-enum FileTransferKind: String, Codable {
+nonisolated enum FileTransferKind: String, Codable, Sendable {
     case download
     case upload
 }
@@ -43,7 +43,7 @@ enum FileTransferPrivacy: Equatable {
     var persistsHistory: Bool { self == .standard }
 }
 
-struct FileRecord: Codable, Identifiable, Equatable {
+nonisolated struct FileRecord: Codable, Identifiable, Equatable, Sendable {
     var id = UUID()
     var kind: FileTransferKind
     var path: String        // absolute file path
@@ -54,7 +54,7 @@ struct FileRecord: Codable, Identifiable, Equatable {
     var name: String { url.lastPathComponent }
 }
 
-enum DownloadTransferState: String, Codable, Equatable {
+nonisolated enum DownloadTransferState: String, Codable, Equatable, Sendable {
     case downloading
     case pausing
     case paused
@@ -70,7 +70,7 @@ enum DownloadTransferState: String, Codable, Equatable {
     }
 }
 
-private struct PersistedIncompleteDownload: Codable {
+nonisolated private struct PersistedIncompleteDownload: Codable, Sendable {
     let id: UUID
     var filename: String
     var destinationPath: String?
@@ -81,9 +81,26 @@ private struct PersistedIncompleteDownload: Codable {
     var errorMessage: String?
 }
 
-private struct DownloadStore: Codable {
+nonisolated private struct DownloadStore: Codable, Sendable {
     var records: [FileRecord]
     var incompleteDownloads: [PersistedIncompleteDownload]
+
+    init(records: [FileRecord], incompleteDownloads: [PersistedIncompleteDownload]) {
+        self.records = records
+        self.incompleteDownloads = incompleteDownloads
+    }
+
+    private enum CodingKeys: CodingKey { case records, incompleteDownloads }
+    init(from decoder: any Decoder) throws {
+        if let keyed = try? decoder.container(keyedBy: CodingKeys.self) {
+            records = try keyed.decode([FileRecord].self, forKey: .records)
+            incompleteDownloads = try keyed.decode([PersistedIncompleteDownload].self, forKey: .incompleteDownloads)
+        } else {
+            // The original history was just an array of completed transfers.
+            records = try decoder.singleValueContainer().decode([FileRecord].self)
+            incompleteDownloads = []
+        }
+    }
 }
 
 struct ActiveDownload: Identifiable, Equatable {
@@ -285,7 +302,13 @@ final class DownloadManager: ObservableObject {
 
     // ponytail: hard cap keeps the JSON small; add paging if anyone hoards 500+.
     private let maxRecords = 500
-    private let storeURL: URL
+    private let file: JSONHistoryFile<DownloadStore>
+    private var loadingTask: Task<Void, Never>?
+    private var persistenceTask: Task<Void, Never>?
+    private var isLoaded = false
+    private var needsSave = false
+    private var startupMutations: [(inout [FileRecord]) -> Void] = []
+    private var discardedDuringLoad: Set<UUID> = []
     private var pauseHandlers: [UUID: () -> Void] = [:]
     private var restartHandlers: [UUID: () -> Void] = [:]
     private var nextColorIndex = 0
@@ -310,16 +333,13 @@ final class DownloadManager: ObservableObject {
         #if os(macOS)
         _ = DownloadFolderAccess.shared.configuredFolder()
         #endif
-        if let storeURL {
-            self.storeURL = storeURL
-        } else {
-            let dir = FileManager.default
-                .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("Straight Up Browser", isDirectory: true)
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            self.storeURL = dir.appendingPathComponent("file-history.json")
-        }
+        let url = storeURL ?? FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Straight Up Browser", isDirectory: true)
+            .appendingPathComponent("file-history.json")
+        file = JSONHistoryFile(url: url)
         load()
+
     }
 
     func record(
@@ -329,9 +349,12 @@ final class DownloadManager: ObservableObject {
         privacy: FileTransferPrivacy = .standard
     ) {
         guard privacy.persistsHistory else { return }
-        records.insert(FileRecord(kind: kind, path: url.path, source: source?.absoluteString, date: Date()), at: 0)
-        if records.count > maxRecords { records.removeLast(records.count - maxRecords) }
-        save()
+        let record = FileRecord(kind: kind, path: url.path, source: source?.absoluteString, date: Date())
+        let limit = maxRecords
+        mutateRecords { records in
+            records.insert(record, at: 0)
+            if records.count > limit { records.removeLast(records.count - limit) }
+        }
     }
 
     @discardableResult
@@ -442,13 +465,27 @@ final class DownloadManager: ObservableObject {
     }
 
     func remove(_ record: FileRecord) {
-        records.removeAll { $0.id == record.id }
+        mutateRecords { $0.removeAll { $0.id == record.id } }
+    }
+
+    func clear(kind: FileTransferKind? = nil) {
+        mutateRecords { records in
+            if let kind { records.removeAll { $0.kind == kind } }
+            else { records.removeAll() }
+        }
+    }
+
+    private func mutateRecords(_ mutation: @escaping (inout [FileRecord]) -> Void) {
+        mutation(&records)
+        if !isLoaded { startupMutations.append(mutation) }
         save()
     }
 
-    func clear() {
-        records.removeAll()
-        save()
+    func waitUntilLoaded() async { await loadingTask?.value }
+
+    func flush() async {
+        await waitUntilLoaded()
+        await persistenceTask?.value
     }
 
     private func mutate(_ id: UUID, _ mutation: (inout ActiveDownload) -> Void) {
@@ -457,65 +494,71 @@ final class DownloadManager: ObservableObject {
     }
 
     private func discardTransfer(_ id: UUID) {
+        if !isLoaded { discardedDuringLoad.insert(id) }
         activeDownloads.removeAll { $0.id == id }
         pauseHandlers[id] = nil
         restartHandlers[id] = nil
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: storeURL) else { return }
-
-        if let store = try? JSONDecoder().decode(DownloadStore.self, from: data) {
-            records = store.records
+        let file = file
+        let limit = maxRecords
+        loadingTask = Task { [weak self] in
+            var stored: DownloadStore?
+            do {
+                stored = try await file.load(transform: { value in
+                    var bounded = value
+                    bounded.records = Array(value.records.prefix(limit))
+                    return bounded
+                })
+            } catch {
+                PersistenceDiagnostics.shared.report(operation: "Load download history", error: error)
+            }
+            guard let self else { return }
             let interruptedMessage = String(localized: "The download was interrupted.")
-            activeDownloads = store.incompleteDownloads.enumerated().map { offset, transfer in
-                ActiveDownload(
-                    id: transfer.id,
-                    tabId: UUID(),
-                    filename: transfer.filename,
-                    destinationPath: transfer.destinationPath,
-                    source: transfer.source.flatMap(URL.init(string:)),
-                    privacy: .standard,
-                    startedAt: transfer.startedAt,
-                    progress: transfer.progress,
-                    state: transfer.state == .downloading || transfer.state == .pausing
-                        ? .failed
-                        : transfer.state,
-                    errorMessage: transfer.errorMessage
-                        ?? (transfer.state == .downloading || transfer.state == .pausing
-                            ? interruptedMessage
-                            : nil),
-                    colorIndex: nextColorIndex + offset
-                )
+            var restored: [ActiveDownload] = []
+            for (index, transfer) in (stored?.incompleteDownloads ?? []).enumerated() {
+                let interrupted = transfer.state == .downloading || transfer.state == .pausing
+                restored.append(ActiveDownload(id: transfer.id, tabId: UUID(), filename: transfer.filename,
+                    destinationPath: transfer.destinationPath, source: transfer.source.flatMap(URL.init(string:)),
+                    privacy: .standard, startedAt: transfer.startedAt, progress: transfer.progress,
+                    state: interrupted ? .failed : transfer.state,
+                    errorMessage: transfer.errorMessage ?? (interrupted ? interruptedMessage : nil),
+                    colorIndex: self.nextColorIndex))
+                self.nextColorIndex += 1
+                if index % 100 == 99 { await Task.yield() }
             }
-            nextColorIndex += activeDownloads.count
-            // Persist the conversion of transfers that were interrupted while
-            // the app was not running, so they no longer look active.
-            if activeDownloads.contains(where: { $0.errorMessage == interruptedMessage }) {
-                save()
-            }
-            return
-        }
-
-        // Migrate the original file-history-only format.
-        if let decoded = try? JSONDecoder().decode([FileRecord].self, from: data) {
-            records = decoded
+            self.activeDownloads.insert(contentsOf: restored.filter {
+                !self.discardedDuringLoad.contains($0.id)
+            }, at: 0)
+            self.discardedDuringLoad.removeAll()
+            var records = stored?.records ?? []
+            for mutation in self.startupMutations { mutation(&records) }
+            self.startupMutations.removeAll()
+            self.records = records
+            self.isLoaded = true
+            // Save the cap, legacy migration and interrupted-transfer conversion.
+            if stored != nil || self.needsSave { self.save() }
         }
     }
 
     private func save() {
-        let incompleteDownloads = persistedIncompleteDownloads
-        guard !records.isEmpty || !incompleteDownloads.isEmpty else {
-            try? FileManager.default.removeItem(at: storeURL)
-            return
+        needsSave = true
+        guard isLoaded, persistenceTask == nil else { return }
+        persistenceTask = Task {
+            while needsSave {
+                needsSave = false
+                let snapshot = DownloadStore(records: records, incompleteDownloads: persistedIncompleteDownloads)
+                do {
+                    try await file.write(snapshot.records.isEmpty && snapshot.incompleteDownloads.isEmpty ? nil : snapshot)
+                } catch {
+                    PersistenceDiagnostics.shared.report(operation: "Save download history", error: error)
+                }
+            }
+            persistenceTask = nil
         }
-        let store = DownloadStore(
-            records: records,
-            incompleteDownloads: incompleteDownloads
-        )
-        guard let data = try? JSONEncoder().encode(store) else { return }
-        try? data.write(to: storeURL, options: .atomic)
     }
+
 }
 
 private extension String {

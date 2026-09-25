@@ -70,21 +70,19 @@ nonisolated enum ShareQueue {
 
     // MARK: Draining (the app side)
 
-    /// Every queued item plus its payload bytes, oldest first. Pure read —
+    /// Every queued item plus its payload URL, oldest first. Pure read —
     /// `clear(_:)` removes what the caller actually ingested.
-    static func pending(container: URL? = containerURL()) -> [(item: SharedItem, fileData: Data?)] {
+    static func pending(container: URL? = containerURL()) -> [(item: SharedItem, fileURL: URL?)] {
         guard let container else { return [] }
         let inbox = inboxURL(container: container)
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: inbox.path) else { return [] }
         return names.filter { $0.hasSuffix(".share.json") }
-            .compactMap { name -> (SharedItem, Data?)? in
+            .compactMap { name -> (SharedItem, URL?)? in
                 guard let data = try? Data(contentsOf: inbox.appendingPathComponent(name)),
                       let item = try? JSONDecoder().decode(SharedItem.self, from: data)
                 else { return nil }
-                let fileData = item.fileName.flatMap {
-                    try? Data(contentsOf: inbox.appendingPathComponent($0))
-                }
-                return (item, fileData)
+                let fileURL = item.fileName.map { inbox.appendingPathComponent($0) }
+                return (item, fileURL)
             }
             .sorted { $0.0.sharedAt < $1.0.sharedAt }
     }
