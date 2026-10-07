@@ -80,15 +80,18 @@ final class PaneFocusOutline: NSView {
         needsDisplay = true
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        guard let context = NSGraphicsContext.current?.cgContext,
-              let contentView = window?.contentView else { return }
-        let corners = PaneBorderCorners.matching(
+    var borderCorners: PaneBorderCorners {
+        guard let contentView = window?.contentView else { return PaneBorderCorners() }
+        return PaneBorderCorners.matching(
             pane: convert(bounds, to: nil),
             window: contentView.convert(contentView.bounds, to: nil),
             radius: WindowLayout.isSquareCorners ? 0 : WindowLayout.windowCornerRadius
         )
-        context.addPath(corners.path(in: bounds, lineWidth: 2).cgPath)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.addPath(borderCorners.path(in: bounds, lineWidth: 2).cgPath)
         context.setStrokeColor(NSColor.controlAccentColor.cgColor)
         context.setLineWidth(2)
         context.strokePath()

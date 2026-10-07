@@ -1368,21 +1368,31 @@ struct PaneFocusTests {
         try? await Task.sleep(for: .milliseconds(50))
     }
 
-    @Test func splitFocusOutlineStaysRoundedAndFollowsTheFocusedPane() async throws {
+    @Test func splitFocusOutlineMatchesThePaneBorderAndFollowsFocus() async throws {
         let manager = WebViewManager()
         let container = WebViewContainer(webViewManager: manager, coordinator: nil)
         container.setFrameSize(NSSize(width: 800, height: 600))
+        let window = NSWindow(contentRect: container.bounds, styleMask: .borderless,
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = container
+        defer { window.close() }
+        let radius = WindowLayout.isSquareCorners ? 0 : WindowLayout.windowCornerRadius
         let first = UUID(), second = UUID(), documentID = UUID()
         let document = NSView()
         container.documentPaneProvider = { $0 == documentID ? document : nil }
         for focused in [first, second, documentID] {
             container.setDisplayedTabs([first, second, documentID], focusedTabId: focused)
             await drainMainQueue()
-            let outline = try #require(container.subviews.last)
+            let outline = try #require(container.subviews.last as? PaneFocusOutline)
             let pane = try #require(focused == documentID ? document : manager.existingWebView(for: focused))
             #expect(outline.frame == pane.frame)
-            #expect(outline.layer?.borderWidth == 2)
-            #expect(outline.layer?.cornerRadius == WindowLayout.windowCornerRadius)
+            let expected = focused == first
+                ? PaneBorderCorners(topLeft: radius, bottomLeft: radius)
+                : focused == second
+                    ? PaneBorderCorners()
+                    : PaneBorderCorners(topRight: radius, bottomRight: radius)
+            #expect(outline.borderCorners == expected)
             #expect(outline.hitTest(NSPoint(x: outline.frame.midX, y: outline.frame.midY)) == nil)
             #expect(pane.layer?.borderWidth == 0)
         }
@@ -1391,10 +1401,10 @@ struct PaneFocusTests {
         #expect(container.subviews.last?.frame == document.frame)
         container.setDisplayedTabs([documentID], focusedTabId: documentID)
         await drainMainQueue()
-        #expect(!container.subviews.contains { $0.layer?.borderWidth == 2 })
+        #expect(!container.subviews.contains { $0 is PaneFocusOutline })
         container.setDisplayedTabs([], focusedTabId: nil)
         await drainMainQueue()
-        #expect(!container.subviews.contains { $0.layer?.borderWidth == 2 })
+        #expect(!container.subviews.contains { $0 is PaneFocusOutline })
     }
 
     @Test func activeWebViewFollowsRequestedFocusBeforeApply() async {
