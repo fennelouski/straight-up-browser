@@ -131,9 +131,7 @@ class TabManager: NSObject, ObservableObject {
     // snapshot it stacks carries this id, so reopen restores the set as one unit.
     private var pendingUndoGroup: UUID?
 
-    // Set when a normal tab is created and we're not the default browser, so
-    // ContentView can show the bottom-corner nudge. Every new-tab path (⌘T, +,
-    // menus, CLI) funnels through createNewTab.
+    // Set once on an eligible app launch by the engagement observer.
     @Published var offerDefaultBrowser = false
 
     // Presentational only: link provenance below owns behavior; this value just
@@ -257,9 +255,6 @@ class TabManager: NSObject, ObservableObject {
         preferredEngine: BrowserEngine = .webKit,
         after source: Tab? = nil
     ) -> Tab {
-        #if os(macOS)
-        if DefaultBrowser.shouldOffer { offerDefaultBrowser = true }
-        #endif
         let newTab = Tab(title: String(localized: "New Tab"), url: url, isActive: false)
         newTab.preferredEngine = preferredEngine
         newTab.openerId = source?.id ?? selectedTabId

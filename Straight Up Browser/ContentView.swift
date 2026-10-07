@@ -2362,6 +2362,7 @@ struct ContentView: View {
         .overlay(tabGridOverlay.zIndex(8))
         .overlay(passwordPickerOverlay.zIndex(9))
         .overlay(alignment: .bottomTrailing, content: { defaultBrowserOverlay.zIndex(9) })
+        .background(DefaultBrowserEngagementObserver(tabManager: tabManager, hasWebPage: activeTab?.url?.scheme == "https" || activeTab?.url?.scheme == "http"))
     }
 
     private var agentPanelView: some View {
@@ -2564,7 +2565,7 @@ struct ContentView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.default, value: tabManager.offerDefaultBrowser)
+        .animation(reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.88), value: tabManager.offerDefaultBrowser)
     }
 
     // Card grid of every open tab, ⌘O (arrows to steer, Return to jump)

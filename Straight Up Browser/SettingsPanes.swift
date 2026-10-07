@@ -239,9 +239,9 @@ struct GeneralSettingsView: View {
                         DefaultBrowser.setPromptEnabled(on)
                     }
                 SettingCaptionRow(
-                    caption: "Show the corner nudge on a new tab until Browser is your default.",
+                    caption: "Offer after four hours of browsing in the last seven days.",
                     title: "Default Browser Nudge",
-                    explanation: "When Browser isn't your default, a small card appears in the corner of a new tab offering to make it one. It goes away for good once you answer it either way — turn this off to skip it entirely, or back on to see it again.",
+                    explanation: "After four hours of foreground browsing within seven days, Browser offers on your next launch. Dismiss twice to pause for ten more used launches; the next offer includes Never. Turn this off to skip offers, or back on to allow them again.",
                     value: $defaultBrowserPrompt
                 ) { DefaultBrowserPromptDemo(enabled: $0) }
 

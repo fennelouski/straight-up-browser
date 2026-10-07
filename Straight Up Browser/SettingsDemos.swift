@@ -535,29 +535,28 @@ struct QuickOpenOverrideDemo: View {
 
 struct DefaultBrowserPromptDemo: View {
     @Binding var enabled: Bool
+    @State private var showingPrompt = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 20) {
             VStack(spacing: 12) {
-                Text("New Tab").font(.caption).foregroundStyle(.tertiary)
-                HStack(spacing: 8) {
-                    Image(systemName: "globe")
-                        .foregroundStyle(enabled ? SettingsTint.general : .secondary)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Make Browser your default?")
-                            .font(.caption.weight(.semibold))
-                        Text("Links from other apps will open here.")
-                            .font(.caption2).foregroundStyle(.secondary)
+                Group {
+                    if showingPrompt {
+                        DefaultBrowserPrompt(onDismiss: { showingPrompt = false }, offersNever: false, isDemo: true)
+                            .scaleEffect(0.8)
+                            .opacity(enabled ? 1 : 0.25)
+                    } else {
+                        VStack(spacing: 10) {
+                            Text("Preview closed.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Button("Show preview") { showingPrompt = true }
+                        }
                     }
-                    Text("Set Default")
-                        .font(.caption2.weight(.medium))
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(.quaternary, in: Capsule())
                 }
-                .padding(10)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-                .opacity(enabled ? 1 : 0.25)
-                Text(enabled ? "Appears in the corner until you answer it."
+                .frame(height: 190)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: showingPrompt)
+                Text(enabled ? "Offered on launch after four hours of recent browsing."
                              : "Never shown. Set the default in System Settings.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -566,10 +565,11 @@ struct DefaultBrowserPromptDemo: View {
             .frame(maxWidth: .infinity)
             .padding(16)
             .background(demoCard)
-            .animation(.easeInOut, value: enabled)
+            .animation(reduceMotion ? nil : .easeInOut, value: enabled)
 
             Toggle("Offer to make Browser your default", isOn: $enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .onChange(of: enabled) { _, _ in showingPrompt = true }
         }
     }
 }
