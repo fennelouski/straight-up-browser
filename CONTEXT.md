@@ -136,6 +136,10 @@ A Markdown file in iCloud Drive belonging to a **Workspace**, referenced by rela
 - Page archives are local-only and never sync; extracted text and every other ledger entity does
 - Browser chrome is keyboard-first: every user-facing surface needs a discoverable key command for opening it, and every primary action within that surface must be reachable without a pointer; pointer controls are alternate affordances, not the only path
 
+## User-facing explanations
+
+About text, help, and settings captions should explain what a feature means and how it benefits the user. Never use these surfaces to explain internal eligibility rules, timing thresholds, scoring, or implementation details. Keep those details in developer documentation, code, and tests.
+
 ## Example dialogue
 
 > **Dev:** "If a **Split** shows Mail and Calendar, which one does ⌘L edit?"

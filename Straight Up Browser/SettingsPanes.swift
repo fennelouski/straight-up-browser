@@ -239,9 +239,9 @@ struct GeneralSettingsView: View {
                         DefaultBrowser.setPromptEnabled(on)
                     }
                 SettingCaptionRow(
-                    caption: "Offer after four hours of browsing in the last seven days.",
-                    title: "Default Browser Nudge",
-                    explanation: "After four hours of foreground browsing within seven days, Browser offers on your next launch. Dismiss twice to pause for ten more used launches; the next offer includes Never. Turn this off to skip offers, or back on to allow them again.",
+                    caption: "Choose Browser to open links from other apps.",
+                    title: "Default Browser",
+                    explanation: "Making Browser your default means web links from Mail, Messages, documents, and other apps open here automatically. You can change your default browser at any time in System Settings.",
                     value: $defaultBrowserPrompt
                 ) { DefaultBrowserPromptDemo(enabled: $0) }
 

@@ -556,8 +556,8 @@ struct DefaultBrowserPromptDemo: View {
                 }
                 .frame(height: 190)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: showingPrompt)
-                Text(enabled ? "Offered on launch after four hours of recent browsing."
-                             : "Never shown. Set the default in System Settings.")
+                Text(enabled ? "Make Browser the home for links from other apps."
+                             : "Choose your default browser in System Settings.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
