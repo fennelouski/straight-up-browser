@@ -117,6 +117,7 @@ struct WebView: NSViewRepresentable {
         nsView.whitePoint = toneSchedule.isActive ? pageWhitePoint : 100
         nsView.blackPoint = toneSchedule.isActive ? pageBlackPoint : 0
         nsView.setDisplayedTabs(displayedTabIds, focusedTabId: activeTabId)
+        nsView.refreshFocusOutline()
         for id in displayedTabIds {
             if let tab = tabs?.first(where: { $0.id == id }) {
                 webViewManager?.setMuted(tab.isMuted, for: id)
@@ -1692,7 +1693,13 @@ class WebViewContainer: NSView {
 
     private let whiteOverlay = PageOverlay()
     private let blackOverlay = PageOverlay()
-    private let focusOutline = PageOverlay()
+    private let focusOutline = PaneFocusOutline()
+
+    func refreshFocusOutline() {
+        // Appearance changes (including Square Corners) need a redraw even
+        // when pane membership and focus have stayed the same.
+        focusOutline.needsDisplay = true
+    }
 
     var activeWebView: WKWebView? {
         // The WebView for the focused tab, not necessarily the manager's
@@ -1741,8 +1748,6 @@ class WebViewContainer: NSView {
         self.wantsLayer = true
         self.layer?.backgroundColor = NSColor.clear.cgColor
         self.layer?.masksToBounds = true // Ensure subviews are clipped to bounds
-        focusOutline.layer?.borderWidth = 2
-        focusOutline.layer?.cornerRadius = WindowLayout.windowCornerRadius
     }
 
     required init?(coder: NSCoder) {
@@ -1949,10 +1954,10 @@ class WebViewContainer: NSView {
             ensureDividers([])
         }
 
-        // Draw inside a rounded, mouse-transparent overlay. A rectangular
-        // WebKit border loses its corners under the window's rounded mask.
+        // Trace the actual pane border: internal joins are square, while
+        // corners at the outside of the window follow its continuous mask.
         if views.count > 1, focusedView != nil {
-            focusOutline.layer?.borderColor = NSColor.controlAccentColor.cgColor
+            refreshFocusOutline()
             if subviews.last !== focusOutline {
                 addSubview(focusOutline, positioned: .above, relativeTo: nil)
             }
@@ -2032,6 +2037,11 @@ class WebViewContainer: NSView {
         layoutPanes()
     }
 
+    override func setFrameOrigin(_ newOrigin: NSPoint) {
+        super.setFrameOrigin(newOrigin)
+        refreshFocusOutline()
+    }
+
     override func didAddSubview(_ subview: NSView) {
         super.didAddSubview(subview)
         // Observe real load progress, and the page rewriting its own URL
@@ -2092,7 +2102,7 @@ class WebViewContainer: NSView {
     }
 }
 
-/// A mouse-transparent page overlay for tone adjustments and the focus outline.
+/// A mouse-transparent page overlay for tone adjustments.
 final class PageOverlay: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)

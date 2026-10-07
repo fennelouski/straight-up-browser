@@ -1131,10 +1131,10 @@ struct ProgressIndicatorDemo: View {
 
     private var mockWindow: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: WindowLayout.isSquareCorners ? 0 : WindowLayout.windowCornerRadius, style: .continuous)
                 .fill(Color.primary.opacity(0.02))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: WindowLayout.isSquareCorners ? 0 : WindowLayout.windowCornerRadius, style: .continuous)
                         .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
                 )
 
@@ -1160,35 +1160,18 @@ struct ProgressIndicatorDemo: View {
                 Spacer()
             }
 
-            // Edge bars grow from their leading/top corner as the page loads.
-            GeometryReader { geo in
-                let w = geo.size.width
-                let h = geo.size.height
-                ZStack(alignment: .topLeading) {
-                    if top {
-                        bar(width: w * progress, height: 3)
-                            .position(x: (w * progress) / 2, y: 1.5)
-                    }
-                    if bottom {
-                        bar(width: w * progress, height: 3)
-                            .position(x: (w * progress) / 2, y: h - 1.5)
-                    }
-                    if left {
-                        bar(width: 3, height: h * progress)
-                            .position(x: 1.5, y: (h * progress) / 2)
-                    }
-                    if right {
-                        bar(width: 3, height: h * progress)
-                            .position(x: w - 1.5, y: (h * progress) / 2)
-                    }
-                }
-            }
+            WindowEdgeProgress(
+                progress: Double(progress), color: .accentColor,
+                cornerRadius: WindowLayout.isSquareCorners ? 0 : WindowLayout.windowCornerRadius,
+                top: top, bottom: bottom, left: left, right: right,
+                lineWidth: 3
+            )
         }
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-
-    private func bar(width: CGFloat, height: CGFloat) -> some View {
-        Rectangle().fill(Color.accentColor).frame(width: width, height: height)
+        .clipShape(
+            WindowLayout.isSquareCorners
+                ? AnyShape(Rectangle())
+                : AnyShape(RoundedRectangle(cornerRadius: WindowLayout.windowCornerRadius, style: .continuous))
+        )
     }
 }
 
