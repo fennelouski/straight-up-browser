@@ -602,11 +602,6 @@ struct ContentView: View {
     @AppStorage("javaScriptEnabled") private var javaScriptEnabled = true
     @AppStorage("adBlockEnabled") private var adBlockEnabled = false
 
-    // Hold-Cmd+Q-to-quit HUD. quitHoldActive gates the overlay; quitHoldProgress
-    // is animated 0→1 by Core Animation over the hold duration.
-    @State private var quitHoldProgress: Double = 0
-    @State private var quitHoldActive = false
-
     // ⇧⌘H / ⇧⌘K shortcut cheat sheet
     @State private var showShortcutCheatSheet = false
 
@@ -2074,31 +2069,6 @@ struct ContentView: View {
         }
     }
 
-    private var quitHoldOverlay: some View {
-        Group {
-            if quitHoldActive {
-                VStack(spacing: 12) {
-                    Text(quitHoldProgress >= 0.99 ? "Release ⌘Q now to quit" : "Keep holding ⌘Q to quit")
-                        .font(.headline)
-                    ProgressView(value: min(quitHoldProgress, 1))
-                        .frame(width: 220)
-                }
-                .padding(24)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                .shadow(radius: 10)
-                .transition(.opacity.combined(with: .scale(scale: 0.96)))
-            }
-        }
-        // The quit HUD is deliberately a fast, tactile affordance. Keep its
-        // entry/exit animation independent of the app-wide reduced-motion
-        // transaction; the hold-length setting still controls only the bar.
-        .transaction {
-            $0.disablesAnimations = false
-            $0.animation = .easeInOut(duration: 0.08)
-        }
-        .animation(.easeInOut(duration: 0.08), value: quitHoldActive)
-    }
-
     // Brief confirmation that ⌥⌘A landed. Driven by observing the preference
     // rather than the shortcut, so flipping autofill from the sidebar menu, the
     // menu bar, or Settings all read the same.
@@ -2356,7 +2326,6 @@ struct ContentView: View {
         .overlay(createContainerDialogOverlay.zIndex(4))
         .overlay(saveWorkspaceDialogOverlay.zIndex(5))
         .overlay(importBookmarksDialogOverlay.zIndex(6))
-        .overlay(quitHoldOverlay.zIndex(7))
         .overlay(autofillHUDOverlay.zIndex(7))
         .overlay(shortcutCheatSheetOverlay.zIndex(8))
         .overlay(tabGridOverlay.zIndex(8))
@@ -2974,31 +2943,6 @@ struct ContentView: View {
                     queue: .main
                 ) { [self] _ in
                     performFind(backwards: true)
-                }
-
-                // Hold-Cmd+Q progress HUD. The manager sends a target and the
-                // hold duration; Core Animation sweeps the bar smoothly, so it
-                // can't stutter the way the old per-frame feed did.
-                NotificationCenter.default.addMainActorObserver(
-                    forName: .browserQuitHoldProgress,
-                    object: nil,
-                    queue: .main
-                ) { [self] notification in
-                    let target = notification.userInfo?["progress"] as? Double ?? 0
-                    let duration = notification.userInfo?["duration"] as? Double ?? 0
-                    if target > 0 {
-                        // Mount the HUD at 0, then animate to full next tick — a
-                        // freshly inserted view won't animate from a value it
-                        // never had, so it would otherwise snap straight to full.
-                        quitHoldActive = true
-                        quitHoldProgress = 0
-                        DispatchQueue.main.async {
-                            withAnimation(.linear(duration: duration)) { quitHoldProgress = 1 }
-                        }
-                    } else {
-                        quitHoldActive = false
-                        quitHoldProgress = 0
-                    }
                 }
 
                 // Screenshot shutter flash

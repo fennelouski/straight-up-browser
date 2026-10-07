@@ -5,6 +5,20 @@ import SwiftUI
 
 @MainActor
 struct BrowserUsabilityTests {
+    @Test func quitBarAndReleaseShareTheSameDeadline() {
+        for duration in [0.16, 1.6, 2.0] {
+            let timing = QuitHoldTiming(startUptime: 100, duration: duration)
+            #expect(timing.progress(at: 99) == 0)
+            #expect(timing.progress(at: 100 + duration / 2) < 1)
+            #expect(!timing.isReady(at: timing.deadline - 0.001))
+            #expect(timing.isReady(at: timing.deadline))
+            #expect(timing.progress(at: timing.deadline) == 1)
+            // Readiness never expires while the user continues holding.
+            #expect(timing.isReady(at: timing.deadline + 60))
+            #expect(timing.progress(at: timing.deadline + 60) == 1)
+        }
+    }
+
     @Test func developmentAndTestBuildsDoNotUpdateThemselves() {
         #expect(!AppDelegate.startsUpdater)
     }
@@ -68,5 +82,105 @@ struct BrowserUsabilityTests {
         try await startup.value
         let run = try await store.createRun(conversationID: conversation.id, entryPoint: .attended)
         #expect(run.conversationID == conversation.id)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct QuitHoldLifecycleTests {
+    @Test func releaseDoesNotRepeatThePageStateSaveCompletedDuringHolding() {
+        let manager = QuitPersistenceProbe()
+        manager.prepareInteractionStatesForTermination()
+        manager.persistInteractionStatesAtTermination()
+        #expect(manager.saveCount == 1)
+    }
+
+    @Test func failedPreparationIsRetriedAtTermination() {
+        let manager = QuitPersistenceProbe()
+        manager.saveSucceeds = false
+        manager.prepareInteractionStatesForTermination()
+        manager.persistInteractionStatesAtTermination()
+        #expect(manager.saveCount == 2)
+    }
+
+    @Test func cancelledHoldingStillSavesFreshPageStateOnALaterQuit() {
+        let manager = QuitPersistenceProbe()
+        manager.prepareInteractionStatesForTermination()
+        manager.cancelInteractionStateTerminationPreparation()
+        manager.persistInteractionStatesAtTermination()
+        #expect(manager.saveCount == 2)
+    }
+
+    @Test func earlyReleaseLeavesTheBrowserOpen() {
+        checkRelease(elapsed: 0.01, shouldQuit: false)
+    }
+
+    @Test func releaseAtFullProgressQuitsExactlyOnce() {
+        checkRelease(elapsed: 2, shouldQuit: true)
+    }
+
+    @Test func releaseAfterExtendedHoldingStillQuitsExactlyOnce() {
+        checkRelease(elapsed: 62, shouldQuit: true)
+    }
+
+    private func checkRelease(elapsed: TimeInterval, shouldQuit: Bool) {
+        let previous = UserDefaults.standard.object(forKey: KeyboardShortcutsManager.quitHoldPercentKey)
+        UserDefaults.standard.set(1.0, forKey: KeyboardShortcutsManager.quitHoldPercentKey)
+        defer { UserDefaults.standard.set(previous, forKey: KeyboardShortcutsManager.quitHoldPercentKey) }
+        let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 300, height: 200),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+        var quitCount = 0
+        let manager = KeyboardShortcutsManager(
+            showOmnibar: .constant(false), reloadAction: {}, hardReloadAction: {},
+            reloadAllTabsAction: {}, goBackAction: {}, goForwardAction: {},
+            windowsForQuit: { [window] }, terminateApplication: { quitCount += 1 }
+        )
+        defer { manager.teardown() }
+        let start = ProcessInfo.processInfo.systemUptime
+        manager.startQuitHold(at: start)
+        manager.handleQuitKeyRelease(at: start + elapsed)
+        manager.handleQuitKeyRelease(at: start + elapsed + 1)
+        #expect(quitCount == (shouldQuit ? 1 : 0))
+        #expect(window.isVisible == !shouldQuit)
+    }
+
+    @Test(arguments: [0.1, 0.45])
+    func cancellingAfterWindowsFadeRestoresTheirOriginalOpacity(fadeWait: Double) async throws {
+        let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 300, height: 200),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.alphaValue = 0.8
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+        var quitCount = 0
+        let manager = KeyboardShortcutsManager(
+            showOmnibar: .constant(false), reloadAction: {}, hardReloadAction: {},
+            reloadAllTabsAction: {}, goBackAction: {}, goForwardAction: {},
+            windowsForQuit: { [window] }, terminateApplication: { quitCount += 1 }
+        )
+        defer { manager.teardown() }
+        manager.startQuitHold(at: ProcessInfo.processInfo.systemUptime)
+        manager.fadeWindowsForQuit()
+        try await Task.sleep(for: .seconds(fadeWait))
+        if fadeWait >= 0.35 { #expect(window.alphaValue == 0) }
+        manager.cancelQuitHold()
+        try await Task.sleep(for: .seconds(0.45))
+        #expect(abs(window.alphaValue - 0.8) < 0.001)
+        #expect(window.isVisible)
+        #expect(quitCount == 0)
+    }
+}
+
+@MainActor
+private final class QuitPersistenceProbe: WebViewManager {
+    private(set) var saveCount = 0
+    var saveSucceeds = true
+
+    override func persistInteractionStates() -> Bool {
+        saveCount += 1
+        return saveSucceeds
     }
 }

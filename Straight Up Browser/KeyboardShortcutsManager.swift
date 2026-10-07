@@ -16,6 +16,8 @@ class KeyboardShortcutsManager {
     static let overrideWebsiteQuickOpenKey = "overrideWebsiteQuickOpen"
 
     private var showOmnibar: Binding<Bool>
+    private let windowsForQuit: () -> [NSWindow]
+    private let terminateApplication: () -> Void
     private var reloadAction: () -> Void
     private var hardReloadAction: () -> Void
     private var reloadAllTabsAction: () -> Void
@@ -23,6 +25,7 @@ class KeyboardShortcutsManager {
     private var goForwardAction: () -> Void
     private weak var webViewManager: WebViewManager?
     private var monitorToken: Any?
+    private var deactivateToken: Any?
 
     // Hold Cmd+Q to quit (Chrome-style). How long is user-configurable in
     // Settings — quitHoldPercentKey stores 0.08 (quick) to 1.0 (slow), scaled
@@ -36,6 +39,7 @@ class KeyboardShortcutsManager {
     private enum QuitHoldState {
         case inactive
         case holding
+        case terminating
     }
 
     private static var quitHoldDuration: TimeInterval {
@@ -48,14 +52,12 @@ class KeyboardShortcutsManager {
     private var controlWasDown = false
 
     private var quitHoldState: QuitHoldState = .inactive
-    // systemUptime (monotonic, immune to clock changes) is compared directly
-    // against the hold duration on release — no second Timer racing the first.
-    // That race was the bug: a Timer-driven "release window" state flip and
-    // the HUD's own withAnimation clock could disagree about whether the bar
-    // was actually full yet, so letting go right at the edge sometimes did
-    // nothing, and other times the app just sat there for another 1.5s.
-    private var quitHoldStartUptime: TimeInterval = 0
-    private var quitHoldDurationAtStart: TimeInterval = 0
+    private var quitTiming: QuitHoldTiming?
+    private var quitPanel: NSPanel?
+    private var quitPreparation: Task<Void, Never>?
+    private var windowFadeTask: Task<Void, Never>?
+    private var fadedWindows: [(window: NSWindow, alpha: CGFloat)] = []
+    private weak var windowBeforeQuit: NSWindow?
 
     init(
         showOmnibar: Binding<Bool>,
@@ -64,7 +66,9 @@ class KeyboardShortcutsManager {
         reloadAllTabsAction: @escaping () -> Void,
         goBackAction: @escaping () -> Void,
         goForwardAction: @escaping () -> Void,
-        webViewManager: WebViewManager? = nil
+        webViewManager: WebViewManager? = nil,
+        windowsForQuit: @escaping () -> [NSWindow] = { NSApp.windows },
+        terminateApplication: @escaping () -> Void = { NSApp.terminate(nil) }
     ) {
         self.showOmnibar = showOmnibar
         self.reloadAction = reloadAction
@@ -73,10 +77,18 @@ class KeyboardShortcutsManager {
         self.goBackAction = goBackAction
         self.goForwardAction = goForwardAction
         self.webViewManager = webViewManager
+        self.windowsForQuit = windowsForQuit
+        self.terminateApplication = terminateApplication
     }
 
     func setupKeyboardShortcuts() {
         guard monitorToken == nil else { return }
+
+        deactivateToken = NotificationCenter.default.addMainActorObserver(
+            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.cancelQuitHold()
+        }
 
         monitorToken = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
             guard let self = self else { return event }
@@ -87,14 +99,14 @@ class KeyboardShortcutsManager {
             // Quit-hold bookkeeping runs regardless of omnibar state
             switch event.type {
             case .keyUp:
-                if self.quitHoldState != .inactive && event.charactersIgnoringModifiers?.lowercased() == "q" {
-                    self.handleQuitKeyRelease()
+                if self.quitHoldState == .holding && event.charactersIgnoringModifiers?.lowercased() == "q" {
+                    self.handleQuitKeyRelease(at: event.timestamp)
                     return nil
                 }
                 return event
             case .flagsChanged:
                 if self.quitHoldState == .holding && !event.modifierFlags.contains(.command) {
-                    self.handleQuitKeyRelease()
+                    self.handleQuitKeyRelease(at: event.timestamp)
                 }
                 // Letting go of Control commits a ⌃Tab run, the same moment the
                 // macOS app switcher commits. Rebinding Next Tab to a chord
@@ -110,14 +122,21 @@ class KeyboardShortcutsManager {
                 break
             }
 
+            if self.quitHoldState == .holding && event.keyCode == 53 {
+                self.cancelQuitHold()
+                return nil
+            }
+
             let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
             let store = ShortcutStore.shared
 
-            // Cmd+Q must be held for 2s; swallow the event (including key
-            // repeats) so the Quit menu item never fires from the keyboard.
+            // Swallow Cmd+Q and its repeats so the Quit menu item never fires.
+            // Only a fresh press can start a hold, including after Escape.
             // The hold gate isn't a normal binding, so it stays a literal.
             if mods == .command && event.charactersIgnoringModifiers == "q" {
-                self.startQuitHold()
+                if !event.isARepeat {
+                    self.startQuitHold(at: event.timestamp)
+                }
                 return nil
             }
 
@@ -362,31 +381,69 @@ class KeyboardShortcutsManager {
     }
     #endif
 
-    private func startQuitHold() {
+    func startQuitHold(at uptime: TimeInterval) {
         guard quitHoldState == .inactive else { return }
         quitHoldState = .holding
-        let duration = Self.quitHoldDuration
-        quitHoldDurationAtStart = duration
-        quitHoldStartUptime = ProcessInfo.processInfo.systemUptime
+        let timing = QuitHoldTiming(startUptime: uptime,
+                                    duration: Self.quitHoldDuration)
+        quitTiming = timing
+        windowBeforeQuit = NSApp.keyWindow
 
-        // Do the slow part now, while the bar is still filling, instead of at
-        // release time: persisting per-tab page state is what used to make
-        // the app linger after the key came up.
-        webViewManager?.persistInteractionStates()
+        // A separate key panel keeps receiving release events even after all
+        // browser windows have faded away. Keeping them alive preserves the session.
+        let panel = QuitHoldPanel(contentRect: NSRect(x: 0, y: 0, width: 320, height: 150),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.level = .floating
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.hidesOnDeactivate = false
+        panel.contentView = NSHostingView(rootView: QuitHoldPrompt(timing: timing))
+        if let frame = windowBeforeQuit?.frame {
+            panel.setFrameOrigin(NSPoint(x: frame.midX - 160, y: frame.midY - 75))
+        } else {
+            panel.center()
+        }
+        quitPanel = panel
+        panel.alphaValue = 0
+        panel.makeKeyAndOrderFront(nil)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.12
+            panel.animator().alphaValue = 1
+        }
 
-        // The HUD animates itself 0→1 over `duration` on its own clock
-        // (Core Animation, immune to main-thread jitter) — we don't feed it
-        // per-frame progress. Whether the hold actually counts as "full" is
-        // decided separately, on release, by comparing elapsed wall-clock
-        // time to `duration` directly.
-        NotificationCenter.default.post(name: .browserQuitHoldProgress, object: nil,
-            userInfo: ["progress": 1.0, "duration": duration])
+        // Show the prompt before starting persistence; its clock includes any
+        // main-thread work, just like the release handler's clock does.
+        quitPreparation = Task { @MainActor [weak self] in
+            guard let self, !Task.isCancelled else { return }
+            self.webViewManager?.prepareInteractionStatesForTermination()
+            await BrowsingHistoryStore.shared.flush()
+            await DownloadManager.shared.flush()
+        }
+        windowFadeTask = Task { @MainActor [weak self] in
+            let remaining = max(0, timing.deadline - ProcessInfo.processInfo.systemUptime)
+            do { try await Task.sleep(for: .seconds(remaining)) } catch { return }
+            guard let self, self.quitHoldState == .holding else { return }
+            self.fadeWindowsForQuit()
+        }
     }
 
-    private func handleQuitKeyRelease() {
-        guard quitHoldState == .holding else { return }
-        let elapsed = ProcessInfo.processInfo.systemUptime - quitHoldStartUptime
-        if elapsed >= quitHoldDurationAtStart {
+    func fadeWindowsForQuit() {
+        guard let panel = quitPanel else { return }
+        fadedWindows = windowsForQuit().filter { $0.isVisible && $0 !== panel }
+            .map { ($0, $0.alphaValue) }
+        let windows = fadedWindows
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.35
+            for (window, _) in windows { window.animator().alphaValue = 0 }
+        }
+        // Keep the windows alive and retain the keyboard monitor until release.
+    }
+
+    func handleQuitKeyRelease(at uptime: TimeInterval) {
+        guard quitHoldState == .holding, let timing = quitTiming else { return }
+        if timing.isReady(at: uptime) {
             performQuitNow()
         } else {
             cancelQuitHold()
@@ -394,24 +451,94 @@ class KeyboardShortcutsManager {
     }
 
     private func performQuitNow() {
-        quitHoldState = .inactive
-        NotificationCenter.default.post(name: .browserQuitHoldProgress, object: nil,
-            userInfo: ["progress": 0.0, "duration": 0.0])
-        NSApp.windows.forEach { $0.orderOut(nil) }
-        exit(0)
+        quitHoldState = .terminating
+        windowFadeTask?.cancel()
+        // Make release immediate visually, then allow the normal termination
+        // delegate and willTerminate observers to finish saving and updating.
+        quitPanel?.orderOut(nil)
+        windowsForQuit().forEach { $0.orderOut(nil) }
+        terminateApplication()
     }
 
-    private func cancelQuitHold() {
+    func cancelQuitHold() {
+        guard quitHoldState == .holding else { return }
         quitHoldState = .inactive
-        NotificationCenter.default.post(name: .browserQuitHoldProgress, object: nil,
-            userInfo: ["progress": 0.0, "duration": 0.0])
+        quitTiming = nil
+        windowFadeTask?.cancel()
+        quitPreparation?.cancel()
+        webViewManager?.cancelInteractionStateTerminationPreparation()
+        quitPanel?.orderOut(nil)
+        quitPanel = nil
+        let windows = fadedWindows
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.15
+            for (window, alpha) in windows { window.animator().alphaValue = alpha }
+        }
+        fadedWindows.removeAll()
+        windowBeforeQuit?.makeKeyAndOrderFront(nil)
     }
 
     func teardown() {
         cancelQuitHold()
+        windowFadeTask?.cancel()
+        quitPreparation?.cancel()
+        quitPanel?.orderOut(nil)
+        if let token = deactivateToken {
+            NotificationCenter.default.removeObserver(token)
+            deactivateToken = nil
+        }
         if let token = monitorToken {
             NSEvent.removeMonitor(token)
             monitorToken = nil
+        }
+    }
+}
+
+/// Both the displayed bar and release eligibility use this monotonic deadline.
+struct QuitHoldTiming {
+    let startUptime: TimeInterval
+    let duration: TimeInterval
+
+    var deadline: TimeInterval { startUptime + duration }
+
+    func progress(at uptime: TimeInterval) -> Double {
+        guard duration > 0, !isReady(at: uptime) else { return 1 }
+        return min(1, max(0, (uptime - startUptime) / duration))
+    }
+
+    func isReady(at uptime: TimeInterval) -> Bool { uptime >= deadline }
+}
+
+private final class QuitHoldPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
+
+private struct QuitHoldPrompt: View {
+    let timing: QuitHoldTiming
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60)) { _ in
+            let uptime = ProcessInfo.processInfo.systemUptime
+            let ready = timing.isReady(at: uptime)
+            VStack(spacing: 12) {
+                Image(systemName: ready ? "checkmark.circle.fill" : "power")
+                    .font(.title2)
+                    .foregroundStyle(ready ? Color.accentColor : Color.secondary)
+                    .contentTransition(.symbolEffect(.replace))
+                Text(ready ? "Release ⌘Q to quit" : "Keep holding ⌘Q to quit")
+                    .font(.headline)
+                    .contentTransition(.opacity)
+                ProgressView(value: ready ? 1 : timing.progress(at: uptime))
+                    .frame(width: 220)
+                Text(ready ? "Or press Esc to cancel" : "Release early to cancel")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: ready)
         }
     }
 }

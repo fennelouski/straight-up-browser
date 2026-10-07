@@ -110,7 +110,6 @@ extension Notification.Name {
 
     // Hold-Cmd+Q-to-quit HUD (userInfo["progress"]: Double target, 0 = cancelled;
     // userInfo["duration"]: Double seconds the view animates over)
-    static let browserQuitHoldProgress = Notification.Name("browserQuitHoldProgress")
 
     // Ad blocker toggled in Settings
     static let adBlockChanged = Notification.Name("adBlockChanged")

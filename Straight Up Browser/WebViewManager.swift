@@ -84,6 +84,7 @@ enum InteractionStatePersistencePolicy {
     }
 }
 
+@MainActor
 class WebViewManager: NSObject, ObservableObject {
     // Claiming to be Chrome while running WebKit gets us flagged as an unsafe
     // embedded webview by Google sign-in (no Sec-CH-UA client hints to back it
@@ -753,7 +754,7 @@ class WebViewManager: NSObject, ObservableObject {
         loadPersistedInteractionStates()
         #if canImport(AppKit)
         NotificationCenter.default.addObserver(
-            self, selector: #selector(persistInteractionStates),
+            self, selector: #selector(persistInteractionStatesAtTermination),
             name: NSApplication.willTerminateNotification, object: nil)
         #endif
         startMemoryPressureMonitoring()
@@ -802,13 +803,32 @@ class WebViewManager: NSObject, ObservableObject {
         Logger.log("Loaded \(savedInteractionStates.count) persisted interaction states", type: "WebViewManager")
     }
 
+    private var interactionStatesPreparedForTermination = false
+
+    func prepareInteractionStatesForTermination() {
+        interactionStatesPreparedForTermination = persistInteractionStates()
+    }
+
+    func cancelInteractionStateTerminationPreparation() {
+        interactionStatesPreparedForTermination = false
+    }
+
+    // Holding Cmd+Q already archives the page state. Do not repeat that slow
+    // work after release; a cancelled hold resets the flag for a later quit.
+    @objc func persistInteractionStatesAtTermination() {
+        if !interactionStatesPreparedForTermination {
+            persistInteractionStates()
+        }
+    }
+
     // Archive open tabs' page state to disk. Live web views win over a stale
     // saved copy for the same tab. The bounded payload prevents a large session
     // or pathological WebKit state from growing Application Support without limit.
     // Internal (not private) so the hold-to-quit gate can trigger it early,
     // while the progress bar is still filling — see KeyboardShortcutsManager.
-    @objc func persistInteractionStates() {
-        guard #available(macOS 12.0, *), let url = Self.interactionStateFileURL else { return }
+    @discardableResult
+    func persistInteractionStates() -> Bool {
+        guard #available(macOS 12.0, *), let url = Self.interactionStateFileURL else { return false }
         var out: [String: Data] = [:]
         // Never persist incognito tabs' page state — that would write a private URL
         // (and form/scroll state) to disk, defeating the point of incognito.
@@ -828,9 +848,15 @@ class WebViewManager: NSObject, ObservableObject {
             fromPropertyList: bounded,
             format: .binary,
             options: 0
-        ) else { return }
-        try? plist.write(to: url, options: .atomic)
-        Logger.log("Persisted \(bounded.count) interaction states", type: "WebViewManager")
+        ) else { return false }
+        do {
+            try plist.write(to: url, options: .atomic)
+            Logger.log("Persisted \(bounded.count) interaction states", type: "WebViewManager")
+            return true
+        } catch {
+            Logger.log("Unable to persist interaction states", type: "WebViewManager")
+            return false
+        }
     }
 
     // MARK: - Memory pressure
