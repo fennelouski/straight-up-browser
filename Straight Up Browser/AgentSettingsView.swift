@@ -219,6 +219,7 @@ struct AgentSettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear {
+            AgentModelMigration.migrateSavedSelection()
             apiKey = BrowserAgentKeychain.read(provider: provider)
             applyCatalogPricingIfNeeded()
             Task {
@@ -350,6 +351,7 @@ struct AgentSettingsView: View {
                     apiKey: apiKey,
                     customEndpoint: customEndpoint
                 )
+                .id(provider)
                 .accessibilityIdentifier("agent-settings-model")
             }
 
@@ -1347,7 +1349,9 @@ struct ProviderModelPicker: View {
     @State private var hasRefreshed = false
 
     private var suggestions: [String] {
-        guard !hasRefreshed else { return discoveredModels }
+        guard !hasRefreshed else {
+            return discoveredModels.filter { provider.resolvedModel($0) == $0 }
+        }
         return AgentProviderModelCatalog.modelIDs(for: provider)
     }
 
@@ -1370,7 +1374,9 @@ struct ProviderModelPicker: View {
                 .disabled(isRefreshing)
             }
         }
-        .id(provider)
+        .task {
+            if !provider.needsAPIKey || !apiKey.isEmpty { refreshModels() }
+        }
     }
 
     private func refreshModels() {

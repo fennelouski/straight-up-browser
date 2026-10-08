@@ -38,7 +38,15 @@ check on demand.
 
 ## Each release
 
-1. **Bump, commit, and tag the version.** In Xcode (target *Browser* → General),
+1. **Review agent models, then bump, commit, and tag the version.**
+   Before every release, follow [the model review procedure](docs/agent-model-review.md):
+   check current official provider catalogs, availability, pricing, and API compatibility;
+   update default/fallback models and reviewed successor mappings where needed. Record
+   that review for this exact release in `docs/agent-model-review.json`. Verification
+   rejects a missing, stale, or mismatched review; release packaging also rechecks the
+   public provider sources and stops if they changed.
+
+   **Bump, commit, and tag:** In Xcode (target *Browser* → General),
    or in
    `Straight Up Browser.xcodeproj/project.pbxproj`:
    - `CURRENT_PROJECT_VERSION` (build number) — bump **every** release, so a changed

@@ -29,4 +29,6 @@ require_pattern 'Browser\.dmg\.sha256' "emit a distributable checksum"
 require_pattern 'ARCHS=arm64' "build Apple Silicon-only release archives"
 require_pattern 'onlyUsePackageVersionsFromResolvedFile' "enforce the resolved Swift package graph"
 
+require_pattern 'check-agent-model-review.py --live' "require a current model review and live provider checks"
+
 echo "Release policy passed."

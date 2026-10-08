@@ -53,7 +53,7 @@ nonisolated struct AgentProviderCapabilityProfile: Equatable, Sendable {
             .split(separator: "/")
             .last
             .map(String.init) ?? model.lowercased()
-        let isReasoningModel = ["gpt-5", "o1", "o3", "o4", "grok-3", "grok-4"]
+        let isReasoningModel = ["gpt-5", "gpt-6", "o1", "o3", "o4", "grok-3", "grok-4"]
             .contains { normalizedModel == $0 || normalizedModel.hasPrefix("\($0)-") || normalizedModel.hasPrefix("\($0).") }
         let host = endpoint.host?.lowercased()
 

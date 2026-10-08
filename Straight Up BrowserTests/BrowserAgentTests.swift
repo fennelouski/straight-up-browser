@@ -67,11 +67,11 @@ struct BrowserAgentTests {
         #expect(BrowserAgentProvider.ollama.defaultEndpoint.contains("11434"))
         #expect(BrowserAgentProvider.lmStudio.defaultEndpoint.contains("1234"))
         #expect(BrowserAgentProvider.compatible.defaultEndpoint.isEmpty)
-        #expect(BrowserAgentProvider.openAI.defaultModel == "gpt-5.6-luna")
-        #expect(BrowserAgentProvider.openAIResponses.defaultModel == "gpt-5.6-luna")
-        #expect(BrowserAgentProvider.anthropicMessages.defaultModel == "claude-sonnet-5")
+        #expect(BrowserAgentProvider.openAI.defaultModel == "gpt-6-luna")
+        #expect(BrowserAgentProvider.openAIResponses.defaultModel == "gpt-6-luna")
+        #expect(BrowserAgentProvider.anthropicMessages.defaultModel == "claude-sonnet-5-5")
         #expect(BrowserAgentProvider.gemini.defaultModel == "gemini-3.6-flash")
-        #expect(BrowserAgentProvider.openRouter.defaultModel == "openai/gpt-latest")
+        #expect(BrowserAgentProvider.openRouter.defaultModel == "openai/gpt-6-luna")
         // Local providers deliberately ship no default: discovery plus the model
         // picker makes a hardcoded guess at what's installed worse than none.
         #expect(BrowserAgentProvider.ollama.defaultModel.isEmpty)

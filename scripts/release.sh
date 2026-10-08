@@ -66,6 +66,8 @@ xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null || {
     exit 1
 }
 
+python3 ./scripts/check-agent-model-review.py --live
+
 # Never archive a release that has not passed the same gates as CI. This ships
 # the Mac app only, so the iPadOS UI suite doesn't gate it (the iOS Release
 # build still runs, so iOS code that fails to compile still can't land).

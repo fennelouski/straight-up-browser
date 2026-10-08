@@ -37,6 +37,8 @@ RUN_IOS_UI_TESTS="${RUN_IOS_UI_TESTS:-1}"
 RUN_TSAN="${RUN_TSAN:-0}"
 MIN_APP_COVERAGE_PERCENT="${MIN_APP_COVERAGE_PERCENT:-25}"
 
+python3 ./scripts/check-agent-model-review.py
+python3 ./scripts/test-agent-model-review.py
 ./scripts/validate-release-policy.sh
 ./scripts/validate-security-policy.sh
 

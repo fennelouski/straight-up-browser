@@ -125,10 +125,10 @@ struct AgentSettingsTests {
     @Test func cataloguedOpenAIModelsAutocompleteAndCarryPublishedPricing() throws {
         let models = AgentProviderModelCatalog.modelIDs(for: .openAI)
         #expect(!models.contains("gpt-5-mini"))
-        #expect(models.contains("gpt-5.6-luna"))
-        #expect(BrowserAgentProvider.openAI.defaultModel == "gpt-5.6-luna")
-        #expect(BrowserAgentProvider.openAI.resolvedModel("gpt-5-mini") == "gpt-5.6-luna")
-        #expect(BrowserAgentProvider.openRouter.defaultModel == "openai/gpt-latest")
+        #expect(models.contains("gpt-6-luna"))
+        #expect(BrowserAgentProvider.openAI.defaultModel == "gpt-6-luna")
+        #expect(BrowserAgentProvider.openAI.resolvedModel("gpt-5-mini") == "gpt-6-luna")
+        #expect(BrowserAgentProvider.openRouter.defaultModel == "openai/gpt-6-luna")
         #expect(BrowserAgentProvider.ollama.defaultModel.isEmpty)
         #expect(BrowserAgentProvider.lmStudio.defaultModel.isEmpty)
 
@@ -139,22 +139,22 @@ struct AgentSettingsTests {
 
         let pricing = try #require(AgentProviderPricingSettings.metadata(
             providerID: BrowserAgentProvider.openAI.rawValue,
-            model: "gpt-5.6-luna",
+            model: "gpt-6-luna",
             defaults: defaults
         ))
         #expect(pricing.source == .providerPublished)
         #expect(pricing.currencyCode == "USD")
-        #expect(pricing.inputMicrounitsPerMillionTokens == 200_000)
-        #expect(pricing.cachedInputMicrounitsPerMillionTokens == 20_000)
-        #expect(pricing.outputMicrounitsPerMillionTokens == 1_200_000)
+        #expect(pricing.inputMicrounitsPerMillionTokens == 100_000)
+        #expect(pricing.cachedInputMicrounitsPerMillionTokens == 10_000)
+        #expect(pricing.outputMicrounitsPerMillionTokens == 500_000)
 
         defaults.set(BrowserAgentProvider.openAI.rawValue, forKey: AgentProviderPricingSettings.Key.providerID)
-        defaults.set("gpt-5.6-luna", forKey: AgentProviderPricingSettings.Key.model)
+        defaults.set("gpt-6-luna", forKey: AgentProviderPricingSettings.Key.model)
         defaults.set("USD", forKey: AgentProviderPricingSettings.Key.currencyCode)
         defaults.set("999", forKey: AgentProviderPricingSettings.Key.inputMicrounitsPerMillionTokens)
         let override = try #require(AgentProviderPricingSettings.metadata(
             providerID: BrowserAgentProvider.openAI.rawValue,
-            model: "gpt-5.6-luna",
+            model: "gpt-6-luna",
             defaults: defaults
         ))
         #expect(override.source == .userConfigured)

@@ -72,6 +72,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AgentModelMigration.migrateSavedSelection()
         installURLHandler()
         // Test hosts cannot interact with this modal before the app finishes
         // bootstrapping. UI tests pass the accepted version explicitly; unit
