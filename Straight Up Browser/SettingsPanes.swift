@@ -557,7 +557,7 @@ struct ShortcutRecorder: View {
                 )
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BrowserPressStyle())
         .onDisappear { recorder.stop() }
     }
 }
@@ -1228,7 +1228,7 @@ struct ScreenshotsSettingsView: View {
                     Button { showingCaptureHelp = true } label: {
                         Image(systemName: "questionmark.circle").foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrowserPressStyle())
                     .accessibilityLabel("What's the difference?")
                     .popover(isPresented: $showingCaptureHelp, arrowEdge: .trailing) {
                         WindowCapturePanel()

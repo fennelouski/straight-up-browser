@@ -72,7 +72,7 @@ struct TranscriptPanelView: View {
             } label: {
                 Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BrowserPressStyle())
             .accessibilityLabel(String(localized: "Close transcript"))
         }
         .padding(10)

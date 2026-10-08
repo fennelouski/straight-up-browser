@@ -161,7 +161,7 @@ struct NewspaperView: View {
                         .font(.title2)
                         .foregroundStyle(layout == .ink ? Color.black.opacity(0.7) : .secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BrowserPressStyle())
                 .accessibilityLabel("Close Newspaper")
             }
 
@@ -230,7 +230,7 @@ struct NewspaperView: View {
                                 )
                             }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrowserPressStyle())
                 }
             }
             .padding(.horizontal, 20)
@@ -558,7 +558,7 @@ private struct NewspaperStoryLink: View {
         NavigationLink(value: article.id) {
             NewspaperStoryCard(article: article, layout: layout, prominence: prominence)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BrowserPressStyle())
         .contextMenu {
             Button(article.isRead ? "Mark Unread" : "Mark Finished") {
                 actions.markRead(article, !article.isRead)
@@ -976,7 +976,7 @@ private struct NewspaperArticleView: View {
                         } label: {
                             Image(systemName: rating <= article.rating ? "star.fill" : "star")
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(BrowserPressStyle())
                         .accessibilityLabel("Rate \(rating) out of 5")
                     }
                 }
@@ -1625,7 +1625,7 @@ struct NewspaperSettingsView: View {
                                 .foregroundStyle(selected ? Color.accentColor : .primary)
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrowserPressStyle())
                     .accessibilityLabel(option.title)
                     .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
                 }

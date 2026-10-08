@@ -395,7 +395,7 @@ struct SavePasswordCard: View {
                 }
                 HStack {
                     Button("Never for This Site") { manager.neverSaveForThisSite() }
-                        .buttonStyle(.plain).opacity(0.7)
+                        .buttonStyle(BrowserPressStyle()).opacity(0.7)
                     Spacer()
                     Button("Not Now") { manager.dismissSavePrompt() }
                         .keyboardShortcut(.cancelAction)
@@ -447,7 +447,7 @@ struct SavePasswordBanner: View {
                 Button(prompt.isUpdate ? "Update" : "Save") { manager.acceptSavePrompt() }
                     .keyboardShortcut(.defaultAction)
                 Button("Not Now") { manager.dismissSavePrompt() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrowserPressStyle())
                     .foregroundStyle(.secondary)
             }
             .font(.system(size: 12))

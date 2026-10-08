@@ -153,7 +153,7 @@ struct TabSwitcherStrip: View {
                 .stroke(Color.accentColor, lineWidth: isCurrent ? 2 : 0)
         )
         .scaleEffect(isCurrent ? 1 : 0.94)
-        .animation(.spring(response: 0.24, dampingFraction: 0.8), value: isCurrent)
+        .browserSettleMotion(isCurrent)
     }
 }
 
@@ -212,13 +212,14 @@ struct TabGridView: View {
                                 Button { choose(tab.id) } label: {
                                     card(for: tab, isFocused: position == index)
                                 }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(BrowserPressStyle())
                                     .accessibilityLabel(BrowserAccessibility.tabLabel(
                                         title: labels?(tab).title ?? tab.title,
                                         url: tab.url, sessionKind: tab.sessionKind,
                                         isPinned: tab.isPinned, isMuted: tab.isMuted, isInSplit: false
                                     ))
                                     .accessibilityAddTraits(position == index ? .isSelected : [])
+                                    .transition(BrowserMotion.tabArrival)
                                     .id(tab.id)
                                     .onHover { hovering in
                                         guard hovering else { return }
@@ -227,11 +228,12 @@ struct TabGridView: View {
                                     }
                             }
                         }
+                        .browserSettleMotion(tabs.map(\.id))
                         .padding(Self.gridPadding)
                     }
                     .onChange(of: index) { _, new in
                         if tabs.indices.contains(new) {
-                            withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo(tabs[new].id, anchor: .center) }
+                            withAnimation(BrowserMotion.slide(reduceMotion)) { proxy.scrollTo(tabs[new].id, anchor: .center) }
                         }
                     }
                 }
@@ -316,6 +318,7 @@ struct TabGridView: View {
                 .strokeBorder(isFocused ? Color.accentColor : Color.gray.opacity(0.25),
                         lineWidth: isFocused ? 2 : 1)
         )
+        .browserFeedbackMotion(isFocused)
     }
 
     private func choose(_ id: UUID) {

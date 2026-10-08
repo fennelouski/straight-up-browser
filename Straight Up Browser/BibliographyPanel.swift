@@ -71,7 +71,7 @@ struct BibliographyPanel: View {
             } label: {
                 Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BrowserPressStyle())
             .keyboardShortcut(.cancelAction)
             .accessibilityLabel(String(localized: "Close bibliography search"))
         }

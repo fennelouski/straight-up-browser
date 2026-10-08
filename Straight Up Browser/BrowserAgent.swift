@@ -5605,34 +5605,34 @@ struct BrowserAgentPanel: View {
                 }
                 Spacer()
                 Button { showingHistory.toggle() } label: { Image(systemName: "clock") }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrowserPressStyle())
                     .delayedHelp("Conversation history")
                     .accessibilityLabel("Conversation History")
                     .accessibilityIdentifier("agent-history")
                     .popover(isPresented: $showingHistory) { historyView }
                 Button { showingScratchPad = true } label: { Image(systemName: "note.text") }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrowserPressStyle())
                     .delayedHelp("Scratch Pad")
                     .accessibilityLabel("Open Scratch Pad")
                     .accessibilityIdentifier("agent-scratch-pad")
                 Button { showingConfiguration.toggle() } label: { Image(systemName: "slider.horizontal.3") }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrowserPressStyle())
                     .delayedHelp("Model settings")
                     .accessibilityLabel("Model Settings")
                 Button(action: onStartLasso) { Image(systemName: "lasso") }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrowserPressStyle())
                     .delayedHelp("Circle something on the page")
                     .accessibilityLabel("Circle Something on the Page")
                 Button { openWindow(id: "agent-tasks") } label: { Image(systemName: "clock.arrow.circlepath") }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrowserPressStyle())
                     .delayedHelp("Scheduled Agent Tasks")
                     .accessibilityLabel("Scheduled Agent Tasks")
                 Button { openWindow(id: "agent-audit") } label: { Image(systemName: "play.rectangle.on.rectangle") }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrowserPressStyle())
                     .delayedHelp("Agent Audit & Replay")
                     .accessibilityLabel("Agent Audit & Replay")
                 Button(action: onClose) { Image(systemName: "xmark") }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrowserPressStyle())
                     .delayedHelp("Close Agent")
                     .accessibilityLabel("Close Agent")
             }
@@ -5701,7 +5701,7 @@ struct BrowserAgentPanel: View {
                     }
                     Spacer()
                     Button(action: onClearLasso) { Image(systemName: "xmark.circle.fill") }
-                        .buttonStyle(.plain).accessibilityLabel("Remove page selection")
+                        .buttonStyle(BrowserPressStyle()).accessibilityLabel("Remove page selection")
                 }
                 .padding(.horizontal, 12).padding(.top, 8)
             }
@@ -5881,7 +5881,7 @@ struct BrowserAgentPanel: View {
                 .foregroundStyle(.secondary)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BrowserPressStyle())
             .accessibilityLabel("\(summary), \(isExpanded ? "collapse" : "expand") activity")
 
             if isExpanded {
@@ -6038,7 +6038,7 @@ struct BrowserAgentPanel: View {
                         } label: {
                             Image(systemName: "stop.circle")
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(BrowserPressStyle())
                         .accessibilityLabel("Cancel child Run \(row.objective)")
                     }
                 }
@@ -6160,7 +6160,7 @@ struct BrowserAgentPanel: View {
                 } label: {
                     Image(systemName: "square.and.pencil")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BrowserPressStyle())
                 .disabled(agent.isRunning)
                 .accessibilityLabel("New Conversation")
             }
@@ -6192,14 +6192,14 @@ struct BrowserAgentPanel: View {
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(BrowserPressStyle())
                                 .accessibilityIdentifier("agent-conversation-\(conversation.id.uuidString)")
                                 Button(role: .destructive) {
                                     Task { await agent.deleteConversation(conversation.id) }
                                 } label: {
                                     Image(systemName: "trash")
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(BrowserPressStyle())
                                 .disabled(agent.isRunning)
                                 .accessibilityLabel("Delete \(conversation.title)")
                             }
@@ -8890,7 +8890,7 @@ private struct BrowserAgentLegacyAuditView: View {
                     Text("Agent Sessions").font(.headline)
                     Spacer()
                     Button(action: reload) { Image(systemName: "arrow.clockwise") }
-                        .buttonStyle(.plain)
+                        .buttonStyle(BrowserPressStyle())
                 }
                 .padding(12)
                 Divider()
@@ -8914,7 +8914,7 @@ private struct BrowserAgentLegacyAuditView: View {
                             .padding(.vertical, 3)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(BrowserPressStyle())
                         .listRowBackground(session.id == selectedSession?.id ? Color.accentColor.opacity(0.16) : Color.clear)
                     }
                 }
@@ -9393,7 +9393,7 @@ struct BrowserAgentAuditView: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BrowserPressStyle())
                 .accessibilityLabel("Reload agent timeline")
             }
             .padding(12)
@@ -9405,7 +9405,7 @@ struct BrowserAgentAuditView: View {
                     Label("All activity", systemImage: "point.3.connected.trianglepath.dotted")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BrowserPressStyle())
                 .listRowBackground(selectedRunID == nil ? Color.accentColor.opacity(0.16) : Color.clear)
                 .accessibilityIdentifier("agent-timeline-all-runs")
 
@@ -9435,7 +9435,7 @@ struct BrowserAgentAuditView: View {
                         .padding(.vertical, 3)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrowserPressStyle())
                     .listRowBackground(selectedRunID == run.id ? Color.accentColor.opacity(0.16) : Color.clear)
                     .accessibilityIdentifier("agent-timeline-run-\(run.id.uuidString)")
                     .accessibilityValue(row.depth == 0 ? "Root Run" : "Child depth \(row.depth)")
@@ -9489,7 +9489,7 @@ struct BrowserAgentAuditView: View {
             } label: {
                 Image(systemName: newestFirst ? "arrow.down" : "arrow.up")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BrowserPressStyle())
             .delayedHelp(newestFirst ? "Show oldest activity first" : "Show newest activity first")
             .accessibilityLabel(newestFirst ? "Show oldest activity first" : "Show newest activity first")
             .accessibilityIdentifier("agent-timeline-order")
@@ -9567,7 +9567,7 @@ struct BrowserAgentAuditView: View {
                 .padding(.vertical, 3)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BrowserPressStyle())
             .accessibilityLabel(item.accessibilityDescription)
             .accessibilityIdentifier("agent-timeline-step-\(item.id.uuidString)")
         }

@@ -416,7 +416,7 @@ struct TabRowView: View {
                     .contentShape(Rectangle())
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BrowserPressStyle())
             .accessibilityLabel(BrowserAccessibility.tabLabel(
                 title: displayTitle,
                 url: tab.url,
@@ -452,6 +452,7 @@ struct TabRowView: View {
                     .allowsHitTesting(false)
             }
         }
+        .browserFeedbackMotion(isSelected)
         .scaleEffect(isBeingDragged ? 1.035 : 1)
         .opacity(isBeingDragged ? 0.68 : 1)
         .shadow(color: .black.opacity(isBeingDragged ? 0.18 : 0), radius: 5, y: 2)

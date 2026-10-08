@@ -36,6 +36,7 @@ struct CollapsibleSection<Content: View, Header: View, Footer: View>: View {
     }
 
     @State private var isCollapsed = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // SettingsSearchNavigation drives cross-pane search on macOS only (SettingsWindow.swift,
     // which owns it, is AppKit-only) — this type wouldn't exist on the iOS build of this file.
@@ -61,7 +62,7 @@ struct CollapsibleSection<Content: View, Header: View, Footer: View>: View {
                 .accessibilityHidden(isCollapsed)
         } header: {
             Button {
-                withAnimation(.snappy(duration: 0.2)) { isCollapsed.toggle() }
+                withAnimation(BrowserMotion.settle(reduceMotion)) { isCollapsed.toggle() }
             } label: {
                 HStack {
                     header()
@@ -77,9 +78,9 @@ struct CollapsibleSection<Content: View, Header: View, Footer: View>: View {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(isHighlighted ? Color.accentColor.opacity(0.18) : Color.clear)
                 )
-                .animation(.easeInOut(duration: 0.3), value: isHighlighted)
+                .browserFeedbackMotion(isHighlighted)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BrowserPressStyle())
         } footer: {
             footer()
                 .frame(maxHeight: isCollapsed ? 0 : nil)

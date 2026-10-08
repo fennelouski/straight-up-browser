@@ -109,7 +109,7 @@ struct DefaultBrowserPrompt: View {
                         guard let settings = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.systempreferences") else { return }
                         NSWorkspace.shared.open(settings)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrowserPressStyle())
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(ink)
                     .underline()
@@ -175,7 +175,7 @@ struct DefaultBrowserPrompt: View {
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BrowserPressStyle())
         .focused($closeFocused)
         .onHover { closeHovered = $0 }
         .animation(motion, value: proximity)

@@ -58,6 +58,7 @@ class KeyboardShortcutsManager {
     private var quitPreparation: Task<Void, Never>?
     private var windowFadeTask: Task<Void, Never>?
     private var fadedWindows: [(window: NSWindow, alpha: CGFloat)] = []
+    private var quitMotionWindows: [NSWindow] = []
     private weak var windowBeforeQuit: NSWindow?
 
     init(
@@ -418,6 +419,10 @@ class KeyboardShortcutsManager {
         // main thread. TimelineView alone cannot render frames during that work.
         panel.contentView?.layoutSubtreeIfNeeded()
         panel.displayIfNeeded()
+        quitMotionWindows = windowsForQuit().filter { $0.isVisible && $0 !== panel }
+        for window in quitMotionWindows {
+            BrowserWindowMotion.installed(on: window)?.close(at: timing.deadline)
+        }
         CATransaction.flush()
         quitPreparation = Task { @MainActor [weak self] in
             guard let self, !Task.isCancelled else { return }
@@ -464,18 +469,20 @@ class KeyboardShortcutsManager {
         terminateApplication()
     }
 
-    func cancelQuitHold() {
+    func cancelQuitHold(animated: Bool = true) {
         guard quitHoldState == .holding else { return }
         quitHoldState = .inactive
         quitTiming = nil
         windowFadeTask?.cancel()
         quitPreparation?.cancel()
         webViewManager?.cancelInteractionStateTerminationPreparation()
+        for window in quitMotionWindows { BrowserWindowMotion.installed(on: window)?.restore(animated: animated) }
+        quitMotionWindows.removeAll()
         quitPanel?.orderOut(nil)
         quitPanel = nil
         let windows = fadedWindows
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.15
+            context.duration = !animated || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.15
             for (window, alpha) in windows { window.animator().alphaValue = alpha }
         }
         fadedWindows.removeAll()
@@ -483,7 +490,9 @@ class KeyboardShortcutsManager {
     }
 
     func teardown() {
-        cancelQuitHold()
+        cancelQuitHold(animated: false)
+        for window in quitMotionWindows { BrowserWindowMotion.installed(on: window)?.restore(animated: false) }
+        quitMotionWindows.removeAll()
         windowFadeTask?.cancel()
         quitPreparation?.cancel()
         quitPanel?.orderOut(nil)

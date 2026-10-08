@@ -611,7 +611,7 @@ struct BrowserLibraryView: View {
                         .font(.title2)
                         .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BrowserPressStyle())
                 .accessibilityLabel("Close Library")
             }
 
@@ -684,7 +684,7 @@ struct BrowserLibraryView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BrowserPressStyle())
 
             Button("Edit") { editingBookmark = bookmark }
             Button(role: .destructive) {
@@ -712,7 +712,7 @@ struct BrowserLibraryView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BrowserPressStyle())
 
             Button(role: .destructive) {
                 onDeleteHistory(url)

@@ -93,7 +93,7 @@ struct SettingInfoButton<Value: Equatable, Demo: View>: View {
                 .foregroundStyle(.secondary)
         }
         // Without .plain the button's hit area swallows the whole Form row.
-        .buttonStyle(.plain)
+        .buttonStyle(BrowserPressStyle())
         .accessibilityLabel("Learn more")
         .popover(isPresented: $showing, arrowEdge: .trailing) {
             SettingInfoPopover(title: title, explanation: explanation, value: $value, demo: demo)
@@ -324,6 +324,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 // MARK: - Container
 
 struct SettingsWindow: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("settingsPane") private var paneRaw = SettingsPane.general.rawValue
     // Comma-joined rawValues (no commas ever appear in a case name) — drag order the user set.
     // Missing/unknown entries (first run, or a pane added since) fall back to enum order.
@@ -369,12 +370,15 @@ struct SettingsWindow: View {
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10))
             }
+            .browserSettleMotion(paneOrder.map(\.id))
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
             .navigationSplitViewColumnWidth(min: 210, ideal: 230, max: 280)
         } detail: {
             ScrollViewReader { proxy in
                 detail
+                    .id(paneRaw)
+                    .transition(.opacity)
                     .navigationTitle(pane.title)
                     .onChange(of: searchNav.pendingScrollID) { _, id in
                         guard let id else { return }
@@ -383,7 +387,7 @@ struct SettingsWindow: View {
                             // pane's sections exist for scrollTo to find; a fixed short delay is
                             // the known, pragmatic workaround rather than a real readiness signal.
                             try? await Task.sleep(nanoseconds: 80_000_000)
-                            withAnimation { proxy.scrollTo(id, anchor: .top) }
+                            withAnimation(BrowserMotion.slide(reduceMotion)) { proxy.scrollTo(id, anchor: .top) }
                             searchNav.highlightedID = id
                             searchNav.pendingScrollID = nil
                             try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -391,6 +395,7 @@ struct SettingsWindow: View {
                         }
                     }
             }
+            .browserSlideMotion(paneRaw)
         }
         .searchable(text: $searchQuery, placement: .sidebar, prompt: Text("Search Settings"))
         .searchFocused($searchFieldFocused)
@@ -480,6 +485,7 @@ struct SettingsWindow: View {
         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         // Plain tap gesture rather than Button: a Button's click tracking swallows the mouseDown
         // that List needs to see to start a reorder drag, so onMove below never fires.
+        .browserFeedbackMotion(selected)
         .onTapGesture { paneRaw = target.rawValue }
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("settings-pane-\(target.rawValue)")

@@ -106,7 +106,7 @@ private struct FloatingFaviconItem<ContextMenu: View>: View {
             }
             .frame(width: cell, height: cell)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BrowserPressStyle())
         .shadow(color: Color.black.opacity(0.3), radius: 2, x: 0, y: 1)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityLabel(accessibilityLabel)
@@ -250,7 +250,7 @@ struct FloatingFaviconOverlay<ContextMenu: View>: View {
                 )
                 .id(tab.id)
                 .transition(.asymmetric(
-                    insertion: .move(edge: .leading).combined(with: .opacity),
+                    insertion: BrowserMotion.tabArrival,
                     removal: .tabPoof
                 ))
             }
@@ -259,14 +259,14 @@ struct FloatingFaviconOverlay<ContextMenu: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.leading, 3)
         .animation(
-            reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.8),
+            reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.76),
             value: tabs.map(\.id)
         )
         }
         .task(id: tabs.first(where: { $0.id == selectedTabId })?.id) {
             await Task.yield()
             guard !Task.isCancelled, let selectedTabId else { return }
-            proxy.scrollTo(selectedTabId, anchor: .center)
+            withAnimation(BrowserMotion.slide(reduceMotion)) { proxy.scrollTo(selectedTabId, anchor: .center) }
         }
         }
     }
@@ -1005,7 +1005,7 @@ struct ContentView: View {
                 .frame(width: 20, height: 20)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BrowserPressStyle())
         .delayedHelp("New Tab · ⌘T")
         .accessibilityLabel("New Tab")
     }
@@ -1022,7 +1022,7 @@ struct ContentView: View {
                     .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BrowserPressStyle())
             .delayedHelp("Visual Tabs · ⌘O")
             .accessibilityLabel("Visual Tabs")
 
@@ -1119,7 +1119,7 @@ struct ContentView: View {
                         .font(.system(size: 10))
                         .foregroundColor(.secondary.opacity(0.7))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BrowserPressStyle())
                 .delayedHelp("Delete Group")
                 .accessibilityLabel("Delete \(group.name) group")
             }
@@ -1256,7 +1256,7 @@ struct ContentView: View {
                         }
                         .padding(.vertical, 4)
                         .transition(.asymmetric(
-                            insertion: .move(edge: .leading).combined(with: .opacity),
+                            insertion: BrowserMotion.tabArrival,
                             removal: .tabPoof
                         ))
                     }
@@ -1264,9 +1264,10 @@ struct ContentView: View {
                 }
             }
             .padding(.vertical, 4)
-            // New tabs slide in from the leading edge so their placement is visible.
-            .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.8),
+            // Arriving tabs and displaced neighbors settle together.
+            .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.76),
                        value: visibleTabOrder.map(\.id))
+            .browserSettleMotion(tabGroups.map(\.id))
         }
         // Wait until SwiftData has published the selected row before scrolling.
         // This also runs when a hidden sidebar is recreated.
@@ -1275,7 +1276,7 @@ struct ContentView: View {
             if let groupId = tab.groupId { collapsedGroupIds.remove(groupId) }
             await Task.yield()
             guard !Task.isCancelled else { return }
-            proxy.scrollTo(tab.id, anchor: .center)
+            withAnimation(BrowserMotion.slide(reduceMotion)) { proxy.scrollTo(tab.id, anchor: .center) }
         }
         }
     }
@@ -1425,7 +1426,7 @@ struct ContentView: View {
                     top: progressBarTop, bottom: progressBarBottom,
                     left: progressBarLeft, right: progressBarRight
                 )
-                .transition(.opacity.animation(.easeIn(duration: 0.2)))
+                .transition(.opacity.animation(BrowserMotion.slide(reduceMotion)))
             }
         }
         .edgesIgnoringSafeArea(.all)
@@ -1512,6 +1513,7 @@ struct ContentView: View {
                                 pageProtection: pageProtectionSummary,
                                 focusedDocumentName: focusedDocumentName
                             )
+                            .transition(BrowserMotion.panel)
                             .allowsHitTesting(true)
                             .accessibilityElement(children: .contain)
                             .accessibilityAddTraits(.isModal)
@@ -1526,12 +1528,14 @@ struct ContentView: View {
                 }
             }
         }
+        .browserSlideMotion(showOmnibar)
     }
 
     private var findBarOverlay: some View {
         Group {
             if showFindBar {
                 findBar
+                    .transition(BrowserMotion.panel)
                     .padding(10)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: FindBar.alignment(findBarPosition))
                     .onChange(of: findText) { _, newValue in
@@ -1546,6 +1550,7 @@ struct ContentView: View {
                     }
             }
         }
+        .browserSlideMotion(showFindBar)
     }
 
     private var findBar: some View {
@@ -1574,21 +1579,21 @@ struct ContentView: View {
             Button(action: { performFind(backwards: true) }) {
                 Image(systemName: "chevron.up")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BrowserPressStyle())
             .delayedHelp("Previous Match")
             .accessibilityLabel("Previous Match")
 
             Button(action: { performFind() }) {
                 Image(systemName: "chevron.down")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BrowserPressStyle())
             .delayedHelp("Next Match")
             .accessibilityLabel("Next Match")
 
             Button(action: { closeFindBar() }) {
                 Image(systemName: "xmark")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BrowserPressStyle())
             .delayedHelp("Close")
             .accessibilityLabel("Close Find Bar")
         }
@@ -1720,6 +1725,7 @@ struct ContentView: View {
                 }
             }
         }
+        .browserSlideMotion(showCreateGroupDialog)
     }
 
     private var createContainerDialogOverlay: some View {
@@ -1779,6 +1785,7 @@ struct ContentView: View {
                 }
             }
         }
+        .browserSlideMotion(showCreateContainerDialog)
     }
 
     private var saveWorkspaceDialogOverlay: some View {
@@ -1901,6 +1908,9 @@ struct ContentView: View {
                 }
             }
         }
+        .browserSlideMotion(showSaveWorkspaceDialog)
+        .browserSlideMotion(showTranscriptPanel)
+        .browserSlideMotion(showImportReport)
     }
 
 
@@ -1942,7 +1952,7 @@ struct ContentView: View {
                                     .background(Color(.controlBackgroundColor))
                                     .cornerRadius(8)
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(BrowserPressStyle())
                             }
                         }
                         .padding(.horizontal)
@@ -1961,6 +1971,7 @@ struct ContentView: View {
                 }
             }
         }
+        .browserSlideMotion(isImportBookmarksDialogPresented)
     }
 
     private var librarySheet: some View {
@@ -2008,7 +2019,7 @@ struct ContentView: View {
                         .font(.title2)
                         .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BrowserPressStyle())
                 .accessibilityLabel("Close Reader Mode")
             }
             .padding()
@@ -2085,7 +2096,7 @@ struct ContentView: View {
             }
         }
         .allowsHitTesting(false)
-        .animation(.easeInOut(duration: 0.12), value: autofillHUD)
+        .animation(BrowserMotion.feedback(reduceMotion), value: autofillHUD)
     }
 
     private var preferencesEnabledIcon: String {
@@ -2449,7 +2460,7 @@ struct ContentView: View {
                                             Button { tabManager.closeTab(tab, tabs: allTabs, reason: .userRejected) } label: {
                                                 Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
                                             }
-                                            .buttonStyle(.plain)
+                                            .buttonStyle(BrowserPressStyle())
                                             .accessibilityLabel("Close tab")
                                         }
                                         .font(.system(size: 11))
@@ -2462,12 +2473,15 @@ struct ContentView: View {
                                             in: RoundedRectangle(cornerRadius: 8)
                                         )
                                     }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(BrowserPressStyle())
+                                    .transition(.asymmetric(insertion: BrowserMotion.tabArrival, removal: .opacity))
+                                    .browserFeedbackMotion(tab.id == tabManager.selectedTabId)
                                 }
                             }
+                            .browserSettleMotion(visibleTabOrder.map(\.id))
                         }
                         Button(action: createNewTab) { Image(systemName: "plus").frame(width: 26, height: 26) }
-                            .buttonStyle(.plain).accessibilityLabel("New Tab")
+                            .buttonStyle(BrowserPressStyle()).accessibilityLabel("New Tab")
                     }
                     .padding(5)
                     .background(.ultraThickMaterial)
@@ -2489,6 +2503,7 @@ struct ContentView: View {
                 Spacer(minLength: 0)
             }
             .zIndex(30)
+            .browserSlideMotion(topTabsRevealed)
         }
     }
 
@@ -2551,8 +2566,10 @@ struct ContentView: View {
                     labels: cardLabels,
                     onHover: hoverPreview
                 )
+                .transition(BrowserMotion.panel)
             }
         }
+        .browserSlideMotion(showTabGrid)
     }
 
     /// One saved login is not a choice to make: the key command means exactly
@@ -2601,7 +2618,7 @@ struct ContentView: View {
             }
         }
         .allowsHitTesting(showPasswordPicker)
-        .animation(.easeOut(duration: 0.12), value: showPasswordPicker)
+        .animation(BrowserMotion.slide(reduceMotion), value: showPasswordPicker)
     }
 
     private var agentPanelOverlay: some View {
@@ -2614,6 +2631,7 @@ struct ContentView: View {
                     .zIndex(20)
             }
         }
+        .browserSlideMotion(showAgentPanel)
         .contentViewTypeErased()
     }
 
@@ -2631,6 +2649,7 @@ struct ContentView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
         }
+        .browserSlideMotion(showTabSwitcher)
     }
 
     // Full shortcut reference, toggled with ⇧⌘H or ⇧⌘K (Esc/click closes).
@@ -2638,8 +2657,10 @@ struct ContentView: View {
         Group {
             if showShortcutCheatSheet {
                 ShortcutCheatSheetOverlay(isPresented: $showShortcutCheatSheet)
+                    .transition(BrowserMotion.panel)
             }
         }
+        .browserSlideMotion(showShortcutCheatSheet)
     }
 
     // Same "theme" key SettingsManager reads — @AppStorage (not SettingsManager.shared.colorScheme)
@@ -2770,6 +2791,9 @@ struct ContentView: View {
                 tabSidebarResizeOverlay
             }
         }
+        .animation(BrowserMotion.slide(reduceMotion || tabBarResizeStartWidth != nil), value: tabBarWidth)
+        .browserSlideMotion(tabSidebarSideRaw)
+        .browserSettleMotion(showAgentPanel)
         .preferredColorScheme(colorScheme)
         .transaction {
             if reduceMotion { $0.disablesAnimations = true }
@@ -2800,7 +2824,7 @@ struct ContentView: View {
                 onEnabledChange: showAutofillHUD(enabled:)
             ))
             .overlay { faviconPeekOverlay }
-            .overlay(alignment: .top) { seenBeforeBanner }
+            .overlay(alignment: .top) { seenBeforeBanner.browserSlideMotion(seenBeforeNote) }
             .overlay(alignment: agentPanelSide.alignment) { agentPanelOverlay }
             // One session, serialized by pageTranslator's own queue: it advances
             // `configuration` to the next pending request as each one finishes.
@@ -3838,7 +3862,7 @@ struct ContentView: View {
                 } label: {
                     Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BrowserPressStyle())
             }
             .font(.system(size: 12))
             .padding(.horizontal, 14)

@@ -65,7 +65,7 @@ struct ClaimsPanel: View {
             } label: {
                 Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BrowserPressStyle())
             .keyboardShortcut(.cancelAction)
             .accessibilityLabel(String(localized: "Close claims panel"))
         }
@@ -129,7 +129,7 @@ struct ClaimsPanel: View {
                 } label: {
                     Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BrowserPressStyle())
                 .foregroundStyle(.secondary)
                 .accessibilityLabel(String(localized: "Dismiss claim"))
             }

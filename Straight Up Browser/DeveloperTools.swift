@@ -641,7 +641,7 @@ struct DeveloperToolsView: View {
                             if model.selectedTab == tab { Rectangle().fill(Color.accentColor).frame(height: 2) }
                         }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BrowserPressStyle())
             }
             Spacer()
             Button {
@@ -650,7 +650,7 @@ struct DeveloperToolsView: View {
             } label: {
                 Image(systemName: "magnifyingglass").frame(width: 28, height: 28)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BrowserPressStyle())
             .delayedHelp("Search Console")
             Menu {
                 Picker("Developer Tools location", selection: Binding(
@@ -669,13 +669,13 @@ struct DeveloperToolsView: View {
             Button { model.refreshSelectedSurface() } label: {
                 Image(systemName: "arrow.clockwise").frame(width: 28, height: 28)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BrowserPressStyle())
             .delayedHelp("Refresh")
             .disabled(model.selectedTab == .console)
             Button(action: onClose) {
                 Image(systemName: "xmark").frame(width: 28, height: 28)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BrowserPressStyle())
             .delayedHelp("Close Developer Tools")
         }
         .frame(height: 30)
@@ -686,7 +686,7 @@ struct DeveloperToolsView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Button { model.clearConsole() } label: { Image(systemName: "clear") }
-                    .buttonStyle(.plain).delayedHelp("Clear console")
+                    .buttonStyle(BrowserPressStyle()).delayedHelp("Clear console")
                 TextField("Search Console", text: $model.consoleFilter)
                     .textFieldStyle(.plain)
                     .font(.system(size: 11))

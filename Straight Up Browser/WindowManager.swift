@@ -7,6 +7,148 @@
 
 import SwiftUI
 import AppKit
+import QuartzCore
+
+/// Animate a mask, never the real window frame or the live WebKit view's layout.
+/// The committed keyframes keep playing while page-state saving occupies main.
+final class BrowserWindowMotion {
+    nonisolated(unsafe) private static var associationKey: UInt8 = 0
+    private let contentLayer: CALayer
+    private weak var window: NSWindow?
+    private var windowSurface: (opaque: Bool, background: NSColor)?
+    private let originalMask: CALayer?
+    private let mask = CAShapeLayer()
+    private var cleanup: Task<Void, Never>?
+    private var closeDeadline: TimeInterval?
+
+    private init(window: NSWindow, layer: CALayer) {
+        self.window = window
+        contentLayer = layer
+        originalMask = layer.mask
+        mask.fillColor = NSColor.black.cgColor
+    }
+
+    static func installed(on window: NSWindow) -> BrowserWindowMotion? {
+        objc_getAssociatedObject(window, &associationKey) as? BrowserWindowMotion
+    }
+
+    static func install(on window: NSWindow) -> BrowserWindowMotion? {
+        if let existing = installed(on: window) { return existing }
+        guard let view = window.contentView else { return nil }
+        view.wantsLayer = true
+        guard let layer = view.layer else { return nil }
+        let motion = BrowserWindowMotion(window: window, layer: layer)
+        objc_setAssociatedObject(window, &associationKey, motion, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        return motion
+    }
+
+    // The same rectangular path topology at every stage allows interpolation.
+    static func aperture(in bounds: CGRect, width: CGFloat, height: CGFloat) -> CGPath {
+        let size = CGSize(width: max(0.5, bounds.width * width),
+                          height: max(0.5, bounds.height * height))
+        return CGPath(rect: CGRect(x: bounds.midX - size.width / 2,
+                                  y: bounds.midY - size.height / 2,
+                                  width: size.width, height: size.height), transform: nil)
+    }
+
+    func open(reducedMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) {
+        guard !reducedMotion else { return }
+        animate(opening: true, duration: BrowserMotion.windowDuration, delay: 0)
+        scheduleRestore(after: BrowserMotion.windowDuration)
+    }
+
+    @discardableResult
+    func close(at deadline: TimeInterval,
+               reducedMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) -> TimeInterval {
+        if let closeDeadline { return max(0, closeDeadline - ProcessInfo.processInfo.systemUptime) }
+        guard !reducedMotion else { return 0 }
+        let remaining = max(0, deadline - ProcessInfo.processInfo.systemUptime)
+        guard remaining > 0 else { return 0 }
+        closeDeadline = deadline
+        let duration = min(BrowserMotion.windowDuration, remaining)
+        animate(opening: false, duration: duration, delay: remaining - duration)
+        return remaining
+    }
+
+    func restore(animated: Bool = true) {
+        cleanup?.cancel()
+        let beforeCollapse = closeDeadline.map {
+            ProcessInfo.processInfo.systemUptime < $0 - BrowserMotion.windowDuration
+        } ?? false
+        closeDeadline = nil
+        guard contentLayer.mask === mask else { return }
+        let current = mask.presentation()?.path ?? mask.path
+        mask.removeAllAnimations()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        mask.path = Self.aperture(in: contentLayer.bounds, width: 1, height: 1)
+        if animated && !beforeCollapse && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, let current {
+            let animation = CABasicAnimation(keyPath: "path")
+            animation.fromValue = current
+            animation.toValue = mask.path
+            animation.duration = 0.18
+            animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            mask.add(animation, forKey: "restore")
+            scheduleRestore(after: 0.18)
+        } else {
+            contentLayer.mask = originalMask
+            restoreWindowSurface()
+        }
+        CATransaction.commit()
+    }
+
+    private func animate(opening: Bool, duration: TimeInterval, delay: TimeInterval) {
+        cleanup?.cancel()
+        // An opaque square-corner window otherwise leaves its background behind
+        // when the content mask collapses. Preserve the user's real appearance.
+        if windowSurface == nil, let window {
+            windowSurface = (window.isOpaque, window.backgroundColor)
+            window.isOpaque = false
+            window.backgroundColor = .clear
+        }
+        let bounds = contentLayer.bounds
+        let full = Self.aperture(in: bounds, width: 1, height: 1)
+        let line = Self.aperture(in: bounds, width: 1, height: 0.004)
+        let point = Self.aperture(in: bounds, width: 0.008, height: 0.004)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        mask.frame = bounds
+        mask.path = opening ? full : point
+        contentLayer.mask = mask
+        let animation = CAKeyframeAnimation(keyPath: "path")
+        animation.values = opening ? [point, line, full] : [full, line, point]
+        animation.keyTimes = opening ? [0, 0.2, 1] : [0, 0.8, 1]
+        animation.timingFunctions = [CAMediaTimingFunction(name: .easeInEaseOut),
+                                     CAMediaTimingFunction(name: .easeInEaseOut)]
+        animation.duration = duration
+        animation.beginTime = mask.convertTime(CACurrentMediaTime(), from: nil) + delay
+        animation.fillMode = .both
+        animation.isRemovedOnCompletion = false
+        mask.add(animation, forKey: "crt")
+        CATransaction.commit()
+        CATransaction.flush()
+    }
+
+    private func scheduleRestore(after duration: TimeInterval) {
+        cleanup?.cancel()
+        cleanup = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .seconds(duration)) } catch { return }
+            guard let self else { return }
+            self.contentLayer.mask = self.originalMask
+            self.mask.removeAllAnimations()
+            self.restoreWindowSurface()
+        }
+    }
+
+    private func restoreWindowSurface() {
+        if let window, let windowSurface {
+            window.isOpaque = windowSurface.opaque
+            window.backgroundColor = windowSurface.background
+            window.invalidateShadow()
+        }
+        windowSurface = nil
+    }
+}
 
 // The browser scene creates a native plain window. This bridge configures its
 // dragging, corners, and saved launch placement without replacing AppKit's frame.
@@ -24,6 +166,7 @@ struct WindowChrome: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 
     private final class ChromeView: NSView {
+        private var didAnimateOpening = false
         // Read only from deinit (nonisolated by default even on a MainActor
         // class), so Swift 6 needs the escape hatch to hand it a non-Sendable
         // NSObjectProtocol token there — otherwise every write stays MainActor.
@@ -88,12 +231,17 @@ struct WindowChrome: NSViewRepresentable {
             // silently killed restoring, so every launch fell back to
             // .defaultSize — measured 2026-09-24: saved 960x1050, restored
             // 1200x800.
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 // SwiftUI's plain style also clears resizing during setup.
                 window.styleMask.insert(.resizable)
                 WindowLayout.restoreFrame(window)
                 WindowLayout.applyOnLaunch(to: window)
                 window.makeKeyAndOrderFront(nil)
+                window.contentView?.layoutSubtreeIfNeeded()
+                if self?.didAnimateOpening == false {
+                    self?.didAnimateOpening = true
+                    BrowserWindowMotion.install(on: window)?.open()
+                }
             }
         }
 

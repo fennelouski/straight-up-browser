@@ -133,7 +133,7 @@ private struct OmnibarSuggestionButton: View {
         Button(action: action) {
             OmnibarSuggestionLabel(suggestion: suggestion, isReady: isReady)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BrowserPressStyle())
         .padding(.horizontal, 12)
         .frame(height: 68)
         .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
@@ -541,7 +541,7 @@ struct OmnibarView: View {
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BrowserPressStyle())
                 .keyboardShortcut("y", modifiers: [.command, .option])
                 .help("Search history (⌥⌘Y)")
                 .accessibilityLabel("Search history")
@@ -553,7 +553,7 @@ struct OmnibarView: View {
                         .foregroundColor(.blue)
                         .padding(.trailing, 12)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BrowserPressStyle())
                 .accessibilityLabel("Go")
                 .accessibilityHint("Open the entered address or search")
             }
@@ -585,6 +585,8 @@ struct OmnibarView: View {
                         }
                     }
                 }
+                .browserSettleMotion(filteredSuggestions.map(\.id))
+                .transition(.opacity.combined(with: .offset(y: -4)))
                 .onHover { suggestionsHovered = $0 }
                 .onDisappear { suggestionsHovered = false }
                 .background(Color(.windowBackgroundColor).opacity(0.95))
@@ -607,6 +609,7 @@ struct OmnibarView: View {
                     .padding(.bottom, 8)
             }
         }
+        .browserSlideMotion(showSuggestions && !filteredSuggestions.isEmpty)
         .frame(minWidth: 0, idealWidth: 600, maxWidth: 600, alignment: .top)
         .onChange(of: historyMode) { _, _ in
             selection = OmnibarSelection()

@@ -136,7 +136,7 @@ struct PageProtectionButton: View {
             Image(systemName: summary.systemImage)
                 .foregroundStyle(summary.tint)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BrowserPressStyle())
         .delayedHelp(summary.title)
         .accessibilityLabel(summary.title)
         .popover(isPresented: $showingDetails) {

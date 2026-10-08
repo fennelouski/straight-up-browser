@@ -92,7 +92,7 @@ struct AuditView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BrowserPressStyle())
                 .keyboardShortcut(.cancelAction)
                 .accessibilityLabel(String(localized: "Close audit view"))
             }
@@ -228,7 +228,7 @@ struct AuditView: View {
                                   ?? Color.primary.opacity(0.08))
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BrowserPressStyle())
         .opacity(dimmedByMode ? 0.4 : 1)
         .anchorPreference(key: AuditAnchorKey.self, value: .bounds) {
             [AuditAnchorKey.Entry(kind: .source(source.sourceId), bounds: $0)]

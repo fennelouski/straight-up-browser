@@ -39,9 +39,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let deadline = ProcessInfo.processInfo.systemUptime + BrowserMotion.windowDuration
+        let duration = sender.windows.filter(\.isVisible).compactMap {
+            BrowserWindowMotion.installed(on: $0)?.close(at: deadline)
+        }.max() ?? 0
         Task {
-            await BrowsingHistoryStore.shared.flush()
-            await DownloadManager.shared.flush()
+            async let history: Void = BrowsingHistoryStore.shared.flush()
+            async let downloads: Void = DownloadManager.shared.flush()
+            if duration > 0 { try? await Task.sleep(for: .seconds(duration)) }
+            _ = await (history, downloads)
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

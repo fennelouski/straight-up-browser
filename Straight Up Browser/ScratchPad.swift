@@ -201,7 +201,7 @@ struct ScratchPadView: View {
             Button(action: onClose) {
                 Image(systemName: aiFeaturesEnabled ? "sparkles" : "xmark")
             }
-                .buttonStyle(.plain)
+                .buttonStyle(BrowserPressStyle())
                 .delayedHelp(aiFeaturesEnabled ? "Back to Agent" : "Close")
                 .accessibilityLabel(aiFeaturesEnabled ? "Back to Agent" : "Close")
         }
@@ -229,7 +229,7 @@ struct ScratchPadView: View {
                     Image(systemName: "plus.circle.fill")
                         .font(.title3)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BrowserPressStyle())
                 .disabled(note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityLabel("Save note")
             }
