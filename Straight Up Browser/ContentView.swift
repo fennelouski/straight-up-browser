@@ -2303,7 +2303,6 @@ struct ContentView: View {
                 )
                 .zIndex(0)
         }
-        .overlay(progressBarOverlay.zIndex(1))
         .overlay(downloadProgressOverlay.zIndex(1.5))
         .overlay(newTabPageOverlay.zIndex(2))
         .overlay(linkPreviewOverlay.zIndex(3))
@@ -2802,6 +2801,8 @@ struct ContentView: View {
             .overlay { faviconPeekOverlay }
             .overlay(alignment: .top) { seenBeforeBanner.browserSlideMotion(seenBeforeNote) }
             .overlay(alignment: agentPanelSide.alignment) { agentPanelOverlay }
+            // Loading belongs to the whole window perimeter, including docked chrome.
+            .overlay { progressBarOverlay }
             // One session, serialized by pageTranslator's own queue: it advances
             // `configuration` to the next pending request as each one finishes.
             .translationTask(pageTranslator.configuration) { session in
