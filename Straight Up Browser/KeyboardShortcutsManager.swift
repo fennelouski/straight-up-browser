@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import QuartzCore
 
 // Only shortcuts the menu bar can't own reliably live here (Ctrl-based combos
 // a WKWebView would swallow, bracket navigation, reload, and the hold-Cmd+Q
@@ -413,8 +414,11 @@ class KeyboardShortcutsManager {
             panel.animator().alphaValue = 1
         }
 
-        // Show the prompt before starting persistence; its clock includes any
-        // main-thread work, just like the release handler's clock does.
+        // Commit the complete layer animation before persistence can occupy the
+        // main thread. TimelineView alone cannot render frames during that work.
+        panel.contentView?.layoutSubtreeIfNeeded()
+        panel.displayIfNeeded()
+        CATransaction.flush()
         quitPreparation = Task { @MainActor [weak self] in
             guard let self, !Task.isCancelled else { return }
             self.webViewManager?.prepareInteractionStatesForTermination()
@@ -529,8 +533,9 @@ private struct QuitHoldPrompt: View {
                 Text(ready ? "Release ⌘Q to quit" : "Keep holding ⌘Q to quit")
                     .font(.headline)
                     .contentTransition(.opacity)
-                ProgressView(value: ready ? 1 : timing.progress(at: uptime))
-                    .frame(width: 220)
+                QuitHoldProgressBar(timing: timing)
+                    .frame(width: 220, height: 4)
+                    .accessibilityLabel("Hold to quit progress")
                 Text(ready ? "Or press Esc to cancel" : "Release early to cancel")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -540,5 +545,78 @@ private struct QuitHoldPrompt: View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: ready)
         }
+    }
+}
+
+private struct QuitHoldProgressBar: NSViewRepresentable {
+    let timing: QuitHoldTiming
+
+    func makeNSView(context: Context) -> QuitHoldProgressNSView {
+        QuitHoldProgressNSView(timing: timing)
+    }
+
+    func updateNSView(_ view: QuitHoldProgressNSView, context: Context) {
+        // SwiftUI's label updates must not restart the committed animation.
+        view.setAccessibilityValue(timing.progress(at: ProcessInfo.processInfo.systemUptime))
+    }
+}
+
+/// Core Animation renders the fill without asking the main thread for frames.
+/// The immutable deadline still belongs to the quit gesture, not the animation.
+final class QuitHoldProgressNSView: NSView {
+    private let timing: QuitHoldTiming
+    private let track = CAShapeLayer()
+    private let fill = CAShapeLayer()
+    private var animationStarted = false
+
+    init(timing: QuitHoldTiming) {
+        self.timing = timing
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.addSublayer(track)
+        layer?.addSublayer(fill)
+        for shape in [track, fill] {
+            shape.lineWidth = 4
+            shape.lineCap = .round
+            shape.fillColor = nil
+        }
+        setAccessibilityElement(true)
+        setAccessibilityRole(.progressIndicator)
+        setAccessibilityMinValue(0)
+        setAccessibilityMaxValue(1)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func layout() {
+        super.layout()
+        guard bounds.width > 4, bounds.height > 0 else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 2, y: bounds.midY))
+        path.addLine(to: CGPoint(x: bounds.width - 2, y: bounds.midY))
+        for shape in [track, fill] {
+            shape.frame = bounds
+            shape.path = path
+        }
+        track.strokeColor = NSColor.quaternaryLabelColor.cgColor
+        fill.strokeColor = NSColor.controlAccentColor.cgColor
+        if !animationStarted {
+            animationStarted = true
+            let uptime = ProcessInfo.processInfo.systemUptime
+            fill.strokeEnd = 1
+            let remaining = max(0, timing.deadline - uptime)
+            if remaining > 0 {
+                let animation = CABasicAnimation(keyPath: "strokeEnd")
+                animation.fromValue = timing.progress(at: uptime)
+                animation.toValue = 1
+                animation.duration = remaining
+                animation.beginTime = fill.convertTime(CACurrentMediaTime(), from: nil)
+                animation.timingFunction = CAMediaTimingFunction(name: .linear)
+                fill.add(animation, forKey: "quitHoldFill")
+            }
+        }
+        CATransaction.commit()
     }
 }
