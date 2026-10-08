@@ -16,6 +16,42 @@ final class Straight_Up_BrowserUITests: XCTestCase {
     }
 
     @MainActor
+    func testNamedWindowsOwnWorkspacesAndSupportNativeFullScreen() {
+        let app = browserForUITesting()
+        app.launchArguments += ["-nativeBrowserFullScreen", "YES"]
+        launchBrowserForUITesting(app)
+        XCTAssertTrue(app.windows["Browser"].waitForExistence(timeout: 10))
+        app.typeKey("n", modifierFlags: [.command])
+        XCTAssertTrue(app.windows["Window 2"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.windows.count, 2)
+        app.menuBars.menuBarItems["File"].click()
+        app.menuItems["Rename Window…"].click()
+        let name = app.sheets.textFields.firstMatch
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.click()
+        app.typeKey("a", modifierFlags: [.command])
+        name.typeText("Research")
+        app.sheets.buttons["Save"].click()
+        let research = app.windows["Research"]
+        XCTAssertTrue(research.waitForExistence(timeout: 5))
+        app.typeKey(.escape, modifierFlags: [])
+        let sidebar = research.buttons["Visual Tabs"]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 5))
+        XCTAssertTrue(research.buttons["New Document"].exists)
+        app.typeKey("f", modifierFlags: [.command, .control])
+        XCTAssertTrue(sidebar.waitForNonExistence(timeout: 10))
+        app.typeKey("l", modifierFlags: [.command])
+        XCTAssertTrue(research.textFields.firstMatch.waitForExistence(timeout: 5))
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(research.textFields.firstMatch.waitForNonExistence(timeout: 5))
+        app.typeKey("f", modifierFlags: [.command, .control])
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 10))
+        app.typeKey("w", modifierFlags: [.command, .option, .shift])
+        XCTAssertTrue(research.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.windows["Browser"].exists)
+    }
+
+    @MainActor
     func testBrowserShellOpensTheAddressBarFromNewTab() throws {
         let app = browserForUITesting()
         launchBrowserForUITesting(app)
@@ -280,18 +316,21 @@ final class Straight_Up_BrowserUITests: XCTestCase {
 
 @MainActor
 func launchBrowserForUITesting(_ app: XCUIApplication) {
-    app.launchArguments += ["-memorySaverEnabled", "YES", "-globalOmnibarHotkey", "off"]
+    app.launchArguments += ["-memorySaverEnabled", "YES", "-globalOmnibarHotkey", "off", "-namedBrowserWindows", "[]"]
+    if !app.launchArguments.contains("-nativeBrowserFullScreen") {
+        app.launchArguments += ["-nativeBrowserFullScreen", "NO"]
+    }
     app.launch()
 
     #if os(macOS)
-    // XCUIApplication.launch starts the SwiftUI process directly, which does
-    // not deliver the open event that creates the WindowGroup window here.
-    // Re-open the same bundle through LaunchServices after launch so the test
-    // exercises the real browser window rather than a windowless process.
+    // Some launches start a windowless process. Deliver an open event only
+    // when needed; a second open event must not create an extra test window.
     let appURL = Bundle.main.bundleURL
         .deletingLastPathComponent()
         .appendingPathComponent("Browser.app")
-    _ = NSWorkspace.shared.open(appURL)
+    if !app.windows.firstMatch.waitForExistence(timeout: 2) {
+        _ = NSWorkspace.shared.open(appURL)
+    }
     app.activate()
     #endif
 }

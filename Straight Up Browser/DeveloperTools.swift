@@ -562,19 +562,23 @@ struct DeveloperToolsDetachedWindow: View {
 }
 
 struct DeveloperToolsCommandModifier: ViewModifier {
+    var windowID: UUID? = nil
     @Binding var isPresented: Bool
     @ObservedObject var model: DeveloperToolsModel
 
     func body(content: Content) -> some View {
         content
-            .onReceive(NotificationCenter.default.publisher(for: .browserToggleDeveloperTools)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .browserToggleDeveloperTools)) { note in
+                if let windowID, !BrowserWindows.shared.accepts(note, in: windowID) { return }
                 withAnimation(.easeInOut(duration: 0.16)) { isPresented.toggle() }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .browserShowDeveloperConsole)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .browserShowDeveloperConsole)) { note in
+                if let windowID, !BrowserWindows.shared.accepts(note, in: windowID) { return }
                 model.select(.console)
                 withAnimation(.easeInOut(duration: 0.16)) { isPresented = true }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .browserToggleDeveloperElementInspector)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .browserToggleDeveloperElementInspector)) { note in
+                if let windowID, !BrowserWindows.shared.accepts(note, in: windowID) { return }
                 model.select(.elements)
                 withAnimation(.easeInOut(duration: 0.16)) { isPresented = true }
                 DispatchQueue.main.async {

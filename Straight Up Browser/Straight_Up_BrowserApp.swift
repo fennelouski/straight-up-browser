@@ -90,28 +90,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 await AgentDefinitionSyncService.shared.start()
             }
         }
-        // Belt and braces: this app is single-window, and a stray open event that
-        // SwiftUI answers itself leaves a second browser window the user has no way
-        // to close (no title bar, ⌘W closes a tab). Sweep once after launch settles.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { Self.closeExtraBrowserWindows() }
-    }
-
-    // Identified positively - .windowStyle(.plain) is what marks a browser
-    // window - so Settings/Downloads/Help, the omnibar panel, and Sparkle's update
-    // windows are never candidates.
-    static func closeExtraBrowserWindows() {
-        let browserWindows = NSApp.windows.filter {
-            $0.isVisible && !($0 is NSPanel)
-                // Square corners drop .titled, and with it the transparent-titlebar flag.
-                && ($0.titlebarAppearsTransparent || !$0.styleMask.contains(.titled))
-                && $0.styleMask.contains(.fullSizeContentView)
-        }
-        // Keep the one the user is actually looking at.
-        let keep = NSApp.mainWindow.flatMap { browserWindows.contains($0) ? $0 : nil } ?? browserWindows.first
-        for extra in browserWindows where extra != keep {
-            Logger.log("Closing extra browser window: \(extra.identifier?.rawValue ?? "nil")", type: "App")
-            extra.close()
-        }
     }
 
     // A link clicked in another app arrives as a GURL Apple Event. SwiftUI's own
@@ -127,7 +105,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             andEventID: AEEventID(kAEGetURL)
         )
         // Finder's "Open With" sends odoc instead, and SwiftUI answers it by
-        // spawning a second WindowGroup window - this app is single-window.
+        // spawning an unrelated window.
         // Claim it back the same way and open the file as a tab.
         NSAppleEventManager.shared().setEventHandler(
             self,
@@ -156,6 +134,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openInNewTab(_ url: URL) {
         Task { @MainActor in
+            if !BrowserWindows.shared.hasWindows {
+                NotificationManager.observersReady = false
+                BrowserWindows.shared.openWindowAction?(BrowserWindows.shared.primaryID)
+            }
             // Cold launch: observers attach in ContentView.onAppear, after this.
             try? await waitForObservers()
             // Same funnel the CLI and Shortcuts post to.
@@ -316,9 +298,9 @@ struct Straight_Up_BrowserApp: App {
     private let modelStartup = ModelContainerStartup.makeDefault()
 
     var body: some Scene {
-        WindowGroup(id: "browser") {
+        WindowGroup(id: "browser", for: UUID.self) { $windowID in
             if let container = modelStartup.container {
-                ContentView()
+                BrowserWindowScene(id: windowID)
                     .background(AgentDefinitionBrowserSessionRegistrationView())
                     .modelContainer(container)
                     .onReceive(NotificationCenter.default.publisher(for: .browserShowSettings)) { _ in
@@ -343,7 +325,9 @@ struct Straight_Up_BrowserApp: App {
                 )
             }
         }
-        .windowStyle(.plain)
+        defaultValue: { BrowserWindows.shared.primaryID }
+        .windowStyle(.hiddenTitleBar)
+        .restorationBehavior(.disabled) // BrowserWindows restores stable identities exactly once.
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1200, height: 800)
 
@@ -438,6 +422,17 @@ struct Straight_Up_BrowserApp: App {
 
             // Add standard browser commands
             CommandGroup(replacing: .newItem) {
+                Button("New Window") {
+                    openWindow(id: "browser", value: BrowserWindows.shared.create())
+                }
+                .keyboardShortcut("n", modifiers: [.command])
+                Button("Rename Window…") {
+                    NotificationCenter.default.post(name: .browserRenameWindow, object: NSApp.keyWindow)
+                }
+                Button("Close Window") {
+                    if let id = BrowserWindows.shared.activeID { BrowserWindows.shared.close(id) }
+                }
+                .keyboardShortcut("w", modifiers: [.command, .option, .shift])
                 Button("New Tab") {
                     NotificationCenter.default.post(name: .browserNewTab, object: nil)
                 }
@@ -608,18 +603,17 @@ struct Straight_Up_BrowserApp: App {
                 }
                 .keyboardShortcut(sc(.windowLayout))
 
-                // No window has a title bar, so native full screen isn't available —
-                // this shortcut now does the same thing as "Snap Window to Size".
+                // Native Spaces or the existing layout, according to the preference.
                 Button("Toggle Full Screen") {
                     if let window = NSApp.keyWindow ?? NSApp.mainWindow {
-                        WindowLayout.toggle(window)
+                        BrowserWindows.toggleFullScreen(window)
                     }
                 }
                 .keyboardShortcut(sc(.fullScreen))
 
                 Button("Toggle Full Screen (Alt)") {
                     if let window = NSApp.keyWindow ?? NSApp.mainWindow {
-                        WindowLayout.toggle(window)
+                        BrowserWindows.toggleFullScreen(window)
                     }
                 }
                 .keyboardShortcut("f", modifiers: [.command, .option, .control])

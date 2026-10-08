@@ -460,6 +460,14 @@ private struct ReaderBlockRow: View {
 }
 
 struct ContentView: View {
+    let windowID: UUID
+    @ObservedObject private var windows = BrowserWindows.shared
+    private var nativeFullScreen: Bool { windows.fullScreenIDs.contains(windowID) }
+    @AppStorage(BrowserWindows.nativeFullScreenKey) private var immersiveFullScreenEnabled = false
+    @State private var renameWindowPresented = false
+    @State private var windowName = ""
+    @State private var windowObservers: [NSObjectProtocol] = []
+    private var immersive: Bool { nativeFullScreen && immersiveFullScreenEnabled }
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
@@ -645,12 +653,13 @@ struct ContentView: View {
     }
 
     private var effectiveTabSidebarWidth: CGFloat {
-        guard tabBarWidth > 0 else { return 0 }
+        guard !immersive, tabBarWidth > 0 else { return 0 }
         return tabBarWidth <= 30 ? 32 : max(80, tabBarWidth)
     }
 
     private func reservedChromeWidth(on side: BrowserChromeSide) -> CGFloat {
-        BrowserChromeLayout.reservedWidth(
+        if immersive { return 0 }
+        return BrowserChromeLayout.reservedWidth(
             on: side,
             tabWidth: effectiveTabSidebarWidth,
             tabSide: tabSidebarSide,
@@ -691,9 +700,14 @@ struct ContentView: View {
 
 
 
-    init() {
+    init(windowID: UUID = BrowserWindows.shared.primaryID) {
         // CLI is now initialized lazily when first used
-        _tabManager = StateObject(wrappedValue: TabManager())
+        self.windowID = windowID
+        _tabManager = StateObject(wrappedValue: TabManager(
+            windowID: windowID,
+            homeWorkspaceID: BrowserWindows.shared.record(windowID)?.homeWorkspaceID,
+            terminateApplication: { BrowserWindows.shared.closeLastTab(in: windowID) }
+        ))
         _browserAgent = StateObject(wrappedValue: BrowserAgent())
     }
 
@@ -1053,7 +1067,9 @@ struct ContentView: View {
                 if tabManager.activeWorkspaceId == nil {
                     Button("Turn This Into a Workspace…", action: { showSaveWorkspaceDialog = true })
                 } else {
-                    Button("Close Workspace", action: { tabManager.suspendWorkspace() })
+                    if tabManager.activeWorkspaceId != tabManager.homeWorkspaceID {
+                        Button("Close Workspace", action: { tabManager.suspendWorkspace() })
+                    }
                     if let active = activeWorkspace {
                         Button("Archive Workspace") { archiveActiveWorkspace(active) }
                     }
@@ -2355,7 +2371,7 @@ struct ContentView: View {
 
     private var browserAndDeveloperTools: some View {
         Group {
-            if !showDeveloperTools || developerToolsPlacement == .window {
+            if immersive || !showDeveloperTools || developerToolsPlacement == .window {
                 mainContent
             } else {
                 switch developerToolsPlacement {
@@ -2414,7 +2430,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var traditionalTopTabBarOverlay: some View {
-        if showTraditionalTopTabs {
+        if showTraditionalTopTabs && !immersive {
             VStack(spacing: 0) {
                 if topTabsRevealed || !topTabsAutoHide {
                     HStack(spacing: 5) {
@@ -2754,7 +2770,7 @@ struct ContentView: View {
             }
         }
         .overlay(alignment: tabSidebarSide.alignment) {
-            if tabBarWidth > 0 {
+            if !immersive && tabBarWidth > 0 {
                 tabSidebar
                     .frame(width: effectiveTabSidebarWidth)
                     .background(Color(.windowBackgroundColor))
@@ -2762,7 +2778,7 @@ struct ContentView: View {
             }
         }
         .overlay(alignment: tabSidebarSide.alignment) {
-            if tabBarWidth > 0 {
+            if !immersive && tabBarWidth > 0 {
                 tabSidebarResizeOverlay
             }
         }
@@ -2800,7 +2816,7 @@ struct ContentView: View {
             ))
             .overlay { faviconPeekOverlay }
             .overlay(alignment: .top) { seenBeforeBanner.browserSlideMotion(seenBeforeNote) }
-            .overlay(alignment: agentPanelSide.alignment) { agentPanelOverlay }
+            .overlay(alignment: agentPanelSide.alignment) { if !immersive { agentPanelOverlay } }
             // Loading belongs to the whole window perimeter, including docked chrome.
             .overlay { progressBarOverlay }
             // One session, serialized by pageTranslator's own queue: it advances
@@ -2831,7 +2847,15 @@ struct ContentView: View {
                 settleCapture = settle
                 tabManager.ledgerStore = store
                 tabManager.settleCapture = settle
-                tabManager.activeWorkspaceId = TabManager.restoredActiveWorkspaceId()
+                if let record = BrowserWindows.shared.record(windowID) {
+                    if let homeID = record.homeWorkspaceID, !workspaces.contains(where: { $0.id == homeID }) {
+                        let workspace = Workspace(name: record.name, orderIndex: workspaces.count)
+                        workspace.id = homeID
+                        modelContext.insert(workspace)
+                        try? modelContext.save()
+                    }
+                    tabManager.activeWorkspaceId = record.workspaceID
+                }
 
                 // Newspaper seed + one-a-day pick; re-checked whenever the app
                 // comes back to the front so a long-running session still gets
@@ -2882,7 +2906,7 @@ struct ContentView: View {
                     await pageTranslator.offerPackDownloadIfNeeded()
                 }
 
-                NotificationCenter.default.addMainActorObserver(
+                addWindowObserver(
                     forName: .browserCaptureSource,
                     object: nil,
                     queue: .main
@@ -2890,7 +2914,7 @@ struct ContentView: View {
                     captureCurrentSource()
                 }
 
-                NotificationCenter.default.addMainActorObserver(
+                addWindowObserver(
                     forName: .browserPageArrived,
                     object: nil,
                     queue: .main
@@ -2899,7 +2923,7 @@ struct ContentView: View {
                 }
 
                 // Setup observer for tab title display mode changes
-                NotificationCenter.default.addMainActorObserver(
+                addWindowObserver(
                     forName: .browserTabTitleDisplayModeChanged,
                     object: nil,
                     queue: .main
@@ -2907,7 +2931,7 @@ struct ContentView: View {
                     tabTitleDisplayRefreshTrigger = UUID()
                 }
 
-                NotificationCenter.default.addMainActorObserver(
+                addWindowObserver(
                     forName: .browserAgentLassoSelected,
                     object: nil,
                     queue: .main
@@ -2916,7 +2940,7 @@ struct ContentView: View {
                 }
 
                 // Find in page (Cmd+F)
-                NotificationCenter.default.addMainActorObserver(
+                addWindowObserver(
                     forName: .browserFindInPage,
                     object: nil,
                     queue: .main
@@ -2930,7 +2954,7 @@ struct ContentView: View {
                 }
 
                 // Cmd+G / Cmd+Shift+G cycle through matches
-                NotificationCenter.default.addMainActorObserver(
+                addWindowObserver(
                     forName: .browserFindNext,
                     object: nil,
                     queue: .main
@@ -2938,7 +2962,7 @@ struct ContentView: View {
                     performFind()
                 }
 
-                NotificationCenter.default.addMainActorObserver(
+                addWindowObserver(
                     forName: .browserFindPrevious,
                     object: nil,
                     queue: .main
@@ -2947,7 +2971,7 @@ struct ContentView: View {
                 }
 
                 // Screenshot shutter flash
-                NotificationCenter.default.addMainActorObserver(
+                addWindowObserver(
                     forName: .browserScreenshotFlash,
                     object: nil,
                     queue: .main
@@ -2959,7 +2983,7 @@ struct ContentView: View {
                 }
 
                 // ⇧⌘H / ⇧⌘K shortcut cheat sheet
-                NotificationCenter.default.addMainActorObserver(
+                addWindowObserver(
                     forName: .browserToggleShortcutOverlay,
                     object: nil,
                     queue: .main
@@ -2967,7 +2991,7 @@ struct ContentView: View {
                     showShortcutCheatSheet.toggle()
                 }
 
-                NotificationCenter.default.addMainActorObserver(
+                addWindowObserver(
                     forName: .browserToggleAgent,
                     object: nil,
                     queue: .main
@@ -2976,7 +3000,7 @@ struct ContentView: View {
                     withAnimation(.easeInOut(duration: 0.2)) { showAgentPanel.toggle() }
                 }
 
-                NotificationCenter.default.addMainActorObserver(
+                addWindowObserver(
                     forName: .browserEndTabCycle,
                     object: nil,
                     queue: .main
@@ -2984,7 +3008,7 @@ struct ContentView: View {
                     tabManager.endRecentTabCycle()
                 }
 
-                NotificationCenter.default.addMainActorObserver(
+                addWindowObserver(
                     forName: .browserToggleScratchPad,
                     object: nil,
                     queue: .main
@@ -3001,7 +3025,7 @@ struct ContentView: View {
                 }
 
                 // Toggle tab bar between hidden and last visible width (Cmd+Shift+L)
-                NotificationCenter.default.addMainActorObserver(
+                addWindowObserver(
                     forName: .browserToggleTabBar,
                     object: nil,
                     queue: .main
@@ -3017,14 +3041,14 @@ struct ContentView: View {
 
                 // ⌃Tab and ⇧⌃Tab switch the tab elsewhere; this only raises the
                 // strip of thumbnails so you can see where you landed.
-                NotificationCenter.default.addMainActorObserver(forName: .browserNextTab, object: nil, queue: .main) { [self] _ in
+                addWindowObserver(forName: .browserNextTab, object: nil, queue: .main) { [self] _ in
                     flashTabSwitcher()
                 }
-                NotificationCenter.default.addMainActorObserver(forName: .browserPreviousTab, object: nil, queue: .main) { [self] _ in
+                addWindowObserver(forName: .browserPreviousTab, object: nil, queue: .main) { [self] _ in
                     flashTabSwitcher()
                 }
 
-                NotificationCenter.default.addMainActorObserver(forName: .browserShowTabGrid, object: nil, queue: .main) { [self] _ in
+                addWindowObserver(forName: .browserShowTabGrid, object: nil, queue: .main) { [self] _ in
                     // Snapshot the tab you're on first; every other tab was captured
                     // when you switched away from it.
                     webViewManager?.captureThumbnail(for: tabManager.selectedTabId)
@@ -3032,33 +3056,33 @@ struct ContentView: View {
                     showTabGrid.toggle()
                 }
 
-                NotificationCenter.default.addMainActorObserver(forName: .browserShowPasswordPicker, object: nil, queue: .main) { [self] _ in
+                addWindowObserver(forName: .browserShowPasswordPicker, object: nil, queue: .main) { [self] _ in
                     fillSavedPassword(submit: false)
                 }
 
-                NotificationCenter.default.addMainActorObserver(forName: .browserFillAndSubmitPassword, object: nil, queue: .main) { [self] _ in
+                addWindowObserver(forName: .browserFillAndSubmitPassword, object: nil, queue: .main) { [self] _ in
                     fillSavedPassword(submit: true)
                 }
 
                 // Privacy & session commands (Privacy menu + ⇧⌘N / ⇧⌘E)
-                NotificationCenter.default.addMainActorObserver(forName: .browserNewIncognitoTab, object: nil, queue: .main) { [self] _ in
+                addWindowObserver(forName: .browserNewIncognitoTab, object: nil, queue: .main) { [self] _ in
                     _ = tabManager.createIncognitoTab()   // fresh, isolated private session
                     showOmnibar = true
                 }
-                NotificationCenter.default.addMainActorObserver(forName: .browserNewRegularTab, object: nil, queue: .main) { [self] _ in
+                addWindowObserver(forName: .browserNewRegularTab, object: nil, queue: .main) { [self] _ in
                     _ = tabManager.createNewTab()          // force a normal tab, leaving any session
                     showOmnibar = true
                 }
-                NotificationCenter.default.addMainActorObserver(forName: .browserConvertTabToIncognito, object: nil, queue: .main) { [self] _ in
+                addWindowObserver(forName: .browserConvertTabToIncognito, object: nil, queue: .main) { [self] _ in
                     convertSelectedTabToIncognito()
                 }
-                NotificationCenter.default.addMainActorObserver(forName: .browserClearSiteData, object: nil, queue: .main) { [self] _ in
+                addWindowObserver(forName: .browserClearSiteData, object: nil, queue: .main) { [self] _ in
                     clearActiveSite()
                 }
-                NotificationCenter.default.addMainActorObserver(forName: .browserClearSessionData, object: nil, queue: .main) { [self] _ in
+                addWindowObserver(forName: .browserClearSessionData, object: nil, queue: .main) { [self] _ in
                     clearActiveSession()
                 }
-                NotificationCenter.default.addMainActorObserver(forName: .browserClearAllData, object: nil, queue: .main) { [self] _ in
+                addWindowObserver(forName: .browserClearAllData, object: nil, queue: .main) { [self] _ in
                     clearAllData()
                 }
 
@@ -3073,7 +3097,8 @@ struct ContentView: View {
                     showOmnibar = true
                 } else {
                     tabManager.selectedTabId =
-                        visiblePersistedTabs.first(where: { $0.isActive })?.id
+                        visiblePersistedTabs.first(where: { $0.id.uuidString == UserDefaults.standard.string(forKey: "selectedTabId." + windowID.uuidString) })?.id
+                        ?? visiblePersistedTabs.first(where: { $0.isActive })?.id
                         ?? visiblePersistedTabs.first?.id
                     // Restore last session's split (drops ids that no longer resolve)
                     tabManager.restoreSplit(from: visiblePersistedTabs)
@@ -3149,13 +3174,16 @@ struct ContentView: View {
             handleMemoryPressure(critical: critical)
         }
         .modifier(DeveloperToolsCommandModifier(
+            windowID: windowID,
             isPresented: $showDeveloperTools,
             model: developerTools
         ))
-        .onReceive(NotificationCenter.default.publisher(for: .browserShowHistory)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .browserShowHistory)) { note in
+            guard BrowserWindows.shared.accepts(note, in: windowID) else { return }
             showHistory()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .browserToggleReader)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .browserToggleReader)) { note in
+            guard BrowserWindows.shared.accepts(note, in: windowID) else { return }
             showReaderMode()
         }
         .onReceive(NotificationCenter.default.publisher(for: .browserAddToNewspaper)) { notification in
@@ -3208,11 +3236,19 @@ struct ContentView: View {
                 try? await Task.sleep(for: .seconds(1.5))
             }
         }
+        .onChange(of: tabManager.activeWorkspaceId) { _, _ in
+            tabManager.ensureSelectedTab(from: allTabs)
+        }
         .onChange(of: tabs) { oldTabs, newTabs in
             // Keep container-tab sessions registered, and keep a valid selection across
             // the merged working set (incognito tabs included).
             webViewManager?.syncSessions(from: newTabs)
             tabManager.ensureSelectedTab(from: allTabs)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+            guard let window = note.object as? NSWindow,
+                  BrowserWindows.shared.window(windowID) === window else { return }
+            publishWindowServices()
         }
         .onDisappear(perform: handleContentViewDisappear)
         .contentViewTypeErased()
@@ -3230,17 +3266,43 @@ struct ContentView: View {
         // paints edge to edge — follow the same curve instead of squaring off
         // a corner the real window already clips.
         .clipShape(
-            WindowLayout.isSquareCorners
+            (WindowLayout.isSquareCorners || nativeFullScreen)
                 ? AnyShape(Rectangle())
                 : AnyShape(RoundedRectangle(cornerRadius: WindowLayout.windowCornerRadius, style: .continuous))
         )
         // Hides the traffic lights and titlebar on the window actually hosting this
         // view, once it has one — see WindowChrome for why this isn't done at onAppear.
-        .background(WindowChrome())
+        .background(WindowChrome(windowID: windowID))
+        .onReceive(NotificationCenter.default.publisher(for: .browserRenameWindow)) { note in
+            guard BrowserWindows.shared.accepts(note, in: windowID) else { return }
+            windowName = BrowserWindows.shared.record(windowID)?.name ?? "Browser"
+            renameWindowPresented = true
+        }
+        .alert("Name This Window", isPresented: $renameWindowPresented) {
+            TextField("Window name", text: $windowName)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") { BrowserWindows.shared.rename(windowID, to: windowName) }
+                .disabled(windowName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+
+    }
+
+    @discardableResult
+    private func addWindowObserver(forName name: Notification.Name?, object: Any?, queue: OperationQueue,
+                                   using action: @escaping @MainActor @Sendable (Notification) -> Void) -> NSObjectProtocol {
+        let token = NotificationCenter.default.addMainActorObserver(forName: name, object: object, queue: queue) { note in
+            let broadcast = name == .browserPageArrived || name == .browserTabTitleDisplayModeChanged
+            guard broadcast || BrowserWindows.shared.accepts(note, in: windowID) else { return }
+            action(note)
+        }
+        windowObservers.append(token)
+        return token
     }
 
     private func handleContentViewDisappear() {
         finishSidebarTabDrag()
+        for token in windowObservers { NotificationCenter.default.removeObserver(token) }
+        windowObservers.removeAll()
         notificationManager?.cleanup()
         keyboardShortcutsManager?.teardown()
     }
@@ -3253,6 +3315,29 @@ struct ContentView: View {
         )
     }
 
+    private func publishWindowServices() {
+        guard let webViewManager else { return }
+        #if os(macOS)
+        // The Website Activity window is its own scene and can't see any of this.
+        // Closures capture the managers (classes) and re-read the store, rather
+        // than capturing this struct — a captured View copy freezes its @Query.
+        TabInsights.shared.webViewManager = webViewManager
+        TabInsights.shared.tabsProvider = { [weak tabManager] in
+            let stored = (try? modelContext.fetch(FetchDescriptor<BrowserTab>())) ?? []
+            return TabSync.visible(stored).filter { $0.workspaceId == tabManager?.activeWorkspaceId }
+                + (tabManager?.incognitoTabs ?? [])
+        }
+        TabInsights.shared.displayedTabIdsProvider = { [weak tabManager] in
+            guard let tabManager else { return [] }
+            return tabManager.splitTabIds.isEmpty
+                ? [tabManager.selectedTabId].compactMap { $0 }
+                : tabManager.splitTabIds
+        }
+        #endif
+        ResearchRecall.shared.ledgerStore = ledgerStore
+        ResearchRecall.shared.documentStore = documentStore
+    }
+
     private func initializeManagers() {
         if TabSync.clearLegacySessionStorage(in: tabs) > 0 {
             try? modelContext.save()
@@ -3263,22 +3348,7 @@ struct ContentView: View {
         self.navigationManager = navigationManager
         tabManager.setModelContext(modelContext)
         tabManager.setWebViewManager(webViewManager)
-        #if os(macOS)
-        // The Website Activity window is its own scene and can't see any of this.
-        // Closures capture the managers (classes) and re-read the store, rather
-        // than capturing this struct — a captured View copy freezes its @Query.
-        TabInsights.shared.webViewManager = webViewManager
-        TabInsights.shared.tabsProvider = { [weak tabManager] in
-            let stored = (try? modelContext.fetch(FetchDescriptor<BrowserTab>())) ?? []
-            return TabSync.visible(stored) + (tabManager?.incognitoTabs ?? [])
-        }
-        TabInsights.shared.displayedTabIdsProvider = { [weak tabManager] in
-            guard let tabManager else { return [] }
-            return tabManager.splitTabIds.isEmpty
-                ? [tabManager.selectedTabId].compactMap { $0 }
-                : tabManager.splitTabIds
-        }
-        #endif
+        publishWindowServices()
         #if os(macOS)
         webViewManager.extensionTabCreationHandler = {
             [weak tabManager, weak webViewManager] url, shouldActivate in
@@ -3332,8 +3402,9 @@ struct ContentView: View {
                     // Inside a workspace, ⇧⌘W closes the WORKSPACE — it never
                     // closes tabs, so it cannot mass-reject sources. Outside one
                     // it keeps its original meaning: close the split's tab set.
-                    if tabManager.activeWorkspaceId != nil {
-                        tabManager.suspendWorkspace()
+                    if let active = tabManager.activeWorkspaceId {
+                        if active == tabManager.homeWorkspaceID { BrowserWindows.shared.close(windowID) }
+                        else { tabManager.suspendWorkspace() }
                     } else {
                         tabManager.closeTabSet(tabs: allTabs)
                     }
@@ -3358,11 +3429,14 @@ struct ContentView: View {
             addBookmarkAction: { self.toggleBookmark() },
             showBookmarksAction: { self.showBookmarks() },
             importBookmarksAction: { self.presentImportBookmarksDialog() },
-            createWindowAction: { self.openWindow(id: "browser") }
+            createWindowAction: { self.openWindow(id: "browser", value: BrowserWindows.shared.create()) }
         )
+
+        notificationManager?.commandWindowID = windowID
 
         keyboardShortcutsManager = KeyboardShortcutsManager(
             showOmnibar: $showOmnibar,
+            commandWindowID: windowID,
             reloadAction: { self.reload() },
             hardReloadAction: { self.hardReload() },
             reloadAllTabsAction: { self.reloadAllTabs() },
@@ -3600,38 +3674,37 @@ struct ContentView: View {
     // MARK: Phase 2 — documents, anchors, transcripts
 
     private func setupPhase2Observers() {
-        let center = NotificationCenter.default
-        center.addMainActorObserver(forName: .browserAnchorSelection, object: nil, queue: .main) { [self] _ in
+        addWindowObserver(forName: .browserAnchorSelection, object: nil, queue: .main) { [self] _ in
             anchorCurrentSelection()
         }
-        center.addMainActorObserver(forName: .browserNewWorkspaceDocument, object: nil, queue: .main) { [self] _ in
+        addWindowObserver(forName: .browserNewWorkspaceDocument, object: nil, queue: .main) { [self] _ in
             createWorkspaceDocument()
         }
-        center.addMainActorObserver(forName: .browserToggleTranscript, object: nil, queue: .main) { [self] _ in
+        addWindowObserver(forName: .browserToggleTranscript, object: nil, queue: .main) { [self] _ in
             toggleTranscriptPanel()
         }
-        center.addMainActorObserver(forName: .browserDocumentNote, object: nil, queue: .main) { [self] note in
+        addWindowObserver(forName: .browserDocumentNote, object: nil, queue: .main) { [self] note in
             if let text = note.userInfo?["text"] as? String { showTransientNote(text) }
         }
-        center.addMainActorObserver(forName: .browserOpenAnchor, object: nil, queue: .main) { [self] note in
+        addWindowObserver(forName: .browserOpenAnchor, object: nil, queue: .main) { [self] note in
             handleOpenAnchor(note)
         }
-        center.addMainActorObserver(forName: .browserToggleAuditView, object: nil, queue: .main) { [self] _ in
+        addWindowObserver(forName: .browserToggleAuditView, object: nil, queue: .main) { [self] _ in
             toggleAuditView()
         }
-        center.addMainActorObserver(forName: .browserToggleBibliography, object: nil, queue: .main) { [self] _ in
+        addWindowObserver(forName: .browserToggleBibliography, object: nil, queue: .main) { [self] _ in
             toggleBibliographyPanel()
         }
-        center.addMainActorObserver(forName: .browserToggleClaims, object: nil, queue: .main) { [self] _ in
+        addWindowObserver(forName: .browserToggleClaims, object: nil, queue: .main) { [self] _ in
             toggleClaimsPanel()
         }
-        center.addMainActorObserver(forName: .browserImportReport, object: nil, queue: .main) { [self] _ in
+        addWindowObserver(forName: .browserImportReport, object: nil, queue: .main) { [self] _ in
             toggleImportReport()
         }
         // A focused document redirects Cmd-L to the editor's find bar (design
         // §1.2). Registered after NotificationManager's own showOmnibar
         // observer, so this runs second and wins.
-        center.addMainActorObserver(forName: .showOmnibar, object: nil, queue: .main) { [self] _ in
+        addWindowObserver(forName: .showOmnibar, object: nil, queue: .main) { [self] _ in
             if tabManager.focusedDocumentId != nil {
                 showOmnibar = false
                 NotificationCenter.default.post(name: .browserDocumentFind, object: nil)
@@ -3914,7 +3987,8 @@ struct ContentView: View {
     private func archiveActiveWorkspace(_ workspace: Workspace) {
         let swept = ledgerStore?.archiveWorkspace(workspace) ?? 0
         Logger.log("Archived \(workspace.name): \(swept) sources kept", type: "Workspace")
-        tabManager.suspendWorkspace()
+        if workspace.id == tabManager.homeWorkspaceID { BrowserWindows.shared.close(windowID) }
+        else { tabManager.suspendWorkspace() }
     }
 
     private func preloadFaviconsForAllTabs() {

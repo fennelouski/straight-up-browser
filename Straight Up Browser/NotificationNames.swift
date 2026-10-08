@@ -22,6 +22,7 @@ enum BrowserWindowCommandRouting {
 
 // Notification names
 extension Notification.Name {
+    static let browserRenameWindow = Notification.Name("browserRenameWindow")
     static let browserOpenURL = Notification.Name("browserOpenURL")
     static let browserCloseTab = Notification.Name("browserCloseTab")
     static let browserCloseTabSet = Notification.Name("browserCloseTabSet")

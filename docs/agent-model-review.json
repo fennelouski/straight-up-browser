@@ -1,7 +1,7 @@
 {
-  "releaseVersion": "2.9.17",
+  "releaseVersion": "2.9.18",
   "reviewedOn": "2026-10-08",
-  "notes": "OpenAI: Luna fast, Sol balanced, Astra flagship; reviewed published Standard short-context pricing. Anthropic: Sonnet 5.5 current. Gemini: 3.6 Flash remains stable current Flash. OpenRouter: current explicit model IDs verified; gpt-latest absent. Apple/local/custom: runtime or installed account discovery, no guessed replacement. Exact aliases migrate, dated snapshots stay pinned. Responses remains the OpenAI tool dialect. Existing Anthropic request uses no forced tool choice or thinking blocks. No billable inference or user credentials used for review.",
+  "notes": "Rechecked official model and pricing sources for the multi-window release; current defaults, reviewed successor mappings, prices, and provider protocols remain unchanged. OpenAI: Luna fast, Sol balanced, Astra flagship; reviewed published Standard short-context pricing. Anthropic: Sonnet 5.5 current. Gemini: 3.6 Flash remains stable current Flash. OpenRouter: current explicit model IDs verified; gpt-latest absent. Apple/local/custom: runtime or installed account discovery, no guessed replacement. Exact aliases migrate, dated snapshots stay pinned. Responses remains the OpenAI tool dialect. Existing Anthropic request uses no forced tool choice or thinking blocks. No billable inference or user credentials used for review.",
   "sourceFiles": {
     "Straight Up Browser/AgentModelCatalog.swift": "ba4459c9f003ac6cac1dab8ad802ae024190b9679f437ff5dbc32b1405d2af02",
     "Straight Up Browser/AgentModelMigration.swift": "414928df2eaf2f2b0e2adaac5c170e1e63ccb335b75ffeb59f3d151efe5f04fa",

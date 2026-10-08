@@ -86,6 +86,9 @@ class TabManager: NSObject, ObservableObject {
     // (see docs/adr/0001-split-is-view-state.md).
     @Published var selectedTabId: UUID? {
         didSet {
+            if let windowID {
+                UserDefaults.standard.set(selectedTabId?.uuidString, forKey: "selectedTabId." + windowID.uuidString)
+            }
             // Selecting any tab takes focus back from a document pane (ADR 0008).
             if oldValue != selectedTabId { focusedDocumentId = nil }
             noteSelectionForRecentOrder()
@@ -103,7 +106,7 @@ class TabManager: NSObject, ObservableObject {
     // Split view: ordered member tab ids (2–4; empty = normal single view).
     // Window view state, not a SwiftData entity — persisted to UserDefaults only.
     @Published var splitTabIds: [UUID] = [] {
-        didSet { UserDefaults.standard.set(splitTabIds.map(\.uuidString), forKey: Self.splitKey) }
+        didSet { UserDefaults.standard.set(splitTabIds.map(\.uuidString), forKey: persistenceKey(Self.splitKey)) }
     }
     // A Split is an arrangement of 2–4 PANES: tabs or workspace documents
     // (ADR 0008). splitTabIds keeps its name and persistence key but holds pane
@@ -148,6 +151,12 @@ class TabManager: NSObject, ObservableObject {
     }
     static let maxSplitTabs = 4
 
+    let windowID: UUID?
+    let homeWorkspaceID: UUID?
+    private func persistenceKey(_ key: String) -> String {
+        windowID.map { key + "." + $0.uuidString } ?? key
+    }
+
     private var modelContext: ModelContext?
     private weak var webViewManager: WebViewManager?
     weak var fastForward: FastForward?
@@ -159,10 +168,13 @@ class TabManager: NSObject, ObservableObject {
     @Published var activeWorkspaceId: UUID? {
         didSet {
             if let id = activeWorkspaceId {
-                UserDefaults.standard.set(id.uuidString, forKey: Self.activeWorkspaceKey)
+                UserDefaults.standard.set(id.uuidString, forKey: persistenceKey(Self.activeWorkspaceKey))
             } else {
-                UserDefaults.standard.removeObject(forKey: Self.activeWorkspaceKey)
+                UserDefaults.standard.removeObject(forKey: persistenceKey(Self.activeWorkspaceKey))
             }
+            #if os(macOS)
+            if let windowID { BrowserWindows.shared.setWorkspace(activeWorkspaceId, for: windowID) }
+            #endif
             // Document panes and their edit sessions belong to the workspace
             // being left; the owner (ContentView / BrowserView_iOS) closes and
             // discards them here so they don't accumulate across switches.
@@ -192,14 +204,31 @@ class TabManager: NSObject, ObservableObject {
 
     init(
         modelContext: ModelContext? = nil,
+        windowID: UUID? = nil,
+        homeWorkspaceID: UUID? = nil,
         webViewManager: WebViewManager? = nil,
         terminateApplication: @escaping () -> Void = defaultTerminateApplication
     ) {
+        self.windowID = windowID
+        self.homeWorkspaceID = homeWorkspaceID
         self.modelContext = modelContext
         self.webViewManager = webViewManager
         self.terminateApplication = terminateApplication
         super.init()
-        if let data = UserDefaults.standard.data(forKey: Self.closedTabsKey),
+        #if os(macOS)
+        // Preserve the original window's split and undo stack on upgrade.
+        if let windowID, BrowserWindows.shared.records.first?.id == windowID {
+            for key in [Self.closedTabsKey, Self.splitKey] {
+                let scoped = persistenceKey(key)
+                if UserDefaults.standard.object(forKey: scoped) == nil,
+                   let legacy = UserDefaults.standard.object(forKey: key) {
+                    UserDefaults.standard.set(legacy, forKey: scoped)
+                    UserDefaults.standard.removeObject(forKey: key)
+                }
+            }
+        }
+        #endif
+        if let data = UserDefaults.standard.data(forKey: persistenceKey(Self.closedTabsKey)),
            let saved = try? JSONDecoder().decode([ClosedTabSnapshot].self, from: data) {
             closedTabs = saved
         }
@@ -216,16 +245,19 @@ class TabManager: NSObject, ObservableObject {
     private func persistClosedTabs() {
         let capped = Array(closedTabs.suffix(Self.maxClosedTabs))
         guard !capped.isEmpty else {
-            UserDefaults.standard.removeObject(forKey: Self.closedTabsKey)
+            UserDefaults.standard.removeObject(forKey: persistenceKey(Self.closedTabsKey))
             return
         }
         if let data = try? JSONEncoder().encode(capped) {
-            UserDefaults.standard.set(data, forKey: Self.closedTabsKey)
+            UserDefaults.standard.set(data, forKey: persistenceKey(Self.closedTabsKey))
         }
     }
 
     static func clearPersistedClosedTabs() {
-        UserDefaults.standard.removeObject(forKey: closedTabsKey)
+        for key in UserDefaults.standard.dictionaryRepresentation().keys
+            where key == closedTabsKey || key.hasPrefix(closedTabsKey + ".") {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
     }
 
     func purgeClosedTabs(forSession sessionId: UUID) {
@@ -644,7 +676,7 @@ class TabManager: NSObject, ObservableObject {
     // device, incognito tabs that died with the app) are silently dropped; fewer
     // than 2 survivors means a plain single view.
     func restoreSplit(from tabs: [Tab]) {
-        guard let strings = UserDefaults.standard.stringArray(forKey: Self.splitKey) else { return }
+        guard let strings = UserDefaults.standard.stringArray(forKey: persistenceKey(Self.splitKey)) else { return }
         // Pane ids resolve against the tab list first, then the active
         // workspace's documents (ADR 0008); unresolved ids drop as before.
         let isDocument = isDocumentPaneId ?? { _ in false }
@@ -652,7 +684,7 @@ class TabManager: NSObject, ObservableObject {
             tabs.contains { $0.id == id } || isDocument(id)
         }
         guard ids.count >= 2 else {
-            if !strings.isEmpty { UserDefaults.standard.removeObject(forKey: Self.splitKey) }
+            if !strings.isEmpty { UserDefaults.standard.removeObject(forKey: persistenceKey(Self.splitKey)) }
             return
         }
         splitTabIds = ids
@@ -787,7 +819,7 @@ class TabManager: NSObject, ObservableObject {
             // Inside a workspace an empty tab set means "I'm done here", not
             // "quit": suspend back to the default workspace instead. Otherwise
             // closing the last tab would both reject every source and terminate.
-            if activeWorkspaceId != nil {
+            if activeWorkspaceId != homeWorkspaceID {
                 if let modelContext { try? modelContext.save() }
                 suspendWorkspace()
                 return
@@ -844,10 +876,10 @@ class TabManager: NSObject, ObservableObject {
     /// shown; their web views go through the same release path the memory saver
     /// uses. Nothing is written to the ledger.
     func suspendWorkspace() {
-        guard activeWorkspaceId != nil else { return }
+        guard activeWorkspaceId != homeWorkspaceID else { return }
         splitTabIds = []
         focusedDocumentId = nil
-        activeWorkspaceId = nil
+        activeWorkspaceId = homeWorkspaceID
         selectedTabId = nil
     }
 

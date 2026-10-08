@@ -1381,6 +1381,7 @@ struct AppearanceSettingsView: View {
     private var blackPointRange: ClosedRange<Double> { toneExtendedRange ? -50...50 : -15...15 }
 
     // Window shape and where it lands on launch.
+    @AppStorage(BrowserWindows.nativeFullScreenKey) private var nativeFullScreen = false
     @AppStorage(WindowLayout.Key.launchEnabled) private var launchLayoutEnabled = false
     @AppStorage(WindowLayout.Key.width) private var launchLayoutWidth = "full"
     @AppStorage(WindowLayout.Key.position) private var launchLayoutPosition = "center"
@@ -1477,6 +1478,9 @@ struct AppearanceSettingsView: View {
             #endif
 
             CollapsibleSection(searchID: "appearance.window") {
+                Toggle("Use native full screen", isOn: $nativeFullScreen)
+                Text("⌃⌘F puts each window in its own macOS Space and hides the menu bar, Dock, and browser chrome. Swipe between Spaces with your trackpad. Turn this off to use the window layout instead. ⌘L still opens the omnibar immediately.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle("Place the window on launch", isOn: $launchLayoutEnabled)
                 Picker("Width", selection: $launchLayoutWidth) {
                     ForEach(WindowLayout.widths, id: \.id) { Text($0.label).tag($0.id) }
@@ -1488,7 +1492,7 @@ struct AppearanceSettingsView: View {
                 SettingCaptionRow(
                     caption: "Full screen height, and as wide and as far across as you like.",
                     title: "Window",
-                    explanation: "The window always fills the screen's height; the width is either the whole screen or a multiple of that height, which keeps the same shape on any display. Position slides it anywhere between flush left and flush right. ⇧⌘F snaps the window to these settings and back again, whether or not it launches there. The window has no title bar at all — macOS only rounds corners for windows that have one, so this app rounds its own edges to match by default; Square corners turns that off, and takes effect immediately. Since there's no title bar, native full screen isn't available, so ⌃⌘F does nothing — ⇧⌘F is the replacement.",
+                    explanation: "The window always fills the screen's height; the width is either the whole screen or a multiple of that height, which keeps the same shape on any display. Position slides it anywhere between flush left and flush right. ⇧⌘F snaps the window to these settings and back again, whether or not it launches there. The window has no title bar at all — macOS only rounds corners for windows that have one, so this app rounds its own edges to match by default; Square corners turns that off, and takes effect immediately. Enable Use native full screen for a separate macOS Space with ⌃⌘F. With it off, ⌃⌘F uses the window layout.",
                     value: $launchLayoutPosition
                 ) { WindowLayoutDemo(position: $0, width: launchLayoutWidth, square: squareWindowCorners) }
             } header: {

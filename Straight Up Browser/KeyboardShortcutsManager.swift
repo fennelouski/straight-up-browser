@@ -16,6 +16,7 @@ import QuartzCore
 class KeyboardShortcutsManager {
     static let overrideWebsiteQuickOpenKey = "overrideWebsiteQuickOpen"
 
+    private let commandWindowID: UUID?
     private var showOmnibar: Binding<Bool>
     private let windowsForQuit: () -> [NSWindow]
     private let terminateApplication: () -> Void
@@ -63,6 +64,7 @@ class KeyboardShortcutsManager {
 
     init(
         showOmnibar: Binding<Bool>,
+        commandWindowID: UUID? = nil,
         reloadAction: @escaping () -> Void,
         hardReloadAction: @escaping () -> Void,
         reloadAllTabsAction: @escaping () -> Void,
@@ -72,6 +74,7 @@ class KeyboardShortcutsManager {
         windowsForQuit: @escaping () -> [NSWindow] = { NSApp.windows },
         terminateApplication: @escaping () -> Void = { NSApp.terminate(nil) }
     ) {
+        self.commandWindowID = commandWindowID
         self.showOmnibar = showOmnibar
         self.reloadAction = reloadAction
         self.hardReloadAction = hardReloadAction
@@ -94,6 +97,9 @@ class KeyboardShortcutsManager {
 
         monitorToken = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
             guard let self = self else { return event }
+            // The manager that started quit owns release even after focus moves to its panel.
+            if self.quitHoldState == .inactive, let id = self.commandWindowID,
+               BrowserWindows.shared.activeID != id { return event }
 
             // Feed the responsive ⇧⌘H cheat sheet; no-op unless it's on screen.
             LiveKeyState.shared.update(from: event)
@@ -168,16 +174,7 @@ class KeyboardShortcutsManager {
                 return nil
             }
 
-            // Fixed Mac aliases are handled before the omnibar pass-through.
-            // ⌘N deliberately creates a fresh blank tab even when an omnibar
-            // query matches an existing tab; ⌘T keeps its undo/reuse behavior.
-            if mods == .command && event.charactersIgnoringModifiers == "n" {
-                NotificationCenter.default.post(
-                    name: .browserForceNewTab,
-                    object: self.webViewManager?.activeWebView?.window
-                )
-                return nil
-            }
+            // ⌘N now belongs to the New Window menu command.
             // ⇧⌘N saves the page behind the omnibar as well as the ordinarily
             // focused page, and is fixed so websites cannot claim it.
             // Two bugs used to live here. ⌥⌘N was a second alias, and a local
@@ -355,7 +352,7 @@ class KeyboardShortcutsManager {
     // no two *registered* defaults collide; nothing proved a registered
     // default did not land on one of these until ⌥⌘N did.
     static let fixedChords: [Shortcut: String] = [
-        Shortcut(key: "n", command: true): "New Tab (fixed alias)",
+        Shortcut(key: "n", command: true): "New Window",
         Shortcut(key: "n", command: true, shift: true): "Add to Newspaper",
         Shortcut(key: "k", command: true, shift: true): "Keyboard Shortcuts (fixed alias)",
         Shortcut(key: "i", command: true, option: true): "Developer Tools",

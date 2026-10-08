@@ -150,7 +150,7 @@ final class BrowserWindowMotion {
     }
 }
 
-// The browser scene creates a native plain window. This bridge configures its
+// The browser scene uses a hidden title bar for native full-screen Spaces. This bridge configures its
 // dragging, corners, and saved launch placement without replacing AppKit's frame.
 //
 // This resolves the window from the view hierarchy rather than guessing at
@@ -162,10 +162,22 @@ final class BrowserWindowMotion {
 // viewDidMoveToWindow fires exactly when this view has a real window, per
 // window, so it can't race and it works for a second browser window too.
 struct WindowChrome: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView { ChromeView() }
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    var windowID: UUID? = nil
+    init(windowID: UUID? = nil) { self.windowID = windowID }
+    func makeNSView(context: Context) -> NSView { ChromeView(windowID: windowID) }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        if let windowID, let window = nsView.window {
+            window.title = BrowserWindows.shared.record(windowID)?.name ?? "Browser"
+        }
+    }
 
     private final class ChromeView: NSView {
+        private let windowID: UUID?
+        init(windowID: UUID?) {
+            self.windowID = windowID
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) { nil }
         private var didAnimateOpening = false
         // Read only from deinit (nonisolated by default even on a MainActor
         // class), so Swift 6 needs the escape hatch to hand it a non-Sendable
@@ -178,7 +190,7 @@ struct WindowChrome: NSViewRepresentable {
             super.viewDidMoveToWindow()
             guard let window else { return }
 
-            // AppKit's plain window cannot receive text input by default.
+            // Preserve keyboard activation for custom window surfaces.
             // Keep SwiftUI's window and frame, but allow it to become key/main.
             if !window.canBecomeKey, let cls = object_getClass(window) {
                 let canActivate: @convention(block) (AnyObject) -> Bool = { _ in true }
@@ -186,8 +198,17 @@ struct WindowChrome: NSViewRepresentable {
                 class_replaceMethod(cls, #selector(getter: NSWindow.canBecomeKey), implementation, "B@:")
                 class_replaceMethod(cls, #selector(getter: NSWindow.canBecomeMain), implementation, "B@:")
             }
+            if let windowID {
+                BrowserWindows.shared.attach(window, id: windowID)
+            }
+            BrowserWindows.applyFullScreenPolicy(to: window)
             window.isMovableByWindowBackground = true
-            window.styleMask.formUnion([.resizable, .fullSizeContentView])
+            window.styleMask.formUnion([.titled, .resizable, .fullSizeContentView])
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                window.standardWindowButton(button)?.isHidden = true
+            }
             window.setAccessibilitySubrole(.standardWindow)
             WindowLayout.applyCornerMask(to: window)
 
@@ -200,6 +221,10 @@ struct WindowChrome: NSViewRepresentable {
                 ) { [weak window] _ in
                     guard let window else { return }
                     WindowLayout.applyCornerMask(to: window)
+                    BrowserWindows.applyFullScreenPolicy(to: window)
+                    if window.styleMask.contains(.fullScreen), !UserDefaults.standard.bool(forKey: BrowserWindows.nativeFullScreenKey) {
+                        window.toggleFullScreen(nil)
+                    }
                 }
             }
             // A non-opaque window's shadow is traced from its actually-drawn
@@ -232,7 +257,7 @@ struct WindowChrome: NSViewRepresentable {
             // .defaultSize — measured 2026-09-24: saved 960x1050, restored
             // 1200x800.
             DispatchQueue.main.async { [weak self] in
-                // SwiftUI's plain style also clears resizing during setup.
+                // SwiftUI may also adjust resizing during setup.
                 window.styleMask.insert(.resizable)
                 WindowLayout.restoreFrame(window)
                 WindowLayout.applyOnLaunch(to: window)
@@ -327,15 +352,22 @@ enum WindowLayout {
     // re-applying after SwiftUI has finished laying out is the one path that
     // survives both.
     private static let frameKey = "browserWindowFrame"
+    private static func frameKey(for window: NSWindow) -> String {
+        let id = BrowserWindows.shared.records.first { BrowserWindows.shared.window($0.id) === window }?.id
+        return id.map { frameKey + "." + $0.uuidString } ?? frameKey
+    }
 
     static func saveFrame(_ window: NSWindow) {
         // Full screen / miniaturised frames aren't where the user "left" it.
         guard !window.isMiniaturized, !window.styleMask.contains(.fullScreen) else { return }
-        UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: frameKey)
+        UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: frameKey(for: window))
     }
 
     static func restoreFrame(_ window: NSWindow) {
-        guard let saved = UserDefaults.standard.string(forKey: frameKey) else { return }
+        let saved = UserDefaults.standard.string(forKey: frameKey(for: window))
+            ?? (BrowserWindows.shared.window(BrowserWindows.shared.records[0].id) === window
+                ? UserDefaults.standard.string(forKey: frameKey) : nil)
+        guard let saved else { return }
         let rect = NSRectFromString(saved)
         guard rect.width > 0, rect.height > 0 else { return }
         // The frame may come from a machine or display that no longer exists
@@ -445,7 +477,7 @@ enum WindowLayout {
     /// so AppKit traces the shadow around the drawn content. Never replace a
     /// titled window's theme frame during layout: AppKit still holds its views.
     static func applyCornerMask(to window: NSWindow) {
-        let square = isSquareCorners
+        let square = isSquareCorners || window.styleMask.contains(.fullScreen)
         window.isOpaque = square
         window.backgroundColor = square ? .windowBackgroundColor : .clear
         let contentView = window.contentView
