@@ -864,6 +864,12 @@ struct Straight_Up_BrowserApp: App {
             }
 
             CommandGroup(replacing: .help) {
+                Button("Getting Started Guide") {
+                    let windows = BrowserWindows.shared
+                    let id = windows.activeID ?? windows.primaryID
+                    if !windows.hasWindows { openWindow(id: "browser", value: id) }
+                    BrowserOnboarding.shared.show(in: id)
+                }
                 Button("Browser Help") {
                     openWindow(id: "help")
                 }

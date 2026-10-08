@@ -138,6 +138,7 @@ struct WorkspaceDocumentSidebarRows: View {
         }
         .buttonStyle(BrowserPressStyle())
         .accessibilityLabel(String(localized: "New Document"))
+        .onboardingTarget(.documents)
     }
 
     private func commitRename(_ document: WorkspaceDocument) {

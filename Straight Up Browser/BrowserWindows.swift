@@ -102,6 +102,7 @@ final class BrowserWindows: ObservableObject {
     }
 
     func didClose(_ id: UUID) {
+        BrowserOnboarding.shared.windowClosed(id)
         for token in tokens.removeValue(forKey: id) ?? [] { NotificationCenter.default.removeObserver(token) }
         fullScreenIDs.remove(id)
         windows.removeValue(forKey: id)

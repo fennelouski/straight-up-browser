@@ -1091,6 +1091,7 @@ struct ContentView: View {
             .menuStyle(.borderlessButton)
             .delayedHelp("Groups, containers, and workspaces")
             .accessibilityLabel("Groups, Containers, and Workspaces")
+            .onboardingTarget(.workspaces)
 
             Menu {
                 Button("Open Newspaper") { openWindow(id: "newspaper") }
@@ -1108,6 +1109,7 @@ struct ContentView: View {
             .menuStyle(.borderlessButton)
             .delayedHelp("Newspaper · add page with ⌥⌘N or ⇧⌘N")
             .accessibilityLabel("Newspaper")
+            .onboardingTarget(.newspaper)
 
         }
     }
@@ -1520,6 +1522,7 @@ struct ContentView: View {
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(.isModal)
             .accessibilityFocused($accessibilityFocus, equals: .omnibar)
+            .onboardingTarget(.omnibar)
         }
     }
 
@@ -2766,6 +2769,7 @@ struct ContentView: View {
                 Spacer().frame(width: reservedChromeWidth(on: .left))
                 browserAndDeveloperTools
                     .clipped()
+                    .onboardingTarget(.page)
                 Spacer().frame(width: reservedChromeWidth(on: .right))
             }
         }
@@ -2775,6 +2779,7 @@ struct ContentView: View {
                     .frame(width: effectiveTabSidebarWidth)
                     .background(Color(.windowBackgroundColor))
                     .clipped()
+                    .onboardingTarget(.tabs)
             }
         }
         .overlay(alignment: tabSidebarSide.alignment) {
@@ -2903,6 +2908,7 @@ struct ContentView: View {
                 // restored tabs win the disk/network.
                 Task { [pageTranslator] in
                     try? await Task.sleep(for: .seconds(10))
+                    guard !BrowserOnboarding.shared.active else { return }
                     await pageTranslator.offerPackDownloadIfNeeded()
                 }
 
@@ -3273,6 +3279,24 @@ struct ContentView: View {
         // Hides the traffic lights and titlebar on the window actually hosting this
         // view, once it has one — see WindowChrome for why this isn't done at onAppear.
         .background(WindowChrome(windowID: windowID))
+        .modifier(BrowserOnboardingPresentation(windowID: windowID) { action in
+            switch action {
+            case .omnibar: showOmnibar = true
+            case .hideOmnibar: showOmnibar = false
+            case .shortcuts: showShortcutCheatSheet = true
+            case .workspace:
+                showOmnibar = false
+                showSaveWorkspaceDialog = true
+            case .document:
+                if activeWorkspace == nil {
+                    showOmnibar = false
+                    showSaveWorkspaceDialog = true
+                } else { createWorkspaceDocument() }
+            case .translationPacks:
+                Task { await pageTranslator.offerPackDownloadIfNeeded() }
+            case .newWindow: openWindow(id: "browser", value: BrowserWindows.shared.create())
+            }
+        })
         .onReceive(NotificationCenter.default.publisher(for: .browserRenameWindow)) { note in
             guard BrowserWindows.shared.accepts(note, in: windowID) else { return }
             windowName = BrowserWindows.shared.record(windowID)?.name ?? "Browser"

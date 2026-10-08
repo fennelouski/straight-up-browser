@@ -16,6 +16,93 @@ final class Straight_Up_BrowserUITests: XCTestCase {
     }
 
     @MainActor
+    func testOnboardingQuickStartAndImmediateTyping() {
+        let app = browserForUITesting()
+        app.launchArguments += ["-onboardingUITesting"]
+        launchBrowserForUITesting(app)
+        XCTAssertTrue(app.buttons["onboarding-show"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["onboarding-later"].exists)
+        XCTAssertTrue(app.buttons["onboarding-decline"].exists)
+        app.buttons["onboarding-show"].click()
+        app.buttons["onboarding-track-quickStart"].click()
+        XCTAssertTrue(app.staticTexts["Your launch pad"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.checkBoxes["onboarding-memory"].exists)
+        app.buttons["Try the omnibar"].click()
+        let field = app.textFields.matching(NSPredicate(format: "placeholderValue == %@", "Search or enter address")).firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("onboarding typing")
+        XCTAssertEqual(field.value as? String, "onboarding typing")
+        app.typeKey(.escape, modifierFlags: [])
+        app.buttons["onboarding-resume"].click()
+        app.buttons["onboarding-next"].click()
+        XCTAssertTrue(app.buttons["onboarding-next"].waitForNonExistence(timeout: 5))
+        app.menuBars.menuBarItems["Help"].click()
+        app.menuItems["Getting Started Guide"].click()
+        XCTAssertTrue(app.buttons["onboarding-track-deepDive"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testOnboardingDeepDiveCoversWorkspacesAndOptionalTools() {
+        let app = browserForUITesting()
+        app.launchArguments += ["-onboardingUITesting"]
+        launchBrowserForUITesting(app)
+        XCTAssertTrue(app.buttons["onboarding-show"].waitForExistence(timeout: 10))
+        app.buttons["onboarding-show"].click()
+        app.buttons["onboarding-track-deepDive"].click()
+        app.checkBoxes["Design"].click()
+        app.buttons["onboarding-next"].click()
+        app.buttons["onboarding-next"].click()
+        XCTAssertTrue(app.staticTexts["A home for each project"].waitForExistence(timeout: 5))
+        app.buttons["onboarding-next"].click()
+        XCTAssertTrue(app.staticTexts["Keep the sources that matter"].waitForExistence(timeout: 5))
+        app.buttons["onboarding-next"].click()
+        XCTAssertTrue(app.buttons["Create a workspace document"].exists)
+        app.buttons["onboarding-next"].click()
+        XCTAssertTrue(app.staticTexts["See the bigger picture"].exists)
+        // Finish the adaptable path without opting into external services.
+        for _ in 0..<14 {
+            if app.buttons["Review agent permissions"].exists { break }
+            app.buttons["onboarding-next"].click()
+        }
+        XCTAssertTrue(app.buttons["Review agent permissions"].exists)
+        XCTAssertTrue(app.buttons["Keep external-agent access off"].exists)
+        app.buttons["onboarding-next"].click()
+        XCTAssertTrue(app.staticTexts["Show what you mean"].exists)
+        app.buttons["onboarding-next"].click()
+        XCTAssertTrue(app.staticTexts["Ready for your own orbit"].exists)
+        app.buttons["onboarding-next"].click()
+        XCTAssertTrue(app.buttons["onboarding-next"].waitForNonExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testOnboardingCustomizationChangesTheLiveTabLayout() {
+        let app = browserForUITesting()
+        app.launchArguments += ["-onboardingUITesting"]
+        // Live choices must not be shadowed by launch-argument defaults.
+        if let index = app.launchArguments.firstIndex(of: "-tabBarWidth") {
+            app.launchArguments.removeSubrange(index...(index + 1))
+        }
+        launchBrowserForUITesting(app)
+        XCTAssertTrue(app.buttons["onboarding-show"].waitForExistence(timeout: 10))
+        app.buttons["onboarding-show"].click()
+        app.buttons["onboarding-track-customization"].click()
+        app.buttons["onboarding-next"].click()
+        XCTAssertTrue(app.staticTexts["Make yourself comfortable"].waitForExistence(timeout: 5))
+        app.buttons["Side tabs"].click()
+        XCTAssertTrue(app.buttons["Visual Tabs"].waitForExistence(timeout: 5))
+        app.buttons["Top tabs"].click()
+        XCTAssertTrue(app.buttons["Visual Tabs"].waitForNonExistence(timeout: 5))
+        app.buttons["Side tabs"].click()
+        XCTAssertTrue(app.buttons["Visual Tabs"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.sliders["Max page brightness"].exists)
+        app.sliders["Max page brightness"].adjust(toNormalizedSliderPosition: 0.6)
+        app.buttons["onboarding-minimize"].click()
+        XCTAssertTrue(app.buttons["onboarding-resume"].waitForExistence(timeout: 5))
+        app.buttons["onboarding-resume"].click()
+        XCTAssertTrue(app.staticTexts["Make yourself comfortable"].exists)
+    }
+
+    @MainActor
     func testNamedWindowsOwnWorkspacesAndSupportNativeFullScreen() {
         let app = browserForUITesting()
         app.launchArguments += ["-nativeBrowserFullScreen", "YES"]
