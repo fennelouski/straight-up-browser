@@ -1463,72 +1463,48 @@ struct ContentView: View {
     }
 
     private var omnibarOverlay: some View {
-        Group {
-            if showOmnibar {
-                ZStack {
-                    // Background with tap to close
-                    Color.black.opacity(0.3)
-                        .edgesIgnoringSafeArea(.all)
-                        .onTapGesture {
-                            showOmnibar = false
+        OmnibarPresentation(isPresented: showOmnibar, topFraction: omnibarTopFraction,
+                            onDismiss: { showOmnibar = false }) {
+            OmnibarView(
+                ledgerNote: { ledgerNote(for: $0) },
+                transcriptHits: { await transcriptSuggestions(for: $0) },
+                isPresented: $showOmnibar,
+                urlString: .constant(currentURL?.absoluteString ?? ""),
+                onNavigate: { urlString, commit in
+                    guard let navigationManager else { return }
+                    switch commit {
+                    case .navigate:
+                        _ = navigationManager.navigateToURL(urlString, activeTab: activeTab)
+                        if let activeTab {
+                            tabManager.updateTabTitle(activeTab)
                         }
-
-                    GeometryReader { geometry in
-                        VStack(spacing: 0) {
-                            Spacer()
-                                .frame(height: geometry.size.height * omnibarTopFraction)
-                            OmnibarView(
-                                ledgerNote: { ledgerNote(for: $0) },
-                                transcriptHits: { await transcriptSuggestions(for: $0) },
-                                isPresented: $showOmnibar,
-                                urlString: .constant(currentURL?.absoluteString ?? ""),
-                                onNavigate: { urlString, commit in
-                                    guard let navigationManager else { return }
-                                    switch commit {
-                                    case .navigate:
-                                        _ = navigationManager.navigateToURL(urlString, activeTab: activeTab)
-                                        if let activeTab {
-                                            tabManager.updateTabTitle(activeTab)
-                                        }
-                                    case .newTab, .newSplitPane:
-                                        // Shift+Return / Cmd+Return: skip navigating the
-                                        // current tab, land the result in a fresh one instead.
-                                        guard let url = URL(string: urlString) else {
-                                            navigationManager.omnibarError = String(localized: "Invalid URL")
-                                            return
-                                        }
-                                        let session = activeTab.map { (kind: $0.sessionKind, sessionId: $0.sessionId) }
-                                            ?? (kind: SessionKind.normal, sessionId: nil)
-                                        let newTab = tabManager.createTab(inheriting: session, url: url, select: commit == .newTab)
-                                        if commit == .newSplitPane {
-                                            tabManager.toggleSplitMembership(newTab, tabs: tabs + [newTab])
-                                        }
-                                    }
-                                },
-                                errorMessage: navigationManager?.omnibarError,
-                                tabs: tabs,
-                                bookmarkSuggestions: bookmarkSuggestions,
-                                currentTabId: tabManager.selectedTabId,
-                                onSwitchToTab: { tabManager.selectedTabId = $0 },
-                                pageProtection: pageProtectionSummary,
-                                focusedDocumentName: focusedDocumentName
-                            )
-                            .transition(BrowserMotion.panel)
-                            .allowsHitTesting(true)
-                            .accessibilityElement(children: .contain)
-                            .accessibilityAddTraits(.isModal)
-                            .accessibilityFocused(
-                                $accessibilityFocus,
-                                equals: .omnibar
-                            )
-                            Spacer(minLength: 0)
+                    case .newTab, .newSplitPane:
+                        // Shift+Return / Cmd+Return: skip navigating the
+                        // current tab, land the result in a fresh one instead.
+                        guard let url = URL(string: urlString) else {
+                            navigationManager.omnibarError = String(localized: "Invalid URL")
+                            return
                         }
-                        .frame(maxWidth: .infinity)
+                        let session = activeTab.map { (kind: $0.sessionKind, sessionId: $0.sessionId) }
+                            ?? (kind: SessionKind.normal, sessionId: nil)
+                        let newTab = tabManager.createTab(inheriting: session, url: url, select: commit == .newTab)
+                        if commit == .newSplitPane {
+                            tabManager.toggleSplitMembership(newTab, tabs: tabs + [newTab])
+                        }
                     }
-                }
-            }
+                },
+                errorMessage: navigationManager?.omnibarError,
+                tabs: tabs,
+                bookmarkSuggestions: bookmarkSuggestions,
+                currentTabId: tabManager.selectedTabId,
+                onSwitchToTab: { tabManager.selectedTabId = $0 },
+                pageProtection: pageProtectionSummary,
+                focusedDocumentName: focusedDocumentName
+            )
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isModal)
+            .accessibilityFocused($accessibilityFocus, equals: .omnibar)
         }
-        .browserSlideMotion(showOmnibar)
     }
 
     private var findBarOverlay: some View {

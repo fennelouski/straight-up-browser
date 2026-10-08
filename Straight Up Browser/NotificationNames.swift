@@ -33,6 +33,7 @@ extension Notification.Name {
     static let browserForceNewTab = Notification.Name("browserForceNewTab")
     static let reopenLastClosedTab = Notification.Name("reopenLastClosedTab")
     static let showOmnibar = Notification.Name("showOmnibar")
+    static let browserFocusOmnibar = Notification.Name("browserFocusOmnibar")
     static let browserListTabs = Notification.Name("browserListTabs")
     static let browserShowTabGrid = Notification.Name("browserShowTabGrid")
     static let browserToggleAgent = Notification.Name("browserToggleAgent")

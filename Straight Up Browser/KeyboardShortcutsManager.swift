@@ -145,6 +145,7 @@ class KeyboardShortcutsManager {
             // Omnibar toggle (rebindable)
             if store.matches(event, .omnibar) {
                 self.showOmnibar.wrappedValue.toggle()
+                self.focusOpenedOmnibar()
                 return nil
             }
 
@@ -271,7 +272,13 @@ class KeyboardShortcutsManager {
             return false
         }
         showOmnibar.wrappedValue.toggle()
+        focusOpenedOmnibar()
         return true
+    }
+
+    private func focusOpenedOmnibar() {
+        guard showOmnibar.wrappedValue else { return }
+        NotificationCenter.default.post(name: .browserFocusOmnibar, object: NSApp.keyWindow)
     }
 
     private var currentHost: String? { webViewManager?.url?.host() }

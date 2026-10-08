@@ -1326,6 +1326,9 @@ struct ScreenshotsSettingsView: View {
 // MARK: - Appearance
 
 struct AppearanceSettingsView: View {
+    @AppStorage(OmnibarMotionPreferences.durationKey)
+    private var omnibarAnimationDuration = OmnibarMotionPreferences.defaultDuration
+    @AppStorage(OmnibarMotionPreferences.springKey) private var omnibarAnimationSpring = true
     // Same "theme" defaults key SettingsManager reads — one store, no desync.
     @AppStorage("theme") private var theme = "System"
     // Matches the app logo's blue by default. Stored as hex because Color itself
@@ -1385,8 +1388,35 @@ struct AppearanceSettingsView: View {
 
     private let themes = ["Light", "Dark", "System"]
 
+    private var omnibarAnimationMilliseconds: Int {
+        let duration = OmnibarMotionPreferences(duration: omnibarAnimationDuration,
+                                                usesSpring: omnibarAnimationSpring).duration
+        return Int((duration * 1000).rounded())
+    }
+
     var body: some View {
         Form {
+            CollapsibleSection(searchID: "appearance.omnibar-motion") {
+                LabeledContent("Omnibar animation duration") {
+                    HStack {
+                        Slider(value: $omnibarAnimationDuration,
+                               in: 0...OmnibarMotionPreferences.maximumDuration, step: 0.01)
+                            .frame(width: 180)
+                            .accessibilityLabel("Omnibar animation duration")
+                        Text(omnibarAnimationMilliseconds == 0 ? String(localized: "Off")
+                             : "\(omnibarAnimationMilliseconds) ms")
+                            .monospacedDigit().frame(width: 65, alignment: .trailing)
+                    }
+                }
+                Toggle("Use a spring for the omnibar", isOn: $omnibarAnimationSpring)
+                    .disabled(omnibarAnimationDuration <= 0)
+            } header: {
+                SettingsLabel("Omnibar Animation", systemImage: "magnifyingglass", tint: SettingsTint.appearance)
+            } footer: {
+                Text("The omnibar expands into place. Set the duration to 0 to turn its animation off. Disable the spring for a smooth ease in and out without bounce. You can type immediately, even while it opens. Reduce Motion turns the animation off.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             CollapsibleSection(searchID: "appearance.tabs") {
                 Picker("Tab sidebar side", selection: $tabSidebarSideRaw) {
                     ForEach(BrowserChromeSide.allCases) { side in

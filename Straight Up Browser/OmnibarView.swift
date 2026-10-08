@@ -188,12 +188,14 @@ struct OmnibarTextField: NSViewRepresentable {
         textField.delegate = context.coordinator
         context.coordinator.textField = textField
         context.coordinator.startMonitoringCommandReturn()
+        context.coordinator.startMonitoringFocusRequests()
         return textField
     }
 
     static func dismantleNSView(_ nsView: NSTextField, coordinator: Coordinator) {
         coordinator.parent.shouldFocus = false
         coordinator.stopMonitoringCommandReturn()
+        coordinator.stopMonitoringFocusRequests()
     }
 
     func updateNSView(_ nsView: NSTextField, context: Context) {
@@ -205,11 +207,16 @@ struct OmnibarTextField: NSViewRepresentable {
             nsView.stringValue = text
         }
 
-        // Focus and select all text when shouldFocus becomes true (only on initial open)
+        // Focus on mounting; subsequent summons select the native field synchronously.
         if shouldFocus && !context.coordinator.hasFocused && !context.coordinator.focusPending {
             context.coordinator.focusPending = true
-            DispatchQueue.main.async {
+            if nsView.window != nil {
                 focusField(nsView, coordinator: context.coordinator, retriesLeft: 3)
+            } else {
+                // A newly created field needs its mounting turn, never the animation's end.
+                DispatchQueue.main.async {
+                    focusField(nsView, coordinator: context.coordinator, retriesLeft: 3)
+                }
             }
         } else if !shouldFocus {
             context.coordinator.hasFocused = false
@@ -254,6 +261,7 @@ struct OmnibarTextField: NSViewRepresentable {
         // NSTextField can clear currentEvent before doCommandBy runs, which made
         // Shift+Return occasionally look like plain Return and switch tabs.
         private var commandReturnMonitor: Any?
+        private var focusObserver: NSObjectProtocol?
 
         init(_ parent: OmnibarTextField) {
             self.parent = parent
@@ -283,6 +291,34 @@ struct OmnibarTextField: NSViewRepresentable {
                 NSEvent.removeMonitor(commandReturnMonitor)
             }
             commandReturnMonitor = nil
+        }
+
+        func startMonitoringFocusRequests() {
+            focusObserver = NotificationCenter.default.addObserver(
+                forName: .browserFocusOmnibar, object: nil, queue: .main
+            ) { [weak self] notification in
+                // OperationQueue.main guarantees this callback runs on the UI thread.
+                let transfer = MainActorNotification(notification)
+                MainActor.assumeIsolated {
+                    guard let self, self.parent.autoSelectAll,
+                          let field = self.textField, let window = field.window,
+                          (transfer.value.object as? NSWindow) === window
+                            || (transfer.value.object == nil && window.isKeyWindow)
+                    else { return }
+                    if let editor = field.currentEditor() as? NSTextView, editor.hasMarkedText() { return }
+                    guard window.makeFirstResponder(field) else { return }
+                    // A reversing transition can retain this field. Select before the next key,
+                    // without waiting for SwiftUI to render another frame or finish its spring.
+                    field.selectText(nil)
+                    self.hasFocused = true
+                    self.hasAutoSelected = true
+                }
+            }
+        }
+
+        func stopMonitoringFocusRequests() {
+            if let focusObserver { NotificationCenter.default.removeObserver(focusObserver) }
+            focusObserver = nil
         }
 
         func controlTextDidBeginEditing(_ obj: Notification) {
@@ -585,7 +621,7 @@ struct OmnibarView: View {
                         }
                     }
                 }
-                .browserSettleMotion(filteredSuggestions.map(\.id))
+                .omnibarMotion(filteredSuggestions.map(\.id))
                 .transition(.opacity.combined(with: .offset(y: -4)))
                 .onHover { suggestionsHovered = $0 }
                 .onDisappear { suggestionsHovered = false }
@@ -609,7 +645,7 @@ struct OmnibarView: View {
                     .padding(.bottom, 8)
             }
         }
-        .browserSlideMotion(showSuggestions && !filteredSuggestions.isEmpty)
+        .omnibarMotion(showSuggestions && !filteredSuggestions.isEmpty)
         .frame(minWidth: 0, idealWidth: 600, maxWidth: 600, alignment: .top)
         .onChange(of: historyMode) { _, _ in
             selection = OmnibarSelection()

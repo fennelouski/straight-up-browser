@@ -97,6 +97,8 @@ enum SettingsSearchIndex {
                   keywords: "the entire window tab bar and all capture screen recording permission"),
 
             // Appearance
+            .init(id: "appearance.omnibar-motion", pane: .appearance, title: "Omnibar Animation",
+                  keywords: "omnibar address bar animation motion duration speed milliseconds off disable expand spring bounce easing"),
             .init(id: "appearance.tabs", pane: .appearance, title: "Tabs",
                   keywords: "tab sidebar side traditional tabs across the top auto-hide adaptive preview cards visual tab shape live previews tab thumbnails switching new tab button apple intelligence names"),
             .init(id: "appearance.developer-tools", pane: .appearance, title: "Developer Tools",

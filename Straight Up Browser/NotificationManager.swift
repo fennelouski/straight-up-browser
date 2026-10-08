@@ -285,6 +285,9 @@ class NotificationManager {
             queue: .main
         ) { [weak self] _ in
             self?.showOmnibar.wrappedValue.toggle()
+            if self?.showOmnibar.wrappedValue == true {
+                NotificationCenter.default.post(name: .browserFocusOmnibar, object: NSApp.keyWindow)
+            }
         }
         observers.append(showOmnibarObserver)
 
