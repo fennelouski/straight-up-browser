@@ -12,9 +12,9 @@ enum NewspaperTemperatureUnit: String, CaseIterable, Identifiable {
     }
     func formatted(_ value: Measurement<UnitTemperature>) -> String {
         switch self {
-        case .system: value.formatted()
-        case .celsius: value.converted(to: .celsius).formatted(.measurement(width: .abbreviated, usage: .asProvided))
-        case .fahrenheit: value.converted(to: .fahrenheit).formatted(.measurement(width: .abbreviated, usage: .asProvided))
+        case .system: value.formatted(.measurement(width: .abbreviated, usage: .weather, numberFormatStyle: .number.precision(.fractionLength(0))))
+        case .celsius: value.converted(to: .celsius).formatted(.measurement(width: .abbreviated, usage: .asProvided, numberFormatStyle: .number.precision(.fractionLength(0))))
+        case .fahrenheit: value.converted(to: .fahrenheit).formatted(.measurement(width: .abbreviated, usage: .asProvided, numberFormatStyle: .number.precision(.fractionLength(0))))
         }
     }
 }
@@ -92,7 +92,7 @@ struct NewspaperWeatherMasthead: View {
             if enabled {
                 if let weather = store.weather, let attribution = store.attribution {
                     VStack(alignment: .leading, spacing: 4) {
-                        AsyncImage(url: scheme == .dark ? attribution.combinedMarkLightURL : attribution.combinedMarkDarkURL) { phase in
+                        AsyncImage(url: scheme == .dark ? attribution.combinedMarkDarkURL : attribution.combinedMarkLightURL) { phase in
                             if let image = phase.image {
                                 image.resizable().scaledToFit().frame(width: 90, height: 20)
                                     .accessibilityLabel("Apple Weather")

@@ -1,5 +1,5 @@
 {
-  "releaseVersion": "2.9.23",
+  "releaseVersion": "2.9.24",
   "reviewedOn": "2026-10-09",
   "notes": "Re-reviewed official provider catalogs, Standard pricing and API compatibility for the Newspaper appearance, discovery and WeatherKit release on 2026-10-09. Live normalized sources remain unchanged from the same-day 2.9.22 review: OpenAI Luna 6, Sol 6.1 and Astra 6 remain current in their fast/balanced/flagship roles; Claude Sonnet 5.5 remains the balanced Anthropic default; Gemini 3.8 Flash remains stable with streaming/function calling and opaque thought-signature continuation. Reviewed OpenRouter IDs remain available. No model, pricing or adapter changes are needed. Gemini pricing remains explicit per-model configuration/unknown, including the reviewed 2026 promotional rates and 2027 change. Custom endpoints, installed local models, dated pinned snapshots, provider boundaries and historical run records remain unchanged. No credentials or billable inference used. Reviewed the scope enforcement change in BrowserAgent: explicit scopes now gate implicit memory retrieval, MCP preparation and advertised tools. Provider endpoints, model resolution, transport parameters and pricing are unchanged.",
   "sourceFiles": {
