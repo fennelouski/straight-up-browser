@@ -503,6 +503,7 @@ struct ContentView: View {
 
     // UI State
     @State private var showOmnibar = false
+    @State private var omnibarWeatherActive = false
     @State private var showTabGrid = false
     @State private var showPasswordPicker = false
     /// ⌘\ (fill and sign in) vs ⌥⌘\ (fill only), carried through the picker
@@ -1482,7 +1483,7 @@ struct ContentView: View {
 
     private var omnibarOverlay: some View {
         OmnibarPresentation(isPresented: showOmnibar, topFraction: omnibarTopFraction,
-                            onDismiss: { showOmnibar = false }) {
+                            onDismiss: { showOmnibar = false }, weatherActive: omnibarWeatherActive) {
             OmnibarView(
                 ledgerNote: { ledgerNote(for: $0) },
                 transcriptHits: { await transcriptSuggestions(for: $0) },
@@ -1517,7 +1518,8 @@ struct ContentView: View {
                 currentTabId: tabManager.selectedTabId,
                 onSwitchToTab: { tabManager.selectedTabId = $0 },
                 pageProtection: pageProtectionSummary,
-                focusedDocumentName: focusedDocumentName
+                focusedDocumentName: focusedDocumentName,
+                onWeatherVisibilityChanged: { omnibarWeatherActive = $0 }
             )
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(.isModal)

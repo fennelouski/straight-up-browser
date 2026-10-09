@@ -28,6 +28,9 @@ struct OmnibarPresentation<Content: View>: View {
     let isPresented: Bool
     let topFraction: Double
     let onDismiss: () -> Void
+    var weatherActive = false
+    @State private var weatherSurfaces: [CGRect] = []
+    @State private var weatherCredited = false
     @ViewBuilder var content: () -> Content
 
     var body: some View {
@@ -38,9 +41,13 @@ struct OmnibarPresentation<Content: View>: View {
                     .onTapGesture(perform: onDismiss)
                     .transition(.opacity)
             }
+            if isPresented && weatherActive {
+                OmnibarWeatherScene(layer: .sky, attributionVisible: weatherCredited)
+                    .transition(OmnibarWeatherCurtain.transition)
+            }
             GeometryReader { geometry in
                 VStack(spacing: 0) {
-                    Spacer().frame(height: geometry.size.height * topFraction)
+                    Spacer().frame(height: geometry.size.height * (weatherActive ? min(0.08, topFraction) : topFraction))
                     if isPresented {
                         content()
                             .transition(BrowserMotion.omnibar)
@@ -49,7 +56,15 @@ struct OmnibarPresentation<Content: View>: View {
                 }
                 .frame(maxWidth: .infinity)
             }
+            if isPresented && weatherActive {
+                OmnibarWeatherScene(layer: .precipitation, surfaces: weatherSurfaces, attributionVisible: weatherCredited)
+                    .transition(OmnibarWeatherCurtain.transition)
+            }
         }
+        .coordinateSpace(name: "omnibarWeatherScene")
+        .onPreferenceChange(OmnibarWeatherSurfaces.self) { weatherSurfaces = $0 }
+        .onPreferenceChange(OmnibarWeatherCreditVisible.self) { weatherCredited = $0 }
+        .omnibarMotion(weatherActive)
         .omnibarMotion(isPresented)
         .allowsHitTesting(isPresented)
         .accessibilityHidden(!isPresented)

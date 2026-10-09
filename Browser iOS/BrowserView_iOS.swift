@@ -105,6 +105,8 @@ struct BrowserView_iOS: View {
     @State private var selectedSuggestion = -1
     @FocusState private var omnibarFocused: Bool
     @State private var showOmnibar = false
+    @State private var weatherSurfaces: [CGRect] = []
+    @State private var weatherCredited = false
 
     @State private var showSidebar = false
     @State private var showWorkspaceSwitcher = false
@@ -243,7 +245,7 @@ struct BrowserView_iOS: View {
     }
 
     private func refreshSuggestions() async {
-        guard showOmnibar, !omnibarText.isEmpty else { cachedSuggestions = []; return }
+        guard showOmnibar, !omnibarText.isEmpty, !omnibarWeatherIntent else { cachedSuggestions = []; return }
         let query = omnibarText
         try? await Task.sleep(for: .milliseconds(100))
         guard !Task.isCancelled else { return }
@@ -1065,14 +1067,33 @@ struct BrowserView_iOS: View {
                     .ignoresSafeArea()
                     .onTapGesture { dismissOmnibar() }
                     .accessibilityHidden(true)
+                if omnibarWeatherIntent {
+                    OmnibarWeatherScene(layer: .sky, attributionVisible: weatherCredited).transition(OmnibarWeatherCurtain.transition)
+                }
                 VStack(spacing: 8) {
                     omnibarCard(availableWidth: min(640, geometry.size.width - 32))
-                    omnibarResults
+                    if omnibarWeatherIntent {
+                        OmnibarWeatherCard {
+                            omnibarText = NavigationManager.searchURL(for: "weather")
+                            selectedSuggestion = -1
+                            navigateFromOmnibar()
+                        }
+                        .frame(maxHeight: max(140, min(350, geometry.size.height - 170)))
+                        .transition(BrowserMotion.panel(from: .top))
+                    } else { omnibarResults }
                 }
                 .frame(maxWidth: 640)
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
+                if omnibarWeatherIntent {
+                    OmnibarWeatherScene(layer: .precipitation, surfaces: weatherSurfaces, attributionVisible: weatherCredited)
+                        .transition(OmnibarWeatherCurtain.transition)
+                }
             }
+            .coordinateSpace(name: "omnibarWeatherScene")
+            .onPreferenceChange(OmnibarWeatherSurfaces.self) { weatherSurfaces = $0 }
+            .onPreferenceChange(OmnibarWeatherCreditVisible.self) { weatherCredited = $0 }
+            .omnibarMotion(omnibarWeatherIntent)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Address and Search")
@@ -1082,6 +1103,7 @@ struct BrowserView_iOS: View {
             return .handled
         }
     }
+    private var omnibarWeatherIntent: Bool { OmnibarWeatherIntent.matches(omnibarText) }
 
     private func omnibarCard(availableWidth: CGFloat) -> some View {
         let controlCount = 5 + (activeTab?.url == nil ? 0 : 1)
@@ -1140,6 +1162,7 @@ struct BrowserView_iOS: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color.primary.opacity(0.08)))
         .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+        .weatherLandingSurface()
         .onChange(of: omnibarText) { _, _ in
             selectedSuggestion = -1
             omnibarHasUserEdited = true
@@ -2055,6 +2078,7 @@ struct BrowserView_iOS: View {
     }
 
     private func navigateFromOmnibar() {
+        guard !omnibarWeatherIntent else { return }
         let text = (selectedSuggestion >= 0 && selectedSuggestion < suggestions.count)
             ? suggestions[selectedSuggestion].url.absoluteString
             : omnibarText

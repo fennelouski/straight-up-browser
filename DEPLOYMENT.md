@@ -53,6 +53,20 @@ XCTest runner with `TEST_RUNNER_RUN_WEATHERKIT_LIVE_TEST=1` when invoking the
 Routine offline verification skips that service probe. A successful compile or
 skipped probe must never be reported as a verified live WeatherKit integration.
 
+Typing exactly `weather` in the omnibar opens the animated weather scene and
+the next 24 hourly forecasts without submitting a web search. Its location
+button shares Newspaper's city/current-location choice, but does not enable the
+Newspaper masthead. A current-location request requires the reader's choice and
+OS authorization; a city can be used instead. Historical hourly snowfall and
+wind inform the decorative effects. Weather and its scene appear only once
+Apple's supplied mark has loaded, with a persistent legal attribution link.
+Animation duration, spring preference, Reduce Motion and Low Power Mode apply.
+The deterministic `-uiTesting -weatherUITesting rain|snow|clear` previews make
+no WeatherKit request and are explicitly labeled as preview weather.
+The same opt-in runner flag enables
+`Straight_Up_BrowserUITests/testOmnibarLiveWeatherKitHourlyForecastAndAttribution`,
+which checks live weather while the Newspaper masthead is disabled.
+
 ## Each release
 
 1. **Review agent models, then bump, commit, and tag the version.**

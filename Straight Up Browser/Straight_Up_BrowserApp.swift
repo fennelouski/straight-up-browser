@@ -192,6 +192,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    #if DEBUG
+    func showGlobalOmnibarForTesting() {
+        guard Self.isRunningUnderTests,
+              ProcessInfo.processInfo.arguments.contains("-globalOmnibarUITesting") else { return }
+        DispatchQueue.main.async { [weak self] in self?.globalOmnibar.toggle() }
+    }
+    #endif
+
     // Keep in sync with EULA.md.
     private static let eulaText = """
     END USER LICENSE AGREEMENT
@@ -864,6 +872,12 @@ struct Straight_Up_BrowserApp: App {
             }
 
             CommandGroup(replacing: .help) {
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("-uiTesting"),
+                   ProcessInfo.processInfo.arguments.contains("-globalOmnibarUITesting") {
+                    Button("Show Floating Omnibar") { appDelegate.showGlobalOmnibarForTesting() }
+                }
+                #endif
                 Button("Getting Started Guide") {
                     let windows = BrowserWindows.shared
                     let id = windows.activeID ?? windows.primaryID

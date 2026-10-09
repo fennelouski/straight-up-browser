@@ -72,13 +72,16 @@ private final class KeyablePanel: NSPanel {
 
 final class GlobalOmnibarController: NSObject, NSWindowDelegate {
     private var panel: KeyablePanel?
+    private var compactHeight: CGFloat = 112
+    private var expandedHeight: CGFloat = 560
 
     func toggle() {
         if panel != nil { close() } else { show() }
     }
 
     private func show() {
-        let content = OmnibarView(
+        expandedHeight = min(560, (NSScreen.main?.visibleFrame.height ?? 584) - 24)
+        let content = GlobalOmnibarWeatherView(
             isPresented: Binding(get: { true }, set: { [weak self] shown in
                 if !shown { self?.close() }
             }),
@@ -86,12 +89,12 @@ final class GlobalOmnibarController: NSObject, NSWindowDelegate {
             // ponytail: no tab/split concept in the floating global panel, so
             // Shift/Cmd+Return behave the same as plain Return here.
             onNavigate: { url, _ in GlobalOmnibarController.openInBrowser(url) },
-            errorMessage: nil,
-            tabs: [], // ponytail: no history/bookmark suggestions in the global panel
-            bookmarkSuggestions: []
+            onWeather: { [weak self] visible in self?.resizeForWeather(visible) },
+            expandedHeight: expandedHeight
         )
         let hosting = NSHostingView(rootView: content)
         hosting.setFrameSize(hosting.fittingSize)
+        compactHeight = hosting.frame.height
 
         let panel = KeyablePanel(
             contentRect: NSRect(origin: .zero, size: hosting.frame.size),
@@ -100,6 +103,9 @@ final class GlobalOmnibarController: NSObject, NSWindowDelegate {
             defer: false
         )
         panel.isReleasedWhenClosed = false
+        panel.identifier = NSUserInterfaceItemIdentifier("browser-global-omnibar")
+        panel.setAccessibilityIdentifier("browser-global-omnibar")
+        panel.title = String(localized: "Address and Search")
         panel.level = .floating
         panel.backgroundColor = .clear
         panel.isOpaque = false
@@ -119,6 +125,19 @@ final class GlobalOmnibarController: NSObject, NSWindowDelegate {
 
         self.panel = panel
         panel.makeKeyAndOrderFront(nil) // keyboard focus without activating the app
+    }
+
+    private func resizeForWeather(_ visible: Bool) {
+        guard let panel else { return }
+        let height: CGFloat = visible ? expandedHeight : compactHeight
+        var frame = panel.frame
+        frame.origin.y += frame.height - height
+        frame.size.height = height
+        if let screen = panel.screen {
+            frame.origin.y = max(screen.visibleFrame.minY + 12,
+                min(frame.origin.y, screen.visibleFrame.maxY - height - 12))
+        }
+        panel.setFrame(frame, display: true)
     }
 
     func close() {
@@ -154,5 +173,31 @@ final class GlobalOmnibarController: NSObject, NSWindowDelegate {
                                                 userInfo: ["url": urlString, "newTab": true])
             }
         }
+    }
+}
+
+private struct GlobalOmnibarWeatherView: View {
+    @Binding var isPresented: Bool
+    @Binding var urlString: String
+    let onNavigate: (String, OmnibarCommit) -> Void
+    let onWeather: (Bool) -> Void
+    let expandedHeight: CGFloat
+    @State private var weather = false
+    @State private var surfaces: [CGRect] = []
+    @State private var credited = false
+    var body: some View {
+        ZStack(alignment: .top) {
+            if weather { OmnibarWeatherScene(layer: .sky, attributionVisible: credited).transition(OmnibarWeatherCurtain.transition) }
+            OmnibarView(isPresented: $isPresented, urlString: $urlString, onNavigate: onNavigate,
+                        errorMessage: nil, tabs: [], bookmarkSuggestions: [],
+                        onWeatherVisibilityChanged: { weather = $0; onWeather($0) })
+            if weather { OmnibarWeatherScene(layer: .precipitation, surfaces: surfaces, attributionVisible: credited).transition(OmnibarWeatherCurtain.transition) }
+        }
+        .frame(width: 600, height: weather ? expandedHeight : nil, alignment: .top)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .coordinateSpace(name: "omnibarWeatherScene")
+        .onPreferenceChange(OmnibarWeatherSurfaces.self) { surfaces = $0 }
+        .onPreferenceChange(OmnibarWeatherCreditVisible.self) { credited = $0 }
+        .omnibarMotion(weather)
     }
 }

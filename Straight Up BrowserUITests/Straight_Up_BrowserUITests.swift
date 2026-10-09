@@ -16,6 +16,101 @@ final class Straight_Up_BrowserUITests: XCTestCase {
     }
 
     @MainActor
+    func testOmnibarWeatherAppearsWhileTypingAndRetainsNormalNavigation() {
+        let app = browserForUITesting()
+        app.launchArguments += ["-weatherUITesting", "rain"]
+        launchBrowserForUITesting(app)
+        let field = app.textFields["Search or enter address"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.click(); field.typeText("weather")
+        XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather-current"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Hourly forecast"].exists)
+        XCTAssertTrue(app.buttons["omnibar-weather-location"].exists)
+        field.typeText("\r")
+        XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather"].exists)
+        XCTAssertEqual(field.value as? String, "weather")
+        let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        screenshot.name = "Omnibar-Weather-Rain"; screenshot.lifetime = .keepAlways; add(screenshot)
+        field.typeText(".com")
+        XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather"].waitForNonExistence(timeout: 5))
+        XCTAssertEqual(field.value as? String, "weather.com")
+        field.typeKey("a", modifierFlags: .command); field.typeText("weather")
+        XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather"].waitForExistence(timeout: 5))
+        field.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather"].waitForNonExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testOmnibarWeatherSnowAndNightRemainUsableWithMotionDisabled() {
+        for scene in ["snow", "clear"] {
+            let app = browserForUITesting()
+            app.launchArguments += ["-weatherUITesting", scene, "-omnibarAnimationDuration", "0"]
+            launchBrowserForUITesting(app)
+            let field = app.textFields["Search or enter address"]
+            XCTAssertTrue(field.waitForExistence(timeout: 5))
+            field.click(); field.typeText("weather")
+            XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather-current"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.staticTexts["Hourly forecast"].exists)
+            let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+            screenshot.name = "Omnibar-Weather-\(scene)"; screenshot.lifetime = .keepAlways; add(screenshot)
+            app.buttons["omnibar-weather-location"].click()
+            XCTAssertTrue(app.buttons["newspaper-weather-use-current"].waitForExistence(timeout: 5))
+            app.buttons["Cancel"].click()
+            field.typeKey(.escape, modifierFlags: [])
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    func testGlobalOmnibarWeatherExpandsAndLocationPopupStaysOpen() {
+        let app = browserForUITesting()
+        app.launchArguments += ["-weatherUITesting", "rain", "-globalOmnibarUITesting", "-newspaperWeatherCity", ""]
+        launchBrowserForUITesting(app)
+        app.typeKey(.escape, modifierFlags: [])
+        app.menuBars.menuBarItems["Help"].click()
+        app.menuItems["Show Floating Omnibar"].click()
+        let panel = app.dialogs["browser-global-omnibar"]
+        XCTAssertTrue(panel.waitForExistence(timeout: 10))
+        let field = panel.textFields["Search or enter address"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.click(); field.typeText("weather")
+        XCTAssertTrue(panel.descendants(matching: .any)["omnibar-weather-current"].waitForExistence(timeout: 10))
+        XCTAssertTrue(panel.buttons["omnibar-weather-location"].isHittable)
+        panel.buttons["omnibar-weather-location"].click()
+        let city = app.textFields["newspaper-weather-city"]
+        XCTAssertTrue(city.waitForExistence(timeout: 5))
+        city.click(); city.typeText("Paris, France")
+        XCTAssertEqual(city.value as? String, "Paris, France")
+        XCTAssertTrue(panel.exists)
+        app.buttons["Cancel"].click()
+        let screenshot = XCTAttachment(screenshot: panel.screenshot())
+        screenshot.name = "Omnibar-Weather-Global"; screenshot.lifetime = .keepAlways; add(screenshot)
+        field.click(); field.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(panel.waitForNonExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testOmnibarLiveWeatherKitHourlyForecastAndAttribution() throws {
+        guard ProcessInfo.processInfo.environment["RUN_WEATHERKIT_LIVE_TEST"] == "1" else {
+            throw XCTSkip("Live WeatherKit is an explicit release-service check.")
+        }
+        let app = browserForUITesting()
+        app.launchArguments += ["-newspaperShowWeather", "NO", "-newspaperWeatherCity", "Amsterdam, Netherlands", "-newspaperWeatherCurrentLocation", "NO"]
+        launchBrowserForUITesting(app)
+        let field = app.textFields["Search or enter address"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.click(); field.typeText("weather")
+        XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather-current"].waitForExistence(timeout: 60))
+        XCTAssertTrue(app.staticTexts["Hourly forecast"].exists)
+        let mark = app.descendants(matching: .any)["omnibar-weather-mark"]
+        XCTAssertTrue(mark.exists)
+        XCTAssertEqual(mark.label, "Apple Weather")
+        XCTAssertTrue(app.links["omnibar-weather-attribution"].exists)
+        let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        screenshot.name = "Omnibar-Live-WeatherKit"; screenshot.lifetime = .keepAlways; add(screenshot)
+    }
+
+    @MainActor
     func testNewspaperAppearanceHeadlineAndDiscoveryControls() {
         let app = browserForUITesting()
         app.launchArguments += ["-newspaperUITesting", "-newspaperShowHeadline", "YES",

@@ -399,6 +399,7 @@ struct OmnibarView: View {
     /// Shown above the field when a workspace document owns focus — the omnibar
     /// then names the document rather than implying a page (Phase 2 deviation #9).
     var focusedDocumentName: String? = nil
+    var onWeatherVisibilityChanged: ((Bool) -> Void)? = nil
 
     @State private var inputText: String = ""
     @State private var selection = OmnibarSelection()
@@ -410,8 +411,9 @@ struct OmnibarView: View {
     @State private var readyURL: URL?
 
     private var showSuggestions: Bool {
-        (historyMode || !inputText.isEmpty) && !filteredSuggestions.isEmpty
+        !weatherIntent && (historyMode || !inputText.isEmpty) && !filteredSuggestions.isEmpty
     }
+    private var weatherIntent: Bool { OmnibarWeatherIntent.matches(inputText, historyMode: historyMode) }
 
     // Load per-tab history lazily, only once a destination search needs it.
     // Opening the current URL for editing never pays for this scan.
@@ -446,6 +448,12 @@ struct OmnibarView: View {
     }
 
     private func requestSuggestions() {
+        if weatherIntent {
+            suggestions.cancel()
+            if hasPrimedPrefetch { Prefetcher.shared.cancel() }
+            readyURL = nil
+            return
+        }
         let query = inputText
         let history = historyMode
         suggestions.request(query: query, historyMode: history) {
@@ -484,6 +492,7 @@ struct OmnibarView: View {
     }
 
     private func pollSuggestions() {
+        guard !weatherIntent else { return }
         suggestions.poll(query: inputText, historyMode: historyMode, deferPublication: suggestionsHovered)
         guard hasPrimedPrefetch else { return }
         Prefetcher.shared.consider(filteredSuggestions, typed: inputText,
@@ -512,6 +521,7 @@ struct OmnibarView: View {
     }
 
     private func commit(_ commit: OmnibarCommit) {
+        guard !weatherIntent else { return }
         if let selected = selectedSuggestion {
             if commit == .navigate, let tabId = selected.tabId {
                 onSwitchToTab?(tabId)
@@ -600,8 +610,17 @@ struct OmnibarView: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .shadow(radius: 4)
+            .weatherLandingSurface()
             .padding(.horizontal, 20)
             .padding(.vertical, 20)
+
+            if weatherIntent {
+                OmnibarWeatherCard { navigate(text: NavigationManager.searchURL(for: "weather")) }
+                    .frame(maxHeight: 420)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
+                    .transition(BrowserMotion.panel(from: .top))
+            }
 
             // Suggestions dropdown
             if showSuggestions && !filteredSuggestions.isEmpty {
@@ -646,6 +665,8 @@ struct OmnibarView: View {
             }
         }
         .omnibarMotion(showSuggestions && !filteredSuggestions.isEmpty)
+        .omnibarMotion(weatherIntent)
+        .onChange(of: weatherIntent) { _, visible in onWeatherVisibilityChanged?(visible) }
         .frame(minWidth: 0, idealWidth: 600, maxWidth: 600, alignment: .top)
         .onChange(of: historyMode) { _, _ in
             selection = OmnibarSelection()
@@ -663,6 +684,7 @@ struct OmnibarView: View {
             }
         }
         .onDisappear {
+            onWeatherVisibilityChanged?(false)
             suggestions.cancel()
             if hasPrimedPrefetch { Prefetcher.shared.cancel() }
         }
@@ -671,6 +693,7 @@ struct OmnibarView: View {
     private func navigate(_ commit: OmnibarCommit = .navigate, text: String? = nil) {
         let trimmedText = (text ?? inputText).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
+        guard !OmnibarWeatherIntent.matches(trimmedText, historyMode: historyMode) else { return }
 
         var urlString = trimmedText
 

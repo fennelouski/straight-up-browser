@@ -122,6 +122,31 @@ final class Browser_iOSUITests: XCTestCase {
     }
 
     @MainActor
+    func testWeatherAppearsWhileTypingAndFitsAboveThePhoneKeyboard() {
+        let app = configuredApplication()
+        app.launchArguments += ["-weatherUITesting", "rain"]
+        app.launch()
+        let field = app.textFields["browser.omnibar"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap(); field.typeText("weather")
+        XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather-current"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Hourly forecast"].exists)
+        let credit = app.staticTexts["Preview weather · No live service requested"]
+        XCTAssertTrue(credit.exists)
+        XCTAssertTrue(app.frame.contains(credit.frame))
+        if app.keyboards.firstMatch.exists {
+            XCTAssertLessThanOrEqual(credit.frame.maxY, app.keyboards.firstMatch.frame.minY)
+        }
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Omnibar-Weather-Phone"; screenshot.lifetime = .keepAlways; add(screenshot)
+        field.typeText(".com")
+        XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather"].waitForNonExistence(timeout: 5))
+        XCTAssertEqual(field.value as? String, "weather.com")
+        app.buttons["Close Address and Search"].tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+    }
+
+    @MainActor
     func testNewspaperCoverAndSettingsFitPhone() {
         let app = configuredApplication()
         app.launchArguments += ["-newspaperUITesting", "-newspaperOpenUITesting", "-newspaperShowWeather", "NO"]

@@ -25,21 +25,57 @@ enum NewspaperTemperatureUnit: String, CaseIterable, Identifiable {
 @MainActor
 final class NewspaperWeatherStore: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
     static let shared = NewspaperWeatherStore()
+    private let preferences: UserDefaults
+    init(preferences: UserDefaults = .standard) { self.preferences = preferences; super.init() }
     @Published private(set) var weather: CurrentWeather?
     @Published private(set) var attribution: WeatherAttribution?
     @Published private(set) var city = ""
     @Published private(set) var status = ""
+    @Published private(set) var scene: OmnibarWeatherSnapshot?
+    @Published private(set) var hasSceneAttribution = false
+    private var omnibarClients: Set<UUID> = []
+    private var creditedClients: Set<UUID> = []
+    var hasOmnibarClients: Bool { !omnibarClients.isEmpty }
+    private var weatherRequested: Bool {
+        hasOmnibarClients || preferences.bool(forKey: NewspaperPreferences.Key.showWeather)
+    }
+
+    func beginOmnibar(_ client: UUID) { omnibarClients.insert(client) }
+    func setOmnibarAttributionVisible(_ visible: Bool, client: UUID) {
+        if visible { creditedClients.insert(client) } else { creditedClients.remove(client) }
+        hasSceneAttribution = !creditedClients.isEmpty
+    }
+    func endOmnibar(_ client: UUID) {
+        omnibarClients.remove(client)
+        setOmnibarAttributionVisible(false, client: client)
+        if !weatherRequested { clear() }
+    }
+    func loadForOmnibar() async {
+        guard hasOmnibarClients else { return }
+        if let preview = OmnibarWeatherSnapshot.testPreview {
+            scene = preview
+            status = ""
+        } else if preferences.bool(forKey: NewspaperPreferences.Key.weatherCurrentLocation) {
+            useCurrentLocation(requestPermission: false)
+        } else {
+            await load(city: preferences.string(forKey: NewspaperPreferences.Key.weatherCity) ?? "")
+        }
+    }
+    func clearIfUnneeded() { if !weatherRequested { clear() } }
     private var fetchedAt: Date = .distantPast
     private var generation = UUID()
     private var locationManager: CLLocationManager?
     private var requestingLocation = false
     private var locationTimeout: Task<Void, Never>?
     private var currentLocationFetchedAt: Date = .distantPast
+    private var cityTask: Task<Void, Never>?
+    private var pendingCity = ""
 
     func useCurrentLocation(requestPermission: Bool) {
-        guard UserDefaults.standard.bool(forKey: NewspaperPreferences.Key.showWeather),
-              UserDefaults.standard.bool(forKey: NewspaperPreferences.Key.weatherCurrentLocation) else { return }
+        guard weatherRequested,
+              preferences.bool(forKey: NewspaperPreferences.Key.weatherCurrentLocation) else { return }
         guard Date().timeIntervalSince(currentLocationFetchedAt) >= 3600 || weather == nil else { return }
+        guard !requestingLocation else { return }
         if locationManager == nil {
             let manager = CLLocationManager()
             manager.desiredAccuracy = kCLLocationAccuracyThreeKilometers
@@ -92,16 +128,19 @@ final class NewspaperWeatherStore: NSObject, ObservableObject, @preconcurrency C
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard requestingLocation, UserDefaults.standard.bool(forKey: NewspaperPreferences.Key.showWeather),
-              UserDefaults.standard.bool(forKey: NewspaperPreferences.Key.weatherCurrentLocation), let location = locations.last,
+        guard requestingLocation, weatherRequested,
+              preferences.bool(forKey: NewspaperPreferences.Key.weatherCurrentLocation), let location = locations.last,
               location.horizontalAccuracy >= 0, location.horizontalAccuracy <= 10000,
               abs(location.timestamp.timeIntervalSinceNow) < 120 else { return }
         requestingLocation = false
         locationTimeout?.cancel()
         let requestID = UUID()
         generation = requestID
+        cityTask?.cancel(); cityTask = nil; pendingCity = ""
         weather = nil
         attribution = nil
+        scene = nil
+        creditedClients.removeAll(); hasSceneAttribution = false
         status = String(localized: "Loading weather…")
         Task { await fetch(location: location, label: String(localized: "Current location"), requestID: requestID, currentLocation: true) }
     }
@@ -115,27 +154,48 @@ final class NewspaperWeatherStore: NSObject, ObservableObject, @preconcurrency C
 
     func clear() {
         generation = UUID()
+        cityTask?.cancel(); cityTask = nil; pendingCity = ""
         requestingLocation = false
         locationTimeout?.cancel()
         locationManager?.stopUpdatingLocation()
         currentLocationFetchedAt = .distantPast
         weather = nil
         attribution = nil
+        scene = nil
+        creditedClients.removeAll(); hasSceneAttribution = false
         city = ""
         status = ""
         fetchedAt = .distantPast
     }
 
     func load(city requestedCity: String) async {
+        guard weatherRequested else { return }
         let requestedCity = requestedCity.trimmingCharacters(in: .whitespacesAndNewlines)
         guard requestedCity.count <= 200 else { clear(); status = String(localized: "Enter a city and country."); return }
-        guard !requestedCity.isEmpty else { clear(); status = String(localized: "Choose a city in Newspaper settings."); return }
+        guard !requestedCity.isEmpty else { clear(); status = String(localized: "Choose a location to see weather."); return }
         guard city != requestedCity || Date().timeIntervalSince(fetchedAt) >= 3600 else { return }
+        if pendingCity == requestedCity, let cityTask { await cityTask.value; return }
+        cityTask?.cancel()
         let requestID = UUID()
         generation = requestID
         weather = nil
         attribution = nil
+        scene = nil
+        creditedClients.removeAll(); hasSceneAttribution = false
         status = String(localized: "Loading weather…")
+        pendingCity = requestedCity
+        // The store owns this request. Closing one omnibar must not cancel the
+        // forecast another window is waiting for; clear() cancels the last lease.
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.searchCity(requestedCity, requestID: requestID)
+            if self.generation == requestID { self.cityTask = nil; self.pendingCity = "" }
+        }
+        cityTask = task
+        await task.value
+    }
+
+    private func searchCity(_ requestedCity: String, requestID: UUID) async {
         do {
             let request = MKLocalSearch.Request()
             request.naturalLanguageQuery = requestedCity
@@ -146,7 +206,7 @@ final class NewspaperWeatherStore: NSObject, ObservableObject, @preconcurrency C
             let location: CLLocation
             if #available(macOS 26, iOS 26, *) { location = place.location }
             else { location = CLLocation(latitude: place.placemark.coordinate.latitude, longitude: place.placemark.coordinate.longitude) }
-            await fetch(location: location, label: requestedCity, requestID: requestID, currentLocation: false)
+            await fetch(location: location, label: requestedCity, requestID: requestID, currentLocation: false, timeZone: place.timeZone ?? .current)
         } catch {
             guard !Task.isCancelled, generation == requestID else { return }
             status = String(localized: "Weather is unavailable. Try again later.")
@@ -154,18 +214,22 @@ final class NewspaperWeatherStore: NSObject, ObservableObject, @preconcurrency C
         }
     }
 
-    private func fetch(location: CLLocation, label: String, requestID: UUID, currentLocation: Bool) async {
+    private func fetch(location: CLLocation, label: String, requestID: UUID, currentLocation: Bool, timeZone: TimeZone = .current) async {
         do {
             let service = WeatherService.shared
-            async let current = service.weather(for: location, including: .current)
+            let now = Date()
+            async let conditions = service.weather(for: location, including: .current,
+                .hourly(startDate: now.addingTimeInterval(-86400), endDate: now.addingTimeInterval(86400)), .daily)
             async let credits = service.attribution
-            let (currentWeather, creditsValue) = try await (current, credits)
+            let ((currentWeather, hourly, daily), creditsValue) = try await (conditions, credits)
             guard !Task.isCancelled, generation == requestID,
-                  UserDefaults.standard.bool(forKey: NewspaperPreferences.Key.showWeather),
-                  UserDefaults.standard.bool(forKey: NewspaperPreferences.Key.weatherCurrentLocation) == currentLocation,
-                  currentLocation || UserDefaults.standard.string(forKey: NewspaperPreferences.Key.weatherCity)?.trimmingCharacters(in: .whitespacesAndNewlines) == label else { return }
+                  weatherRequested,
+                  preferences.bool(forKey: NewspaperPreferences.Key.weatherCurrentLocation) == currentLocation,
+                  currentLocation || preferences.string(forKey: NewspaperPreferences.Key.weatherCity)?.trimmingCharacters(in: .whitespacesAndNewlines) == label else { return }
             weather = currentWeather
             attribution = creditsValue
+            scene = OmnibarWeatherSnapshot(current: currentWeather, hourly: Array(hourly), daily: Array(daily),
+                city: label, latitude: location.coordinate.latitude, timeZone: timeZone, now: now)
             city = label
             fetchedAt = Date()
             if currentLocation { currentLocationFetchedAt = fetchedAt }
@@ -227,7 +291,7 @@ struct NewspaperWeatherMasthead: View {
         }
         .popover(isPresented: $configuring) { NewspaperWeatherLocationPopup() }
         .task(id: "\(enabled)-\(currentLocation)-\(city)") {
-            if !enabled { store.clear() }
+            if !enabled { store.clearIfUnneeded() }
             else if currentLocation { store.useCurrentLocation(requestPermission: false) }
             else { await store.load(city: city) }
         }
@@ -235,6 +299,7 @@ struct NewspaperWeatherMasthead: View {
 }
 
 struct NewspaperWeatherLocationPopup: View {
+    var enablesMasthead = true
     @AppStorage(NewspaperPreferences.Key.showWeather) private var enabled = false
     @AppStorage(NewspaperPreferences.Key.weatherCity) private var city = ""
     @AppStorage(NewspaperPreferences.Key.weatherCurrentLocation) private var currentLocation = false
@@ -245,7 +310,7 @@ struct NewspaperWeatherLocationPopup: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Weather location").font(.headline)
             Button("Use current location", systemImage: "location") {
-                enabled = true
+                if enablesMasthead { enabled = true }
                 currentLocation = true
                 store.useCurrentLocation(requestPermission: true)
             }.accessibilityIdentifier("newspaper-weather-use-current")
@@ -257,7 +322,7 @@ struct NewspaperWeatherLocationPopup: View {
             if !store.status.isEmpty { Text(store.status).font(.caption).foregroundStyle(.secondary) }
             HStack {
                 Button("Cancel") { dismiss() }
-                if enabled { Button("Turn off weather") { enabled = false; store.clear(); dismiss() } }
+                if enabled && enablesMasthead { Button("Turn off weather") { enabled = false; store.clear(); dismiss() } }
                 Spacer()
                 Button("Use this city") { saveCity() }
                     .disabled(draftCity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -272,7 +337,7 @@ struct NewspaperWeatherLocationPopup: View {
         store.clear()
         city = value
         currentLocation = false
-        enabled = true
+        if enablesMasthead { enabled = true }
         dismiss()
     }
 }
