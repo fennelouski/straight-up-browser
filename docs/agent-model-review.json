@@ -1,12 +1,12 @@
 {
-  "releaseVersion": "2.9.22",
+  "releaseVersion": "2.9.23",
   "reviewedOn": "2026-10-09",
-  "notes": "Re-reviewed official provider catalogs, Standard pricing and API compatibility for the organic motion refinement on 2026-10-09. Live normalized sources remain unchanged from the same-day 2.9.21 review: OpenAI Luna 6, Sol 6.1 and Astra 6 remain current in their fast/balanced/flagship roles; Claude Sonnet 5.5 remains the balanced Anthropic default; Gemini 3.8 Flash remains stable with streaming/function calling and opaque thought-signature continuation. Reviewed OpenRouter IDs remain available. No model, pricing or adapter changes are needed. Gemini pricing remains explicit per-model configuration/unknown, including the reviewed 2026 promotional rates and 2027 change. Custom endpoints, installed local models, dated pinned snapshots, provider boundaries and historical run records remain unchanged. No credentials or billable inference used.",
+  "notes": "Re-reviewed official provider catalogs, Standard pricing and API compatibility for the Newspaper appearance, discovery and WeatherKit release on 2026-10-09. Live normalized sources remain unchanged from the same-day 2.9.22 review: OpenAI Luna 6, Sol 6.1 and Astra 6 remain current in their fast/balanced/flagship roles; Claude Sonnet 5.5 remains the balanced Anthropic default; Gemini 3.8 Flash remains stable with streaming/function calling and opaque thought-signature continuation. Reviewed OpenRouter IDs remain available. No model, pricing or adapter changes are needed. Gemini pricing remains explicit per-model configuration/unknown, including the reviewed 2026 promotional rates and 2027 change. Custom endpoints, installed local models, dated pinned snapshots, provider boundaries and historical run records remain unchanged. No credentials or billable inference used. Reviewed the scope enforcement change in BrowserAgent: explicit scopes now gate implicit memory retrieval, MCP preparation and advertised tools. Provider endpoints, model resolution, transport parameters and pricing are unchanged.",
   "sourceFiles": {
     "Straight Up Browser/AgentModelCatalog.swift": "ba4459c9f003ac6cac1dab8ad802ae024190b9679f437ff5dbc32b1405d2af02",
     "Straight Up Browser/AgentModelMigration.swift": "5e02a270b6598c1b551e8cd7cbff3a1d747612a10c7f234d3c2b65b9947bcbbb",
     "Straight Up Browser/ProviderTransport.swift": "7c1d0f1b4e4403d00dd674930a3bd35f6da4ff467c6268b63b02858abbd0c0d1",
-    "Straight Up Browser/BrowserAgent.swift": "f32e0a1f27658f4f4170ce514a2e6a5330de70ece14fbf736175570109cb1486",
+    "Straight Up Browser/BrowserAgent.swift": "174e815e271b35a72f687350b821c40d51196d212ecc6ed2bf22f1be9ff5097c",
     "Straight Up Browser/AgentSettingsView.swift": "ddbae3def3238987746300216863a2b8cefd1ad80c978442bd4e4f6133779700",
     "Straight Up Browser/ProviderAdapters.swift": "79d9e0c72a525949210dbb4c890450dcd6a0aec4204162a9bd4e2ba2803804fd"
   },

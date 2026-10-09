@@ -269,6 +269,7 @@ struct TabWebView: UIViewRepresentable {
                 if Tab.normalizeURLForComparison(tab.url) != Tab.normalizeURLForComparison(currentURL) {
                     tab.url = currentURL
                 }
+                tabManager?.noteNewspaperPageFinished(tab: tab, webView: webView)
                 // Record the visit for omnibar suggestions; WKWebView owns back/forward.
                 if tab.historyStrings.last != currentURL.absoluteString {
                     tab.historyStrings.append(currentURL.absoluteString)

@@ -276,7 +276,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .shortcuts: return String(localized: "Customize keyboard shortcuts")
         case .autofill: return String(localized: "Profiles, contacts, form filling")
         case .content: return String(localized: "JavaScript and page content")
-        case .newspaper: return String(localized: "Layouts, offline text, article length")
+        case .newspaper: return String(localized: "Appearance, discovery, weather, offline text")
         case .downloads: return String(localized: "Image downloads, folder")
         case .screenshots: return String(localized: "Capture shortcuts, formats, folders")
         case .appearance: return String(localized: "Theme and loading progress")

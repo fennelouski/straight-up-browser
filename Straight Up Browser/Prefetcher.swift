@@ -113,7 +113,10 @@ final class Prefetcher: NSObject, ObservableObject, WKNavigationDelegate {
     }
 
     nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        MainActor.assumeIsolated { readyURL = inFlight }
+        MainActor.assumeIsolated {
+            readyURL = inFlight
+            NewspaperDiscoveryCoordinator.shared.consider(webView, session: .normal, source: .prefetched)
+        }
     }
 
     /// The omnibar closed without going anywhere — drop the guess.

@@ -226,7 +226,7 @@ private struct OnboardingLesson: View {
     let step: OnboardingStep
     @ObservedObject var guide: BrowserOnboarding
     let action: (OnboardingAction) -> Void
-    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     @AppStorage("memorySaverEnabled") private var memory = false
     @AppStorage("showTraditionalTopTabs") private var topTabs = false
     @AppStorage("topTabsAutoHide") private var topAutoHide = true
@@ -490,7 +490,7 @@ private struct OnboardingLesson: View {
     private func settings(_ pane: SettingsPane, _ section: String?) {
         UserDefaults.standard.set(pane.rawValue, forKey: "settingsPane")
         SettingsSearchNavigation.shared.pendingScrollID = section
-        openSettings()
+        openWindow(id: "settings")
     }
     private func tryFeature(_ feature: OnboardingAction) { guide.minimized = true; action(feature) }
     private func makeDefault() {

@@ -36,6 +36,23 @@ check on demand.
   prints it, if you need to restore it on a new machine — treat the output as a
   secret, don't paste it anywhere).
 
+## Newspaper Apple Weather setup
+
+WeatherKit requires the Browser App ID's **WeatherKit App Capability and App
+Service** to be enabled in Certificates, Identifiers & Profiles. Xcode's signed
+entitlement and provisioning profile prove the capability; they do not prove
+that the account's service access works. See [Apple's setup instructions](https://developer.apple.com/help/account/services/weatherkit/).
+The native SDK authenticates the signed app; no WeatherKit REST key or Browser
+backend is needed.
+
+The opt-in live UI probe requests a reader-chosen city and requires a forecast,
+Apple's supplied mark and its legal attribution link. Forward the flag to the
+XCTest runner with `TEST_RUNNER_RUN_WEATHERKIT_LIVE_TEST=1` when invoking the
+`Browser UI` scheme, selecting
+`Straight Up BrowserUITests/Straight_Up_BrowserUITests/testNewspaperLiveWeatherKitAttribution`.
+Routine offline verification skips that service probe. A successful compile or
+skipped probe must never be reported as a verified live WeatherKit integration.
+
 ## Each release
 
 1. **Review agent models, then bump, commit, and tag the version.**

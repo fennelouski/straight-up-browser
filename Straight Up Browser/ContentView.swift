@@ -2865,6 +2865,7 @@ struct ContentView: View {
                 // Newspaper seed + one-a-day pick; re-checked whenever the app
                 // comes back to the front so a long-running session still gets
                 // tomorrow's article.
+                NewspaperDiscoveryCoordinator.shared.start(modelContext: modelContext)
                 NewspaperAutoFeed.runIfNeeded(modelContext: modelContext)
                 NotificationCenter.default.addObserver(
                     forName: NSApplication.didBecomeActiveNotification,

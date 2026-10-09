@@ -441,6 +441,7 @@
 					5799E6C8B0A6D3D0970EB02B = {
 						CreatedOnToolsVersion = 26.2;
 						SystemCapabilities = {
+                            com.apple.WeatherKit = { enabled = 1; };
 							com.apple.BackgroundModes = {
 								enabled = 1;
 							};
@@ -453,6 +454,7 @@
 						};
 					};
 					803E20662F11607F00A31C8D = {
+                        SystemCapabilities = { com.apple.WeatherKit = { enabled = 1; }; };
 						CreatedOnToolsVersion = 26.2;
 					};
 					803E20752F11608100A31C8D = {
@@ -925,7 +927,7 @@
 				CODE_SIGN_ENTITLEMENTS = Browser.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 129;
+				CURRENT_PROJECT_VERSION = 130;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -940,7 +942,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.9.22;
+				MARKETING_VERSION = 2.9.23;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser";
 				PRODUCT_NAME = Browser;
 				REGISTER_APP_GROUPS = YES;
@@ -962,7 +964,7 @@
 				CODE_SIGN_ENTITLEMENTS = Browser.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 129;
+				CURRENT_PROJECT_VERSION = 130;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -977,7 +979,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.9.22;
+				MARKETING_VERSION = 2.9.23;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser";
 				PRODUCT_NAME = Browser;
 				REGISTER_APP_GROUPS = YES;

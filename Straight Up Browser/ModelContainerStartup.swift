@@ -86,6 +86,13 @@ struct ModelContainerStartup {
                 configurations: configurations
             )
             NewspaperStore(modelContext: container.mainContext).reconcileInterruptedWork()
+            if isRunningUnderTests && ProcessInfo.processInfo.arguments.contains("-newspaperUITesting") {
+                let store = NewspaperStore(modelContext: container.mainContext)
+                for (index, title) in ["A city makes room for a quieter morning", "The gardens growing above our streets", "Why the night sky still surprises us"].enumerated() {
+                    let item = store.enqueue(url: URL(string: "https://newspaper.example/story-\(index)")!, title: title, section: index == 0 ? "Front Page" : "Features").article
+                    store.finishCapture(item, article: ReaderArticle(title: title, byline: "Newspaper Preview", blocks: Array(repeating: .paragraph(runs: [.plain("Small changes can reshape everyday life. This sample story demonstrates readable columns, generous headlines and an edition that stays yours. The original article remains available with its source attribution.")]), count: 6), publication: "Sample Gazette"))
+                }
+            }
             // Idempotent, version-gated data migrations for the research ledger.
             LedgerMigrator(modelContext: container.mainContext).migrateIfNeeded()
             return container

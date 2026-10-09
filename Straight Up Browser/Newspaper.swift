@@ -102,6 +102,21 @@ nonisolated enum NewspaperLayout: String, CaseIterable, Identifiable {
     var usesImages: Bool { self == .magazine || self == .shelf }
 }
 
+nonisolated enum NewspaperAppearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .system: String(localized: "Follow System")
+        case .light: String(localized: "Light")
+        case .dark: String(localized: "Dark")
+        }
+    }
+    var colorScheme: ColorScheme? {
+        switch self { case .system: nil; case .light: .light; case .dark: .dark }
+    }
+}
+
 nonisolated enum NewspaperNavigationStyle: String, CaseIterable, Identifiable {
     case continuous
     case pages
@@ -176,6 +191,22 @@ nonisolated enum NewspaperPriority: Int, CaseIterable, Identifiable {
 enum NewspaperPreferences {
     enum Key {
         static let layout = "newspaperLayout"
+        static let appearance = "newspaperAppearance"
+        static let showHeadline = "newspaperShowHeadline"
+        static let headlineID = "newspaperHeadlineID"
+        static let discoverVisited = "newspaperDiscoverVisited"
+        static let discoverPrefetched = "newspaperDiscoverPrefetched"
+        static let discoverRelated = "newspaperDiscoverRelated"
+        static let onDeviceValidation = "newspaperOnDeviceValidation"
+        static let externalValidation = "newspaperExternalValidation"
+        static let idleDiscovery = "newspaperIdleDiscovery"
+        static let shareDiscovery = "newspaperShareDiscovery"
+        static let dailyDiscoveryLimit = "newspaperDailyDiscoveryLimit"
+        static let excludedHosts = "newspaperExcludedHosts"
+        static let starterArticles = "newspaperStarterArticles"
+        static let showWeather = "newspaperShowWeather"
+        static let weatherCity = "newspaperWeatherCity"
+        static let weatherTemperatureUnit = "newspaperWeatherTemperatureUnit"
         static let navigationStyle = "newspaperNavigationStyle"
         static let photoLimit = "newspaperPhotoLimit"
         static let condenseArticles = "newspaperCondenseArticles"
@@ -192,6 +223,17 @@ enum NewspaperPreferences {
     static var fontFamily: String {
         UserDefaults.standard.string(forKey: Key.fontFamily) ?? ""
     }
+
+    static let defaultAppearance = NewspaperAppearance.system.rawValue
+    // UI previews exercise live choices without changing the installed browser's
+    // layout or appearance preferences. Ordinary launches retain their saved choices.
+    static let presentationStore: UserDefaults = {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("-uiTesting"), arguments.contains("-newspaperUITesting"),
+              let store = UserDefaults(suiteName: "Browser.NewspaperPresentationUITests") else { return .standard }
+        store.removePersistentDomain(forName: "Browser.NewspaperPresentationUITests")
+        return store
+    }()
 
     static let defaultLayout = NewspaperLayout.broadsheet.rawValue
     static let defaultNavigationStyle = NewspaperNavigationStyle.continuous.rawValue
@@ -389,6 +431,7 @@ enum NewspaperAutoFeed {
         guard !ProcessInfo.processInfo.arguments.contains("-uiTesting"),
               ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
         let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: NewspaperPreferences.Key.starterArticles) else { return }
         let today = now.formatted(.iso8601.year().month().day())
         let articles = (try? modelContext.fetch(FetchDescriptor<NewspaperArticle>())) ?? []
         let range = NewspaperSeedCatalog.plan(
@@ -1051,7 +1094,7 @@ final class NewspaperStore {
         return String(localized: "Front Page")
     }
 
-    private func article(sourceKey: String) -> NewspaperArticle? {
+    func article(sourceKey: String) -> NewspaperArticle? {
         var descriptor = FetchDescriptor<NewspaperArticle>(
             predicate: #Predicate { $0.sourceKey == sourceKey }
         )

@@ -4,6 +4,21 @@ Newspaper turns user-selected web pages into a private, synced reading library w
 
 This document describes the product boundary, current P0 implementation, and staged architecture. Canonical terms live in [CONTEXT.md](../CONTEXT.md); the on-device model boundary is recorded in [ADR-0005](adr/0005-newspaper-on-device-document-transforms.md).
 
+## 2026-10-09 reader and optional discovery update
+
+The current implementation adds a full-width headline, independent Follow System /
+Light / Dark appearance, paper-colored reading surfaces and paired appearance
+previews. Alternative layouts are chosen in Newspaper settings. Discovery and
+curated starter requests now require individual opt-ins. Visited pages,
+omnibar-prefetched articles, linked-article fetching, idle Mac work, on-device
+validation, external validation, private-iCloud candidate sharing and weather
+have independent controls. The exact boundaries and limitations are described
+in [ADR-0009](adr/0009-newspaper-discovery-and-private-idle-workers.md).
+
+The P0 contracts and roadmap below describe the original vertical slice. Where
+P0 excluded discovery or unattended classification, ADR-0009 is the explicit
+extension; these features remain disabled until the reader enables them.
+
 ## Product contract
 
 ### Capture and return

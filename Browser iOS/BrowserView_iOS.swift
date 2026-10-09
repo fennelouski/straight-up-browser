@@ -1591,6 +1591,7 @@ struct BrowserView_iOS: View {
         navigationManager = NavigationManager()
         bookmarkManager = BookmarkManager(modelContext: modelContext)
         tabManager.setModelContext(modelContext)
+        NewspaperDiscoveryCoordinator.shared.start(modelContext: modelContext)
         tabManager.setWebViewManager(wvm)
         tabManager.fastForward = fastForward
         fastForward.configure(

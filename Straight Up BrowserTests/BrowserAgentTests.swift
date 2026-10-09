@@ -310,6 +310,51 @@ struct BrowserAgentTests {
         #expect(AgentChatSlashCommand.parse("/promote nope") == nil)
     }
 
+    @Test func newspaperValidationScopeSendsNeitherMemoryNorTools() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("newspaper-agent-scope-\(UUID().uuidString)", isDirectory: true)
+        let suiteName = "NewspaperAgentScope." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        defaults.set(true, forKey: AgentMemorySettings.Key.enabled)
+        let memory = AgentMemoryController(baseDirectory: directory, defaults: defaults)
+        let marker = "PRIVATE_GARDEN_CONTEXT_DO_NOT_SEND"
+        let stored = await memory.call("propose_agent_memory",
+            arguments: ["text": "garden " + marker, "scope": "global", "sensitivity": "preference"],
+            permit: AgentExecutionPermit(runID: UUID(), toolName: "propose_agent_memory", invocationDigest: "fixture", decisionStepID: UUID()),
+            conversationID: nil, taskID: nil, pageURL: "", browserSession: .normal, sourceStepID: UUID())
+        let storedJSON = try #require(JSONSerialization.jsonObject(with: Data(stored.utf8)) as? [String: Any])
+        #expect(storedJSON["stored"] as? Bool == true)
+        let store = try AgentRunStore(baseDirectory: directory)
+        let recorder = RequestRecordingAgentProviderAdapter(answer: "ARTICLE")
+        let agent = BrowserAgent(storageDirectory: directory, runStore: store,
+            memoryController: memory, providerAdapterFactory: { _ in recorder })
+        for capabilities in [Set<AgentCapability>(), Set([AgentCapability.memoryRead])] {
+            agent.submit("garden", displayPrompt: "Validate a Newspaper article", pageTitle: "Newspaper validation", pageURL: "",
+                configuration: fixtureConfiguration(), entryPoint: .scheduled,
+                runScopeOverride: AgentRunScope(capabilities: capabilities),
+                execute: { _, _, _, _ in Issue.record("Validation must not execute tools"); return "{}" })
+            try await waitWhile { agent.isRunning }
+            #expect(agent.messages.last(where: { $0.role == .assistant })?.text == "ARTICLE")
+        }
+        let requests = recorder.recordedRequests()
+        #expect(requests.count == 2)
+        let first = try #require(requests.first)
+        #expect(first.tools.isEmpty)
+        #expect(first.messages.count == 2)
+        func text(_ request: AgentModelRequest) -> String {
+            request.messages.flatMap(\.content).compactMap { part in
+                if case .text(let value) = part { return value }
+                return nil
+            }.joined(separator: "\n")
+        }
+        #expect(!text(first).contains(marker))
+        #expect(text(try #require(requests.last)).contains(marker), "The enabled memory fixture must be retrievable when a Run has memoryRead authority")
+    }
+
     @Test func continuousConversationActuallyIncludesPriorVisibleTurns() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("browser-agent-continuous-\(UUID().uuidString)", isDirectory: true)

@@ -1608,15 +1608,18 @@ final class BrowserAgent: ObservableObject {
         get async { try? await runStoreTask.value }
     }
     private let storageDirectory: URL
+    private let memoryController: AgentMemoryController
     private let providerAdapterFactory: (@Sendable (BrowserAgentConfiguration) throws -> any AgentProviderAdapter)?
     private var storeInitializationError: Error?
 
     init(
         storageDirectory: URL = BrowserCLI.supportDirectory,
         runStore: AgentRunStore? = nil,
+        memoryController: AgentMemoryController? = nil,
         providerAdapterFactory: (@Sendable (BrowserAgentConfiguration) throws -> any AgentProviderAdapter)? = nil
     ) {
         self.storageDirectory = storageDirectory
+        self.memoryController = memoryController ?? .shared
         self.providerAdapterFactory = providerAdapterFactory
         runStoreTask = Task {
             if let runStore { return runStore }
@@ -1930,7 +1933,11 @@ final class BrowserAgent: ObservableObject {
             )
             var effectiveConfigurationSnapshot = configurationSnapshot
             effectiveConfigurationSnapshot?.provider = provider
-            let preparedExternalTools = await BrowserAgentMCPStore.shared.prepareTools()
+            let preparedExternalTools = if let runScopeOverride, !runScopeOverride.capabilities.contains(.externalMCP) {
+                BrowserAgentExternalTools()
+            } else {
+                await BrowserAgentMCPStore.shared.prepareTools()
+            }
             var capabilities = configurationSnapshot?.enabledCapabilities ?? Set(
                 AgentToolCatalog.canonical
                     .descriptors(visibleIn: entryPoint == .scheduled ? .scheduler : .builtInAgent)
@@ -2272,7 +2279,7 @@ final class BrowserAgent: ObservableObject {
         let browserSession: AgentBrowserSession = incognito
             ? .incognito
             : (initialPage?.session ?? .normal)
-        if let memory = await AgentMemoryController.shared.retrieve(
+        if runCapabilities.contains(.memoryRead), let memory = await memoryController.retrieve(
             runID: runID,
             stepID: promptStepID,
             conversationID: conversationID,
@@ -2307,7 +2314,8 @@ final class BrowserAgent: ObservableObject {
             ?? BrowserAgentExternalTools()
         let runtimeCatalog = activeRunGroupRuntime?.toolCatalog ?? .canonical
         let allAvailableTools = runtimeCatalog.descriptors(visibleIn: .builtInAgent)
-        let availableTools: [AgentToolDescriptor] = if configuration.provider == .appleIntelligence {
+            .filter { $0.requiredCapabilities.isSubset(of: runCapabilities) }
+        let availableTools: [AgentToolDescriptor] = if runCapabilities.isEmpty || configuration.provider == .appleIntelligence {
             []
         } else if let childContract {
             allAvailableTools.filter { childContract.authority.allowedTools.contains($0.name) }

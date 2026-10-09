@@ -28,11 +28,32 @@ struct NewspaperView: View {
     let onOpenOriginal: (URL) -> Void
     let onClose: () -> Void
 
-    @AppStorage(NewspaperPreferences.Key.layout)
+    @AppStorage(NewspaperPreferences.Key.layout, store: NewspaperPreferences.presentationStore)
     private var layoutRaw = NewspaperPreferences.defaultLayout
     @AppStorage(NewspaperPreferences.Key.navigationStyle)
     private var navigationStyleRaw = NewspaperPreferences.defaultNavigationStyle
     @AppStorage(NewspaperPreferences.Key.fontFamily) private var fontFamily = ""
+
+    @AppStorage(NewspaperPreferences.Key.appearance, store: NewspaperPreferences.presentationStore) private var appearance = NewspaperPreferences.defaultAppearance
+    @AppStorage(NewspaperPreferences.Key.showHeadline) private var showHeadline = true
+    @AppStorage(NewspaperPreferences.Key.headlineID) private var headlineID = ""
+    #if os(macOS)
+    @Environment(\.openWindow) private var openWindow
+    #endif
+
+    private var headline: NewspaperArticle? {
+        guard showHeadline else { return nil }
+        return sortedArticles.first { $0.id.uuidString == headlineID && $0.captureState == .ready }
+            ?? sortedArticles.first { $0.captureState == .ready && !$0.isRead }
+            ?? sortedArticles.first { $0.captureState == .ready }
+    }
+    private var supportingArticles: [NewspaperArticle] {
+        sortedArticles.filter { $0.id != headline?.id }
+    }
+    private var issueArticles: [NewspaperArticle] {
+        if let headline { return [headline] + supportingArticles }
+        return sortedArticles
+    }
 
     @State private var selectedSection = Self.allSections
     @State private var unreadOnly = false
@@ -90,7 +111,7 @@ struct NewspaperView: View {
                     filteredEmptyState
                 } else if navigationStyle == .pages {
                     NewspaperPagedIssue(
-                        articles: sortedArticles,
+                        articles: issueArticles,
                         layout: layout,
                         pageIndex: $pageIndex,
                         actions: actions
@@ -99,8 +120,8 @@ struct NewspaperView: View {
                     continuousIssue
                 }
             }
-            .background(issueBackground.ignoresSafeArea())
-            .foregroundStyle(layout == .ink ? Color.black : Color.primary)
+            .background(NewspaperPaper().ignoresSafeArea())
+            .foregroundStyle(Color.primary)
             .navigationDestination(for: UUID.self) { id in
                 if let article = storedArticles.first(where: { $0.id == id }) {
                     NewspaperArticleView(
@@ -119,6 +140,7 @@ struct NewspaperView: View {
                 }
             }
         }
+        .preferredColorScheme((NewspaperAppearance(rawValue: appearance) ?? .system).colorScheme)
         #if os(macOS)
         .frame(minWidth: 900, idealWidth: 1120, minHeight: 650, idealHeight: 780)
         #endif
@@ -153,18 +175,19 @@ struct NewspaperView: View {
                         .font(.caption.weight(.semibold))
                     Text(issueSummary)
                         .font(.caption2)
-                        .foregroundStyle(layout == .ink ? Color.black.opacity(0.65) : .secondary)
+                        .foregroundStyle(Color.secondary)
                 }
 
                 Button(action: onClose) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title2)
-                        .foregroundStyle(layout == .ink ? Color.black.opacity(0.7) : .secondary)
+                        .foregroundStyle(Color.secondary)
                 }
                 .buttonStyle(BrowserPressStyle())
                 .accessibilityLabel("Close Newspaper")
             }
 
+            NewspaperWeatherMasthead()
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) { issueControls }
                 VStack(alignment: .leading, spacing: 10) { issueControls }
@@ -176,13 +199,13 @@ struct NewspaperView: View {
 
     @ViewBuilder
     private var issueControls: some View {
-        Picker("Layout", selection: $layoutRaw) {
-            ForEach(NewspaperLayout.allCases) { layout in
-                Label(layout.title, systemImage: layout.systemImage).tag(layout.rawValue)
-            }
-        }
-        .pickerStyle(.menu)
-        .accessibilityLabel("Newspaper layout")
+        #if os(macOS)
+        Button {
+            UserDefaults.standard.set("newspaper", forKey: "settingsPane")
+            openWindow(id: "settings")
+        } label: { Label("Newspaper Settings", systemImage: "gearshape") }
+        .buttonStyle(BrowserPressStyle())
+        #endif
 
         Picker("Reading", selection: $navigationStyleRaw) {
             ForEach(NewspaperNavigationStyle.allCases) { style in
@@ -225,7 +248,7 @@ struct NewspaperView: View {
                             .overlay {
                                 Capsule().strokeBorder(
                                     layout == .ink
-                                        ? Color.black.opacity(0.5)
+                                        ? Color.primary.opacity(0.5)
                                         : Color.secondary.opacity(0.3)
                                 )
                             }
@@ -241,16 +264,22 @@ struct NewspaperView: View {
     @ViewBuilder
     private var continuousIssue: some View {
         ScrollView {
-            switch layout {
-            case .ink:
-                NewspaperInkIssue(articles: sortedArticles, actions: actions)
-            case .broadsheet:
-                NewspaperBroadsheetIssue(articles: sortedArticles, actions: actions)
-            case .magazine:
-                NewspaperMagazineIssue(articles: sortedArticles, actions: actions)
-            case .shelf:
-                NewspaperShelfIssue(articles: sortedArticles, actions: actions)
+            VStack(spacing: 0) {
+                if let headline {
+                    VStack(alignment: .leading, spacing: 8) {
+                        NewspaperSectionRule(title: "Today's Headline", monochrome: true)
+                        NewspaperStoryLink(article: headline, layout: layout, prominence: .headline, actions: actions)
+                    }
+                    .padding(24)
+                }
+                switch layout {
+                case .ink: NewspaperInkIssue(articles: supportingArticles, actions: actions)
+                case .broadsheet: NewspaperBroadsheetIssue(articles: supportingArticles, actions: actions)
+                case .magazine: NewspaperMagazineIssue(articles: supportingArticles, actions: actions)
+                case .shelf: NewspaperShelfIssue(articles: supportingArticles, actions: actions)
+                }
             }
+            .browserSettleMotion(headline?.id)
         }
         .scrollIndicators(.visible)
     }
@@ -292,12 +321,8 @@ struct NewspaperView: View {
         return String(localized: "\(unread) unread · \(storedArticles.count) saved")
     }
 
-    private var issueBackground: Color {
-        layout == .ink ? Color(red: 0.96, green: 0.945, blue: 0.90) : .newspaperBackground
-    }
-
     private var sectionSelectionColor: Color {
-        layout == .ink ? Color.black.opacity(0.14) : Color.accentColor.opacity(0.16)
+        layout == .ink ? Color.primary.opacity(0.14) : Color.accentColor.opacity(0.16)
     }
 }
 
@@ -328,7 +353,7 @@ private struct NewspaperInkIssue: View {
                             actions: actions
                         )
                         if article.id != stories.last?.id {
-                            Divider().overlay(Color.black.opacity(0.55))
+                            Divider().overlay(Color.primary.opacity(0.55))
                         }
                     }
                 }
@@ -542,6 +567,7 @@ private struct NewspaperPagedIssue: View {
 private enum NewspaperStoryProminence {
     case standard
     case lead
+    case headline
     case page
 }
 
@@ -571,6 +597,10 @@ private struct NewspaperStoryLink: View {
                         Label(priority.title, systemImage: priority.systemImage)
                     }
                 }
+            }
+            Button("Make Today's Headline") {
+                UserDefaults.standard.set(article.id.uuidString, forKey: NewspaperPreferences.Key.headlineID)
+                UserDefaults.standard.set(true, forKey: NewspaperPreferences.Key.showHeadline)
             }
             // "Items movable afterward" (Phase 3, design §5): re-points the
             // most recent workspace reference; the Section never re-files.
@@ -606,6 +636,8 @@ private struct NewspaperStoryLink: View {
                 actions.remove(article)
             }
         }
+        .accessibilityLabel(article.title)
+        .accessibilityValue("\(article.section) · \(article.estimatedReadingMinutes) min")
         .accessibilityHint("Open the saved article")
     }
 
@@ -682,7 +714,7 @@ private struct NewspaperStoryCard: View {
             if let byline = article.byline, !byline.isEmpty {
                 Text(byline)
                     .font(.caption)
-                    .foregroundStyle(layout == .ink ? Color.black.opacity(0.65) : .secondary)
+                    .foregroundStyle(Color.secondary)
                     .lineLimit(1)
             }
 
@@ -698,8 +730,8 @@ private struct NewspaperStoryCard: View {
                 Text(NewspaperPresentation.excerpt(article.cardExcerpt, words: excerptLength))
                     .font(bodyFont)
                     .lineSpacing(3)
-                    .lineLimit(prominence == .page ? 14 : prominence == .lead ? 7 : 5)
-                    .foregroundStyle(layout == .ink ? Color.black.opacity(0.82) : .secondary)
+                    .lineLimit(prominence == .page ? 14 : prominence == .headline ? 4 : prominence == .lead ? 7 : 5)
+                    .foregroundStyle(Color.secondary)
             }
 
             HStack(spacing: 8) {
@@ -714,7 +746,7 @@ private struct NewspaperStoryCard: View {
             .font(.caption2.weight(.medium))
             .foregroundStyle(
                 layout == .ink
-                    ? Color.black.opacity(0.62)
+                    ? Color.primary.opacity(0.62)
                     : Color.secondary.opacity(0.62)
             )
         }
@@ -725,7 +757,7 @@ private struct NewspaperStoryCard: View {
             if layout == .ink || layout == .broadsheet {
                 Rectangle()
                     .strokeBorder(
-                        layout == .ink ? Color.black.opacity(0.58) : Color.secondary.opacity(0.22),
+                        layout == .ink ? Color.primary.opacity(0.58) : Color.secondary.opacity(0.22),
                         lineWidth: layout == .ink ? 1 : 0.5
                     )
             }
@@ -736,21 +768,20 @@ private struct NewspaperStoryCard: View {
 
     private var titleFont: Font {
         switch prominence {
-        case .page: NewspaperTypography.font(fontFamily, size: 38)
+        case .page, .headline: NewspaperTypography.font(fontFamily, size: 38)
         case .lead: NewspaperTypography.font(fontFamily, size: 27)
         case .standard: NewspaperTypography.font(fontFamily, size: 20)
         }
     }
 
     private var bodyFont: Font {
-        prominence == .page
-            ? NewspaperTypography.font(fontFamily, size: 19)
-            : NewspaperTypography.font(fontFamily, size: 15)
+        NewspaperTypography.font(fontFamily, size: prominence == .page ? 19 : prominence == .headline ? 17 : 15)
     }
 
     private var excerptLength: Int {
         switch prominence {
         case .page: 260
+        case .headline: 90
         case .lead: 130
         case .standard: 80
         }
@@ -759,7 +790,7 @@ private struct NewspaperStoryCard: View {
     private var cardPadding: CGFloat {
         switch prominence {
         case .page: 30
-        case .lead: 20
+        case .lead, .headline: 20
         case .standard: 16
         }
     }
@@ -795,7 +826,7 @@ private struct NewspaperSectionRule: View {
                 .fixedSize()
             Rectangle().frame(height: 2)
         }
-        .foregroundStyle(monochrome ? Color.black : Color.primary)
+        .foregroundStyle(Color.primary)
         .padding(.bottom, 8)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
@@ -872,13 +903,8 @@ private struct NewspaperArticleView: View {
             .padding(.vertical, 28)
             .frame(maxWidth: .infinity)
         }
-        .background(
-            (layout == .ink
-                ? Color(red: 0.96, green: 0.945, blue: 0.90)
-                : Color.newspaperBackground
-            ).ignoresSafeArea()
-        )
-        .foregroundStyle(layout == .ink ? Color.black : Color.primary)
+        .background(NewspaperPaper().ignoresSafeArea())
+        .foregroundStyle(Color.primary)
         .navigationTitle(article.section)
         .confirmationDialog(
             "Remove this article from your newspaper?",
@@ -925,7 +951,7 @@ private struct NewspaperArticleView: View {
                 Text("\(article.estimatedReadingMinutes) min read")
             }
             .font(.subheadline)
-            .foregroundStyle(layout == .ink ? Color.black.opacity(0.65) : .secondary)
+            .foregroundStyle(Color.secondary)
         }
     }
 
@@ -1331,6 +1357,14 @@ private enum NewspaperPresentation {
     }
 }
 
+private struct NewspaperPaper: View {
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        (scheme == .dark ? Color(red: 0.12, green: 0.13, blue: 0.14)
+                         : Color(red: 0.97, green: 0.96, blue: 0.925))
+    }
+}
+
 private extension Color {
     static var newspaperBackground: Color {
         #if os(macOS)
@@ -1394,10 +1428,12 @@ struct NewspaperLayoutPreview: View {
         .accessibilityHidden(true)
     }
 
+    @Environment(\.colorScheme) private var scheme
     private var paper: Color {
-        layout == .ink ? Color(red: 0.96, green: 0.945, blue: 0.90) : Color.primary.opacity(0.04)
+        scheme == .dark ? Color(red: 0.12, green: 0.13, blue: 0.14)
+                        : Color(red: 0.97, green: 0.96, blue: 0.925)
     }
-    private var inkColor: Color { layout == .ink ? .black : .primary }
+    private var inkColor: Color { .primary }
 
     private func line(_ width: CGFloat, height: CGFloat = 2, opacity: Double = 0.35) -> some View {
         Capsule().fill(inkColor.opacity(opacity)).frame(width: width, height: height)
@@ -1474,7 +1510,8 @@ struct NewspaperLayoutPreview: View {
 }
 
 struct NewspaperSettingsView: View {
-    @AppStorage(NewspaperPreferences.Key.layout)
+    @Environment(\.colorScheme) private var systemScheme
+    @AppStorage(NewspaperPreferences.Key.layout, store: NewspaperPreferences.presentationStore)
     private var layout = NewspaperPreferences.defaultLayout
     @AppStorage(NewspaperPreferences.Key.navigationStyle)
     private var navigationStyle = NewspaperPreferences.defaultNavigationStyle
@@ -1493,10 +1530,24 @@ struct NewspaperSettingsView: View {
     @AppStorage(NewspaperPreferences.Key.defaultSection)
     private var defaultSection = ""
 
+    @AppStorage(NewspaperPreferences.Key.appearance, store: NewspaperPreferences.presentationStore) private var appearance = NewspaperPreferences.defaultAppearance
+    @AppStorage(NewspaperPreferences.Key.showHeadline) private var showHeadline = true
+
     var body: some View {
         Form {
-            CollapsibleSection {
+            CollapsibleSection(searchID: "newspaper.layout") {
                 layoutGallery
+                Picker("Appearance", selection: $appearance) {
+                    ForEach(NewspaperAppearance.allCases) { Text($0.title).tag($0.rawValue) }
+                }.accessibilityIdentifier("newspaper-appearance")
+                HStack(spacing: 16) {
+                    VStack { NewspaperLayoutPreview(layout: NewspaperLayout(rawValue: layout) ?? .broadsheet).environment(\.colorScheme, .light); Text("Light").font(.caption) }
+                    VStack { NewspaperLayoutPreview(layout: NewspaperLayout(rawValue: layout) ?? .broadsheet).environment(\.colorScheme, .dark); Text("Dark").font(.caption) }
+                }
+                Toggle("Show a front-page headline", isOn: $showHeadline)
+                Button("Choose the headline automatically") {
+                    UserDefaults.standard.removeObject(forKey: NewspaperPreferences.Key.headlineID)
+                }
                 Picker(selection: $navigationStyle) {
                     ForEach(NewspaperNavigationStyle.allCases) { style in
                         Text(style.title).tag(style.rawValue)
@@ -1589,13 +1640,14 @@ struct NewspaperSettingsView: View {
                 Text("A publisher's section takes precedence when the page provides one. You can move any saved article later.")
             }
 
+            NewspaperDiscoverySettings()
+            NewspaperWeatherSettings()
             NewspaperLibrarySection()
 
             CollapsibleSection {
                 NewspaperTintedLabel(title: "Readable text is retained for offline use", systemImage: "arrow.down.doc", tint: .green)
                 NewspaperTintedLabel(title: "Remote photos are loaded only when shown", systemImage: "photo", tint: .orange)
                 NewspaperTintedLabel(title: "Newspaper follows the main browser-data sync switch", systemImage: "icloud", tint: .blue)
-                NewspaperTintedLabel(title: "A starter article arrives each day you read nothing new", systemImage: "calendar.badge.plus", tint: .pink)
             } header: {
                 NewspaperSettingsHeader(title: "Offline & Sync", systemImage: "externaldrive.badge.icloud")
             } footer: {
@@ -1607,31 +1659,31 @@ struct NewspaperSettingsView: View {
     }
 
     private var layoutGallery: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 14) {
-                ForEach(NewspaperLayout.allCases) { option in
-                    let selected = option.rawValue == layout
-                    Button {
-                        layout = option.rawValue
-                    } label: {
-                        VStack(spacing: 6) {
-                            NewspaperLayoutPreview(layout: option)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .stroke(selected ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: selected ? 2.5 : 1)
-                                )
-                            Label(option.title, systemImage: option.systemImage)
-                                .font(.caption.weight(selected ? .semibold : .regular))
-                                .foregroundStyle(selected ? Color.accentColor : .primary)
-                        }
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 14)], spacing: 14) {
+            ForEach(NewspaperLayout.allCases) { option in
+                let selected = option.rawValue == layout
+                Button {
+                    layout = option.rawValue
+                } label: {
+                    VStack(spacing: 6) {
+                        NewspaperLayoutPreview(layout: option)
+                            .environment(\.colorScheme, (NewspaperAppearance(rawValue: appearance) ?? .system).colorScheme ?? systemScheme)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(selected ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: selected ? 2.5 : 1)
+                            )
+                        Label(option.title, systemImage: option.systemImage)
+                            .font(.caption.weight(selected ? .semibold : .regular))
+                            .foregroundStyle(selected ? Color.accentColor : .primary)
                     }
-                    .buttonStyle(BrowserPressStyle())
-                    .accessibilityLabel(option.title)
-                    .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
                 }
+                .buttonStyle(BrowserPressStyle())
+                .accessibilityLabel(option.title)
+                .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
             }
-            .padding(.vertical, 4)
         }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 3)
     }
 }
 

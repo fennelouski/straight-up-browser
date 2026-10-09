@@ -844,11 +844,18 @@ class TabManager: NSObject, ObservableObject {
         if tab.id == selectedTabId, tab.sessionKind != .incognito {
             NotificationCenter.default.post(name: .browserPageArrived, object: tab.url)
         }
+        noteNewspaperPageFinished(tab: tab, webView: webView)
         settleCapture?.pageDidSettleEventually(
             tab: tab,
             webView: webView,
             openedFromSourceId: openerSourceId(for: tab, tabs: tabs)
         )
+    }
+
+    func noteNewspaperPageFinished(tab: Tab, webView: WKWebView?) {
+        guard let webView, let modelContext else { return }
+        NewspaperDiscoveryCoordinator.shared.start(modelContext: modelContext)
+        NewspaperDiscoveryCoordinator.shared.consider(webView, session: tab.sessionKind)
     }
 
     /// Deliberate capture of one tab into the active workspace.

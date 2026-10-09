@@ -16,6 +16,66 @@ final class Straight_Up_BrowserUITests: XCTestCase {
     }
 
     @MainActor
+    func testNewspaperAppearanceHeadlineAndDiscoveryControls() {
+        let app = browserForUITesting()
+        app.launchArguments += ["-newspaperUITesting", "-newspaperShowHeadline", "YES",
+            "-newspaperDiscoverVisited", "NO", "-newspaperDiscoverPrefetched", "NO", "-newspaperDiscoverRelated", "NO", "-newspaperExternalValidation", "NO", "-newspaperShowWeather", "NO"]
+        launchBrowserForUITesting(app)
+        app.menuBars.menuBarItems["Edit"].click()
+        app.menuItems["Open Newspaper"].click()
+        let paper = app.windows["newspaper"]
+        XCTAssertTrue(paper.waitForExistence(timeout: 10))
+        XCTAssertTrue(paper.staticTexts["TODAY'S HEADLINE"].waitForExistence(timeout: 5))
+        XCTAssertEqual(paper.buttons.matching(identifier: "Why the night sky still surprises us").count, 1)
+        paper.buttons["Newspaper Settings"].click()
+        let settings = app.windows["settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        for _ in 0..<6 {
+            if settings.buttons["Ink"].isHittable { break }
+            settings.scrollViews.element(boundBy: 1).swipeDown()
+        }
+        settings.popUpButtons["newspaper-appearance"].click()
+        app.menuItems["Dark"].click()
+        settings.buttons["Broadsheet"].click()
+        XCTAssertTrue(settings.buttons["Shelf"].exists)
+        XCTAssertTrue(settings.staticTexts["Light"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(settings.staticTexts["Dark"].firstMatch.exists)
+        let previews = XCTAttachment(screenshot: settings.screenshot()); previews.name = "Newspaper-Settings-Previews"; previews.lifetime = .keepAlways; add(previews)
+        let dark = XCTAttachment(screenshot: paper.screenshot()); dark.name = "Newspaper-Dark"; dark.lifetime = .keepAlways; add(dark)
+        settings.popUpButtons["newspaper-appearance"].click()
+        app.menuItems["Light"].click()
+        settings.buttons["Ink"].click()
+        XCTAssertEqual(settings.popUpButtons["newspaper-appearance"].value as? String, "Light")
+        for _ in 0..<12 {
+            if settings.switches["newspaper-discovery-visited"].isHittable { break }
+            settings.scrollViews.element(boundBy: 1).swipeUp()
+        }
+        XCTAssertTrue(settings.switches["newspaper-discovery-visited"].waitForExistence(timeout: 5))
+        XCTAssertEqual((settings.switches["newspaper-discovery-visited"].value as? NSNumber)?.intValue, 0)
+        XCTAssertEqual((settings.switches["newspaper-discovery-external"].value as? NSNumber)?.intValue, 0)
+        settings.typeKey("w", modifierFlags: .command)
+        paper.click()
+        let light = XCTAttachment(screenshot: paper.screenshot()); light.name = "Newspaper-Ink-Light"; light.lifetime = .keepAlways; add(light)
+    }
+
+    @MainActor
+    func testNewspaperLiveWeatherKitAttribution() throws {
+        guard ProcessInfo.processInfo.environment["RUN_WEATHERKIT_LIVE_TEST"] == "1" else {
+            throw XCTSkip("Live WeatherKit is an explicit release-service check.")
+        }
+        let app = browserForUITesting()
+        app.launchArguments += ["-newspaperUITesting", "-newspaperShowWeather", "YES", "-newspaperWeatherCity", "Amsterdam, Netherlands"]
+        launchBrowserForUITesting(app)
+        app.menuBars.menuBarItems["Edit"].click()
+        app.menuItems["Open Newspaper"].click()
+        let paper = app.windows["newspaper"]
+        XCTAssertTrue(paper.waitForExistence(timeout: 10))
+        XCTAssertTrue(paper.descendants(matching: .any)["newspaper-weather-current"].waitForExistence(timeout: 60))
+        XCTAssertTrue(paper.links["newspaper-weather-attribution"].exists)
+        let screenshot = XCTAttachment(screenshot: paper.screenshot()); screenshot.name = "Newspaper-Live-WeatherKit"; screenshot.lifetime = .keepAlways; add(screenshot)
+    }
+
+    @MainActor
     func testOnboardingQuickStartAndImmediateTyping() {
         let app = browserForUITesting()
         app.launchArguments += ["-onboardingUITesting"]

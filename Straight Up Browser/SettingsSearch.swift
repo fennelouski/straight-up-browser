@@ -96,6 +96,13 @@ enum SettingsSearchIndex {
             .init(id: "screenshots.kind.window", pane: .screenshots, title: "Window and Tab Bar",
                   keywords: "the entire window tab bar and all capture screen recording permission"),
 
+            // Newspaper
+            .init(id: "newspaper.layout", pane: .newspaper, title: "Newspaper Layout",
+                  keywords: "newspaper broadsheet ink magazine shelf preview light dark appearance system headline front page reading navigation photos"),
+            .init(id: "newspaper.discovery", pane: .newspaper, title: "Article Discovery",
+                  keywords: "newspaper automatic collect visited pages prefetch linked articles idle device private icloud exclude sites apple intelligence external ai provider daily budget starter"),
+            .init(id: "newspaper.weather", pane: .newspaper, title: "Weather",
+                  keywords: "newspaper apple weather city country temperature celsius fahrenheit attribution"),
             // Appearance
             .init(id: "appearance.omnibar-motion", pane: .appearance, title: "Omnibar Animation",
                   keywords: "omnibar address bar animation motion duration speed milliseconds off disable expand spring bounce easing"),
