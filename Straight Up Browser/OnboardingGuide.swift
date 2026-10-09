@@ -75,7 +75,7 @@ private struct OnboardingOverlay: View {
             } else {
                 Button { guide.minimized = false } label: {
                     HStack {
-                        OnboardingAstronaut(moves: false, spring: false).frame(width: 32, height: 38)
+                        OnboardingAstronaut(pose: .floating, moves: false, spring: false).frame(width: 32, height: 38)
                         Text("Continue your guide").fontWeight(.medium)
                     }.padding(.horizontal, 12).padding(.vertical, 6)
                 }
@@ -109,10 +109,7 @@ private struct OnboardingGuideCard: View {
     let action: (OnboardingAction) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var pose: String {
-        if guide.step == .finished { return "OnboardingAstronautCelebrate" }
-        return guide.step == nil ? "OnboardingAstronautWelcome" : "OnboardingAstronautPoint"
-    }
+    private var pose: OnboardingAstronautPose { .forLesson(guide.step) }
 
     var body: some View {
         VStack(spacing: 0) {

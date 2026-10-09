@@ -49,7 +49,7 @@ enum BrowserAgentProvider: String, CaseIterable, Identifiable, Sendable {
         case .openAI: "gpt-6-luna"
         case .openAIResponses: "gpt-6-luna"
         case .anthropicMessages: "claude-sonnet-5-5"
-        case .gemini: "gemini-3.6-flash"
+        case .gemini: "gemini-3.8-flash"
         case .openRouter: "openai/gpt-6-luna"
         case .ollama, .lmStudio:
             ""

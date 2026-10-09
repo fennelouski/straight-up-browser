@@ -195,11 +195,14 @@ nonisolated struct AgentToolCall: Codable, Equatable, Sendable {
     let id: String
     let index: Int
     let name: String
+    /// Opaque Gemini continuation metadata; replay unchanged on its function part.
+    let thoughtSignature: String?
 
-    init(id: String, index: Int, name: String) {
+    init(id: String, index: Int, name: String, thoughtSignature: String? = nil) {
         self.id = id
         self.index = index
         self.name = name
+        self.thoughtSignature = thoughtSignature
     }
 }
 
@@ -1500,7 +1503,7 @@ nonisolated struct GeminiGenerateContentStreamParser: Sendable {
         for (candidateIndex, candidate) in (object["candidates"] as? [[String: Any]] ?? []).enumerated() {
             if let content = candidate["content"] as? [String: Any] {
                 for (partIndex, part) in (content["parts"] as? [[String: Any]] ?? []).enumerated() {
-                    if let text = part["text"] as? String, !text.isEmpty {
+                    if part["thought"] as? Bool != true, let text = part["text"] as? String, !text.isEmpty {
                         events.append(.textDelta(text))
                     }
                     if let function = part["functionCall"] as? [String: Any] {
@@ -1509,7 +1512,8 @@ nonisolated struct GeminiGenerateContentStreamParser: Sendable {
                         let call = AgentToolCall(
                             id: function["id"] as? String ?? "gemini-tool-\(index)",
                             index: index,
-                            name: function["name"] as? String ?? "unknown_tool"
+                            name: function["name"] as? String ?? "unknown_tool",
+                            thoughtSignature: part["thoughtSignature"] as? String
                         )
                         let arguments: AgentToolArguments
                         let raw: String
@@ -1620,13 +1624,17 @@ nonisolated struct GeminiGenerateContentRequestBuilder: Sendable {
                         ]),
                     ])
                 case .toolCall(let invocation):
-                    return .object([
+                    var part: [String: JSONValue] = [
                         "functionCall": .object([
                             "id": .string(invocation.call.id),
                             "name": .string(invocation.call.name),
                             "args": invocation.arguments,
                         ]),
-                    ])
+                    ]
+                    if let signature = invocation.call.thoughtSignature {
+                        part["thoughtSignature"] = .string(signature)
+                    }
+                    return .object(part)
                 }
             }
             contents.append(.object([

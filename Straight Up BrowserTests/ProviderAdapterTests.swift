@@ -265,6 +265,38 @@ struct ProviderAdapterTests {
         ])
     }
 
+    @Test func geminiToolContinuationReplaysThoughtSignatureAndPreservesOldCalls() throws {
+        var parser = GeminiGenerateContentStreamParser()
+        let events = try parser.consume(AgentProviderStreamFrame(data:
+            #"{"candidates":[{"content":{"parts":[{"thought":true,"text":"private reasoning"},{"functionCall":{"id":"call-signed","name":"lookup","args":{"q":"swift"}},"thoughtSignature":"opaque-fixture-signature"}]},"finishReason":"STOP"}]}"#))
+        #expect(!events.contains(.textDelta("private reasoning")))
+        let call = try #require(events.compactMap { event -> AgentToolCall? in
+            if case .toolCallCompleted(let call, _) = event { return call }
+            return nil
+        }.first)
+        #expect(call.thoughtSignature == "opaque-fixture-signature")
+        let request = AgentModelRequest(model: "gemini-3.8-flash", messages: [
+            AgentModelMessage(role: .assistant, content: [.toolCall(.init(call: call,
+                arguments: .object(["q": .string("swift")])))]),
+            AgentModelMessage(role: .tool, content: [.toolResult(.init(callID: call.id,
+                toolName: call.name, content: .string("result")))])
+        ], tools: [fixtureTool()])
+        let body = try GeminiGenerateContentRequestBuilder().makeBody(for: request)
+        guard case .object(let object) = body,
+              case .array(let contents) = object["contents"],
+              case .object(let assistant) = contents.first,
+              case .array(let parts) = assistant["parts"],
+              case .object(let part) = parts.first else {
+            Issue.record("Expected Gemini continuation parts")
+            return
+        }
+        #expect(part["thoughtSignature"] == .string("opaque-fixture-signature"))
+        #expect(part["functionCall"] != nil)
+        let old = try JSONDecoder().decode(AgentToolCall.self,
+            from: Data(#"{"id":"old","index":0,"name":"lookup"}"#.utf8))
+        #expect(old.thoughtSignature == nil)
+    }
+
     @Test func geminiRequestBuilderUsesSystemInstructionAndFunctionDeclarations() throws {
         let request = AgentModelRequest(
             model: "gemini-fixture",

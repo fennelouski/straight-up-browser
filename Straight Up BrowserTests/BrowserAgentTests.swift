@@ -62,7 +62,7 @@ struct BrowserAgentTests {
         #expect(BrowserAgentProvider.anthropicMessages.defaultEndpoint ==
             "https://api.anthropic.com/v1/messages")
         #expect(BrowserAgentProvider.gemini.defaultEndpoint ==
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:streamGenerateContent?alt=sse")
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse")
         #expect(BrowserAgentProvider.openRouter.defaultEndpoint.hasPrefix("https://"))
         #expect(BrowserAgentProvider.ollama.defaultEndpoint.contains("11434"))
         #expect(BrowserAgentProvider.lmStudio.defaultEndpoint.contains("1234"))
@@ -70,7 +70,7 @@ struct BrowserAgentTests {
         #expect(BrowserAgentProvider.openAI.defaultModel == "gpt-6-luna")
         #expect(BrowserAgentProvider.openAIResponses.defaultModel == "gpt-6-luna")
         #expect(BrowserAgentProvider.anthropicMessages.defaultModel == "claude-sonnet-5-5")
-        #expect(BrowserAgentProvider.gemini.defaultModel == "gemini-3.6-flash")
+        #expect(BrowserAgentProvider.gemini.defaultModel == "gemini-3.8-flash")
         #expect(BrowserAgentProvider.openRouter.defaultModel == "openai/gpt-6-luna")
         // Local providers deliberately ship no default: discovery plus the model
         // picker makes a hardcoded guess at what's installed worse than none.

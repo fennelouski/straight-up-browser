@@ -26,7 +26,10 @@ enum AgentModelMigration {
                 return "openai/" + replacement
             }
             return model == "anthropic/claude-sonnet-5" ? "anthropic/claude-sonnet-5.5" : model
-        case .appleIntelligence, .gemini, .ollama, .lmStudio, .compatible:
+        case .gemini:
+            return ["gemini-3.6-flash", "gemini-3.7-flash"].contains(model)
+                ? "gemini-3.8-flash" : model
+        case .appleIntelligence, .ollama, .lmStudio, .compatible:
             return model
         }
     }

@@ -1,13 +1,14 @@
 {
-  "releaseVersion": "2.9.19",
-  "reviewedOn": "2026-10-08",
-  "notes": "Rechecked official model and pricing sources for the onboarding release; current defaults, reviewed successor mappings, prices, and provider protocols remain unchanged. OpenAI: Luna fast, Sol balanced, Astra flagship; reviewed published Standard short-context pricing. Anthropic: Sonnet 5.5 current. Gemini: 3.6 Flash remains stable current Flash. OpenRouter: current explicit model IDs verified; gpt-latest absent. Apple/local/custom: runtime or installed account discovery, no guessed replacement. Exact aliases migrate, dated snapshots stay pinned. Responses remains the OpenAI tool dialect. Existing Anthropic request uses no forced tool choice or thinking blocks. No billable inference or user credentials used for review.",
+  "releaseVersion": "2.9.20",
+  "reviewedOn": "2026-10-09",
+  "notes": "Reviewed official catalogs, Standard pricing and API compatibility for the mascot animation release. OpenAI Luna/Sol/Astra IDs, Standard short-context rates and Responses tool dialect remain current; refreshed Luna and Sol source digests after reviewing updated documentation. Anthropic Sonnet 5.5 remains the balanced default. Gemini 3.8 Flash is stable, supports streaming and function calling; reviewed 2026 Standard promotional prices and the 2027 change. Upgrade exact Gemini 3.6/3.7 Flash aliases within the native Gemini provider only; custom, local, dated snapshots and unreviewed OpenRouter Gemini IDs remain unchanged. Gemini rates remain explicit per-model configuration/unknown, with no old pricing transferred. Historical runs stay unchanged. No credentials or billable inference used. Native Gemini tool continuation now preserves opaque thought signatures on the original function-call parts and excludes private thought text. Existing stored calls decode without signatures; no historical records are rewritten.",
   "sourceFiles": {
     "Straight Up Browser/AgentModelCatalog.swift": "ba4459c9f003ac6cac1dab8ad802ae024190b9679f437ff5dbc32b1405d2af02",
-    "Straight Up Browser/AgentModelMigration.swift": "414928df2eaf2f2b0e2adaac5c170e1e63ccb335b75ffeb59f3d151efe5f04fa",
+    "Straight Up Browser/AgentModelMigration.swift": "5e02a270b6598c1b551e8cd7cbff3a1d747612a10c7f234d3c2b65b9947bcbbb",
     "Straight Up Browser/ProviderTransport.swift": "7c1d0f1b4e4403d00dd674930a3bd35f6da4ff467c6268b63b02858abbd0c0d1",
-    "Straight Up Browser/BrowserAgent.swift": "0c6ec143500171d737890d129023556a807703a98d9e64cdcb1aadd9d6866a78",
-    "Straight Up Browser/AgentSettingsView.swift": "ddbae3def3238987746300216863a2b8cefd1ad80c978442bd4e4f6133779700"
+    "Straight Up Browser/BrowserAgent.swift": "f32e0a1f27658f4f4170ce514a2e6a5330de70ece14fbf736175570109cb1486",
+    "Straight Up Browser/AgentSettingsView.swift": "ddbae3def3238987746300216863a2b8cefd1ad80c978442bd4e4f6133779700",
+    "Straight Up Browser/ProviderAdapters.swift": "79d9e0c72a525949210dbb4c890450dcd6a0aec4204162a9bd4e2ba2803804fd"
   },
   "providerSources": [
     {
@@ -18,12 +19,12 @@
     {
       "url": "https://developers.openai.com/api/docs/models/gpt-6-luna.md",
       "format": "markdown",
-      "sha256": "58dbbc320ce4e552e4f7c49d0135c1c1fb2af0dcb24e22e66a3c8449b8385816"
+      "sha256": "d3af93ced5a2ff1dcba02e61918bf43a21d0b1f21ef42bcd110fe412d5963e4c"
     },
     {
       "url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol.md",
       "format": "markdown",
-      "sha256": "1b3df0858d6765f798489b1cf67ff786ada1cbc0ce4ed2c5e426696e298cd701"
+      "sha256": "48c1547bbc9e09f017bea9ca9505242576e115401782fd0916a5209f5ba1ea89"
     },
     {
       "url": "https://developers.openai.com/api/docs/models/gpt-6-astra.md",
@@ -50,6 +51,16 @@
         "anthropic/claude-sonnet-5.5"
       ],
       "sha256": "b749a02cbb2ec24c2593486b0393088a16b9d93d77ccd8df2389f48ac6c9ffcb"
+    },
+    {
+      "url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash",
+      "format": "html-main",
+      "sha256": "2476bed7d4ffdf3752a46498d70984f4ef108e3131af9044b919aa2d737bfd53"
+    },
+    {
+      "url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "format": "html-main",
+      "sha256": "0e97085c930d628bf9a5f7ae54f8d3cba7cfd036825ed635f80474906e989b25"
     }
   ]
 }

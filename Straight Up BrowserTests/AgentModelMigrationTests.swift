@@ -16,6 +16,11 @@ struct AgentModelMigrationTests {
         #expect(BrowserAgentProvider.openRouter.resolvedModel("openai/gpt-5.6-luna") == "openai/gpt-6-luna")
         #expect(BrowserAgentProvider.openRouter.resolvedModel("openai/gpt-latest") == "openai/gpt-6-luna")
         #expect(BrowserAgentProvider.anthropicMessages.resolvedModel("claude-sonnet-5") == "claude-sonnet-5-5")
+        #expect(BrowserAgentProvider.gemini.resolvedModel("gemini-3.6-flash") == "gemini-3.8-flash")
+        #expect(BrowserAgentProvider.gemini.resolvedModel("gemini-3.7-flash") == "gemini-3.8-flash")
+        #expect(BrowserAgentProvider.gemini.resolvedModel("gemini-3.6-flash-2026-04-01") == "gemini-3.6-flash-2026-04-01")
+        #expect(BrowserAgentProvider.compatible.resolvedModel("gemini-3.6-flash") == "gemini-3.6-flash")
+        #expect(BrowserAgentProvider.openRouter.resolvedModel("google/gemini-3.6-flash") == "google/gemini-3.6-flash")
         for provider in [BrowserAgentProvider.ollama, .lmStudio, .compatible] {
             #expect(provider.resolvedModel("gpt-5.6-luna") == "gpt-5.6-luna")
         }
