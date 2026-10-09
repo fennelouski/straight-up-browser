@@ -122,6 +122,40 @@ final class Browser_iOSUITests: XCTestCase {
     }
 
     @MainActor
+    func testNewspaperCoverAndSettingsFitPhone() {
+        let app = configuredApplication()
+        app.launchArguments += ["-newspaperUITesting", "-newspaperOpenUITesting", "-newspaperShowWeather", "NO"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Newspaper Settings"].waitForExistence(timeout: 10))
+        let weather = app.buttons["newspaper-weather-location"]
+        XCTAssertGreaterThanOrEqual(weather.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(weather.frame.height, 44)
+        weather.tap()
+        XCTAssertTrue(app.buttons["newspaper-weather-use-current"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["newspaper-weather-city"].exists)
+        XCTAssertTrue(app.frame.contains(app.buttons["newspaper-weather-use-current"].frame))
+        app.buttons["Cancel"].tap()
+        app.buttons["Newspaper Settings"].tap()
+        XCTAssertTrue(app.buttons["Publication Style & Paper"].waitForExistence(timeout: 5))
+        app.buttons["Publication Style & Paper"].tap()
+        for _ in 0..<16 { if app.buttons["Bold Weekly"].isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(app.buttons["Bold Weekly"].waitForExistence(timeout: 5))
+        app.buttons["Bold Weekly"].tap()
+        for _ in 0..<20 {
+            if app.buttons["Use this style's recommended format and paper"].isHittable { break }
+            app.swipeUp()
+        }
+        app.buttons["Use this style's recommended format and paper"].tap()
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["newspaper-cover-issue"].waitForExistence(timeout: 5))
+        let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "Newspaper-Phone-Cover"; screenshot.lifetime = .keepAlways; add(screenshot)
+        XCTAssertTrue(app.frame.contains(app.buttons["Newspaper Settings"].frame))
+        XCTAssertTrue(app.buttons["Close Newspaper"].isHittable)
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["Inside this edition"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     private func launchBrowser(_ app: XCUIApplication) {
         app.launch()
         // A fresh profile starts in the address bar. Dismiss it before testing

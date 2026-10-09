@@ -97,12 +97,18 @@ enum SettingsSearchIndex {
                   keywords: "the entire window tab bar and all capture screen recording permission"),
 
             // Newspaper
+            .init(id: "newspaper.style", pane: .newspaper, title: "Publication Style & Paper",
+                  keywords: "newspaper publication style paper texture newsprint rose ivory linen magazine cover cutout subject vision region language animation motion spring duration"),
+            .init(id: "newspaper.naming", pane: .newspaper, title: "Edition Name",
+                  keywords: "newspaper magazine masthead name personal personalized apple intelligence AI naming nickname context device region sites shortlist"),
+            .init(id: "newspaper.shopping", pane: .newspaper, title: "Shopping Notebook",
+                  keywords: "newspaper shopping product interest personal clipping ads purchase privacy collection clear"),
             .init(id: "newspaper.layout", pane: .newspaper, title: "Newspaper Layout",
-                  keywords: "newspaper broadsheet ink magazine shelf preview light dark appearance system headline front page reading navigation photos"),
+                  keywords: "newspaper broadsheet ink magazine shelf cover contents flipbook feed newsstand eclectic preview light dark appearance system headline front page reading navigation photos"),
             .init(id: "newspaper.discovery", pane: .newspaper, title: "Article Discovery",
-                  keywords: "newspaper automatic collect visited pages prefetch linked articles idle device private icloud exclude sites apple intelligence external ai provider daily budget starter"),
+                  keywords: "newspaper automatic collect visited pages recent visits catch up front pages prefetch linked articles idle device private icloud exclude sites apple intelligence external ai provider daily budget starter"),
             .init(id: "newspaper.weather", pane: .newspaper, title: "Weather",
-                  keywords: "newspaper apple weather city country temperature celsius fahrenheit attribution"),
+                  keywords: "newspaper apple weather current location permission city country temperature celsius fahrenheit attribution"),
             // Appearance
             .init(id: "appearance.omnibar-motion", pane: .appearance, title: "Omnibar Animation",
                   keywords: "omnibar address bar animation motion duration speed milliseconds off disable expand spring bounce easing"),

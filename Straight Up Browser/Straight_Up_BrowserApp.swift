@@ -376,7 +376,7 @@ struct Straight_Up_BrowserApp: App {
                 )
             }
         }
-        .windowStyle(.automatic)
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1120, height: 780)
 

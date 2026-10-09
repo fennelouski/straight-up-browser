@@ -86,7 +86,7 @@ struct ModelContainerStartup {
                 configurations: configurations
             )
             NewspaperStore(modelContext: container.mainContext).reconcileInterruptedWork()
-            if isRunningUnderTests && ProcessInfo.processInfo.arguments.contains("-newspaperUITesting") {
+            if isRunningUnderTests && ProcessInfo.processInfo.arguments.contains("-newspaperUITesting") && !ProcessInfo.processInfo.arguments.contains("-newspaperEmptyUITesting") {
                 let store = NewspaperStore(modelContext: container.mainContext)
                 for (index, title) in ["A city makes room for a quieter morning", "The gardens growing above our streets", "Why the night sky still surprises us"].enumerated() {
                     let item = store.enqueue(url: URL(string: "https://newspaper.example/story-\(index)")!, title: title, section: index == 0 ? "Front Page" : "Features").article

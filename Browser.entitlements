@@ -22,6 +22,8 @@
 	<true/>
 	<key>com.apple.security.assets.pictures.read-write</key>
 	<true/>
+	<key>com.apple.security.personal-information.location</key>
+	<true/>
 	<key>com.apple.security.personal-information.addressbook</key>
 	<true/>
 	<!-- Hardened Runtime (required for notarization) blocks camera/mic even with

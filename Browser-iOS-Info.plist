@@ -40,6 +40,8 @@
 	<string>public.app-category.productivity</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Browser uses your current location when you ask for local weather in Newspaper.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Websites you visit can ask to use your camera for video calls and photos.</string>
 	<key>NSMicrophoneUsageDescription</key>

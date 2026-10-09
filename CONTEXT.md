@@ -69,7 +69,7 @@ A named research project. Owns **Tabs** (via `Tab.workspaceId`), **Workspace doc
 _Avoid_: saved workspace (the old UserDefaults tab snapshot, now removed), `TabGroup`, **Split**
 
 **Default workspace**:
-`workspaceId == nil` — the absence of a workspace, not a row. Ordinary browsing happens here and nothing is captured.
+`workspaceId == nil` — the absence of a workspace, not a row. Ordinary browsing happens here without creating Workspace references. Independently controlled Newspaper discovery can create global Saved Articles from regular visits; that does not assign them to a Workspace.
 _Avoid_: default session (`BrowserSession` means website-data isolation, which is orthogonal)
 
 **Source**:

@@ -8,8 +8,9 @@ This document describes the product boundary, current P0 implementation, and sta
 
 The current implementation adds a full-width headline, independent Follow System /
 Light / Dark appearance, paper-colored reading surfaces and paired appearance
-previews. Alternative layouts are chosen in Newspaper settings. Discovery and
-curated starter requests now require individual opt-ins. Visited pages,
+previews. Alternative layouts are chosen in Newspaper settings. Collection from normal visits, recent-reading catch-up and links on visited
+front pages now defaults on, preserving explicit opt-outs. Curated starter requests
+and all other discovery sources require individual opt-ins. Visited pages,
 omnibar-prefetched articles, linked-article fetching, idle Mac work, on-device
 validation, external validation, private-iCloud candidate sharing and weather
 have independent controls. The exact boundaries and limitations are described
@@ -17,18 +18,65 @@ in [ADR-0009](adr/0009-newspaper-discovery-and-private-idle-workers.md).
 
 The P0 contracts and roadmap below describe the original vertical slice. Where
 P0 excluded discovery or unattended classification, ADR-0009 is the explicit
-extension; these features remain disabled until the reader enables them.
+extension; the collection defaults and current limits below supersede the
+original opt-in discovery defaults.
 
 ## Product contract
+
+### Editorial styles and visual editions
+
+The 2026-10-09 visual-edition extension adds thirty original publication-inspired
+styles, nine independent reading formats, procedural paper and optional local
+cover-subject isolation. First-open recommendations use only the device locale
+and already-saved image availability. An empty first edition has an optional,
+offline author-story/support fallback. Separately opted-in personal shopping
+clippings use product-page metadata and never invent offers or contact ad services.
+See [ADR-0010](adr/0010-newspaper-editorial-styles-and-personal-clippings.md) for
+the exact privacy, resource, presentation and verification boundaries.
+
+### Default discovery and weather
+
+Normal visited-page capture, visited front-page article links and recent-reading
+catch-up default on, with stored false choices respected. Prefetch capture, idle
+work, AI validation, private-cloud candidate sharing and shopping remain separate
+opt-ins. The daily automatic article budget defaults to 24 (adjustable 1–100).
+Catch-up considers up to 96 deduplicated public candidates from the last thirty
+days and open normal tabs. It runs a bounded pass while Newspaper is open, checks
+opt-outs between loads, and pauses on Low Power Mode or memory pressure. Checked
+URLs are retained locally for a day to avoid repeating work. Links discovered
+from those seed visits have a single level of fetching; fetched links do not
+start a recursive crawl. Background loads are anonymous, nonpersistent and have
+publisher JavaScript and autoplay disabled, with images, media, fonts and
+stylesheets blocked for these text-only loads. Outside catch-up, linked discovery
+retains its one-request-per-thirty-minutes limit.
+
+Private/container sessions, excluded hosts and subdomains, credential URLs,
+sensitive account paths and non-tracking queries are skipped. Recognized tracking
+parameters and fragments are removed. Publisher article semantics and substantive
+text are required; front-page navigation is not saved as an article. Reddit text
+posts use the original post rather than comments. Publisher metadata or local
+source/topic cues supply sections; the reader can change them. Empty-first-edition
+welcome excerpts are considered after catch-up, so available reading takes priority.
+
+The masthead weather icon opens a location popup. Readers can enter a city or
+choose their current location. The latter requests When in Use authorization
+only after that choice, uses an existing authorization without another permission
+prompt, and makes a one-shot coarse location request. Coordinates stay in memory,
+are not logged or synced, and go directly to Apple's WeatherKit. No IP guess or
+background-location access is used. The choice can be changed or weather disabled
+from the popup or settings. Forecasts retain Apple's mark and legal attribution;
+weather failure leaves the edition readable. Manual city typing is a draft until
+submitted, avoiding a lookup for every keystroke.
 
 ### Capture and return
 
 1. From a regular HTTP(S) Tab, the reader chooses **Add to Newspaper**. On macOS the action is in browser chrome, the Tab context menu, and the app menu; on iOS it is in the overflow menu. Adding the same normalized URL refreshes the existing Saved Article rather than intentionally creating another local copy.
 2. Browser immediately creates a Saved Article, then extracts readable metadata, semantic text blocks, links, and a bounded set of image descriptors from the exact visible `WKWebView`. A failed refresh retains the last good offline Article Document.
-3. The reader opens **Newspaper** in a dedicated macOS window or iOS full-screen view, filters by Section or unread state, and reads by continuous scrolling or one-story pages.
+3. The reader opens **Newspaper** in a dedicated macOS window or iOS full-screen view, filters by Section or unread state, and reads by continuous scrolling or print pages with up to four stories.
 4. While reading, the reader may rank priority, move Section, rate one to five stars, mark finished, switch between shortened and original Renditions, reveal more photos, open the source page in an ordinary Tab, or remove the Saved Article.
 
-Incognito Tabs cannot create Saved Articles because capture is durable. Non-HTTP(S) pages are not captured. P0 is user-directed: it does not crawl links, ingest feeds automatically, or recommend pages the reader did not save.
+Incognito Tabs cannot create Saved Articles because capture is durable. Non-HTTP(S) pages are not captured. The original P0 capture is user-directed. The bounded discovery extension below
+adds eligible public reading from regular visits and publication front pages.
 
 ### Reading modes and settings
 
@@ -36,7 +84,8 @@ Incognito Tabs cannot create Saved Articles because capture is durable. Non-HTTP
 - **Broadsheet** is a responsive multi-column text layout and image-free.
 - **Magazine** uses richer cards and a configured photo budget.
 - **Shelf** presents a visual collection with the same article-level reading controls.
-- **Scroll** and **Pages** are alternate navigation styles over the same Saved Articles; neither creates a stored “issue.”
+- **Scroll** moves the entire edition, including its masthead. **Pages** uses large
+  fading edge chevrons and horizontal gestures with loose-sheet transitions. These are alternate navigation styles over the same Saved Articles; neither creates a stored “issue.”
 - Settings choose layout, navigation, photos per article, default Section, and optional maximum words or characters. “Show more photos” is explicit and remote images are never required for the text experience.
 
 Layout, navigation, current filters, and page position are device-local view state. Saved metadata, text payloads, Sections, ratings, priority, and reading state are content state.
@@ -149,3 +198,5 @@ The current branch has foundational tests for document round trips and stable di
 - Integration: Reader extraction fixtures, page-navigation races, incognito no-write, unsupported model fallback, cancellation, offline relaunch, remote-photo failure, and source opening into an ordinary Tab.
 - Sync/performance: two-device conflict and deletion scenarios, partial asset arrival, 10,000 metadata rows with lazy payloads, and bounded memory while paging.
 - UI/accessibility: every macOS/iOS entry point, empty/error/filter states, Scroll/Pages and all layouts, full/short switch, photo reveal, VoiceOver, Dynamic Type, keyboard focus, Reduce Motion, and macOS window-close behavior.
+
+Edition names can be typed or generated from a previewed, bounded selection of personal context. Apple Intelligence stays on device; Mac users may explicitly choose their connected provider and a two-pass shortlist. Names are reviewed and selected before application. Styles and naming each live in initially collapsed settings sections. See ADR-0010 for budgets, retention and availability.

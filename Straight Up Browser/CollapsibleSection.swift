@@ -25,11 +25,13 @@ struct CollapsibleSection<Content: View, Header: View, Footer: View>: View {
     // `CollapsibleSection(searchID: "x") { ... } header: { ... } footer: { ... }`.
     init(
         searchID: String? = nil,
+        initiallyCollapsed: Bool = false,
         @ViewBuilder content: @escaping () -> Content,
         @ViewBuilder header: @escaping () -> Header,
         @ViewBuilder footer: @escaping () -> Footer
     ) {
         self.searchID = searchID
+        self._isCollapsed = State(initialValue: initiallyCollapsed)
         self.content = content
         self.header = header
         self.footer = footer
@@ -86,6 +88,10 @@ struct CollapsibleSection<Content: View, Header: View, Footer: View>: View {
         // Form and confuse SwiftUI's diffing, so only opt in when a searchID is actually given.
         if let searchID {
             section.id(searchID)
+                .onAppear { if isHighlighted { isCollapsed = false } }
+                .onChange(of: isHighlighted) { _, highlighted in
+                    if highlighted { isCollapsed = false }
+                }
         } else {
             section
         }
@@ -95,9 +101,10 @@ struct CollapsibleSection<Content: View, Header: View, Footer: View>: View {
 extension CollapsibleSection where Footer == EmptyView {
     init(
         searchID: String? = nil,
+        initiallyCollapsed: Bool = false,
         @ViewBuilder content: @escaping () -> Content,
         @ViewBuilder header: @escaping () -> Header
     ) {
-        self.init(searchID: searchID, content: content, header: header, footer: { EmptyView() })
+        self.init(searchID: searchID, initiallyCollapsed: initiallyCollapsed, content: content, header: header, footer: { EmptyView() })
     }
 }

@@ -30,9 +30,9 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         paper.buttons["Newspaper Settings"].click()
         let settings = app.windows["settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
-        for _ in 0..<6 {
-            if settings.buttons["Ink"].isHittable { break }
-            settings.scrollViews.element(boundBy: 1).swipeDown()
+        for _ in 0..<16 {
+            if settings.popUpButtons["newspaper-appearance"].isHittable { break }
+            settings.scrollViews.element(boundBy: 1).swipeUp()
         }
         settings.popUpButtons["newspaper-appearance"].click()
         app.menuItems["Dark"].click()
@@ -59,12 +59,125 @@ final class Straight_Up_BrowserUITests: XCTestCase {
     }
 
     @MainActor
+    func testNewspaperPublicationStylesAndVisualFormats() {
+        let app = browserForUITesting()
+        app.launchArguments += ["-newspaperUITesting", "-newspaperShowWeather", "NO", "-newspaperShowHeadline", "NO", "-newspaperNavigationStyle", "continuous"]
+        launchBrowserForUITesting(app)
+        app.menuBars.menuBarItems["Edit"].click()
+        app.menuItems["Open Newspaper"].click()
+        let paper = app.windows["newspaper"]
+        XCTAssertTrue(paper.waitForExistence(timeout: 10))
+        let sky = paper.buttons["Why the night sky still surprises us"]
+        let gardens = paper.buttons["The gardens growing above our streets"]
+        XCTAssertTrue(sky.waitForExistence(timeout: 5))
+        XCTAssertTrue(gardens.waitForExistence(timeout: 5))
+        XCTAssertLessThan(sky.frame.width, paper.frame.width * 0.6)
+        XCTAssertEqual(sky.frame.minY, gardens.frame.minY, accuracy: 2)
+        XCTAssertGreaterThan(gardens.frame.minX, sky.frame.maxX)
+        let mastheadY = paper.staticTexts["Metropolitan"].frame.minY
+        paper.scrollViews.firstMatch.swipeUp()
+        XCTAssertLessThan(paper.staticTexts["Metropolitan"].frame.minY, mastheadY - 20)
+        XCTAssertTrue(paper.buttons["Close Newspaper"].isHittable)
+        XCTAssertGreaterThan(paper.buttons["Close Newspaper"].frame.maxX, paper.frame.maxX - 10)
+        paper.scrollViews.firstMatch.swipeDown()
+        let columns = XCTAttachment(screenshot: paper.screenshot()); columns.name = "Newspaper-Print-Columns"; columns.lifetime = .keepAlways; add(columns)
+        paper.buttons["Newspaper Settings"].click()
+        let settings = app.windows["settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertTrue(settings.buttons["Publication Style & Paper"].waitForExistence(timeout: 5))
+        for _ in 0..<32 {
+            if settings.buttons["Publication Style & Paper"].isHittable { break }
+            settings.scrollViews.element(boundBy: 1).scroll(byDeltaX: 0, deltaY: 200)
+        }
+        XCTAssertFalse(settings.buttons["Bold Weekly"].exists)
+        settings.buttons["Publication Style & Paper"].click()
+        for _ in 0..<32 {
+            if settings.buttons["Bold Weekly"].isHittable { break }
+            settings.scrollViews.element(boundBy: 1).scroll(byDeltaX: 0, deltaY: -200)
+        }
+        XCTAssertTrue(settings.buttons["Bold Weekly"].waitForExistence(timeout: 5))
+        settings.buttons["Bold Weekly"].click()
+        for _ in 0..<32 {
+            if settings.buttons["Use this style's recommended format and paper"].isHittable { break }
+            settings.scrollViews.element(boundBy: 1).scroll(byDeltaX: 0, deltaY: -200)
+        }
+        settings.buttons["Use this style's recommended format and paper"].click()
+        XCTAssertTrue(paper.descendants(matching: .any)["newspaper-cover-issue"].waitForExistence(timeout: 5))
+        XCTAssertTrue(paper.descendants(matching: .any)["newspaper-table-of-contents"].exists)
+        let cover = XCTAttachment(screenshot: paper.screenshot()); cover.name = "Newspaper-Cover-Contents"; cover.lifetime = .keepAlways; add(cover)
+        for _ in 0..<32 {
+            if settings.buttons["Eclectic"].isHittable { break }
+            settings.scrollViews.element(boundBy: 1).scroll(byDeltaX: 0, deltaY: -200)
+        }
+        settings.buttons["Eclectic"].click()
+        XCTAssertTrue(paper.descendants(matching: .any)["newspaper-newsstand"].waitForExistence(timeout: 5))
+        let eclectic = XCTAttachment(screenshot: paper.screenshot()); eclectic.name = "Newspaper-Eclectic"; eclectic.lifetime = .keepAlways; add(eclectic)
+        settings.buttons["Story Feed"].click()
+        XCTAssertTrue(paper.buttons["Why the night sky still surprises us"].exists)
+        settings.buttons["Flipbook"].click()
+        XCTAssertTrue(paper.buttons["Next"].waitForExistence(timeout: 5))
+        paper.buttons["Next"].click()
+        XCTAssertTrue(paper.staticTexts["Page 2 of 3"].waitForExistence(timeout: 5))
+        paper.swipeLeft()
+        XCTAssertTrue(paper.staticTexts["Page 3 of 3"].waitForExistence(timeout: 5))
+        paper.swipeRight()
+        XCTAssertTrue(paper.staticTexts["Page 2 of 3"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testNewspaperEditionNameIsManualAndReversibleWithoutAI() {
+        let app = browserForUITesting()
+        app.launchArguments += ["-newspaperUITesting", "-newspaperShowWeather", "NO"]
+        launchBrowserForUITesting(app)
+        app.menuBars.menuBarItems["Edit"].click(); app.menuItems["Open Newspaper"].click()
+        let paper = app.windows["newspaper"]
+        XCTAssertTrue(paper.waitForExistence(timeout: 10))
+        paper.buttons["Newspaper Settings"].click()
+        let settings = app.windows["settings"]
+        XCTAssertTrue(settings.buttons["Edition Name"].waitForExistence(timeout: 5))
+        for _ in 0..<32 {
+            if settings.buttons["Edition Name"].isHittable { break }
+            settings.scrollViews.element(boundBy: 1).scroll(byDeltaX: 0, deltaY: 200)
+        }
+        XCTAssertFalse(settings.textFields["newspaper-personal-name"].exists)
+        settings.buttons["Edition Name"].click()
+        let field = settings.textFields["newspaper-personal-name"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.click(); field.typeText("The Orbit Journal")
+        XCTAssertTrue(paper.staticTexts["The Orbit Journal"].waitForExistence(timeout: 5))
+        XCTAssertFalse(settings.buttons["Send preview & suggest names"].exists)
+        settings.buttons["Use the style's name"].click()
+        XCTAssertTrue(paper.staticTexts["The Orbit Journal"].waitForNonExistence(timeout: 5))
+        let screenshot = XCTAttachment(screenshot: settings.screenshot()); screenshot.name = "Newspaper-Edition-Name"; screenshot.lifetime = .keepAlways; add(screenshot)
+    }
+
+    @MainActor
+    func testNewspaperWeatherIconOffersLocationWithoutRequestingIt() {
+        let app = browserForUITesting()
+        app.launchArguments += ["-newspaperUITesting", "-newspaperShowWeather", "NO", "-newspaperWeatherCurrentLocation", "NO", "-newspaperWeatherCity", ""]
+        launchBrowserForUITesting(app)
+        app.menuBars.menuBarItems["Edit"].click(); app.menuItems["Open Newspaper"].click()
+        let paper = app.windows["newspaper"]
+        XCTAssertTrue(paper.waitForExistence(timeout: 10))
+        paper.buttons["newspaper-weather-location"].click()
+        XCTAssertTrue(app.buttons["newspaper-weather-use-current"].waitForExistence(timeout: 5))
+        let city = app.textFields["newspaper-weather-city"]
+        XCTAssertTrue(city.exists)
+        city.click(); city.typeText("Amsterdam, Netherlands")
+        XCTAssertTrue(app.buttons["Use this city"].isEnabled)
+        XCTAssertFalse(app.staticTexts["Loading weather…"].exists)
+        XCTAssertFalse(app.staticTexts["Finding your location…"].exists)
+        let shot = XCTAttachment(screenshot: paper.screenshot()); shot.name = "Newspaper-Weather-Location"; shot.lifetime = .keepAlways; add(shot)
+        app.typeKey(.escape, modifierFlags: [])
+    }
+
+    @MainActor
     func testNewspaperLiveWeatherKitAttribution() throws {
         guard ProcessInfo.processInfo.environment["RUN_WEATHERKIT_LIVE_TEST"] == "1" else {
             throw XCTSkip("Live WeatherKit is an explicit release-service check.")
         }
         let app = browserForUITesting()
-        app.launchArguments += ["-newspaperUITesting", "-newspaperShowWeather", "YES", "-newspaperWeatherCity", "Amsterdam, Netherlands"]
+        app.launchArguments += ["-newspaperUITesting", "-newspaperShowWeather", "YES", "-newspaperWeatherCity", "Amsterdam, Netherlands", "-newspaperWeatherCurrentLocation", "NO"]
         launchBrowserForUITesting(app)
         app.menuBars.menuBarItems["Edit"].click()
         app.menuItems["Open Newspaper"].click()
@@ -502,7 +615,7 @@ func launchBrowserForUITesting(_ app: XCUIApplication) {
     let appURL = Bundle.main.bundleURL
         .deletingLastPathComponent()
         .appendingPathComponent("Browser.app")
-    if !app.windows.firstMatch.waitForExistence(timeout: 2) {
+    if !app.windows.firstMatch.waitForExistence(timeout: 10) {
         _ = NSWorkspace.shared.open(appURL)
     }
     app.activate()

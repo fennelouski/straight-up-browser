@@ -78,6 +78,7 @@ nonisolated enum NewspaperLayout: String, CaseIterable, Identifiable {
     case broadsheet
     case magazine
     case shelf
+    case cover, flipbook, feed, newsstand, eclectic
 
     var id: String { rawValue }
 
@@ -87,6 +88,11 @@ nonisolated enum NewspaperLayout: String, CaseIterable, Identifiable {
         case .broadsheet: String(localized: "Broadsheet")
         case .magazine: String(localized: "Magazine")
         case .shelf: String(localized: "Shelf")
+        case .cover: String(localized: "Cover & Contents")
+        case .flipbook: String(localized: "Flipbook")
+        case .feed: String(localized: "Story Feed")
+        case .newsstand: String(localized: "Newsstand")
+        case .eclectic: String(localized: "Eclectic")
         }
     }
 
@@ -96,10 +102,17 @@ nonisolated enum NewspaperLayout: String, CaseIterable, Identifiable {
         case .broadsheet: "rectangle.split.3x1"
         case .magazine: "photo.on.rectangle.angled"
         case .shelf: "books.vertical"
+        case .cover: "book.closed"
+        case .flipbook: "book.pages"
+        case .feed: "rectangle.stack"
+        case .newsstand: "books.vertical.fill"
+        case .eclectic: "square.grid.3x3"
         }
     }
 
-    var usesImages: Bool { self == .magazine || self == .shelf }
+    var isEditorial: Bool { self == .ink || self == .broadsheet }
+
+    var usesImages: Bool { self != .ink && self != .broadsheet }
 }
 
 nonisolated enum NewspaperAppearance: String, CaseIterable, Identifiable {
@@ -195,6 +208,7 @@ enum NewspaperPreferences {
         static let showHeadline = "newspaperShowHeadline"
         static let headlineID = "newspaperHeadlineID"
         static let discoverVisited = "newspaperDiscoverVisited"
+        static let discoverRecent = "newspaperDiscoverRecent"
         static let discoverPrefetched = "newspaperDiscoverPrefetched"
         static let discoverRelated = "newspaperDiscoverRelated"
         static let onDeviceValidation = "newspaperOnDeviceValidation"
@@ -206,6 +220,7 @@ enum NewspaperPreferences {
         static let starterArticles = "newspaperStarterArticles"
         static let showWeather = "newspaperShowWeather"
         static let weatherCity = "newspaperWeatherCity"
+        static let weatherCurrentLocation = "newspaperWeatherCurrentLocation"
         static let weatherTemperatureUnit = "newspaperWeatherTemperatureUnit"
         static let navigationStyle = "newspaperNavigationStyle"
         static let photoLimit = "newspaperPhotoLimit"
@@ -298,10 +313,10 @@ enum NewspaperTypography {
         var id: String { family }
     }
 
-    static let systemSerif = Choice(family: "", title: String(localized: "New York (System Serif)"))
+    static let styleDefault = Choice(family: "", title: String(localized: "Publication style font"))
 
     /// A short, opinionated list first; the full installed list follows.
-    static let suggested: [Choice] = [systemSerif] + [
+    static let suggested: [Choice] = [styleDefault] + [
         "Georgia", "Charter", "Iowan Old Style", "Palatino", "Baskerville",
         "Times New Roman", "Hoefler Text", "Athelas", "Seravek",
         "Helvetica Neue", "Avenir Next", "Optima"
@@ -319,8 +334,9 @@ enum NewspaperTypography {
     }
 
     static func font(_ family: String = NewspaperPreferences.fontFamily, size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        family.isEmpty
-            ? .system(size: size, weight: weight, design: .serif)
+        let style = NewspaperEditionStyle(rawValue: NewspaperPreferences.presentationStore.string(forKey: NewspaperEditionPreferences.style) ?? "") ?? .metropolitan
+        return family.isEmpty
+            ? .system(size: size, weight: weight, design: style.sansSerif ? .default : .serif)
             : .custom(family, size: size).weight(weight)
     }
 }

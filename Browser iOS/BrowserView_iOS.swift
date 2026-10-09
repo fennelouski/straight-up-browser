@@ -425,6 +425,12 @@ struct BrowserView_iOS: View {
             await pageTranslator.perform(session: session)
         }
         .onAppear(perform: firstAppear)
+        .task {
+            if ProcessInfo.processInfo.arguments.contains("-uiTesting"), ProcessInfo.processInfo.arguments.contains("-newspaperOpenUITesting") {
+                showOmnibar = false
+                presentNewspaper()
+            }
+        }
         .onChange(of: tabManager.selectedTabId) { _, newValue in
             tabManager.updateActiveTab(in: allTabs)
             webViewManager?.setActiveTab(newValue)

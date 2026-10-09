@@ -1,7 +1,7 @@
 {
-  "releaseVersion": "2.9.24",
+  "releaseVersion": "2.9.25",
   "reviewedOn": "2026-10-09",
-  "notes": "Re-reviewed official provider catalogs, Standard pricing and API compatibility for the Newspaper appearance, discovery and WeatherKit release on 2026-10-09. Live normalized sources remain unchanged from the same-day 2.9.22 review: OpenAI Luna 6, Sol 6.1 and Astra 6 remain current in their fast/balanced/flagship roles; Claude Sonnet 5.5 remains the balanced Anthropic default; Gemini 3.8 Flash remains stable with streaming/function calling and opaque thought-signature continuation. Reviewed OpenRouter IDs remain available. No model, pricing or adapter changes are needed. Gemini pricing remains explicit per-model configuration/unknown, including the reviewed 2026 promotional rates and 2027 change. Custom endpoints, installed local models, dated pinned snapshots, provider boundaries and historical run records remain unchanged. No credentials or billable inference used. Reviewed the scope enforcement change in BrowserAgent: explicit scopes now gate implicit memory retrieval, MCP preparation and advertised tools. Provider endpoints, model resolution, transport parameters and pricing are unchanged.",
+  "notes": "Re-reviewed official provider catalogs, Standard pricing and API compatibility on 2026-10-09 for the Newspaper editorial-styles and visual-editions release. OpenAI Luna 6 / Sol 6.1 / Astra 6 retain fast/balanced/flagship roles; Claude Sonnet 5.5 remains the balanced Anthropic default; Gemini 3.8 Flash retains its stable streaming/function-calling API and opaque thought-signature continuation. Reviewed OpenRouter model IDs remain available. No model, pricing or adapter changes are required. Gemini pricing remains explicit per-model configuration/unknown, including the reviewed promotional rates and 2027 change. Covers use bounded on-device Apple Vision; personal shopping clippings use separately consented page metadata and introduce no provider calls. Custom endpoints, installed local models, dated snapshots, provider boundaries and historical runs are unchanged. No credentials or billable inference used. Edition naming adds explicitly requested, tool-free, previewed context with up to two calls; the task-only fast choice uses the reviewed OpenAI/OpenRouter Luna 6 IDs, and other selected providers/models are retained. Run pricing and redacted usage refer to the actual selected model. The final live gate detected an update to the Sonnet 5.5 overview: the advisor-tool rejection list also includes Haiku 5.5. Re-reviewed the current official overview, model ID, Standard $2/$10 rates, cache rates and Messages compatibility. Browser does not use the advisor tool, forced tool choice or non-default sampling; its selected model and configured-price boundary need no changes. Re-reviewed the changed Google pricing page: Gemini 3.8 Flash Standard input/output/cache remain $0.75/$3.75/$0.075 per million through 2026, rising to $1.50/$7.50/$0.15 on January 1, 2027. Browser retains explicit per-selected-model Gemini prices or unknown pricing, with no transfer of rates or historical rewrite.",
   "sourceFiles": {
     "Straight Up Browser/AgentModelCatalog.swift": "ba4459c9f003ac6cac1dab8ad802ae024190b9679f437ff5dbc32b1405d2af02",
     "Straight Up Browser/AgentModelMigration.swift": "5e02a270b6598c1b551e8cd7cbff3a1d747612a10c7f234d3c2b65b9947bcbbb",
@@ -34,7 +34,7 @@
     {
       "url": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview.md",
       "format": "markdown",
-      "sha256": "a3afaf77fd1f012b32e7c690bdf683b87ed6d5410967e7f422c1691fdeeb4604"
+      "sha256": "9124d9a805dbcd5b809ab50732cf0d2ada34e7c657f3fe18a41eab5e4abd1f0a"
     },
     {
       "url": "https://ai.google.dev/gemini-api/docs/models",
@@ -60,7 +60,7 @@
     {
       "url": "https://ai.google.dev/gemini-api/docs/pricing",
       "format": "html-main",
-      "sha256": "0e97085c930d628bf9a5f7ae54f8d3cba7cfd036825ed635f80474906e989b25"
+      "sha256": "844c4a4130f712aeffa572f9093afbcc41de182300ae945a6e28810371740e8d"
     }
   ]
 }

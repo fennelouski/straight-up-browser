@@ -246,7 +246,8 @@ nonisolated struct ReaderArticle: Codable, Equatable {
 enum ReaderMode {
     static let extractionScript = """
         (() => {
-          const source = document.querySelector('article') || document.querySelector('main') || document.body;
+          const redditPost = /(^|\\.)reddit\\.com$/.test(location.hostname) && location.pathname.includes('/comments/') ? document.querySelector('shreddit-post') : null;
+          const source = redditPost?.querySelector('[slot="text-body"]') || redditPost || document.querySelector('article') || document.querySelector('main') || document.body;
           if (!source) return null;
           const copy = source.cloneNode(true);
           copy.querySelectorAll(`
@@ -384,8 +385,8 @@ enum ReaderMode {
             return [{ url: src, alt: (image.alt || '').trim() }];
           }).slice(0, 40);
           return {
-            title: document.title || location.hostname,
-            byline: author ? author.textContent.trim() : '',
+            title: redditPost?.getAttribute('post-title') || document.title || location.hostname,
+            byline: redditPost?.getAttribute('author') || (author ? author.textContent.trim() : ''),
             publication: textOf('meta[property="og:site_name"], meta[name="application-name"]'),
             section: textOf('meta[property="article:section"], meta[name="section"]'),
             publishedAt: textOf('meta[property="article:published_time"], time[datetime]'),
