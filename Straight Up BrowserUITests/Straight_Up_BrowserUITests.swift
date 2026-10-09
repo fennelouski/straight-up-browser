@@ -363,6 +363,33 @@ final class Straight_Up_BrowserUITests: XCTestCase {
     }
 
     @MainActor
+    func testSettingsSectionCollapseRemovesControlsAndRestoresSelection() {
+        #if os(macOS)
+        let app = browserForUITesting()
+        launchBrowserForUITesting(app)
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
+        app.typeKey(",", modifierFlags: .command)
+        let appearance = app.buttons["settings-pane-appearance"]
+        XCTAssertTrue(appearance.waitForExistence(timeout: 5))
+        appearance.click()
+
+        let right = app.radioButtons["Right"]
+        XCTAssertTrue(right.waitForExistence(timeout: 5))
+        right.click()
+        XCTAssertEqual((right.value as? NSNumber)?.intValue, 1)
+
+        let tabs = app.buttons["Tabs"]
+        tabs.click()
+        XCTAssertTrue(right.waitForNonExistence(timeout: 5))
+        XCTAssertFalse(app.switches["Show traditional tabs across the top"].exists)
+        tabs.click()
+        XCTAssertTrue(right.waitForExistence(timeout: 5))
+        XCTAssertEqual((right.value as? NSNumber)?.intValue, 1, "Collapsing a section must preserve its settings")
+        app.radioButtons["Left"].click()
+        #endif
+    }
+
+    @MainActor
     func testTabOverviewCardsAreAccessibleAndEscapeDismissesIt() {
         let app = browserForUITesting()
         launchBrowserForUITesting(app)
@@ -430,6 +457,7 @@ func browserForUITesting(tabBarWidth: Int = 200) -> XCUIApplication {
         "-acceptedEULAVersion", "1", "-tabSyncEnabled", "NO",
         "-tabBarWidth", String(tabBarWidth), "-defaultBrowserPromptEnabled", "NO",
         "-launchLayoutEnabled", "NO", "-showNewTabButton", "YES",
+        "-tabSidebarSide", "left",
     ]
     return app
 }

@@ -49,17 +49,13 @@ struct CollapsibleSection<Content: View, Header: View, Footer: View>: View {
     #endif
 
     var body: some View {
-        // Collapsing hides content/footer by clipping them to zero height rather than removing
-        // them from the Section, so the grouped box keeps drawing around just the header — an
-        // empty Section renders without its box, which drops the header's icon/text formatting
-        // and the spacing between sections.
+        // Let native controls draw their full bounds. A clip on every row cuts off
+        // segmented caps, slider thumbs and focus rings even while expanded.
+        // Remove collapsed rows from the Form so it also removes their separators/insets.
         let section = Section {
-            content()
-                .frame(maxHeight: isCollapsed ? 0 : nil)
-                .clipped()
-                .opacity(isCollapsed ? 0 : 1)
-                .disabled(isCollapsed)
-                .accessibilityHidden(isCollapsed)
+            if !isCollapsed {
+                content()
+            }
         } header: {
             Button {
                 withAnimation(BrowserMotion.settle(reduceMotion)) { isCollapsed.toggle() }
@@ -82,11 +78,9 @@ struct CollapsibleSection<Content: View, Header: View, Footer: View>: View {
             }
             .buttonStyle(BrowserPressStyle())
         } footer: {
-            footer()
-                .frame(maxHeight: isCollapsed ? 0 : nil)
-                .clipped()
-                .opacity(isCollapsed ? 0 : 1)
-                .accessibilityHidden(isCollapsed)
+            if !isCollapsed {
+                footer()
+            }
         }
         // A shared `nil` identity would collide across every non-indexed section in the same
         // Form and confuse SwiftUI's diffing, so only opt in when a searchID is actually given.
