@@ -18,7 +18,7 @@ struct OmnibarMotionPreferences {
     func animation(reducedMotion: Bool) -> Animation? {
         guard !reducedMotion, duration > 0 else { return nil }
         return usesSpring ? .spring(duration: duration, bounce: 0.16)
-                          : .easeInOut(duration: duration)
+                          : BrowserMotion.ease(duration: duration)
     }
 }
 
@@ -43,8 +43,7 @@ struct OmnibarPresentation<Content: View>: View {
                     Spacer().frame(height: geometry.size.height * topFraction)
                     if isPresented {
                         content()
-                            .transition(.opacity.combined(with: .scale(scale: 0.9))
-                                .combined(with: .offset(y: -6)))
+                            .transition(BrowserMotion.omnibar)
                     }
                     Spacer(minLength: 0)
                 }
@@ -73,22 +72,61 @@ private struct OmnibarValueMotion<Value: Equatable>: ViewModifier {
 /// A small vocabulary: slides ease, displaced content settles, feedback is quick.
 enum BrowserMotion {
     static let windowDuration: TimeInterval = 0.35
+    static func ease(duration: TimeInterval) -> Animation {
+        .timingCurve(0.3, 0.05, 0.15, 1, duration: duration)
+    }
     static func slide(_ reduced: Bool) -> Animation? {
-        reduced ? nil : .easeInOut(duration: 0.22)
+        reduced ? nil : ease(duration: 0.22)
     }
     static func settle(_ reduced: Bool) -> Animation? {
         reduced ? nil : .spring(response: 0.28, dampingFraction: 0.76)
     }
     static func feedback(_ reduced: Bool) -> Animation? {
-        reduced ? nil : .easeInOut(duration: 0.12)
+        reduced ? nil : ease(duration: 0.12)
     }
     static var tabArrival: AnyTransition {
-        .opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading))
-            .combined(with: .offset(y: -6))
+        reveal(width: 0.06, height: 0.03, lift: -6, drift: 3, anchor: .topLeading)
     }
     static var panel: AnyTransition {
-        .opacity.combined(with: .scale(scale: 0.985))
-            .combined(with: .offset(y: -6))
+        reveal(width: 0.04, height: 0.02, lift: -6, drift: 2)
+    }
+    static var omnibar: AnyTransition {
+        reveal(width: 0.07, height: 0.035, lift: -6, drift: 3)
+    }
+    static func panel(from edge: Edge) -> AnyTransition {
+        .move(edge: edge).combined(with: panel)
+    }
+    private static func reveal(width: CGFloat, height: CGFloat, lift: CGFloat,
+                               drift: CGFloat, anchor: UnitPoint = .center) -> AnyTransition {
+        .opacity.combined(with: .modifier(
+            active: BrowserOrganicReveal(progress: 1, width: width, height: height,
+                                         lift: lift, drift: drift, anchor: anchor),
+            identity: BrowserOrganicReveal(progress: 0, width: width, height: height,
+                                           lift: lift, drift: drift, anchor: anchor)))
+    }
+}
+
+/// A little cross-axis arc and unequal compression, with no clipping or layout
+/// changes. Spring overshoot can settle naturally; the final transform is identity.
+private struct BrowserOrganicReveal: AnimatableModifier {
+    var progress: CGFloat
+    let width: CGFloat
+    let height: CGFloat
+    let lift: CGFloat
+    let drift: CGFloat
+    let anchor: UnitPoint
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let amount = reduceMotion ? 0 : progress
+        content
+            .scaleEffect(x: 1 - width * amount, y: 1 - height * amount, anchor: anchor)
+            .offset(x: drift * sin(.pi * amount), y: lift * amount)
     }
 }
 
@@ -98,7 +136,8 @@ struct BrowserPressStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
+            .scaleEffect(x: configuration.isPressed && !reduceMotion ? 0.965 : 1,
+                         y: configuration.isPressed && !reduceMotion ? 0.98 : 1)
             .opacity(configuration.isPressed ? 0.82 : 1)
             .animation(BrowserMotion.feedback(reduceMotion), value: configuration.isPressed)
     }

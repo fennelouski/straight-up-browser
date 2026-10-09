@@ -409,7 +409,7 @@ struct SavePasswordCard: View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
             .shadow(radius: 10, y: 3)
-            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            .transition(BrowserMotion.panel)
             .accessibilityElement(children: .contain)
         }
     }

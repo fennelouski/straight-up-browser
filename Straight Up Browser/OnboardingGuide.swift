@@ -137,7 +137,7 @@ private struct OnboardingGuideCard: View {
                     else if guide.progress.track == nil { chooser }
                     else if let step = guide.step {
                         OnboardingLesson(step: step, guide: guide, action: action)
-                            .id(step).transition(.opacity.combined(with: .offset(y: 7)))
+                            .id(step).transition(BrowserMotion.panel)
                     }
                 }.padding(.horizontal, 24).padding(.vertical, 14)
             }

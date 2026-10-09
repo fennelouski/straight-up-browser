@@ -119,15 +119,23 @@ extension View {
 
 /// The row contracts, softens, and vanishes around its favicon instead of
 /// silently closing. Used by Back-to-source and ordinary sidebar closes alike.
-private struct TabPoofModifier: ViewModifier {
-    let progress: CGFloat
+private struct TabPoofModifier: AnimatableModifier {
+    var progress: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
 
     func body(content: Content) -> some View {
+        let amount = reduceMotion ? 1 : progress
         content
-            .scaleEffect(progress, anchor: .leading)
+            .scaleEffect(x: amount, y: 1 - (1 - amount) * 0.85, anchor: .leading)
+            .offset(y: -3 * sin(.pi * amount))
             .opacity(progress)
-            .blur(radius: (1 - progress) * 7)
-            .rotationEffect(.degrees(Double(1 - progress) * -3), anchor: .leading)
+            .blur(radius: (1 - amount) * 7)
+            .rotationEffect(.degrees(Double(1 - amount) * -3), anchor: .leading)
     }
 }
 

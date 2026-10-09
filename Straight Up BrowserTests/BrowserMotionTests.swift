@@ -6,6 +6,23 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct BrowserMotionTests {
+    @Test func apertureBowsInwardWithoutCroppingTheRestingWindow() {
+        let bounds = CGRect(x: 10, y: 20, width: 400, height: 300)
+        let full = BrowserWindowMotion.aperture(in: bounds, width: 1, height: 1)
+        let bowed = BrowserWindowMotion.aperture(in: bounds, width: 1, height: 1, sideSqueeze: 0.025)
+        #expect(full.boundingBoxOfPath == bounds)
+        #expect(full.contains(CGPoint(x: bounds.minX + 1, y: bounds.midY)))
+        #expect(!bowed.contains(CGPoint(x: bounds.minX + 1, y: bounds.midY)))
+        #expect(!bowed.contains(CGPoint(x: bounds.maxX - 1, y: bounds.midY)))
+        #expect(bowed.contains(CGPoint(x: bounds.midX, y: bounds.midY)))
+        #expect(bowed.contains(CGPoint(x: bounds.minX + 1, y: bounds.minY + 1)))
+        var fullElements: [CGPathElementType] = []
+        var bowedElements: [CGPathElementType] = []
+        full.applyWithBlock { fullElements.append($0.pointee.type) }
+        bowed.applyWithBlock { bowedElements.append($0.pointee.type) }
+        #expect(fullElements == bowedElements)
+    }
+
     private func makeWindow() -> NSWindow {
         let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 400, height: 300),
                               styleMask: [.borderless], backing: .buffered, defer: false)

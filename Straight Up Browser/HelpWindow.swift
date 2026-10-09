@@ -339,7 +339,7 @@ struct ShortcutCheatSheetOverlay: View {
                             .padding(.vertical, 5)
                             .background(Color.accentColor.opacity(0.12), in: Capsule())
                             .opacity(searchOpacity)
-                            .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                            .transition(BrowserMotion.panel)
                     }
                 }
 

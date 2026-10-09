@@ -2087,7 +2087,7 @@ struct ContentView: View {
                     .padding(.vertical, 14)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                     .shadow(radius: 10)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    .transition(BrowserMotion.panel)
             }
         }
         .allowsHitTesting(false)
@@ -2608,7 +2608,7 @@ struct ContentView: View {
                 )
                 .frame(width: PasswordPickerView.width)
                 .position(x: geo.size.width / 2, y: geo.size.height * 0.3)
-                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                .transition(BrowserMotion.panel)
             }
         }
         .allowsHitTesting(showPasswordPicker)
@@ -2621,7 +2621,7 @@ struct ContentView: View {
             // AI off the panel still hosts it — nothing of the agent shows.
             if showAgentPanel && (aiFeaturesEnabled || showScratchPad) {
                 agentPanelView
-                    .transition(.move(edge: agentPanelSide.edge).combined(with: .opacity))
+                    .transition(BrowserMotion.panel(from: agentPanelSide.edge))
                     .zIndex(20)
             }
         }
@@ -2640,7 +2640,7 @@ struct ContentView: View {
                     labels: cardLabels
                 )
                 .padding(.horizontal, 24)
-                .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                .transition(BrowserMotion.panel)
             }
         }
         .browserSlideMotion(showTabSwitcher)

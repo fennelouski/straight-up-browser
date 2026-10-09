@@ -35,7 +35,7 @@ struct OnboardingAstronaut: View {
         Group {
             if moves && !reduceMotion {
                 portrait.phaseAnimator([false, true]) { image, up in
-                    image.offset(y: up ? -4 : 2).rotationEffect(.degrees(up ? 2 : -2))
+                    image.offset(x: up ? 1.5 : -1.5, y: up ? -4 : 2).rotationEffect(.degrees(up ? 2 : -2))
                 } animation: { _ in
                     spring ? .spring(duration: 2.6, bounce: 0.08) : .easeInOut(duration: 2.6)
                 }
@@ -77,8 +77,8 @@ struct OnboardingShuttle: View {
         Group {
             if motionEnabled {
                 ship.phaseAnimator([false, true]) { image, up in
-                    image.offset(y: up ? -5 : 3).rotationEffect(.degrees(up ? 3 : -3))
-                        .scaleEffect(up && spring ? 1.025 : 1)
+                    image.offset(x: up ? 2 : -2, y: up ? -5 : 3).rotationEffect(.degrees(up ? 3 : -3))
+                        .scaleEffect(x: up ? 1.02 : 0.99, y: up ? 0.99 : 1.015)
                 } animation: { _ in
                     spring ? .spring(duration: 2.4, bounce: 0.1) : .easeInOut(duration: 2.4)
                 }

@@ -622,7 +622,7 @@ struct OmnibarView: View {
                     }
                 }
                 .omnibarMotion(filteredSuggestions.map(\.id))
-                .transition(.opacity.combined(with: .offset(y: -4)))
+                .transition(BrowserMotion.panel)
                 .onHover { suggestionsHovered = $0 }
                 .onDisappear { suggestionsHovered = false }
                 .background(Color(.windowBackgroundColor).opacity(0.95))

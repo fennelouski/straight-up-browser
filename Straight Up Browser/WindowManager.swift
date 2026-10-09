@@ -42,13 +42,28 @@ final class BrowserWindowMotion {
         return motion
     }
 
-    // The same rectangular path topology at every stage allows interpolation.
-    static func aperture(in bounds: CGRect, width: CGFloat, height: CGFloat) -> CGPath {
+    // Matching cubic edges at every stage let Core Animation interpolate the bow
+    // without changing WebKit layout or needing main-thread animation updates.
+    static func aperture(in bounds: CGRect, width: CGFloat, height: CGFloat,
+                         sideSqueeze: CGFloat = 0) -> CGPath {
         let size = CGSize(width: max(0.5, bounds.width * width),
                           height: max(0.5, bounds.height * height))
-        return CGPath(rect: CGRect(x: bounds.midX - size.width / 2,
-                                  y: bounds.midY - size.height / 2,
-                                  width: size.width, height: size.height), transform: nil)
+        let rect = CGRect(x: bounds.midX - size.width / 2,
+                          y: bounds.midY - size.height / 2,
+                          width: size.width, height: size.height)
+        let bow = size.width * min(0.04, max(0, sideSqueeze))
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addCurve(to: CGPoint(x: rect.maxX, y: rect.maxY),
+                      control1: CGPoint(x: rect.maxX - bow, y: rect.minY + rect.height / 3),
+                      control2: CGPoint(x: rect.maxX - bow, y: rect.maxY - rect.height / 3))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addCurve(to: CGPoint(x: rect.minX, y: rect.minY),
+                      control1: CGPoint(x: rect.minX + bow, y: rect.maxY - rect.height / 3),
+                      control2: CGPoint(x: rect.minX + bow, y: rect.minY + rect.height / 3))
+        path.closeSubpath()
+        return path
     }
 
     func open(reducedMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) {
@@ -87,7 +102,7 @@ final class BrowserWindowMotion {
             animation.fromValue = current
             animation.toValue = mask.path
             animation.duration = 0.18
-            animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            animation.timingFunction = CAMediaTimingFunction(controlPoints: 0.3, 0.05, 0.15, 1)
             mask.add(animation, forKey: "restore")
             scheduleRestore(after: 0.18)
         } else {
@@ -108,7 +123,9 @@ final class BrowserWindowMotion {
         }
         let bounds = contentLayer.bounds
         let full = Self.aperture(in: bounds, width: 1, height: 1)
-        let line = Self.aperture(in: bounds, width: 1, height: 0.004)
+        let gather = Self.aperture(in: bounds, width: 0.99, height: 0.98, sideSqueeze: 0.006)
+        let squeeze = Self.aperture(in: bounds, width: 0.95, height: 0.55, sideSqueeze: 0.025)
+        let line = Self.aperture(in: bounds, width: 0.9, height: 0.004)
         let point = Self.aperture(in: bounds, width: 0.008, height: 0.004)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -116,10 +133,12 @@ final class BrowserWindowMotion {
         mask.path = opening ? full : point
         contentLayer.mask = mask
         let animation = CAKeyframeAnimation(keyPath: "path")
-        animation.values = opening ? [point, line, full] : [full, line, point]
-        animation.keyTimes = opening ? [0, 0.2, 1] : [0, 0.8, 1]
-        animation.timingFunctions = [CAMediaTimingFunction(name: .easeInEaseOut),
-                                     CAMediaTimingFunction(name: .easeInEaseOut)]
+        animation.values = opening ? [point, line, squeeze, gather, full]
+                                   : [full, gather, squeeze, line, point]
+        animation.keyTimes = opening ? [0, 0.14, 0.48, 0.84, 1] : [0, 0.12, 0.62, 0.86, 1]
+        animation.timingFunctions = (0..<4).map { _ in
+            CAMediaTimingFunction(controlPoints: 0.3, 0.05, 0.15, 1)
+        }
         animation.duration = duration
         animation.beginTime = mask.convertTime(CACurrentMediaTime(), from: nil) + delay
         animation.fillMode = .both

@@ -378,7 +378,7 @@ struct SettingsWindow: View {
             ScrollViewReader { proxy in
                 detail
                     .id(paneRaw)
-                    .transition(.opacity)
+                    .transition(BrowserMotion.panel)
                     .navigationTitle(pane.title)
                     .onChange(of: searchNav.pendingScrollID) { _, id in
                         guard let id else { return }
