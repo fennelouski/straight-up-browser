@@ -443,7 +443,7 @@ struct SavePasswordBanner: View {
             HStack(spacing: 10) {
                 Image(systemName: "key.fill")
                 Text(manager.saveError ?? "\(prompt.isUpdate ? "Update" : "Save") password for \(prompt.username) on \(prompt.domain)?")
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
                 Button(prompt.isUpdate ? "Update" : "Save") { manager.acceptSavePrompt() }
                     .keyboardShortcut(.defaultAction)
                 Button("Not Now") { manager.dismissSavePrompt() }

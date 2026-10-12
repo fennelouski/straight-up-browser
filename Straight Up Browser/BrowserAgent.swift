@@ -5837,7 +5837,7 @@ struct BrowserAgentPanel: View {
                     value: activityDotsAreActive
                 )
             Text(agentActivityStatus)
-                .lineLimit(1)
+                .fixedSize(horizontal: false, vertical: true)
                 .modifier(AgentStatusShimmerModifier(
                     active: true,
                     color: aiSearchEffectColor

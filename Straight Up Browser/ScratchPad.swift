@@ -224,7 +224,7 @@ struct ScratchPadView: View {
                 Text("Drop text, links, or images anywhere here")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
                 Button(action: saveNote) {
                     Image(systemName: "plus.circle.fill")
                         .font(.title3)

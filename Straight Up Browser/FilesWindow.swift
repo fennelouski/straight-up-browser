@@ -366,7 +366,7 @@ private struct ActiveDownloadRow: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 12)
