@@ -130,7 +130,7 @@ final class Browser_iOSUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         field.tap(); field.typeText("weather")
         XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather-current"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["Hourly forecast"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["weather-hourly-title"].exists)
         let credit = app.staticTexts["Preview weather · No live service requested"]
         XCTAssertTrue(credit.exists)
         XCTAssertTrue(app.frame.contains(credit.frame))

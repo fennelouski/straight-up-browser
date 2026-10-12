@@ -19,18 +19,21 @@ enum NewspaperTemperatureUnit: String, CaseIterable, Identifiable {
     }
 }
 
-/// Native WeatherKit only. No Browser backend, account, IP-derived location,
-/// or inferred location. Current location is a reader-selected, one-shot request;
-/// coordinates remain in memory and are sent only to Apple for weather.
+/// Native weather coordinator, with no implicit or IP-derived location. Apple
+/// remains the default; another provider requires an explicitly enabled local key.
+/// Current location is a reader-selected, one-shot request and stays in memory.
 @MainActor
 final class NewspaperWeatherStore: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
     static let shared = NewspaperWeatherStore()
     private let preferences: UserDefaults
-    init(preferences: UserDefaults = .standard) { self.preferences = preferences; super.init() }
+    init(preferences: UserDefaults = .standard, locationManager: CLLocationManager? = nil) {
+        self.preferences = preferences; self.locationManager = locationManager; super.init()
+    }
     @Published private(set) var weather: CurrentWeather?
     @Published private(set) var attribution: WeatherAttribution?
     @Published private(set) var city = ""
     @Published private(set) var status = ""
+    @Published private(set) var forecast: BrowserWeatherForecast?
     @Published private(set) var scene: OmnibarWeatherSnapshot?
     @Published private(set) var hasSceneAttribution = false
     private var omnibarClients: Set<UUID> = []
@@ -62,6 +65,7 @@ final class NewspaperWeatherStore: NSObject, ObservableObject, @preconcurrency C
         }
     }
     func clearIfUnneeded() { if !weatherRequested { clear() } }
+    private var retentionTask: Task<Void, Never>?
     private var fetchedAt: Date = .distantPast
     private var generation = UUID()
     private var locationManager: CLLocationManager?
@@ -74,7 +78,7 @@ final class NewspaperWeatherStore: NSObject, ObservableObject, @preconcurrency C
     func useCurrentLocation(requestPermission: Bool) {
         guard weatherRequested,
               preferences.bool(forKey: NewspaperPreferences.Key.weatherCurrentLocation) else { return }
-        guard Date().timeIntervalSince(currentLocationFetchedAt) >= 3600 || weather == nil else { return }
+        guard Date().timeIntervalSince(currentLocationFetchedAt) >= 3600 || forecast?.isFresh(at: Date()) != true else { return }
         guard !requestingLocation else { return }
         if locationManager == nil {
             let manager = CLLocationManager()
@@ -137,12 +141,12 @@ final class NewspaperWeatherStore: NSObject, ObservableObject, @preconcurrency C
         let requestID = UUID()
         generation = requestID
         cityTask?.cancel(); cityTask = nil; pendingCity = ""
-        weather = nil
-        attribution = nil
-        scene = nil
-        creditedClients.removeAll(); hasSceneAttribution = false
         status = String(localized: "Loading weather…")
-        Task { await fetch(location: location, label: String(localized: "Current location"), requestID: requestID, currentLocation: true) }
+        cityTask = Task { [weak self] in
+            guard let self else { return }
+            await self.fetch(location: location, label: String(localized: "Current location"), requestID: requestID, currentLocation: true)
+            if self.generation == requestID { self.cityTask = nil }
+        }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
@@ -162,6 +166,8 @@ final class NewspaperWeatherStore: NSObject, ObservableObject, @preconcurrency C
         weather = nil
         attribution = nil
         scene = nil
+        forecast = nil
+        retentionTask?.cancel(); retentionTask = nil
         creditedClients.removeAll(); hasSceneAttribution = false
         city = ""
         status = ""
@@ -173,15 +179,12 @@ final class NewspaperWeatherStore: NSObject, ObservableObject, @preconcurrency C
         let requestedCity = requestedCity.trimmingCharacters(in: .whitespacesAndNewlines)
         guard requestedCity.count <= 200 else { clear(); status = String(localized: "Enter a city and country."); return }
         guard !requestedCity.isEmpty else { clear(); status = String(localized: "Choose a location to see weather."); return }
-        guard city != requestedCity || Date().timeIntervalSince(fetchedAt) >= 3600 else { return }
+        guard city != requestedCity || forecast?.isFresh(at: Date()) != true
+            || forecast?.source.provider != (preferences.string(forKey: "browserWeatherProvider") ?? "apple") else { return }
         if pendingCity == requestedCity, let cityTask { await cityTask.value; return }
         cityTask?.cancel()
         let requestID = UUID()
         generation = requestID
-        weather = nil
-        attribution = nil
-        scene = nil
-        creditedClients.removeAll(); hasSceneAttribution = false
         status = String(localized: "Loading weather…")
         pendingCity = requestedCity
         // The store owns this request. Closing one omnibar must not cancel the
@@ -197,53 +200,58 @@ final class NewspaperWeatherStore: NSObject, ObservableObject, @preconcurrency C
 
     private func searchCity(_ requestedCity: String, requestID: UUID) async {
         do {
-            let request = MKLocalSearch.Request()
-            request.naturalLanguageQuery = requestedCity
-            request.resultTypes = .address
-            let response = try await MKLocalSearch(request: request).start()
+            let query = try WeatherPlacesStore(preferences: preferences).query(for: requestedCity)
+            let results = try await BrowserWeatherService.shared.resolve(query)
             guard !Task.isCancelled, generation == requestID else { return }
-            guard let place = response.mapItems.first else { status = String(localized: "City not found. Include a country or region."); return }
-            let location: CLLocation
-            if #available(macOS 26, iOS 26, *) { location = place.location }
-            else { location = CLLocation(latitude: place.placemark.coordinate.latitude, longitude: place.placemark.coordinate.longitude) }
-            await fetch(location: location, label: requestedCity, requestID: requestID, currentLocation: false, timeZone: place.timeZone ?? .current)
+            guard results.count == 1 else { status = "Several locations match. Include a country or region."; return }
+            let result = try await BrowserWeatherService.shared.forecast(for: results[0])
+            guard !Task.isCancelled, generation == requestID, weatherRequested,
+                  !preferences.bool(forKey: NewspaperPreferences.Key.weatherCurrentLocation),
+                  preferences.string(forKey: NewspaperPreferences.Key.weatherCity)?.trimmingCharacters(in: .whitespacesAndNewlines) == requestedCity else { return }
+            apply(result, currentLocation: false)
         } catch {
             guard !Task.isCancelled, generation == requestID else { return }
-            status = String(localized: "Weather is unavailable. Try again later.")
-            Logger.log("WeatherKit failed: \((error as NSError).domain) \((error as NSError).code)", type: "Newspaper", visibility: .public)
+            status = (error as? BrowserWeatherError)?.message ?? "Weather is unavailable. Retry or choose another location."
         }
     }
 
     private func fetch(location: CLLocation, label: String, requestID: UUID, currentLocation: Bool, timeZone: TimeZone = .current) async {
         do {
-            let service = WeatherService.shared
-            let now = Date()
-            async let conditions = service.weather(for: location, including: .current,
-                .hourly(startDate: now.addingTimeInterval(-86400), endDate: now.addingTimeInterval(86400)), .daily)
-            async let credits = service.attribution
-            let ((currentWeather, hourly, daily), creditsValue) = try await (conditions, credits)
-            guard !Task.isCancelled, generation == requestID,
-                  weatherRequested,
-                  preferences.bool(forKey: NewspaperPreferences.Key.weatherCurrentLocation) == currentLocation,
-                  currentLocation || preferences.string(forKey: NewspaperPreferences.Key.weatherCity)?.trimmingCharacters(in: .whitespacesAndNewlines) == label else { return }
-            weather = currentWeather
-            attribution = creditsValue
-            scene = OmnibarWeatherSnapshot(current: currentWeather, hourly: Array(hourly), daily: Array(daily),
-                city: label, latitude: location.coordinate.latitude, timeZone: timeZone, now: now)
-            city = label
-            fetchedAt = Date()
-            if currentLocation { currentLocationFetchedAt = fetchedAt }
-            status = ""
+            let query = "\(location.coordinate.latitude),\(location.coordinate.longitude)"
+            let places = try await BrowserWeatherService.shared.resolve(query)
+            guard let place = places.first, places.count == 1 else { throw BrowserWeatherError.message("Your town could not be resolved. Enter a city instead.") }
+            let result = try await BrowserWeatherService.shared.forecast(for: place)
+            guard !Task.isCancelled, generation == requestID, weatherRequested,
+                  preferences.bool(forKey: NewspaperPreferences.Key.weatherCurrentLocation) == currentLocation else { return }
+            apply(result, currentLocation: currentLocation)
         } catch {
             guard !Task.isCancelled, generation == requestID else { return }
-            status = String(localized: "Weather is unavailable. Click the weather icon to try another location.")
-            Logger.log("WeatherKit failed: \((error as NSError).domain) \((error as NSError).code)", type: "Newspaper", visibility: .public)
+            status = (error as? BrowserWeatherError)?.message ?? "Weather is unavailable. Retry or choose another location."
         }
+    }
+    func expireIfNeeded(now: Date) {
+        guard let forecast, now.timeIntervalSince(forecast.source.issuedAt) >= 7200 else { return }
+        self.forecast = nil; weather = nil; attribution = nil; scene = nil
+        status = "Forecast expired. Retry for current weather."
+    }
+    private func apply(_ result: BrowserWeatherForecast, currentLocation: Bool) {
+        retentionTask?.cancel()
+        retentionTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(max(0.1, result.source.issuedAt.addingTimeInterval(7200).timeIntervalSinceNow))) } catch { return }
+            self?.expireIfNeeded(now: Date())
+        }
+        forecast = result; weather = result.nativeCurrent; attribution = result.nativeAttribution
+        scene = result.scene; city = result.place.label; fetchedAt = Date()
+        if currentLocation { currentLocationFetchedAt = fetchedAt }
+        status = ""
     }
 
 }
 
 struct NewspaperWeatherMasthead: View {
+    @AppStorage("browserWeatherProvider") private var provider = "apple"
+    @AppStorage("browserWeatherCredentialRevision") private var revision = "native"
+    @AppStorage("browserWeatherBYOEnabled") private var byo = false
     @State private var configuring = false
     @State private var attributionLoaded = false
     @AppStorage(NewspaperPreferences.Key.showWeather) private var enabled = false
@@ -259,38 +267,40 @@ struct NewspaperWeatherMasthead: View {
                 configuring = true
             } label: {
                 Group {
-                    if enabled, attributionLoaded, let weather = store.weather {
-                        Label("\(store.city) · \((NewspaperTemperatureUnit(rawValue: unit) ?? .system).formatted(weather.temperature)) · \(weather.condition.description)", systemImage: weather.symbolName)
+                    if enabled, let forecast = store.forecast, attributionLoaded || forecast.source.markURL == nil {
+                        Label("\(store.city) · \((NewspaperTemperatureUnit(rawValue: unit) ?? .system).formatted(Measurement(value: forecast.scene.celsius, unit: .celsius))) · \(forecast.scene.condition.description)", systemImage: forecast.scene.symbol)
                     } else {
                         Image(systemName: "cloud.sun").font(.title3)
                     }
                 }.frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
             }
             .font(.caption).buttonStyle(BrowserPressStyle())
-            .accessibilityLabel(enabled && store.weather != nil ? "Weather · \(store.city)" : "Choose weather location")
+            .accessibilityLabel(enabled && store.forecast != nil ? "Weather · \(store.city)" : "Choose weather location")
             .accessibilityIdentifier("newspaper-weather-location")
             .help("Choose weather location")
-            if enabled, let weather = store.weather, let attribution = store.attribution {
-                AsyncImage(url: scheme == .dark ? attribution.combinedMarkDarkURL : attribution.combinedMarkLightURL) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFit().frame(width: 90, height: 20).accessibilityLabel("Apple Weather")
-                            .onAppear { attributionLoaded = true }
-                            .onDisappear { attributionLoaded = false }
-                        Text("Updated \(weather.date.formatted(date: .omitted, time: .shortened))")
-                            .font(.caption2).foregroundStyle(.secondary)
-                            .accessibilityIdentifier("newspaper-weather-current")
-                    } else if phase.error != nil {
-                        Text("Weather attribution could not be loaded.").font(.caption)
-                    } else { ProgressView().controlSize(.small) }
+            if enabled, let forecast = store.forecast {
+                if let markURL = forecast.source.markURL {
+                    AsyncImage(url: scheme == .light ? (forecast.nativeAttribution?.combinedMarkLightURL ?? markURL) : markURL) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFit().frame(width: 90, height: 20).accessibilityLabel(forecast.source.name)
+                                .onAppear { attributionLoaded = true }.onDisappear { attributionLoaded = false }
+                            Text("Updated \(forecast.scene.date.formatted(date: .omitted, time: .shortened))")
+                                .font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("newspaper-weather-current")
+                        } else if phase.error != nil { Text("Weather attribution could not be loaded.").font(.caption) }
+                        else { ProgressView().controlSize(.small) }
+                    }.id(forecast.place.id)
+                } else {
+                    Text("\(forecast.source.name) · Updated \(forecast.scene.date.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption2).accessibilityIdentifier("newspaper-weather-current")
                 }
-                Link("Weather data sources", destination: attribution.legalPageURL).font(.caption2)
+                Link("Weather data sources", destination: forecast.source.legalURL).font(.caption2)
                     .accessibilityIdentifier("newspaper-weather-attribution")
             } else if enabled, !store.status.isEmpty {
                 Text(store.status).font(.caption).foregroundStyle(.secondary).frame(maxWidth: 240, alignment: .trailing)
             }
         }
         .popover(isPresented: $configuring) { NewspaperWeatherLocationPopup() }
-        .task(id: "\(enabled)-\(currentLocation)-\(city)") {
+        .task(id: "\(enabled)-\(currentLocation)-\(city)-\(provider)-\(revision)-\(byo)") {
             if !enabled { store.clearIfUnneeded() }
             else if currentLocation { store.useCurrentLocation(requestPermission: false) }
             else { await store.load(city: city) }
@@ -299,7 +309,9 @@ struct NewspaperWeatherMasthead: View {
 }
 
 struct NewspaperWeatherLocationPopup: View {
+    @AppStorage(NewspaperPreferences.Key.weatherTemperatureUnit) private var unit = NewspaperTemperatureUnit.system.rawValue
     var enablesMasthead = true
+    var validationPlace: BrowserWeatherPlace? = nil
     @AppStorage(NewspaperPreferences.Key.showWeather) private var enabled = false
     @AppStorage(NewspaperPreferences.Key.weatherCity) private var city = ""
     @AppStorage(NewspaperPreferences.Key.weatherCurrentLocation) private var currentLocation = false
@@ -307,34 +319,40 @@ struct NewspaperWeatherLocationPopup: View {
     @ObservedObject private var store = NewspaperWeatherStore.shared
     @Environment(\.dismiss) private var dismiss
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        ScrollView { VStack(alignment: .leading, spacing: 12) {
             Text("Weather location").font(.headline)
             Button("Use current location", systemImage: "location") {
                 if enablesMasthead { enabled = true }
                 currentLocation = true
                 store.useCurrentLocation(requestPermission: true)
             }.accessibilityIdentifier("newspaper-weather-use-current")
-            TextField("City and country", text: $draftCity).textFieldStyle(.roundedBorder)
+            TextField("Address, postcode, or city and country", text: $draftCity).textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("newspaper-weather-city")
                 .onSubmit { saveCity() }
-            Text("Choose a city or allow location access for local weather. Location and weather requests use Apple.")
+            Text("Enter an address or postcode, or choose location access. Geocoding uses Apple; forecasts use your selected provider.")
                 .font(.caption).foregroundStyle(.secondary)
             if !store.status.isEmpty { Text(store.status).font(.caption).foregroundStyle(.secondary) }
             HStack {
                 Button("Cancel") { dismiss() }
-                if enabled && enablesMasthead { Button("Turn off weather") { enabled = false; store.clear(); dismiss() } }
+                if enabled && enablesMasthead { Button("Turn off weather") { enabled = false; store.clearIfUnneeded(); dismiss() } }
                 Spacer()
                 Button("Use this city") { saveCity() }
                     .disabled(draftCity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-        }.padding(18).frame(width: 310)
+            Picker("Temperature", selection: $unit) { ForEach(NewspaperTemperatureUnit.allCases) { Text($0.title).tag($0.rawValue) } }
+            Divider()
+            WeatherPlacesEditor()
+            Divider()
+            WeatherProviderSettings(validationPlace: validationPlace ?? store.forecast?.place)
+            Divider()
+            WeatherRegionalFeedSettings()
+        }.padding(18) }.frame(width: 360, height: 600)
             .onAppear { draftCity = city }
             .newspaperMotion(store.status)
     }
     private func saveCity() {
         let value = draftCity.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, value.count <= 200 else { return }
-        store.clear()
         city = value
         currentLocation = false
         if enablesMasthead { enabled = true }
@@ -350,17 +368,17 @@ struct NewspaperWeatherSettings: View {
     @State private var configuring = false
     var body: some View {
         CollapsibleSection(searchID: "newspaper.weather") {
-            Toggle("Show Apple Weather in the masthead", isOn: $enabled)
+            Toggle("Show weather in the masthead", isOn: $enabled)
             if enabled {
                 Button(currentLocation ? "Current location" : city.isEmpty ? "Choose location" : city, systemImage: "location") { configuring = true }
                     .popover(isPresented: $configuring) { NewspaperWeatherLocationPopup() }
                 Picker("Temperature", selection: $unit) {
                     ForEach(NewspaperTemperatureUnit.allCases) { Text($0.title).tag($0.rawValue) }
                 }
-                Text("City search and weather requests go directly to Apple. Your browsing and articles are not sent with them. Current location is requested only when you choose it; coordinates are not saved or synced.")
+                Text("Geocoding goes to Apple. Forecast coordinates go to your selected provider. Saved places stay local; they are not synced to other apps. Current location is requested only when you choose it.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         } header: { Label("Weather", systemImage: "cloud.sun") }
-        footer: { Text("Weather refreshes when you open Newspaper, at most once per hour. Apple Weather and its data-source attribution appear with the forecast. Weather needs an internet connection; the saved newspaper remains readable offline.") }
+        footer: { Text("Forecasts use a bounded temporary memory cache and provider attribution. Rain needs fresher data. Offline or stale forecasts are labelled; the saved newspaper remains readable offline.") }
     }
 }

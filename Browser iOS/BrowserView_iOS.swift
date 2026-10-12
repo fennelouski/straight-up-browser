@@ -107,6 +107,7 @@ struct BrowserView_iOS: View {
     @State private var showOmnibar = false
     @State private var weatherSurfaces: [CGRect] = []
     @State private var weatherCredited = false
+    @State private var weatherSnapshot: OmnibarWeatherSnapshot?
 
     @State private var showSidebar = false
     @State private var showWorkspaceSwitcher = false
@@ -1068,13 +1069,13 @@ struct BrowserView_iOS: View {
                     .onTapGesture { dismissOmnibar() }
                     .accessibilityHidden(true)
                 if omnibarWeatherIntent {
-                    OmnibarWeatherScene(layer: .sky, attributionVisible: weatherCredited).transition(OmnibarWeatherCurtain.transition)
+                    OmnibarWeatherScene(layer: .sky, attributionVisible: weatherCredited, snapshot: weatherSnapshot).transition(.opacity)
                 }
                 VStack(spacing: 8) {
                     omnibarCard(availableWidth: min(640, geometry.size.width - 32))
                     if omnibarWeatherIntent {
-                        OmnibarWeatherCard {
-                            omnibarText = NavigationManager.searchURL(for: "weather")
+                        OmnibarWeatherCard(query: omnibarText, mapURL: activeTab?.url?.absoluteString) {
+                            omnibarText = NavigationManager.searchURL(for: omnibarText)
                             selectedSuggestion = -1
                             navigateFromOmnibar()
                         }
@@ -1086,13 +1087,14 @@ struct BrowserView_iOS: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
                 if omnibarWeatherIntent {
-                    OmnibarWeatherScene(layer: .precipitation, surfaces: weatherSurfaces, attributionVisible: weatherCredited)
-                        .transition(OmnibarWeatherCurtain.transition)
+                    OmnibarWeatherScene(layer: .precipitation, surfaces: weatherSurfaces, attributionVisible: weatherCredited, snapshot: weatherSnapshot)
+                        .transition(.opacity)
                 }
             }
             .coordinateSpace(name: "omnibarWeatherScene")
             .onPreferenceChange(OmnibarWeatherSurfaces.self) { weatherSurfaces = $0 }
             .onPreferenceChange(OmnibarWeatherCreditVisible.self) { weatherCredited = $0 }
+        .onPreferenceChange(OmnibarWeatherResolvedScene.self) { weatherSnapshot = $0 }
             .omnibarMotion(omnibarWeatherIntent)
         }
         .accessibilityElement(children: .contain)

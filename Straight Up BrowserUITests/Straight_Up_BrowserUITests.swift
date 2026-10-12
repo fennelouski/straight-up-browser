@@ -16,15 +16,47 @@ final class Straight_Up_BrowserUITests: XCTestCase {
     }
 
     @MainActor
+    func testWeatherPostcodesAliasesAndHourlyRainStayClearlyLabelled() {
+        let app = browserForUITesting()
+        app.launchArguments += ["-weatherUITesting", "rain", "-browserWeatherSavedPlaces", "{}"]
+        launchBrowserForUITesting(app)
+        let field = app.textFields["Search or enter address"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.click(); field.typeText("weather 80516")
+        let current = app.descendants(matching: .any)["omnibar-weather-current"]
+        XCTAssertTrue(current.waitForExistence(timeout: 10))
+        XCTAssertTrue(current.label.contains("Erie") && current.label.contains("United States"))
+        XCTAssertTrue(app.staticTexts["Preview weather · No live service requested"].exists)
+        let erie = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        erie.name = "Weather-Erie-Postal-Fixture"; erie.lifetime = .keepAlways; add(erie)
+        field.typeKey("a", modifierFlags: .command); field.typeText("2725 DM Weather")
+        let resolved = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "Zoetermeer"), object: current)
+        XCTAssertEqual(XCTWaiter.wait(for: [resolved], timeout: 10), .completed)
+        XCTAssertTrue(current.label.contains("Zoetermeer") && current.label.contains("Netherlands"))
+        XCTAssertTrue(app.descendants(matching: .any)["weather-nowcast-unavailable"].exists)
+        let dutch = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        dutch.name = "Weather-Zoetermeer-Postal-Fixture"; dutch.lifetime = .keepAlways; add(dutch)
+        field.typeKey("a", modifierFlags: .command); field.typeText("weather home")
+        XCTAssertTrue(app.staticTexts["omnibar-weather-status"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["omnibar-weather-status"].label.contains("Set up Home"))
+        field.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather"].waitForNonExistence(timeout: 5))
+        app.terminate()
+    }
+
+    @MainActor
     func testOmnibarWeatherAppearsWhileTypingAndRetainsNormalNavigation() {
         let app = browserForUITesting()
         app.launchArguments += ["-weatherUITesting", "rain"]
         launchBrowserForUITesting(app)
         let field = app.textFields["Search or enter address"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
+        let initialFieldFrame = field.frame
         field.click(); field.typeText("weather")
         XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather-current"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["Hourly forecast"].exists)
+        XCTAssertEqual(field.frame.minY, initialFieldFrame.minY, accuracy: 1)
+        XCTAssertEqual(field.frame.minX, initialFieldFrame.minX, accuracy: 1)
+        XCTAssertTrue(app.descendants(matching: .any)["weather-hourly-title"].exists)
         XCTAssertTrue(app.buttons["omnibar-weather-location"].exists)
         field.typeText("\r")
         XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather"].exists)
@@ -34,6 +66,7 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         field.typeText(".com")
         XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather"].waitForNonExistence(timeout: 5))
         XCTAssertEqual(field.value as? String, "weather.com")
+        XCTAssertEqual(field.frame.minY, initialFieldFrame.minY, accuracy: 1)
         field.typeKey("a", modifierFlags: .command); field.typeText("weather")
         XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather"].waitForExistence(timeout: 5))
         field.typeKey(.escape, modifierFlags: [])
@@ -50,7 +83,7 @@ final class Straight_Up_BrowserUITests: XCTestCase {
             XCTAssertTrue(field.waitForExistence(timeout: 5))
             field.click(); field.typeText("weather")
             XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather-current"].waitForExistence(timeout: 10))
-            XCTAssertTrue(app.staticTexts["Hourly forecast"].exists)
+            XCTAssertTrue(app.descendants(matching: .any)["weather-hourly-title"].exists)
             let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
             screenshot.name = "Omnibar-Weather-\(scene)"; screenshot.lifetime = .keepAlways; add(screenshot)
             app.buttons["omnibar-weather-location"].click()
@@ -73,8 +106,11 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         XCTAssertTrue(panel.waitForExistence(timeout: 10))
         let field = panel.textFields["Search or enter address"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
+        let initialFieldFrame = field.frame
         field.click(); field.typeText("weather")
         XCTAssertTrue(panel.descendants(matching: .any)["omnibar-weather-current"].waitForExistence(timeout: 10))
+        XCTAssertEqual(field.frame.minY, initialFieldFrame.minY, accuracy: 1)
+        XCTAssertEqual(field.frame.minX, initialFieldFrame.minX, accuracy: 1)
         XCTAssertTrue(panel.buttons["omnibar-weather-location"].isHittable)
         panel.buttons["omnibar-weather-location"].click()
         let city = app.textFields["newspaper-weather-city"]
@@ -101,7 +137,7 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         field.click(); field.typeText("weather")
         XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather-current"].waitForExistence(timeout: 60))
-        XCTAssertTrue(app.staticTexts["Hourly forecast"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["weather-hourly-title"].exists)
         let mark = app.descendants(matching: .any)["omnibar-weather-mark"]
         XCTAssertTrue(mark.exists)
         XCTAssertEqual(mark.label, "Apple Weather")

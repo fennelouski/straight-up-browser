@@ -1,0 +1,6 @@
+{
+  "80516": [{"town":"Erie","region":"Colorado","country":"United States","countryCode":"US","latitude":40.045,"longitude":-105.048,"timeZoneID":"America/Denver"}],
+  "2725 dm": [{"town":"Zoetermeer","region":"South Holland","country":"Netherlands","countryCode":"NL","latitude":52.061,"longitude":4.493,"timeZoneID":"Europe/Amsterdam"}],
+  "leiden": [{"town":"Leiden","region":"South Holland","country":"Netherlands","countryCode":"NL","latitude":52.16,"longitude":4.49,"timeZoneID":"Europe/Amsterdam"}],
+  "springfield": [{"town":"Springfield","region":"Illinois","country":"United States","countryCode":"US","latitude":39.8,"longitude":-89.64,"timeZoneID":"America/Chicago"},{"town":"Springfield","region":"Massachusetts","country":"United States","countryCode":"US","latitude":42.1,"longitude":-72.58,"timeZoneID":"America/New_York"}]
+}

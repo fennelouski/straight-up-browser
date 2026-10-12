@@ -53,13 +53,19 @@ XCTest runner with `TEST_RUNNER_RUN_WEATHERKIT_LIVE_TEST=1` when invoking the
 Routine offline verification skips that service probe. A successful compile or
 skipped probe must never be reported as a verified live WeatherKit integration.
 
-Typing exactly `weather` in the omnibar opens the animated weather scene and
-the next 24 hourly forecasts without submitting a web search. Its location
+Typing `weather` in the omnibar opens the animated weather scene and
+hourly forecasts without submitting a web search. Locations, Home/Work aliases,
+tomorrow and supported rain/dry-window commands are described in
+[the next-version implementation and verification record](docs/weather-next-version.md). Its location
 button shares Newspaper's city/current-location choice, but does not enable the
 Newspaper masthead. A current-location request requires the reader's choice and
 OS authorization; a city can be used instead. Historical hourly snowfall and
 wind inform the decorative effects. Weather and its scene appear only once
 Apple's supplied mark has loaded, with a persistent legal attribution link.
+Effects overlay the existing page transparently. Precipitation enters from above,
+accelerates toward terminal speed, and follows wind to the first exposed omnibar
+or forecast-panel top edge. Rain splashes and drains; snowfall adds capped deposits
+after impact. Collisions use browser control geometry, not elements inside web pages.
 Animation duration, spring preference, Reduce Motion and Low Power Mode apply.
 The deterministic `-uiTesting -weatherUITesting rain|snow|clear` previews make
 no WeatherKit request and are explicitly labeled as preview weather.

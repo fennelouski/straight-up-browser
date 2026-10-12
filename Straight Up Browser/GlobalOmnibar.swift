@@ -81,7 +81,7 @@ final class GlobalOmnibarController: NSObject, NSWindowDelegate {
 
     private func show() {
         expandedHeight = min(560, (NSScreen.main?.visibleFrame.height ?? 584) - 24)
-        let content = GlobalOmnibarWeatherView(
+        var content = GlobalOmnibarWeatherView(
             isPresented: Binding(get: { true }, set: { [weak self] shown in
                 if !shown { self?.close() }
             }),
@@ -121,6 +121,9 @@ final class GlobalOmnibarController: NSObject, NSWindowDelegate {
                 x: frame.midX - hosting.frame.width / 2,
                 y: frame.minY + frame.height * 0.72 - hosting.frame.height / 2
             ))
+            expandedHeight = min(expandedHeight, panel.frame.maxY - frame.minY - 12)
+            content.expandedHeight = expandedHeight
+            hosting.rootView = content
         }
 
         self.panel = panel
@@ -133,10 +136,6 @@ final class GlobalOmnibarController: NSObject, NSWindowDelegate {
         var frame = panel.frame
         frame.origin.y += frame.height - height
         frame.size.height = height
-        if let screen = panel.screen {
-            frame.origin.y = max(screen.visibleFrame.minY + 12,
-                min(frame.origin.y, screen.visibleFrame.maxY - height - 12))
-        }
         panel.setFrame(frame, display: true)
     }
 
@@ -181,23 +180,25 @@ private struct GlobalOmnibarWeatherView: View {
     @Binding var urlString: String
     let onNavigate: (String, OmnibarCommit) -> Void
     let onWeather: (Bool) -> Void
-    let expandedHeight: CGFloat
+    var expandedHeight: CGFloat
     @State private var weather = false
     @State private var surfaces: [CGRect] = []
     @State private var credited = false
+    @State private var weatherSnapshot: OmnibarWeatherSnapshot?
     var body: some View {
         ZStack(alignment: .top) {
-            if weather { OmnibarWeatherScene(layer: .sky, attributionVisible: credited).transition(OmnibarWeatherCurtain.transition) }
+            if weather { OmnibarWeatherScene(layer: .sky, attributionVisible: credited, snapshot: weatherSnapshot).transition(.opacity) }
             OmnibarView(isPresented: $isPresented, urlString: $urlString, onNavigate: onNavigate,
                         errorMessage: nil, tabs: [], bookmarkSuggestions: [],
                         onWeatherVisibilityChanged: { weather = $0; onWeather($0) })
-            if weather { OmnibarWeatherScene(layer: .precipitation, surfaces: surfaces, attributionVisible: credited).transition(OmnibarWeatherCurtain.transition) }
+            if weather { OmnibarWeatherScene(layer: .precipitation, surfaces: surfaces, attributionVisible: credited, snapshot: weatherSnapshot).transition(.opacity) }
         }
         .frame(width: 600, height: weather ? expandedHeight : nil, alignment: .top)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .coordinateSpace(name: "omnibarWeatherScene")
         .onPreferenceChange(OmnibarWeatherSurfaces.self) { surfaces = $0 }
         .onPreferenceChange(OmnibarWeatherCreditVisible.self) { credited = $0 }
+        .onPreferenceChange(OmnibarWeatherResolvedScene.self) { weatherSnapshot = $0 }
         .omnibarMotion(weather)
     }
 }

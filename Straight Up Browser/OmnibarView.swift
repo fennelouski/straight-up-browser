@@ -615,7 +615,7 @@ struct OmnibarView: View {
             .padding(.vertical, 20)
 
             if weatherIntent {
-                OmnibarWeatherCard { navigate(text: NavigationManager.searchURL(for: "weather")) }
+                OmnibarWeatherCard(query: inputText, mapURL: urlString) { navigate(text: NavigationManager.searchURL(for: inputText)) }
                     .frame(maxHeight: 420)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 16)

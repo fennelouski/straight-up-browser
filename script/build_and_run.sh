@@ -21,7 +21,7 @@ fi
 
 # Ad-hoc verification builds cannot carry Apple-restricted capabilities.
 cp Browser.entitlements "$BUILD_ROOT/development.entitlements"
-for key in com.apple.developer.icloud-container-identifiers com.apple.developer.icloud-services com.apple.developer.ubiquity-container-identifiers com.apple.developer.web-browser.public-key-credential; do
+for key in com.apple.developer.icloud-container-identifiers com.apple.developer.icloud-services com.apple.developer.ubiquity-container-identifiers com.apple.developer.ubiquity-kvstore-identifier com.apple.developer.web-browser.public-key-credential com.apple.developer.weatherkit; do
     /usr/libexec/PlistBuddy -c "Delete :$key" "$BUILD_ROOT/development.entitlements"
 done
 xcodebuild build -quiet -onlyUsePackageVersionsFromResolvedFile \

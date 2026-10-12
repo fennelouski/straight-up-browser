@@ -31,6 +31,7 @@ struct OmnibarPresentation<Content: View>: View {
     var weatherActive = false
     @State private var weatherSurfaces: [CGRect] = []
     @State private var weatherCredited = false
+    @State private var weatherSnapshot: OmnibarWeatherSnapshot?
     @ViewBuilder var content: () -> Content
 
     var body: some View {
@@ -42,12 +43,12 @@ struct OmnibarPresentation<Content: View>: View {
                     .transition(.opacity)
             }
             if isPresented && weatherActive {
-                OmnibarWeatherScene(layer: .sky, attributionVisible: weatherCredited)
-                    .transition(OmnibarWeatherCurtain.transition)
+                OmnibarWeatherScene(layer: .sky, attributionVisible: weatherCredited, snapshot: weatherSnapshot)
+                    .transition(.opacity)
             }
             GeometryReader { geometry in
                 VStack(spacing: 0) {
-                    Spacer().frame(height: geometry.size.height * (weatherActive ? min(0.08, topFraction) : topFraction))
+                    Spacer().frame(height: geometry.size.height * topFraction)
                     if isPresented {
                         content()
                             .transition(BrowserMotion.omnibar)
@@ -57,13 +58,14 @@ struct OmnibarPresentation<Content: View>: View {
                 .frame(maxWidth: .infinity)
             }
             if isPresented && weatherActive {
-                OmnibarWeatherScene(layer: .precipitation, surfaces: weatherSurfaces, attributionVisible: weatherCredited)
-                    .transition(OmnibarWeatherCurtain.transition)
+                OmnibarWeatherScene(layer: .precipitation, surfaces: weatherSurfaces, attributionVisible: weatherCredited, snapshot: weatherSnapshot)
+                    .transition(.opacity)
             }
         }
         .coordinateSpace(name: "omnibarWeatherScene")
         .onPreferenceChange(OmnibarWeatherSurfaces.self) { weatherSurfaces = $0 }
         .onPreferenceChange(OmnibarWeatherCreditVisible.self) { weatherCredited = $0 }
+        .onPreferenceChange(OmnibarWeatherResolvedScene.self) { weatherSnapshot = $0 }
         .omnibarMotion(weatherActive)
         .omnibarMotion(isPresented)
         .allowsHitTesting(isPresented)
