@@ -166,6 +166,7 @@ struct TabGridView: View {
     var refreshLivePreviews: (() -> Void)? = nil
     var labels: ((Tab) -> (title: String, detail: String))? = nil
     var onHover: ((Tab) -> Void)? = nil
+    var onHoverChanged: ((Tab, Bool) -> Void)? = nil
 
     @State private var index = 0
     @State private var keyMonitor: Any?
@@ -222,9 +223,11 @@ struct TabGridView: View {
                                     .transition(BrowserMotion.tabArrival)
                                     .id(tab.id)
                                     .onHover { hovering in
-                                        guard hovering else { return }
-                                        index = position
-                                        onHover?(tab)
+                                        if hovering {
+                                            index = position
+                                            onHover?(tab)
+                                        }
+                                        onHoverChanged?(tab, hovering)
                                     }
                             }
                         }

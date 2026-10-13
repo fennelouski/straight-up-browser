@@ -2,20 +2,24 @@
 
 First launch offers **Show me around**, **Maybe later**, and **I’m ready to explore**.
 Maybe later waits three days before offering again. Declining or finishing stops automatic
-invitations. **Help → Getting Started Guide** always reopens it. Pausing or closing its
-browser window saves the chosen path, step, and interests. One browser window owns the
-guide at a time. No guide appears in normal UI tests; dedicated onboarding tests opt in.
+invitations. **Help → Getting Started Guide** always reopens it. **Help → Restart Getting
+Started Guide** and **Settings → General → Getting Started → Restart Onboarding** begin
+again at the welcome screen, clearing only guide progress — never browser or accessibility
+preferences. Pausing or closing its browser window saves the chosen path, step, and
+interests. One browser window owns the guide at a time. No guide appears in normal UI
+tests; dedicated onboarding tests opt in.
 
 ## Paths
 
 - Quick Start: one page of live keyboard bindings, alternative omnibar commands,
-  the full shortcut reference, an explicit memory-saving choice, and an optional
-  default-browser action. Large displays include window-position shortcuts.
-- Quick Customization: interests, tab layout and maximum page brightness, navigation,
-  two-to-four-pane splits, window placement on large displays, memory saving,
+  the full shortcut reference, a Control-hover live-tab-preview tip, an explicit
+  memory-saving choice, and an optional default-browser action. Large displays include
+  window-position shortcuts.
+- Quick Customization: interests, tab layout and maximum page brightness, live Control-hover
+  tab previews, navigation, two-to-four-pane splits, window placement on large displays, memory saving,
   external-agent permissions, and screenshot tools when relevant.
 - Deep Dive: navigation, workspaces, captured sources, documents and evidence,
-  splits and windows, appearance, memory, download location, on-device translation,
+  splits and windows, appearance and live Control-hover tab previews, memory, download location, on-device translation,
   Newspaper, optional AI setup, external-agent permissions, and relevant screenshot tools.
 
 Interests stay local. A dark browser in the evening/night prioritizes the white-point

@@ -2578,6 +2578,13 @@ struct TabPeekPlacementTests {
     private let size = NSSize(width: 420, height: 322)
 
     @MainActor
+    @Test func controlModifierActivatesAnEnabledPeek() {
+        #expect(TabPeekController.shouldPresent(isEnabled: true, modifierFlags: [.control]))
+        #expect(!TabPeekController.shouldPresent(isEnabled: true, modifierFlags: [.command]))
+        #expect(!TabPeekController.shouldPresent(isEnabled: false, modifierFlags: [.control]))
+    }
+
+    @MainActor
     @Test func screenTopCentersUnderTheCamera() {
         let frame = TabPeekController.frame(
             for: size,

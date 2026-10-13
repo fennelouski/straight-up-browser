@@ -55,6 +55,14 @@ final class TabPeekController {
     private var panel: TabPeekWindow?
     private var refreshTask: Task<Void, Never>?
     private var peekedTabId: UUID?
+    // Hover and modifier state are kept separately: holding Control after the
+    // pointer has already reached a tab should open the peek just as reliably
+    // as entering the tab with Control already held.
+    private var hoveredTab: Tab?
+    private weak var hoveredWebViewManager: WebViewManager?
+    private var modifierMonitor: Any?
+    private var refreshGeneration = 0
+    private var onSidebarThumbnailUpdated: (() -> Void)?
 
     private static let panelSize = NSSize(width: 420, height: 322)
 
@@ -67,28 +75,89 @@ final class TabPeekController {
         UserDefaults.standard.object(forKey: TabPeekPlacement.enabledKey) as? Bool ?? true
     }
 
-    /// Called on every tab hover. Does nothing unless Control is actually down.
-    func hovered(tab: Tab, webViewManager: WebViewManager?) {
-        guard isEnabled, NSEvent.modifierFlags.contains(.control) else { return }
+    static func shouldPresent(
+        isEnabled: Bool,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        isEnabled && modifierFlags.contains(.control)
+    }
+
+    /// Called whenever a tab begins receiving pointer hover. This records the
+    /// target even before Control goes down, so a later modifier edge can start
+    /// the live peek without asking the person to leave and re-enter the tab.
+    func hovered(
+        tab: Tab,
+        webViewManager: WebViewManager?,
+        onSidebarThumbnailUpdated: @escaping () -> Void
+    ) {
+        guard isEnabled else { return }
         guard let webViewManager else { return }
-        guard peekedTabId != tab.id else { return }
-        peekedTabId = tab.id
-        model.image = webViewManager.thumbnail(for: tab.id)
-        refresh(tab: tab, webViewManager: webViewManager)
-        present()
-        startRefreshing(tab: tab, webViewManager: webViewManager)
+
+        hoveredTab = tab
+        hoveredWebViewManager = webViewManager
+        self.onSidebarThumbnailUpdated = onSidebarThumbnailUpdated
+        installModifierMonitor()
+        showPeekIfControlHeld()
+    }
+
+    /// Ends the current hover target. The panel itself ignores mouse events, so
+    /// leaving its source tab is always what closes a Control-hover peek.
+    func unhovered(tabId: UUID) {
+        guard hoveredTab?.id == tabId else { return }
+        hoveredTab = nil
+        hoveredWebViewManager = nil
+        onSidebarThumbnailUpdated = nil
+        removeModifierMonitor()
+        hide()
     }
 
     func hide() {
         refreshTask?.cancel()
         refreshTask = nil
         peekedTabId = nil
+        refreshGeneration &+= 1
         panel?.orderOut(nil)
+    }
+
+    // MARK: - Hover and modifier tracking
+
+    private func showPeekIfControlHeld(
+        modifierFlags: NSEvent.ModifierFlags = NSEvent.modifierFlags
+    ) {
+        guard Self.shouldPresent(isEnabled: isEnabled, modifierFlags: modifierFlags),
+              let tab = hoveredTab,
+              let webViewManager = hoveredWebViewManager else {
+            hide()
+            return
+        }
+        guard peekedTabId != tab.id else { return }
+
+        peekedTabId = tab.id
+        model.image = webViewManager.thumbnail(for: tab.id)
+        refreshMetadata(tab: tab, webViewManager: webViewManager)
+        present()
+        startRefreshing(tab: tab, webViewManager: webViewManager)
+    }
+
+    private func installModifierMonitor() {
+        guard modifierMonitor == nil else { return }
+        modifierMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            MainActor.assumeIsolated {
+                self?.showPeekIfControlHeld(modifierFlags: event.modifierFlags)
+            }
+            return event
+        }
+    }
+
+    private func removeModifierMonitor() {
+        guard let modifierMonitor else { return }
+        NSEvent.removeMonitor(modifierMonitor)
+        self.modifierMonitor = nil
     }
 
     // MARK: - Contents
 
-    private func refresh(tab: Tab, webViewManager: WebViewManager) {
+    private func refreshMetadata(tab: Tab, webViewManager: WebViewManager) {
         let webView = webViewManager.existingWebView(for: tab.id)
         model.title = tab.title.isEmpty ? Tab.extractDomain(from: tab.url) : tab.title
         model.host = tab.url?.host ?? ""
@@ -105,32 +174,41 @@ final class TabPeekController {
         if MemoryPinnedSites.isPinned(tab.url) { status.append(String(localized: "Kept in memory")) }
         if tab.sessionKind == .incognito { status.append(String(localized: "Private")) }
         model.status = status
-        if let image = webViewManager.thumbnail(for: tab.id) { model.image = image }
     }
 
     private func startRefreshing(tab: Tab, webViewManager: WebViewManager) {
         refreshTask?.cancel()
         refreshTask = Task { @MainActor [weak self] in
-            var ticks = 0
             while !Task.isCancelled {
-                // Polled at 150ms so letting go of Control dismisses the panel
-                // immediately; the picture only needs refreshing every ten ticks.
                 guard NSEvent.modifierFlags.contains(.control) else {
                     self?.hide()
                     return
                 }
-                if ticks % 10 == 0 {
-                    // The oven borrows the tab off screen, photographs it, and
-                    // hands it back; a displayed tab is snapshotted in place.
-                    webViewManager.warmThumbnails(for: [(id: tab.id, url: tab.url)])
-                }
-                if ticks % 10 == 5 {
-                    self?.refresh(tab: tab, webViewManager: webViewManager)
-                }
+
+                self?.refreshMetadata(tab: tab, webViewManager: webViewManager)
+                self?.refreshLiveImage(tab: tab, webViewManager: webViewManager)
                 self?.reposition()
-                ticks += 1
-                try? await Task.sleep(for: .milliseconds(150))
+                // A one-second cadence keeps an open peek recognizably live
+                // without turning an off-screen page into a continuous renderer.
+                try? await Task.sleep(for: .seconds(1))
             }
+        }
+    }
+
+    private func refreshLiveImage(tab: Tab, webViewManager: WebViewManager) {
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
+        // The oven borrows a background tab only long enough to photograph it;
+        // a displayed tab snapshots in place. Its completion gives the popup
+        // the image first, then tells ContentView to redraw the sidebar card
+        // from that same cache entry.
+        webViewManager.captureLiveThumbnail(for: tab.id, url: tab.url) { [weak self] image in
+            guard let self,
+                  self.peekedTabId == tab.id,
+                  self.refreshGeneration == generation,
+                  let image else { return }
+            self.model.image = image
+            self.onSidebarThumbnailUpdated?()
         }
     }
 

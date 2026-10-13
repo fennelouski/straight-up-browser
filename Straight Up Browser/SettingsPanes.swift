@@ -17,6 +17,7 @@ import WebKit
 
 struct GeneralSettingsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.openWindow) private var openWindow
     @Query private var tabs: [Tab]
 
     @AppStorage("searchEngine") private var searchEngine = "Google"
@@ -281,9 +282,24 @@ struct GeneralSettingsView: View {
             } header: {
                 SettingsLabel("Quit Safety", systemImage: "power", tint: SettingsTint.general)
             }
+
+            CollapsibleSection(searchID: "general.onboarding") {
+                Button("Restart Onboarding") { restartOnboarding() }
+                Text("Start the Getting Started Guide from the beginning. This only resets guide progress; your browser and accessibility preferences stay as they are.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                SettingsLabel("Getting Started", systemImage: "sparkles", tint: SettingsTint.general)
+            }
         }
         .formStyle(.grouped)
         .task { iCloudAvailable = await TabSync.iCloudAvailable() }
+    }
+
+    private func restartOnboarding() {
+        let windows = BrowserWindows.shared
+        let id = windows.activeID ?? windows.primaryID
+        if !windows.hasWindows { openWindow(id: "browser", value: id) }
+        BrowserOnboarding.shared.restart(in: id)
     }
 }
 
@@ -1443,14 +1459,14 @@ struct AppearanceSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Show tab thumbnails while switching with ⌃Tab", isOn: $visualTabSwitcher)
                 #if os(macOS)
-                Toggle("Peek at a tab by holding Control and hovering it", isOn: $tabPeekEnabled)
+                Toggle("Live-preview a tab by holding Control and hovering it", isOn: $tabPeekEnabled)
                 Picker("Show the peek", selection: $tabPeekPlacementRaw) {
                     ForEach(TabPeekPlacement.allCases) { placement in
                         Text(placement.label).tag(placement.rawValue)
                     }
                 }
                 .disabled(!tabPeekEnabled)
-                Text("Checks in on a background tab without switching to it. Top middle of the screen puts the page right under the webcam, so glancing at it still looks like eye contact on a call.")
+                Text("Checks in on a background tab without switching to it. Each fresh image updates the peek first, then its sidebar preview. Top middle of the screen puts the page right under the webcam, so glancing at it still looks like eye contact on a call.")
                     .font(.caption).foregroundStyle(.secondary)
                 #endif
                 Toggle("Show the new tab button above the sidebar", isOn: $showNewTabButton)

@@ -715,25 +715,71 @@ class WebViewManager: NSObject, ObservableObject {
     var ovenQueue: [(id: UUID, url: URL?)] = []
     var ovenBaking: UUID?
     var ovenWindow: NSWindow?
+    // A Control-hover peek replaces an older request for the same tab instead
+    // of queuing a run of identical snapshots while a slow page is baking.
+    // TabPreviewOven completes this after it has actually photographed the tab.
+    var liveThumbnailCompletions: [UUID: (WebViewThumbnail?) -> Void] = [:]
     #endif
 
     // Only a web view that is in a window and not hidden actually paints, so
     // this captures the tab you're leaving, the tab you're on, and whatever the
     // oven has parked off screen. A hidden background tab snapshots blank, and
     // a blank card is worse than a stale one — hence the isHidden guard.
-    func captureThumbnail(for tabId: UUID?, afterScreenUpdates: Bool = true) {
+    func captureThumbnail(
+        for tabId: UUID?,
+        afterScreenUpdates: Bool = true,
+        completion: ((WebViewThumbnail?) -> Void)? = nil
+    ) {
         guard let tabId, let webView = webViews[tabId],
-              webView.window != nil, !webView.isHidden, webView.bounds.width > 0 else { return }
+              webView.window != nil, !webView.isHidden, webView.bounds.width > 0 else {
+            completion?(nil)
+            return
+        }
         let config = WKSnapshotConfiguration()
         config.snapshotWidth = 400
         // Off screen there are no screen updates to wait for; the web content
         // process renders the frame either way.
         config.afterScreenUpdates = afterScreenUpdates
         webView.takeSnapshot(with: config) { [weak self] image, _ in
-            guard let image else { return }
+            guard let image else {
+                completion?(nil)
+                return
+            }
             self?.thumbnails[tabId] = image
+            completion?(image)
         }
     }
+
+    #if canImport(AppKit)
+    /// Capture a new image for a Control-hover peek. Visible tabs snapshot in
+    /// place; background tabs use the oven. The completion is intentionally
+    /// latest-wins per tab, so a slow page cannot flood the peek with stale
+    /// completions while the pointer remains over it.
+    func captureLiveThumbnail(
+        for tabId: UUID,
+        url: URL?,
+        completion: @escaping (WebViewThumbnail?) -> Void
+    ) {
+        if let webView = existingWebView(for: tabId),
+           webView.window != nil,
+           !webView.isHidden,
+           webView.bounds.width > 0 {
+            captureThumbnail(for: tabId, completion: completion)
+            return
+        }
+
+        liveThumbnailCompletions[tabId] = completion
+        warmThumbnails(for: [(id: tabId, url: url)])
+    }
+
+    /// Called by the off-screen oven after its snapshot completion. Kept here
+    /// so the oven can stay responsible only for rendering and the controller
+    /// can update its popup before ContentView redraws the matching card.
+    func completeLiveThumbnail(for tabId: UUID, image: WebViewThumbnail?) {
+        let completion = liveThumbnailCompletions.removeValue(forKey: tabId)
+        completion?(image)
+    }
+    #endif
 
     override init() {
         super.init()

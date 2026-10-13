@@ -130,12 +130,12 @@ private struct OnboardingExhaust: View {
 
 private struct SpotlightShape: Shape {
     var focus: CGRect
-    var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<CGFloat, CGFloat>> {
+    nonisolated var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<CGFloat, CGFloat>> {
         get { .init(.init(focus.origin.x, focus.origin.y), .init(focus.width, focus.height)) }
         set { focus = CGRect(x: newValue.first.first, y: newValue.first.second,
                              width: newValue.second.first, height: newValue.second.second) }
     }
-    func path(in rect: CGRect) -> Path {
+    nonisolated func path(in rect: CGRect) -> Path {
         var p = Path(rect)
         p.addRoundedRect(in: focus.insetBy(dx: -7, dy: -7), cornerSize: CGSize(width: 12, height: 12))
         return p

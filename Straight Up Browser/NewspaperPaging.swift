@@ -66,8 +66,8 @@ struct NewspaperPageTurn: AnimatableModifier {
 private struct NewspaperSheetEdge: Shape {
     var bend: CGFloat
     let direction: Int
-    var animatableData: CGFloat { get { bend } set { bend = newValue } }
-    func path(in rect: CGRect) -> Path {
+    nonisolated var animatableData: CGFloat { get { bend } set { bend = newValue } }
+    nonisolated func path(in rect: CGRect) -> Path {
         let inset = rect.width * bend
         var path = Path()
         path.move(to: CGPoint(x: direction > 0 ? 0 : inset, y: 0))

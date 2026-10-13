@@ -42,7 +42,7 @@ struct ClaimsPanel: View {
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         #endif
-        .task {
+        .task { [weak ledgerStore] in
             if !session.isLoaded { await session.open() }
             scout.isAlreadyPromoted = { [weak ledgerStore] text in
                 ledgerStore?.claimExists(normalizedFrom: text) ?? false

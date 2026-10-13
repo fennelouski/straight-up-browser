@@ -91,6 +91,7 @@ private struct FloatingFaviconItem<ContextMenu: View>: View {
     let dropTargetTabId: UUID?
     let automaticLinkBirthCue: AutomaticLinkBirthCue?
     var onHover: (() -> Void)? = nil
+    var onHoverChanged: ((Bool) -> Void)? = nil
     @ViewBuilder var contextMenu: () -> ContextMenu
 
     private let cell: CGFloat = 26
@@ -128,7 +129,10 @@ private struct FloatingFaviconItem<ContextMenu: View>: View {
             )
         )
         .contentShape(Rectangle())
-        .onHover { if $0 { onHover?() } }
+        .onHover { hovering in
+            if hovering { onHover?() }
+            onHoverChanged?(hovering)
+        }
         .contextMenu { contextMenu() }
         .overlay {
             if isDropTarget {
@@ -222,6 +226,7 @@ struct FloatingFaviconOverlay<ContextMenu: View>: View {
     let onDragBegan: (UUID) -> Void
     let onDropFinished: () -> Void
     var onHover: ((BrowserTab) -> Void)? = nil
+    var onHoverChanged: ((BrowserTab, Bool) -> Void)? = nil
     @ViewBuilder var contextMenu: (BrowserTab) -> ContextMenu
 
     var body: some View {
@@ -246,6 +251,7 @@ struct FloatingFaviconOverlay<ContextMenu: View>: View {
                     dropTargetTabId: dropTargetTabId,
                     automaticLinkBirthCue: tabManager?.automaticLinkBirthCue,
                     onHover: { onHover?(tab) },
+                    onHoverChanged: { onHoverChanged?(tab, $0) },
                     contextMenu: { contextMenu(tab) }
                 )
                 .id(tab.id)
@@ -1268,7 +1274,10 @@ struct ContentView: View {
                             thumbnail: webViewManager?.thumbnail(for: tab.id),
                             expandedHeight: adaptiveHeight,
                             cardLabels: adaptiveHeight != nil ? cardLabels(for: tab) : nil,
-                            onHover: { hoverPreview(tab) }
+                            onHover: { hoverPreview(tab) },
+                            onHoverChanged: { hovering in
+                                if !hovering { endHoverPreview(tab) }
+                            }
                         )
                         .contextMenu {
                             tabContextMenu(for: tab, groupTabs: groupSection.tabs, currentGroupId: groupSection.group?.id)
@@ -1332,6 +1341,9 @@ struct ContentView: View {
                         onDragBegan: beginSidebarTabDrag,
                         onDropFinished: finishSidebarTabDrag,
                         onHover: hoverPreview,
+                        onHoverChanged: { tab, hovering in
+                            if !hovering { endHoverPreview(tab) }
+                        },
                         contextMenu: { tab in
                             tabContextMenu(
                                 for: tab,
@@ -2560,7 +2572,10 @@ struct ContentView: View {
                     onSelect: { tabManager.selectedTabId = $0 },
                     refreshLivePreviews: refreshVisualTabPreviews,
                     labels: cardLabels,
-                    onHover: hoverPreview
+                    onHover: hoverPreview,
+                    onHoverChanged: { tab, hovering in
+                        if !hovering { endHoverPreview(tab) }
+                    }
                 )
                 .transition(BrowserMotion.panel)
             }
@@ -2889,15 +2904,11 @@ struct ContentView: View {
                 // Scoped to the ACTIVE workspace (ADR 0008: pane ids resolve
                 // against the active workspace's documents) — a document id from
                 // a suspended workspace must not resolve as a pane.
-                tabManager.isDocumentPaneId = { [weak docStore, weak tabManager] id in
-                    guard let row = docStore?.document(id: id) else { return false }
-                    return row.workspaceId == tabManager?.activeWorkspaceId
-                }
-                // Leaving a workspace closes its document panes and edit
-                // sessions; nothing else discards them (Phase 2 known debt).
-                tabManager.workspaceSwitched = { [weak documentPaneManager] in
-                    documentPaneManager?.discardAll()
-                }
+                configureDocumentPaneHandlers(
+                    tabManager: tabManager,
+                    documentStore: docStore,
+                    documentPaneManager: documentPaneManager
+                )
                 anchorComposer = AnchorComposer(
                     ledgerStore: store, documentStore: docStore, settleCapture: settle)
                 setupPhase2Observers()
@@ -3700,6 +3711,22 @@ struct ContentView: View {
     /// surface — ContentView's type-check budget is a real ceiling.
     // MARK: Phase 2 — documents, anchors, transcripts
 
+    private func configureDocumentPaneHandlers(
+        tabManager: TabManager,
+        documentStore: DocumentStore,
+        documentPaneManager: DocumentPaneManager
+    ) {
+        tabManager.isDocumentPaneId = { [weak documentStore, weak tabManager] id in
+            guard let row = documentStore?.document(id: id) else { return false }
+            return row.workspaceId == tabManager?.activeWorkspaceId
+        }
+        // Leaving a workspace closes its document panes and edit sessions;
+        // nothing else discards them (Phase 2 known debt).
+        tabManager.workspaceSwitched = { [weak documentPaneManager] in
+            documentPaneManager?.discardAll()
+        }
+    }
+
     private func setupPhase2Observers() {
         addWindowObserver(forName: .browserAnchorSelection, object: nil, queue: .main) { [self] _ in
             anchorCurrentSelection()
@@ -4294,13 +4321,21 @@ struct ContentView: View {
     /// has never opened.
     private func hoverPreview(_ tab: BrowserTab) {
         // Control-hover peeks at the tab without switching to it (see TabPeek).
-        TabPeekController.shared.hovered(tab: tab, webViewManager: webViewManager)
+        // The controller remembers this hover even before Control is pressed and
+        // calls back only after its popup has accepted a newly captured image.
+        TabPeekController.shared.hovered(tab: tab, webViewManager: webViewManager) {
+            self.visualPreviewRefresh = UUID()
+        }
         guard visualTabLivePreviews else { return }
         if displayedTabIds.contains(tab.id) {
             refreshVisualTabPreviews()
         } else {
             webViewManager?.warmThumbnails(for: [(id: tab.id, url: tab.url)])
         }
+    }
+
+    private func endHoverPreview(_ tab: BrowserTab) {
+        TabPeekController.shared.unhovered(tabId: tab.id)
     }
 
     /// Once the tab you're actually looking at has landed, walk the rest of the
