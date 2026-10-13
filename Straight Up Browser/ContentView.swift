@@ -503,6 +503,8 @@ struct ContentView: View {
 
     // UI State
     @State private var showOmnibar = false
+    @State private var newCommandQuery: String?
+    @State private var newCommandRequest = UUID()
     @State private var omnibarWeatherActive = false
     @State private var showTabGrid = false
     @State private var showPasswordPicker = false
@@ -1519,8 +1521,10 @@ struct ContentView: View {
                 onSwitchToTab: { tabManager.selectedTabId = $0 },
                 pageProtection: pageProtectionSummary,
                 focusedDocumentName: focusedDocumentName,
+                initialQuery: newCommandQuery,
                 onWeatherVisibilityChanged: { omnibarWeatherActive = $0 }
             )
+            .id(newCommandRequest)
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(.isModal)
             .accessibilityFocused($accessibilityFocus, equals: .omnibar)
@@ -2327,7 +2331,6 @@ struct ContentView: View {
         .overlay(downloadProgressOverlay.zIndex(1.5))
         .overlay(newTabPageOverlay.zIndex(2))
         .overlay(linkPreviewOverlay.zIndex(3))
-        .overlay(omnibarOverlay.zIndex(3))
         .overlay(findBarOverlay.zIndex(3))
         .overlay(createGroupDialogOverlay.zIndex(4))
         .overlay(createContainerDialogOverlay.zIndex(4))
@@ -2336,6 +2339,7 @@ struct ContentView: View {
         .overlay(autofillHUDOverlay.zIndex(7))
         .overlay(shortcutCheatSheetOverlay.zIndex(8))
         .overlay(tabGridOverlay.zIndex(8))
+        .overlay(omnibarOverlay.zIndex(9))
         .overlay(passwordPickerOverlay.zIndex(9))
         .overlay(alignment: .bottomTrailing, content: { defaultBrowserOverlay.zIndex(9) })
         .background(DefaultBrowserEngagementObserver(tabManager: tabManager, hasWebPage: activeTab?.url?.scheme == "https" || activeTab?.url?.scheme == "http"))
@@ -2560,7 +2564,8 @@ struct ContentView: View {
                     onSelect: { tabManager.selectedTabId = $0 },
                     refreshLivePreviews: refreshVisualTabPreviews,
                     labels: cardLabels,
-                    onHover: hoverPreview
+                    onHover: hoverPreview,
+                    keyboardEnabled: !showOmnibar
                 )
                 .transition(BrowserMotion.panel)
             }
@@ -3057,6 +3062,16 @@ struct ContentView: View {
                     flashTabSwitcher()
                 }
 
+                addWindowObserver(forName: .browserNewCommand, object: nil, queue: .main) { [self] _ in
+                    performConfiguredNewCommand()
+                }
+                addWindowObserver(forName: .browserMovePaneLeft, object: nil, queue: .main) { [self] _ in
+                    _ = tabManager.moveFocusedPane(by: -1)
+                }
+                addWindowObserver(forName: .browserMovePaneRight, object: nil, queue: .main) { [self] _ in
+                    _ = tabManager.moveFocusedPane(by: 1)
+                }
+
                 addWindowObserver(forName: .browserShowTabGrid, object: nil, queue: .main) { [self] _ in
                     // Snapshot the tab you're on first; every other tab was captured
                     // when you switched away from it.
@@ -3117,11 +3132,17 @@ struct ContentView: View {
             // Safe to re-run: observer setup is balanced by cleanup/teardown in onDisappear
             notificationManager?.setupNotificationObservers()
             keyboardShortcutsManager?.setupKeyboardShortcuts()
+            if let presentation = NewCommandPreferences.pendingWindows.removeValue(forKey: windowID) {
+                presentConfiguredNewCommand(presentation)
+            }
         }
         // Every way the active tab changes writes selectedTabId, so peek from
         // here rather than the individual switch/close/reopen paths: Cmd+W and
         // Cmd+Shift+T get it too, and a no-op switch (Cmd+5 with 3 tabs open)
         // doesn't peek because the value never changed.
+        .onChange(of: showOmnibar) { _, visible in
+            if !visible { newCommandQuery = nil }
+        }
         .onChange(of: tabManager.selectedTabId) { _, _ in peekFavicon() }
         .onChange(of: showOmnibar) { _, isShowing in
             // Dismissing the omnibar (Esc, click-away) without navigating takes
@@ -3471,6 +3492,31 @@ struct ContentView: View {
             goForwardAction: { self.goForward() },
             webViewManager: webViewManager
         )
+    }
+
+    private func performConfiguredNewCommand() {
+        let presentation = NewCommandPreferences.presentation()
+        switch NewCommandPreferences.destination() {
+        case .window:
+            let id = BrowserWindows.shared.create()
+            NewCommandPreferences.pendingWindows[id] = presentation
+            openWindow(id: "browser", value: id)
+            return
+        case .currentContext: break
+        case .tab:
+            _ = tabManager.createCommandTab(inSplit: false, tabs: allTabs, inheriting: activeSession())
+        case .splitPane:
+            _ = tabManager.createCommandTab(inSplit: true, tabs: allTabs, inheriting: activeSession())
+        }
+        presentConfiguredNewCommand(presentation)
+    }
+
+    private func presentConfiguredNewCommand(_ presentation: NewCommandPresentation) {
+        webViewManager?.captureThumbnail(for: tabManager.selectedTabId)
+        showTabGrid = presentation == .visualTabs
+        newCommandQuery = presentation == .weather ? "weather" : ""
+        newCommandRequest = UUID()
+        showOmnibar = true
     }
 
     private func createNewTab() {

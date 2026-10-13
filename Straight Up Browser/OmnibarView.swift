@@ -399,6 +399,7 @@ struct OmnibarView: View {
     /// Shown above the field when a workspace document owns focus — the omnibar
     /// then names the document rather than implying a page (Phase 2 deviation #9).
     var focusedDocumentName: String? = nil
+    var initialQuery: String? = nil
     var onWeatherVisibilityChanged: ((Bool) -> Void)? = nil
 
     @State private var inputText: String = ""
@@ -673,7 +674,7 @@ struct OmnibarView: View {
             requestSuggestions()
         }
         .onAppear {
-            inputText = urlString
+            inputText = initialQuery ?? urlString
             shouldFocusTextField = true
             requestSuggestions()
         }

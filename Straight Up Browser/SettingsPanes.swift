@@ -19,6 +19,8 @@ struct GeneralSettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var tabs: [Tab]
 
+    @AppStorage(NewCommandDestination.key) private var newCommandDestination = NewCommandDestination.window.rawValue
+    @AppStorage(NewCommandPresentation.key) private var newCommandPresentation = NewCommandPresentation.omnibar.rawValue
     @AppStorage("searchEngine") private var searchEngine = "Google"
     @AppStorage("omnibarPosition") private var omnibarPosition = "Upper"
     @AppStorage(FindBar.positionKey) private var findBarPosition = FindBar.defaultPosition
@@ -209,6 +211,16 @@ struct GeneralSettingsView: View {
                     explanation: "Pressing Space pages down. This sets how far — 90% leaves a sliver of overlap so you don't lose your place, while 100% is a clean full-screen jump.",
                     value: $spaceScrollPercent
                 ) { SpaceScrollDemo(percent: $0) }
+
+                Picker("New command destination (⌘N)", selection: $newCommandDestination) {
+                    ForEach(NewCommandDestination.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
+                }
+                Picker("New command presentation", selection: $newCommandPresentation) {
+                    ForEach(NewCommandPresentation.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
+                }
+                Text("Choose where the configurable New shortcut opens and what it shows. Split panes inherit the current session. At the four-pane limit, the command keeps the current split and opens the omnibar there. Move the focused pane with ⌃⌥⌘← or ⌃⌥⌘→; add Shift to snap the window instead. Rebind these commands in Keyboard Shortcuts.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 Toggle("⌘P creates a PDF (Print is ⇧⌘P)", isOn: $cmdPExportsPDF)
                 SettingCaptionRow(
