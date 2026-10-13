@@ -25,20 +25,26 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         field.click(); field.typeText("weather 80516")
         let current = app.descendants(matching: .any)["omnibar-weather-current"]
         XCTAssertTrue(current.waitForExistence(timeout: 10))
-        XCTAssertTrue(current.label.contains("Erie") && current.label.contains("United States"))
+        let erie = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value CONTAINS %@ AND value CONTAINS %@", "Erie", "United States"),
+            object: current
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [erie], timeout: 5), .completed)
         XCTAssertTrue(app.staticTexts["Preview weather · No live service requested"].exists)
-        let erie = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
-        erie.name = "Weather-Erie-Postal-Fixture"; erie.lifetime = .keepAlways; add(erie)
+        let erieAttachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        erieAttachment.name = "Weather-Erie-Postal-Fixture"; erieAttachment.lifetime = .keepAlways; add(erieAttachment)
         field.typeKey("a", modifierFlags: .command); field.typeText("2725 DM Weather")
-        let resolved = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "Zoetermeer"), object: current)
+        let resolved = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "Zoetermeer"), object: current)
         XCTAssertEqual(XCTWaiter.wait(for: [resolved], timeout: 10), .completed)
-        XCTAssertTrue(current.label.contains("Zoetermeer") && current.label.contains("Netherlands"))
+        let resolvedValue = current.value as? String ?? ""
+        XCTAssertTrue(resolvedValue.contains("Zoetermeer") && resolvedValue.contains("Netherlands"))
         XCTAssertTrue(app.descendants(matching: .any)["weather-nowcast-unavailable"].exists)
         let dutch = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
         dutch.name = "Weather-Zoetermeer-Postal-Fixture"; dutch.lifetime = .keepAlways; add(dutch)
         field.typeKey("a", modifierFlags: .command); field.typeText("weather home")
         XCTAssertTrue(app.staticTexts["omnibar-weather-status"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["omnibar-weather-status"].label.contains("Set up Home"))
+        let status = app.staticTexts["omnibar-weather-status"]
+        XCTAssertTrue((status.value as? String ?? "").contains("Set up Home"))
         field.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather"].waitForNonExistence(timeout: 5))
         app.terminate()
@@ -425,7 +431,11 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         app.sheets.buttons["Save"].click()
         let research = app.windows["Research"]
         XCTAssertTrue(research.waitForExistence(timeout: 5))
-        app.typeKey(.escape, modifierFlags: [])
+        let researchOmnibar = research.textFields["Search or enter address"]
+        XCTAssertTrue(researchOmnibar.waitForExistence(timeout: 5))
+        researchOmnibar.click()
+        researchOmnibar.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(researchOmnibar.waitForNonExistence(timeout: 5))
         let sidebar = research.buttons["Visual Tabs"]
         XCTAssertTrue(sidebar.waitForExistence(timeout: 5))
         XCTAssertTrue(research.buttons["New Document"].exists)
@@ -710,8 +720,12 @@ final class Straight_Up_BrowserUITests: XCTestCase {
     func testCompactSidebarKeepsActionsAccessibleWithoutOverlapping() {
         let app = browserForUITesting(tabBarWidth: 80)
         launchBrowserForUITesting(app)
-        app.typeKey(.escape, modifierFlags: [])
-        let more = app.menuButtons["More Tab Actions"]
+        let startupOmnibar = app.textFields["Search or enter address"]
+        XCTAssertTrue(startupOmnibar.waitForExistence(timeout: 5))
+        startupOmnibar.click()
+        startupOmnibar.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(startupOmnibar.waitForNonExistence(timeout: 5))
+        let more = app.menuButtons["more-tab-actions"]
         XCTAssertTrue(more.waitForExistence(timeout: 5))
         let newTab = app.buttons["New Tab"]
         XCTAssertLessThanOrEqual(newTab.frame.maxX, more.frame.minX)

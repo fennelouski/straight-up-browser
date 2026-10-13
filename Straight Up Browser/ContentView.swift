@@ -999,13 +999,14 @@ struct ContentView: View {
                         newTabHeaderButton
                         tabBarHeaderActions
                     } label: {
-                        Image(systemName: "ellipsis")
+                        Label("More Tab Actions", systemImage: "ellipsis")
+                            .labelStyle(.iconOnly)
+                            .accessibilityIdentifier("more-tab-actions")
                             .frame(width: 20, height: 20)
                             .contentShape(Rectangle())
                     }
                     .menuStyle(.borderlessButton)
                     .delayedHelp("More Tab Actions")
-                    .accessibilityLabel("More Tab Actions")
                 }
             }
         }
