@@ -38,7 +38,7 @@ struct WindowEdgeProgress: View {
     }
 }
 
-struct WindowEdgeProgressShape: Shape {
+nonisolated struct WindowEdgeProgressShape: Shape {
     enum Edge { case top, bottom, left, right }
 
     var edge: Edge

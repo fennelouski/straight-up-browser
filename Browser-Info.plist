@@ -2,20 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- System Settings → Default web browser only lists apps that claim the
-	     web document types as well as the http/https schemes — the URL types
-	     alone get you into "Open With" but not into the browser picker.
-	     Mirrors what Safari, Chrome, and Arc declare.
-	     Generated keys (version, category, copyright…) are merged in by
-	     GENERATE_INFOPLIST_FILE. -->
-	<key>NSLocationUsageDescription</key>
-	<string>Browser uses your current location when you ask for local weather.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Browser uses your current location when you ask for local weather.</string>
-	<key>NSFocusStatusUsageDescription</key>
-	<string>Browser checks whether a Focus is on so it can dim pages only while you are winding down.</string>
-	<key>NSContactsUsageDescription</key>
-	<string>Browser needs access to Contacts so you can choose people. It reads only the cards you select to fill their current details when you ask it to.</string>
+	<key>BrowserLocalBuildNotes</key>
+	<string>Includes preserved ClaimsPanel weak capture fix; local Air update</string>
+	<key>BrowserSourceRevision</key>
+	<string>aa0e763cf3af39110d996f4b5baaf89f5ea71935</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -43,10 +33,10 @@
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
-			<key>CFBundleURLName</key>
-			<string>Web site URL</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>Web site URL</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>http</string>
@@ -54,59 +44,14 @@
 			</array>
 		</dict>
 	</array>
-	<!-- Sparkle auto-update. Feed is generated + signed by
-	     scripts/sparkle-bin/generate_appcast (see scripts/release.sh) and hosted
-	     alongside the DMG. Filename is "browser-appcast.xml", not the generic
-	     "appcast.xml" — that name is already taken by Dictate's feed in the same
-	     nathanfennel.com/downloads/ folder. SUPublicEDKey is the public half of
-	     the EdDSA key in the release Mac's Keychain — it never changes across
-	     releases; losing the private key would break updates for everyone
-	     already installed. -->
-	<key>SUFeedURL</key>
-	<string>https://nathanfennel.com/downloads/browser-appcast.xml</string>
-	<key>SUPublicEDKey</key>
-	<string>EVIc3OgRfDph2xDZgmLkjrHOdI8S249jGppr8MHTMCs=</string>
-	<key>SUEnableAutomaticChecks</key>
-	<true/>
-	<key>SUAutomaticallyUpdate</key>
-	<true/>
-	<!-- Required because this app is sandboxed: Sparkle installs through an XPC
-	     service instead of doing it in-process. Must stay paired with the
-	     mach-lookup temporary exception in Browser.entitlements — either one
-	     alone leaves updates silently failing after the "a new version is
-	     available" dialog. The downloader service is deliberately NOT enabled:
-	     Sparkle's docs say to leave it off when the app already holds
-	     com.apple.security.network.client, which this one does. -->
-	<key>SUEnableInstallerLauncherService</key>
-	<true/>
-	<!-- Sidebar drag-to-reorder (TabRowView.swift) ships tabs and tab groups
-	     between rows as these custom types via onDrag/onDrop. Without an
-	     export declaration here, UTType(exportedAs:) is never registered
-	     with the system, so onDrop's conformance check silently rejects
-	     every drop and dropEntered/performDrop never fire. -->
-	<key>UTExportedTypeDeclarations</key>
-	<array>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>com.nathanfennel.straight-up-browser.tab</string>
-			<key>UTTypeDescription</key>
-			<string>Browser Tab</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
-		</dict>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>com.nathanfennel.straight-up-browser.tabgroup</string>
-			<key>UTTypeDescription</key>
-			<string>Browser Tab Group</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
-		</dict>
-	</array>
+	<key>NSContactsUsageDescription</key>
+	<string>Browser needs access to Contacts so you can choose people. It reads only the cards you select to fill their current details when you ask it to.</string>
+	<key>NSFocusStatusUsageDescription</key>
+	<string>Browser checks whether a Focus is on so it can dim pages only while you are winding down.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Browser uses your current location when you ask for local weather.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Browser uses your current location when you ask for local weather.</string>
 	<key>NSUbiquitousContainers</key>
 	<dict>
 		<key>iCloud.com.nathanfennel.Straight-Up-Browser</key>
@@ -119,5 +64,38 @@
 			<string>Any</string>
 		</dict>
 	</dict>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://nathanfennel.com/downloads/browser-appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>EVIc3OgRfDph2xDZgmLkjrHOdI8S249jGppr8MHTMCs=</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Browser Tab</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.nathanfennel.straight-up-browser.tab</string>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Browser Tab Group</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.nathanfennel.straight-up-browser.tabgroup</string>
+		</dict>
+	</array>
 </dict>
 </plist>

@@ -2574,7 +2574,7 @@ struct ContentView: View {
     /// instead of leaving the keystroke silent.
     private func fillSavedPassword(submit: Bool) {
         guard let tabID = tabManager.selectedTabId else { return }
-        let domain = allTabs.first { $0.id == tabID }?.url?.host?.lowercased()
+        let domain = credentialManager.focusedDomain(tabID: tabID) ?? allTabs.first { $0.id == tabID }?.url?.host?.lowercased()
         let usernames = domain.map { SavedCredentialStore.usernames(domain: $0) } ?? []
         if let domain, usernames.count == 1 {
             credentialManager.dismissSuggestions()
@@ -2594,7 +2594,7 @@ struct ContentView: View {
             if showPasswordPicker {
                 let currentTabId = tabManager.selectedTabId
                 let currentTab = allTabs.first { $0.id == currentTabId }
-                let domain = currentTab?.url?.host?.lowercased()
+                let domain = currentTabId.flatMap { credentialManager.focusedDomain(tabID: $0) } ?? currentTab?.url?.host?.lowercased()
                 PasswordPickerView(
                     isPresented: $showPasswordPicker,
                     domain: domain,
@@ -2889,13 +2889,13 @@ struct ContentView: View {
                 // Scoped to the ACTIVE workspace (ADR 0008: pane ids resolve
                 // against the active workspace's documents) — a document id from
                 // a suspended workspace must not resolve as a pane.
-                tabManager.isDocumentPaneId = { [weak docStore, weak tabManager] id in
+                tabManager.isDocumentPaneId = { [weak docStore, weak tabManager = tabManager] id in
                     guard let row = docStore?.document(id: id) else { return false }
                     return row.workspaceId == tabManager?.activeWorkspaceId
                 }
                 // Leaving a workspace closes its document panes and edit
                 // sessions; nothing else discards them (Phase 2 known debt).
-                tabManager.workspaceSwitched = { [weak documentPaneManager] in
+                tabManager.workspaceSwitched = { [weak documentPaneManager = documentPaneManager] in
                     documentPaneManager?.discardAll()
                 }
                 anchorComposer = AnchorComposer(

@@ -56,7 +56,7 @@ done
 
 echo "Running macOS unit tests..."
 xcodebuild test -quiet \
-    -onlyUsePackageVersionsFromResolvedFile \
+    -onlyUsePackageVersionsFromResolvedFile -packageAuthorizationProvider netrc \
     -project "$PROJECT" \
     -scheme "Browser" \
     -destination "platform=macOS,arch=arm64" \
@@ -87,7 +87,7 @@ echo "Coverage gate passed: Browser.app is ${APP_COVERAGE_PERCENT}% (minimum ${M
 if [ "$RUN_TSAN" = "1" ]; then
     echo "Running macOS unit tests with Thread Sanitizer..."
     xcodebuild test -quiet \
-        -onlyUsePackageVersionsFromResolvedFile \
+        -onlyUsePackageVersionsFromResolvedFile -packageAuthorizationProvider netrc \
         -project "$PROJECT" \
         -scheme "Browser" \
         -destination "platform=macOS,arch=arm64" \
@@ -104,7 +104,7 @@ fi
 
 echo "Building the iOS app in Release..."
 xcodebuild build -quiet \
-    -onlyUsePackageVersionsFromResolvedFile \
+    -onlyUsePackageVersionsFromResolvedFile -packageAuthorizationProvider netrc \
     -project "$PROJECT" \
     -scheme "Browser iOS" \
     -configuration Release \
@@ -114,7 +114,7 @@ xcodebuild build -quiet \
 
 echo "Building the Apple Silicon macOS app in Release..."
 xcodebuild build -quiet \
-    -onlyUsePackageVersionsFromResolvedFile \
+    -onlyUsePackageVersionsFromResolvedFile -packageAuthorizationProvider netrc \
     -project "$PROJECT" \
     -scheme "Browser" \
     -configuration Release \
@@ -131,7 +131,7 @@ CLI_EXECUTABLE="$DERIVED_DATA_ROOT/macos-release/Build/Products/Release/Browser.
 if [ "$RUN_UI_TESTS" = "1" ]; then
     echo "Running macOS UI tests..."
     xcodebuild test -quiet \
-        -onlyUsePackageVersionsFromResolvedFile \
+        -onlyUsePackageVersionsFromResolvedFile -packageAuthorizationProvider netrc \
         -project "$PROJECT" \
         -scheme "Browser UI" \
         -destination "platform=macOS,arch=arm64" \
@@ -159,7 +159,7 @@ if [ "$RUN_UI_TESTS" = "1" ]; then
         # launched. Wait for the boot to complete first.
         xcrun simctl bootstatus "$IOS_SIMULATOR_ID" -b >/dev/null 2>&1 || true
         xcodebuild test -quiet \
-            -onlyUsePackageVersionsFromResolvedFile \
+            -onlyUsePackageVersionsFromResolvedFile -packageAuthorizationProvider netrc \
             -project "$PROJECT" \
             -scheme "Browser iOS" \
             -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_ID" \
@@ -176,7 +176,7 @@ else
     echo "UI test execution skipped (set RUN_UI_TESTS=1 on a UI-automation-enabled host)."
     echo "Building macOS UI tests..."
     xcodebuild build-for-testing -quiet \
-        -onlyUsePackageVersionsFromResolvedFile \
+        -onlyUsePackageVersionsFromResolvedFile -packageAuthorizationProvider netrc \
         -project "$PROJECT" \
         -scheme "Browser UI" \
         -destination "platform=macOS,arch=arm64" \
