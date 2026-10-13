@@ -222,31 +222,45 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         let settings = app.windows["settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         XCTAssertTrue(settings.buttons["Publication Style & Paper"].waitForExistence(timeout: 5))
+        let settingsContent = settings.scrollViews.element(boundBy: 1)
         for _ in 0..<32 {
             if settings.buttons["Publication Style & Paper"].isHittable { break }
-            settings.scrollViews.element(boundBy: 1).scroll(byDeltaX: 0, deltaY: 200)
+            settingsContent.scroll(byDeltaX: 0, deltaY: 200)
         }
         XCTAssertFalse(settings.buttons["Bold Weekly"].exists)
         settings.buttons["Publication Style & Paper"].click()
         for _ in 0..<32 {
             if settings.buttons["Bold Weekly"].isHittable { break }
-            settings.scrollViews.element(boundBy: 1).scroll(byDeltaX: 0, deltaY: -200)
+            settingsContent.scroll(byDeltaX: 0, deltaY: -200)
         }
         XCTAssertTrue(settings.buttons["Bold Weekly"].waitForExistence(timeout: 5))
         settings.buttons["Bold Weekly"].click()
         for _ in 0..<32 {
             if settings.buttons["Use this style's recommended format and paper"].isHittable { break }
-            settings.scrollViews.element(boundBy: 1).scroll(byDeltaX: 0, deltaY: -200)
+            settingsContent.scroll(byDeltaX: 0, deltaY: -200)
         }
         settings.buttons["Use this style's recommended format and paper"].click()
         XCTAssertTrue(paper.descendants(matching: .any)["newspaper-cover-issue"].waitForExistence(timeout: 5))
         XCTAssertTrue(paper.descendants(matching: .any)["newspaper-table-of-contents"].exists)
         let cover = XCTAttachment(screenshot: paper.screenshot()); cover.name = "Newspaper-Cover-Contents"; cover.lifetime = .keepAlways; add(cover)
-        for _ in 0..<32 {
-            if settings.buttons["Eclectic"].isHittable { break }
-            settings.scrollViews.element(boundBy: 1).scroll(byDeltaX: 0, deltaY: -200)
+        let eclecticFormat = settings.buttons["Eclectic"]
+        for _ in 0..<64 {
+            if eclecticFormat.exists {
+                let formatFrame = eclecticFormat.frame
+                let viewport = settingsContent.frame
+                if eclecticFormat.isHittable,
+                   formatFrame.midY > viewport.minY + 24,
+                   formatFrame.midY < viewport.maxY - 24 {
+                    break
+                }
+            }
+            settingsContent.scroll(byDeltaX: 0, deltaY: -100)
         }
-        settings.buttons["Eclectic"].click()
+        XCTAssertTrue(eclecticFormat.exists)
+        XCTAssertTrue(eclecticFormat.isHittable)
+        XCTAssertGreaterThan(eclecticFormat.frame.midY, settingsContent.frame.minY + 24)
+        XCTAssertLessThan(eclecticFormat.frame.midY, settingsContent.frame.maxY - 24)
+        eclecticFormat.click()
         XCTAssertTrue(paper.descendants(matching: .any)["newspaper-newsstand"].waitForExistence(timeout: 5))
         let eclectic = XCTAttachment(screenshot: paper.screenshot()); eclectic.name = "Newspaper-Eclectic"; eclectic.lifetime = .keepAlways; add(eclectic)
         settings.buttons["Story Feed"].click()

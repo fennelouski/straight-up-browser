@@ -1,7 +1,7 @@
 {
-  "releaseVersion": "2.9.28",
+  "releaseVersion": "2.9.29",
   "reviewedOn": "2026-10-13",
-  "notes": "Rechecked the official catalogs, pricing, availability, and API compatibility for the 2.9.28 release candidate after the 2.9.27 candidate's UI-test corrections. OpenAI keeps GPT-6 Luna / GPT-6.1 Sol / GPT-6 Astra in their fast, balanced, and flagship roles at $0.10/$0.50, $2/$10, and $10/$50 input/output per million tokens; their Responses API model IDs, reasoning controls, and tool support remain compatible with Browser's adapters. Claude Sonnet 5.5 remains the active balanced Anthropic default at $2/$10 per million tokens, with the current Messages API model ID and adaptive-thinking response handling remaining compatible. Gemini 4 Argon is now listed as a separate flagship-reasoning model with its own pricing; Gemini 3.8 Flash remains the stable selected Gemini model and retains function calling, streaming-compatible generation, and opaque thought-signature continuation. Its Standard input/output/cache pricing remains $0.75/$3.75/$0.075 per million tokens through 2026, rising to $1.50/$7.50/$0.15 on January 1, 2027. Reviewed OpenRouter IDs remain available. No default, fallback, migration, adapter, or pricing implementation change is appropriate because the new Gemini model has a distinct role and the selected model, provider boundary, and compatibility remain intact. Custom endpoints, installed local models, dated pinned snapshots, and model roles remain intact. Future runs continue to price and record the actual selected model; historical runs are unchanged. No credentials or billable inference were used for this review.",
+  "notes": "Rechecked the official catalogs, pricing, availability, and API compatibility for the 2.9.29 release candidate after the 2.9.28 release gate identified and corrected a UI-test interaction. OpenAI keeps GPT-6 Luna / GPT-6.1 Sol / GPT-6 Astra in their fast, balanced, and flagship roles at $0.10/$0.50, $2/$10, and $10/$50 input/output per million tokens; their Responses API model IDs, reasoning controls, and tool support remain compatible with Browser's adapters. Claude Sonnet 5.5 remains the active balanced Anthropic default at $2/$10 per million tokens, with the current Messages API model ID and adaptive-thinking response handling remaining compatible. Gemini 4 Argon remains a separate flagship-reasoning model with its own pricing, while the catalog's Live and speech variants are distinct roles. Gemini 3.8 Flash remains the stable selected Gemini model with the same `gemini-3.8-flash` ID, 1,048,576/65,536 input/output limits, and function-calling, caching, structured-output, low/medium/high-thinking, and streaming-compatible GenerateContent support; Browser continues to omit the unsupported minimal thinking level and preserve opaque thought-signature continuation. Its Standard input/output/cache pricing remains $0.75/$3.75/$0.075 per million tokens through 2026, rising to $1.50/$7.50/$0.15 on January 1, 2027. Reviewed OpenRouter IDs remain available. No default, fallback, migration, adapter, or pricing implementation change is appropriate because the new Gemini model has a distinct role and the selected model, provider boundary, and compatibility remain intact. Custom endpoints, installed local models, dated pinned snapshots, and model roles remain intact. Future runs continue to price and record the actual selected model; historical runs are unchanged. No credentials or billable inference were used for this review.",
   "sourceFiles": {
     "Straight Up Browser/AgentModelCatalog.swift": "ba4459c9f003ac6cac1dab8ad802ae024190b9679f437ff5dbc32b1405d2af02",
     "Straight Up Browser/AgentModelMigration.swift": "5e02a270b6598c1b551e8cd7cbff3a1d747612a10c7f234d3c2b65b9947bcbbb",
@@ -39,7 +39,7 @@
     {
       "url": "https://ai.google.dev/gemini-api/docs/models",
       "format": "html-main",
-      "sha256": "b3e8e15c2801cb0890eacbf2f692f89f18fe86aaa1b0a44baed105a1fed2210b"
+      "sha256": "8dc16565ae5e23327165714504fbf34d37c64ed648f7efbd37e4bf364935b187"
     },
     {
       "url": "https://openrouter.ai/api/v1/models",
@@ -55,12 +55,12 @@
     {
       "url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash",
       "format": "html-main",
-      "sha256": "2476bed7d4ffdf3752a46498d70984f4ef108e3131af9044b919aa2d737bfd53"
+      "sha256": "c8f7f4f70f1db75399ff7a32a706bf9f0750a78d22769ef5a4ec5d279dc82eb8"
     },
     {
       "url": "https://ai.google.dev/gemini-api/docs/pricing",
       "format": "html-main",
-      "sha256": "85c9b2e4f2b48d40db23e22c6f921e415dc81aadc6580ccecea23c3a5ecadd22"
+      "sha256": "770f22a730316750c468c080028a14cf5ebf4aeef0f924862a72f4701a76b69f"
     }
   ]
 }
