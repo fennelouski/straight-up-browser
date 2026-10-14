@@ -121,7 +121,13 @@ which checks live weather while the Newspaper masthead is disabled.
    `build/release/release-provenance.json`. The provenance file records the
    source commit/tag, version/build, Xcode version, and artifact hashes. The
    process takes a few minutes (two notarization round-trips to Apple). Override
-   the profile with `NOTARY_PROFILE=name`.
+   the profile with `NOTARY_PROFILE=name`. The macOS UI suite has an eight-minute
+   wall-clock deadline by default, including Xcode runner startup. Use
+   `MACOS_UI_TEST_TIMEOUT_SECONDS=<positive-seconds>` to set a different
+   deadline. It is a fail-closed guard: reaching it stops the release and does
+   not waive XCTest verification. The macOS UI test host activates Browser;
+   use a separate signed macOS account or dedicated release host when that must
+   not interrupt the primary desktop session.
 
 The universal iPhone/iPad app has a separate App Store release gate. Use
 [`IOS_DEPLOYMENT.md`](IOS_DEPLOYMENT.md), `scripts/verify-ios.sh`, and

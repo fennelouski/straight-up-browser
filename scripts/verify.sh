@@ -29,6 +29,11 @@ UI_TEST_SETTINGS=(
     SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
 )
 RUN_UI_TESTS="${RUN_UI_TESTS:-0}"
+# UI test case limits do not cover a test-runner launch that never connects.
+# Keep an outer deadline as well so a release attempt cannot monopolize the
+# active macOS desktop indefinitely. Reaching the deadline is a failure, not a
+# skipped verification gate.
+MACOS_UI_TEST_TIMEOUT_SECONDS="${MACOS_UI_TEST_TIMEOUT_SECONDS:-480}"
 # The iPadOS UI suite gates the iOS app, which ships on its own schedule. Set
 # this to 0 to release the Mac app without it. The iOS Release build below is
 # unconditional either way, so a macOS release still cannot land iOS code that
@@ -36,6 +41,17 @@ RUN_UI_TESTS="${RUN_UI_TESTS:-0}"
 RUN_IOS_UI_TESTS="${RUN_IOS_UI_TESTS:-1}"
 RUN_TSAN="${RUN_TSAN:-0}"
 MIN_APP_COVERAGE_PERCENT="${MIN_APP_COVERAGE_PERCENT:-25}"
+
+case "$MACOS_UI_TEST_TIMEOUT_SECONDS" in
+    ''|*[!0-9]*)
+        echo "MACOS_UI_TEST_TIMEOUT_SECONDS must be a positive whole number." >&2
+        exit 64
+        ;;
+esac
+if [ "$MACOS_UI_TEST_TIMEOUT_SECONDS" -lt 1 ]; then
+    echo "MACOS_UI_TEST_TIMEOUT_SECONDS must be greater than zero." >&2
+    exit 64
+fi
 
 python3 ./scripts/check-agent-model-review.py
 python3 ./scripts/test-agent-model-review.py
@@ -129,16 +145,31 @@ CLI_EXECUTABLE="$DERIVED_DATA_ROOT/macos-release/Build/Products/Release/Browser.
 ./scripts/validate-macos-architectures.sh "$MAC_EXECUTABLE" "$CLI_EXECUTABLE"
 
 if [ "$RUN_UI_TESTS" = "1" ]; then
-    echo "Running macOS UI tests..."
-    xcodebuild test -quiet \
-        -onlyUsePackageVersionsFromResolvedFile \
-        -project "$PROJECT" \
-        -scheme "Browser UI" \
-        -destination "platform=macOS,arch=arm64" \
-        -derivedDataPath "$DERIVED_DATA_ROOT/macos-ui-tests" \
-        -resultBundlePath "$DERIVED_DATA_ROOT/macos-ui-tests.xcresult" \
-        -parallel-testing-enabled NO \
-        "${UI_TEST_SETTINGS[@]}"
+    echo "Running macOS UI tests (maximum ${MACOS_UI_TEST_TIMEOUT_SECONDS}s)..."
+    macos_ui_test_status=0
+    if ./scripts/run-with-time-limit.sh "$MACOS_UI_TEST_TIMEOUT_SECONDS" \
+        xcodebuild test -quiet \
+            -onlyUsePackageVersionsFromResolvedFile \
+            -project "$PROJECT" \
+            -scheme "Browser UI" \
+            -destination "platform=macOS,arch=arm64" \
+            -derivedDataPath "$DERIVED_DATA_ROOT/macos-ui-tests" \
+            -resultBundlePath "$DERIVED_DATA_ROOT/macos-ui-tests.xcresult" \
+            -parallel-testing-enabled NO \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 45 \
+            -maximum-test-execution-time-allowance 90 \
+            "${UI_TEST_SETTINGS[@]}"; then
+        :
+    else
+        macos_ui_test_status=$?
+    fi
+    if [ "$macos_ui_test_status" -ne 0 ]; then
+        if [ "$macos_ui_test_status" -eq 124 ]; then
+            echo "macOS UI tests exceeded the ${MACOS_UI_TEST_TIMEOUT_SECONDS}s deadline; the release is intentionally stopped." >&2
+        fi
+        exit "$macos_ui_test_status"
+    fi
 
     if [ "$RUN_IOS_UI_TESTS" = "1" ]; then
         echo "Running iPadOS UI tests..."
