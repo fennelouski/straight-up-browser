@@ -42,9 +42,8 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         let dutch = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
         dutch.name = "Weather-Zoetermeer-Postal-Fixture"; dutch.lifetime = .keepAlways; add(dutch)
         field.typeKey("a", modifierFlags: .command); field.typeText("weather home")
-        XCTAssertTrue(app.staticTexts["omnibar-weather-status"].waitForExistence(timeout: 5))
-        let status = app.staticTexts["omnibar-weather-status"]
-        XCTAssertTrue((status.value as? String ?? "").contains("Set up Home"))
+        XCTAssertTrue(app.buttons["omnibar-weather-location"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather-current"].waitForNonExistence(timeout: 5))
         field.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather"].waitForNonExistence(timeout: 5))
         app.terminate()

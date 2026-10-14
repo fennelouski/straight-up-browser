@@ -62,7 +62,7 @@ nonisolated struct BrowserWeatherPlace: Identifiable, Codable, Equatable, Sendab
     func query(for name: String) throws -> String {
         let alias = name.lowercased()
         if let query = places[alias] { return query }
-        if ["home", "work"].contains(alias) { throw BrowserWeatherError.message("Set up \(alias.capitalized) in Saved places first.") }
+        if ["home", "work"].contains(alias) { throw BrowserWeatherError.locationRequired }
         return name
     }
     func save(name: String, query: String) throws {
@@ -185,10 +185,12 @@ struct WeatherPlacesEditor: View {
                 }
             }
             HStack {
-                Button("Home", systemImage: "house") { name = "home"; address = places.places["home"] ?? "" }
+                Button { name = "home"; address = places.places["home"] ?? "" } label: { Image(systemName: "house") }
                     .tint(name == "home" ? .accentColor : .secondary)
-                Button("Work", systemImage: "briefcase") { name = "work"; address = places.places["work"] ?? "" }
+                    .accessibilityLabel("Home").help("Home")
+                Button { name = "work"; address = places.places["work"] ?? "" } label: { Image(systemName: "briefcase") }
                     .tint(name == "work" ? .accentColor : .secondary)
+                    .accessibilityLabel("Work").help("Work")
                 Button { name = ""; address = "" } label: { Image(systemName: "plus") }
                     .accessibilityLabel("Add another place")
             }.buttonStyle(.bordered)

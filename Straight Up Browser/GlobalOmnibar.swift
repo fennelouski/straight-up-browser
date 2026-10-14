@@ -90,11 +90,14 @@ final class GlobalOmnibarController: NSObject, NSWindowDelegate {
             // Shift/Cmd+Return behave the same as plain Return here.
             onNavigate: { url, _ in GlobalOmnibarController.openInBrowser(url) },
             onWeather: { [weak self] visible in self?.resizeForWeather(visible) },
+            onWeatherHeight: { [weak self] height in self?.resizeForWeather(true, cardHeight: height) },
             expandedHeight: expandedHeight
         )
         let hosting = NSHostingView(rootView: content)
         hosting.setFrameSize(hosting.fittingSize)
         compactHeight = hosting.frame.height
+        content.compactHeight = compactHeight
+        hosting.rootView = content
 
         let panel = KeyablePanel(
             contentRect: NSRect(origin: .zero, size: hosting.frame.size),
@@ -130,9 +133,9 @@ final class GlobalOmnibarController: NSObject, NSWindowDelegate {
         panel.makeKeyAndOrderFront(nil) // keyboard focus without activating the app
     }
 
-    private func resizeForWeather(_ visible: Bool) {
+    private func resizeForWeather(_ visible: Bool, cardHeight: CGFloat = 80) {
         guard let panel else { return }
-        let height: CGFloat = visible ? expandedHeight : compactHeight
+        let height: CGFloat = visible ? min(expandedHeight, compactHeight + cardHeight + 16) : compactHeight
         var frame = panel.frame
         frame.origin.y += frame.height - height
         frame.size.height = height
@@ -180,11 +183,14 @@ private struct GlobalOmnibarWeatherView: View {
     @Binding var urlString: String
     let onNavigate: (String, OmnibarCommit) -> Void
     let onWeather: (Bool) -> Void
+    let onWeatherHeight: (CGFloat) -> Void
     var expandedHeight: CGFloat
+    var compactHeight: CGFloat = 100
     @State private var weather = false
     @State private var surfaces: [CGRect] = []
     @State private var credited = false
     @State private var weatherSnapshot: OmnibarWeatherSnapshot?
+    @State private var weatherCardHeight: CGFloat = 80
     var body: some View {
         ZStack(alignment: .top) {
             if weather { OmnibarWeatherScene(layer: .sky, attributionVisible: credited, snapshot: weatherSnapshot).transition(.opacity) }
@@ -193,12 +199,20 @@ private struct GlobalOmnibarWeatherView: View {
                         onWeatherVisibilityChanged: { weather = $0; onWeather($0) })
             if weather { OmnibarWeatherScene(layer: .precipitation, surfaces: surfaces, attributionVisible: credited, snapshot: weatherSnapshot).transition(.opacity) }
         }
-        .frame(width: 600, height: weather ? expandedHeight : nil, alignment: .top)
+        .frame(width: 600, height: weather ? min(expandedHeight, compactHeight + weatherCardHeight + 16) : nil, alignment: .top)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .coordinateSpace(name: "omnibarWeatherScene")
         .onPreferenceChange(OmnibarWeatherSurfaces.self) { surfaces = $0 }
         .onPreferenceChange(OmnibarWeatherCreditVisible.self) { credited = $0 }
         .onPreferenceChange(OmnibarWeatherResolvedScene.self) { weatherSnapshot = $0 }
+        .onPreferenceChange(OmnibarWeatherPanelHeight.self) { height in
+            guard height > 0 else { return }
+            weatherCardHeight = height
+            if weather { onWeatherHeight(height) }
+        }
+        .onChange(of: weather) { _, visible in
+            if visible { onWeatherHeight(weatherCardHeight) }
+        }
         .omnibarMotion(weather)
     }
 }

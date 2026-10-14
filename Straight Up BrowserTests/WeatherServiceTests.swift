@@ -2,14 +2,115 @@ import Foundation
 import Testing
 import WeatherKit
 import CoreLocation
+import AppKit
+import SwiftUI
 @testable import Browser
 
 @MainActor private final class WeatherFixtureConnection { var offline = true }
+@MainActor private final class WeatherMarkCounter { var calls = 0 }
 nonisolated private final class DeniedWeatherLocationFixture: CLLocationManager {
     override var authorizationStatus: CLAuthorizationStatus { .denied }
 }
 
 @MainActor struct WeatherServiceTests {
+    @Test func emptyWeatherStatesRenderAsCompactControls() throws {
+        let phases: [WeatherCardPhase] = [.location, .offline, .unavailable, .provider]
+        let renderer = ImageRenderer(content: VStack(spacing: 12) {
+            ForEach(phases, id: \.self) { phase in
+                WeatherCompactStatus(phase: phase, onLocation: {}, onProvider: {}, onRetry: {}, onCandidate: { _ in })
+                    .padding(18).frame(maxWidth: .infinity, minHeight: 76)
+                    .foregroundStyle(.white).tint(.white)
+                    .background(Color(red: 0.04, green: 0.09, blue: 0.16), in: RoundedRectangle(cornerRadius: 22))
+            }
+        }.frame(width: 560).environment(\.colorScheme, .dark).transaction { $0.disablesAnimations = true })
+        let image = try #require(renderer.nsImage)
+        #expect(image.size.width == 560 && image.size.height < 400)
+        if let path = ProcessInfo.processInfo.environment["WEATHER_STATUS_PREVIEW_PATH"],
+           let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
+           let png = bitmap.representation(using: .png, properties: [:]) {
+            try png.write(to: URL(fileURLWithPath: path))
+        }
+    }
+    @Test func attributionReadinessSurvivesLocationChangesAndRepeatedLoads() async throws {
+        let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1, pixelsHigh: 1,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 4, bitsPerPixel: 32))
+        let data = try #require(bitmap.representation(using: .png, properties: [:]))
+        let counter = WeatherMarkCounter()
+        let url = URL(string: "https://example.com/mark/\(UUID().uuidString).png")!
+        let loader = WeatherAttributionLoader { _ in
+            await MainActor.run { counter.calls += 1 }
+            return data
+        }
+        #expect(!loader.isReady(for: url))
+        await loader.load(url)
+        #expect(loader.isReady(for: url) && loader.image != nil)
+        // Changing the place leaves the provider mark URL unchanged. Reloading
+        // or remounting its view must not reset attribution or hide the forecast.
+        await loader.load(url)
+        #expect(loader.isReady(for: url) && !loader.loading && counter.calls == 1)
+        let other = URL(string: "https://example.com/other/\(UUID().uuidString).png")!
+        #expect(!loader.isReady(for: other))
+        await loader.load(other)
+        #expect(loader.isReady(for: other) && counter.calls == 2)
+    }
+    @Test func attributionFailuresRecoverAndLateMarksCannotReplaceTheCurrentProvider() async throws {
+        let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1, pixelsHigh: 1,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 4, bitsPerPixel: 32))
+        let data = try #require(bitmap.representation(using: .png, properties: [:]))
+        let connection = WeatherFixtureConnection()
+        let slow = URL(string: "https://example.com/slow/\(UUID().uuidString).png")!
+        let fast = URL(string: "https://example.com/fast/\(UUID().uuidString).png")!
+        let loader = WeatherAttributionLoader { url in
+            if await MainActor.run(body: { connection.offline }) { throw URLError(.notConnectedToInternet) }
+            if url == slow { try? await Task.sleep(for: .milliseconds(50)) }
+            return data
+        }
+        await loader.load(fast)
+        #expect(!loader.isReady(for: fast))
+        if case .offline = loader.failure {} else { Issue.record("Missing mark must retain the real offline cause") }
+        connection.offline = false
+        let previous = Task { await loader.load(slow) }
+        try await Task.sleep(for: .milliseconds(10))
+        await loader.load(fast)
+        await previous.value
+        #expect(loader.isReady(for: fast) && loader.loadedURL == fast && loader.failure == nil)
+    }
+    @Test func weatherPresentationSeparatesMissingSetupOfflineAndProviderFailures() {
+        func phase(forecast: Bool = false, mark: Bool = false, loading: Bool = false, offline: Bool = false,
+                   location: Bool = false, failure: BrowserWeatherError? = nil, candidates: Bool = false, attributionFailed: Bool = false) -> WeatherCardPhase {
+            .resolve(hasForecast: forecast, markReady: mark, loading: loading, offline: offline,
+                     needsLocation: location, failure: failure, hasCandidates: candidates, attributionFailed: attributionFailed)
+        }
+        #expect(phase(location: true) == .location)
+        #expect(phase(failure: .locationRequired) == .location)
+        #expect(phase(loading: true) == .loading)
+        #expect(phase(offline: true) == .offline)
+        #expect(phase(failure: .offline) == .offline)
+        #expect(phase(failure: .credentials) == .provider)
+        #expect(phase(loading: true, location: true, failure: .credentials) == .provider)
+        #expect(phase(failure: .unavailable) == .unavailable)
+        #expect(phase(forecast: true, attributionFailed: true) == .unavailable)
+        #expect(phase(forecast: true, mark: true, loading: true) == .ready)
+        #expect(phase(forecast: true, mark: true, candidates: true) == .ambiguous)
+        #expect(phase(forecast: true, mark: true, offline: true) == .ready)
+        #expect(phase(forecast: true, mark: true, failure: .locationRequired) == .location)
+        #expect(phase(offline: true, location: true) == .offline)
+        #expect(WeatherCardPhase.location.preferredHeight() == 80)
+        #expect(WeatherCardPhase.unavailable.preferredHeight() == 80)
+        #expect(WeatherCardPhase.ready.preferredHeight() == 420)
+    }
+    @Test func fetchingAnimationStartsAfterThreeSecondsAndNestedOfflineErrorsAreRecognized() {
+        let started = Date(timeIntervalSince1970: 1000)
+        #expect(!WeatherCardPhase.showsLoadingAnimation(startedAt: nil, now: started))
+        #expect(!WeatherCardPhase.showsLoadingAnimation(startedAt: started, now: started.addingTimeInterval(2.99)))
+        #expect(WeatherCardPhase.showsLoadingAnimation(startedAt: started, now: started.addingTimeInterval(3)))
+        let underlying = NSError(domain: NSURLErrorDomain, code: URLError.notConnectedToInternet.rawValue)
+        let mapFailure = NSError(domain: "MKErrorDomain", code: 5, userInfo: [NSUnderlyingErrorKey: underlying])
+        if case .offline = BrowserWeatherError.classify(mapFailure) {} else { Issue.record("Nested offline error lost its connectivity state") }
+        if case .unavailable = BrowserWeatherError.classify(URLError(.timedOut)) {} else { Issue.record("A slow provider is not evidence of being offline") }
+    }
     private let now = Date(timeIntervalSince1970: 1791792000)
     private func preferences() -> UserDefaults { UserDefaults(suiteName: "WeatherFixture." + UUID().uuidString)! }
     private func place(_ town: String = "Erie", lat: Double = 40.045, lon: Double = -105.048) -> BrowserWeatherPlace {
@@ -43,6 +144,8 @@ nonisolated private final class DeniedWeatherLocationFixture: CLLocationManager 
         store.beginOmnibar(UUID())
         store.useCurrentLocation(requestPermission: false)
         #expect(store.forecast == nil && store.status.contains("Location access is unavailable"))
+        #expect(!store.loading)
+        if case .locationRequired = store.failure {} else { Issue.record("Denied location must offer location setup") }
     }
     @Test func savedPlacesStayPrivateAndMissingAliasesAreExplicit() throws {
         let first = WeatherPlacesStore(preferences: preferences()), second = WeatherPlacesStore(preferences: preferences())

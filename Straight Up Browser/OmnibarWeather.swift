@@ -165,6 +165,11 @@ struct OmnibarWeatherResolvedScene: PreferenceKey {
     }
 }
 
+struct OmnibarWeatherPanelHeight: PreferenceKey {
+    static var defaultValue: CGFloat { 0 }
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
 struct OmnibarWeatherCard: View {
     var query = "weather"
     var mapURL: String? = nil
@@ -173,9 +178,12 @@ struct OmnibarWeatherCard: View {
     @ObservedObject private var places = WeatherPlacesStore.shared
     @ObservedObject private var regional = WeatherRegionalFeedStore.shared
     @StateObject private var model = BrowserWeatherQueryModel()
+    @StateObject private var credit = WeatherAttributionLoader()
+    @ObservedObject private var network = WeatherNetworkStatus.shared
     @State private var client = UUID()
     @State private var configuring = false
-    @State private var credited = false
+    @State private var configuringProvider = false
+    @State private var busySince: Date?
     @State private var saveStatus = ""
     @AppStorage(NewspaperPreferences.Key.weatherCity) private var city = ""
     @AppStorage(NewspaperPreferences.Key.weatherCurrentLocation) private var currentLocation = false
@@ -188,11 +196,30 @@ struct OmnibarWeatherCard: View {
     private var usesCurrent: Bool { intent.location == nil && currentLocation && OmnibarWeatherSnapshot.testPreview == nil }
     private var forecast: BrowserWeatherForecast? { usesCurrent ? (store.forecast ?? model.result) : model.result }
     private var requestKey: String {
-        "\(intent.location ?? city)|\(currentLocation)|\(places.places.sorted { $0.key < $1.key })|\(provider)|\(revision)|\(byo)"
+        let requested = intent.location ?? city
+        let resolved = (try? places.query(for: requested)) ?? requested
+        return "\(resolved)|\(usesCurrent)|\(provider)|\(revision)|\(byo)"
     }
-    private var ready: Bool { forecast.map { $0.source.fixture || $0.source.markURL == nil || credited } ?? false }
-    private var status: String { usesCurrent ? store.status : model.status }
-    private var loading: Bool { model.loading || (usesCurrent && (status.contains("Loading") || status.contains("Finding"))) }
+    private var markReady: Bool { forecast.map { $0.source.fixture || credit.isReady(for: $0.source.markURL) } ?? false }
+    private var failure: BrowserWeatherError? {
+        if case .credentials = model.failure { return model.failure }
+        return (usesCurrent ? store.failure : model.failure) ?? credit.failure
+    }
+    private var loading: Bool {
+        (usesCurrent ? store.loading : model.loading) || credit.loading ||
+            (forecast != nil && !markReady && credit.failure == nil)
+    }
+    private var needsLocation: Bool {
+        guard !usesCurrent else { return false }
+        let requested = (intent.location ?? city).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return requested.isEmpty || (["home", "work"].contains(requested) && places.places[requested] == nil)
+    }
+    private var phase: WeatherCardPhase {
+        .resolve(hasForecast: forecast != nil, markReady: markReady, loading: loading,
+                 offline: network.offline, needsLocation: needsLocation, failure: failure,
+                 hasCandidates: !model.candidates.isEmpty, attributionFailed: credit.failure != nil)
+    }
+    private var ready: Bool { phase == .ready }
     private func temperature(_ celsius: Double) -> String {
         (NewspaperTemperatureUnit(rawValue: unit) ?? .system).formatted(Measurement(value: celsius, unit: .celsius))
     }
@@ -213,77 +240,107 @@ struct OmnibarWeatherCard: View {
     }
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if loading {
-                        HStack { ProgressView().controlSize(.small); Text(status).font(.caption) }
-                            .accessibilityIdentifier("weather-loading")
-                    } else if !status.isEmpty && forecast != nil {
-                        Text(status).font(.caption).accessibilityIdentifier("omnibar-weather-status")
-                    }
-                    ForEach(model.candidates) { candidate in
-                        Button(candidate.label) { load(resolved: candidate) }.frame(minHeight: 44)
-                    }
-                    if let retryAt = model.retryAt { Text("Retry after \(retryAt.formatted(date: .abbreviated, time: .shortened))").font(.caption) }
-                    if !status.isEmpty && model.candidates.isEmpty {
-                        Button("Retry") { load(debounce: false) }.disabled(model.retryAt.map { $0 > Date() } ?? false)
-                            .accessibilityIdentifier("weather-retry")
-                    }
-                    if let forecast, ready {
+            if ready, let forecast {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        updateNotice
                         forecastContent(forecast)
                             .id(forecast.place.id + String(forecast.source.issuedAt.timeIntervalSince1970))
                             .transition(.opacity)
-                    } else {
-                        Label("Weather", systemImage: "cloud.sun").font(.title2)
-                        if !loading {
-                            Text(status.isEmpty ? (forecast == nil ? "Choose a location to see your weather and hourly forecast." : "Loading provider attribution…") : status)
-                                .font(.callout).accessibilityIdentifier("omnibar-weather-status")
-                        }
-                    }
-                    if let forecast {
-                        HStack {
-                            Button("Use this place as Home") { save("home", query: "\(forecast.place.latitude),\(forecast.place.longitude)") }
-                            Button("Use this place as Work") { save("work", query: "\(forecast.place.latitude),\(forecast.place.longitude)") }
-                        }.font(.caption)
-                    }
-                    if let mapURL, let point = WeatherMapLink.query(mapURL) {
-                        HStack {
-                            Button("Use open map as Home") { save("home", query: point) }
-                            Button("Use open map as Work") { save("work", query: point) }
-                        }.font(.caption)
-                    }
-                    if !saveStatus.isEmpty { Text(saveStatus).font(.caption) }
-                }.padding(18)
+                        if !saveStatus.isEmpty { Text(saveStatus).font(.caption).foregroundStyle(.white.opacity(0.7)) }
+                    }.padding(18)
+                }
+                HStack(spacing: 12) {
+                    locationButton(pulsing: false)
+                    Spacer(minLength: 8)
+                    savePlaceButton("home", symbol: "house", forecast: forecast)
+                    savePlaceButton("work", symbol: "briefcase", forecast: forecast)
+                    Button(action: onSearch) { Image(systemName: "magnifyingglass").frame(width: 36, height: 36) }
+                        .accessibilityLabel("Search the web").help("Search the web")
+                        .accessibilityIdentifier("omnibar-weather-search")
+                }.padding(.horizontal, 14)
+                attribution(forecast)
+            } else {
+                compactState
+                    .padding(18)
+                    .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
             }
-            HStack {
-                Button(city.isEmpty && !currentLocation ? "Choose location" : "Saved places", systemImage: "location") { configuring = true }
-                    .frame(minHeight: 44).accessibilityIdentifier("omnibar-weather-location")
-                Spacer(minLength: 8)
-                Button("Search the web", action: onSearch).frame(minHeight: 44).accessibilityIdentifier("omnibar-weather-search")
-            }.font(.caption).padding(.horizontal, 18)
-            if let forecast { attribution(forecast) }
         }
         .foregroundStyle(.white).tint(.white)
         .background(Color(red: 0.04, green: 0.09, blue: 0.16).opacity(0.91), in: RoundedRectangle(cornerRadius: 22))
         .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.15)))
         .weatherLandingSurface()
         .preference(key: OmnibarWeatherCreditVisible.self, value: ready)
+        .preference(key: OmnibarWeatherPanelHeight.self, value: phase.preferredHeight(candidateCount: model.candidates.count))
         .preference(key: OmnibarWeatherResolvedScene.self, value: ready ? forecast?.scene : nil)
         .accessibilityElement(children: .contain).accessibilityIdentifier("omnibar-weather")
-        .popover(isPresented: $configuring) { NewspaperWeatherLocationPopup(enablesMasthead: false, validationPlace: forecast?.place).foregroundStyle(.primary).tint(.accentColor) }
+        .popover(isPresented: $configuring) {
+            NewspaperWeatherLocationPopup(enablesMasthead: false, validationPlace: forecast?.place,
+                aliasToSave: ["home", "work"].contains(intent.location?.lowercased() ?? "") ? intent.location?.lowercased() : nil)
+                .foregroundStyle(.primary).tint(.accentColor)
+        }
+        .popover(isPresented: $configuringProvider) {
+            WeatherProviderSettings(validationPlace: forecast?.place).padding(18).frame(width: 360)
+                .foregroundStyle(.primary).tint(.accentColor)
+        }
         .onAppear { store.beginOmnibar(client) }
         .task(id: requestKey) { load() }
+        .task(id: forecast?.source.markURL) { await credit.load(forecast?.source.markURL) }
         .task {
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(60)) } catch { break }
                 model.expireIfNeeded(now: Date()); store.expireIfNeeded(now: Date())
             }
         }
+        .onChange(of: loading, initial: true) { _, fetching in busySince = fetching ? Date() : nil }
+        .onChange(of: network.offline) { wasOffline, offline in
+            if wasOffline && !offline { retry() }
+        }
         .onChange(of: ready) { _, visible in store.setOmnibarAttributionVisible(visible, client: client) }
-        .onChange(of: forecast?.place.id) { _, _ in credited = false }
         .onDisappear { model.cancel(); store.endOmnibar(client) }
         .omnibarMotion(forecast?.place.id)
         .omnibarMotion(forecast?.source.issuedAt)
+    }
+
+    private var compactState: some View {
+        WeatherCompactStatus(phase: phase, startedAt: busySince, retryAt: model.retryAt, candidates: model.candidates,
+            onLocation: { configuring = true }, onProvider: { configuringProvider = true }, onRetry: retry,
+            onCandidate: { load(resolved: $0) })
+    }
+    @ViewBuilder private var updateNotice: some View {
+        if network.offline || isOfflineFailure {
+            Label("Offline · saved forecast", systemImage: "wifi.slash").font(.caption)
+                .accessibilityIdentifier("weather-offline")
+        } else if failure != nil {
+            HStack {
+                Label("Couldn't update", systemImage: "exclamationmark.circle")
+                Spacer()
+                if case .credentials = failure {
+                    Button { configuringProvider = true } label: { Image(systemName: "key") }
+                        .accessibilityLabel("Weather providers")
+                }
+                retryButton
+            }.font(.caption).padding(.horizontal, 18)
+        } else if loading {
+            WeatherFetchingIndicator(startedAt: busySince, refreshing: true)
+        }
+    }
+    private var isOfflineFailure: Bool { if case .offline = failure { return true }; return false }
+    private var retryButton: some View {
+        WeatherRetryButton(retryAt: model.retryAt, action: retry)
+    }
+    private func locationButton(pulsing: Bool) -> some View {
+        WeatherLocationButton(pulsing: pulsing) { configuring = true }
+    }
+    private func savePlaceButton(_ name: String, symbol: String, forecast: BrowserWeatherForecast) -> some View {
+        Button { save(name, query: "\(forecast.place.latitude),\(forecast.place.longitude)") } label: {
+            Image(systemName: symbol).frame(width: 36, height: 36)
+        }
+        .accessibilityLabel("Use this place as \(name.capitalized)").help("Save as \(name.capitalized)")
+    }
+    private func retry() {
+        load(debounce: false)
+        if !markReady { Task { await credit.load(forecast?.source.markURL, refresh: true) } }
     }
     @ViewBuilder private func forecastContent(_ forecast: BrowserWeatherForecast) -> some View {
         let scene = forecast.scene
@@ -341,19 +398,14 @@ struct OmnibarWeatherCard: View {
             Text("Preview weather · No live service requested").font(.caption2).padding(12)
         } else {
             HStack(spacing: 12) {
-                if let url = forecast.source.markURL {
-                    AsyncImage(url: url) { phase in
-                        if let image = phase.image {
-                            image.resizable().scaledToFit().frame(width: 90, height: 20)
-                                .accessibilityLabel(forecast.source.name).accessibilityIdentifier("omnibar-weather-mark")
-                                .onAppear { credited = true }.onDisappear { credited = false }
-                        } else { Text("Weather attribution is unavailable.").font(.caption2) }
-                    }.id(forecast.place.id)
+                if forecast.source.markURL != nil, let image = credit.image {
+                    image.resizable().scaledToFit().frame(width: 90, height: 20)
+                        .accessibilityLabel(forecast.source.name).accessibilityIdentifier("omnibar-weather-mark")
                 } else { Text(forecast.source.name).font(.caption2) }
                 Spacer(minLength: 0)
                 Link("Weather data sources", destination: forecast.source.legalURL).font(.caption2).accessibilityIdentifier("omnibar-weather-attribution")
             }.padding(.horizontal, 18).padding(.vertical, 12)
-            Text("Weather animations illustrate forecast data and are modified by Browser.").font(.caption2).padding(.bottom, 8)
+                .help("Weather animations illustrate forecast data and are modified by Browser.")
         }
     }
     private func load(resolved: BrowserWeatherPlace? = nil, debounce: Bool = true) {
@@ -379,13 +431,15 @@ struct OmnibarWeatherCard: View {
                     source: .init(provider: "fixture", name: "Preview weather", legalURL: URL(string: "https://developer.apple.com/weatherkit/")!, markURL: nil,
                                   issuedAt: Date(), expiresAt: Date().addingTimeInterval(3600), fixture: true)))
             } catch { model.fail((error as? BrowserWeatherError)?.message ?? "Preview unavailable.") }
+        } else if provider == "tomorrow" && (!byo || !BrowserWeatherKeychain.hasKey()) {
+            model.fail(.credentials)
         } else if usesCurrent {
             model.cancel(); Task { await store.loadForOmnibar() }
         } else if requested.isEmpty { model.fail("Choose a location to see weather.") }
         else { model.load(requested, resolved: resolved, debounce: debounce) }
     }
     private func save(_ name: String, query: String) {
-        do { try places.save(name: name, query: query); saveStatus = "\(name.capitalized) saved in this browser." }
+        do { try places.save(name: name, query: query); saveStatus = "\(name.capitalized) saved" }
         catch { saveStatus = "The place could not be saved." }
     }
 }
