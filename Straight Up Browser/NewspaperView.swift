@@ -76,6 +76,7 @@ struct NewspaperView: View {
     @State private var showDismissed = false
     @State private var pageIndex = 0
     @State private var pageTurnDirection = 1
+    @State private var readingHistory = NewspaperReadingHistory()
 
     private static let allSections = "All Sections"
 
@@ -112,7 +113,12 @@ struct NewspaperView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+          readerControls
+          NavigationStack(path: Binding(
+            get: { readingHistory.path },
+            set: { readingHistory.visit($0) }
+          )) {
             ScrollView {
               VStack(spacing: 0) {
                 masthead
@@ -145,7 +151,6 @@ struct NewspaperView: View {
               }
             }
             .scrollIndicators(.visible)
-            .overlay(alignment: .topTrailing) { closeButton.padding(4) }
             .overlay {
                 if layout == .flipbook || navigationStyle == .pages {
                     HStack {
@@ -163,19 +168,15 @@ struct NewspaperView: View {
                 case .ended: nearLeft = false; nearRight = false
                 }
             }
-            .background { NewspaperHorizontalPaging(onTurn: turnPage) }
             #if os(iOS)
             .simultaneousGesture(DragGesture(minimumDistance: 30).onEnded { value in
                 guard abs(value.translation.width) > abs(value.translation.height) * 1.5,
                       abs(value.translation.width) > 70 else { return }
-                turnPage(value.translation.width < 0 ? 1 : -1)
+                _ = navigate(value.translation.width < 0 ? 1 : -1)
             })
             #endif
             .background(NewspaperPaper().ignoresSafeArea())
             .foregroundStyle(Color.primary)
-            #if os(macOS)
-            .ignoresSafeArea(.container, edges: .top)
-            #endif
             .navigationDestination(for: UUID.self) { id in
                 if let article = storedArticles.first(where: { $0.id == id }) {
                     NewspaperArticleView(
@@ -186,6 +187,9 @@ struct NewspaperView: View {
                             NewspaperStore(modelContext: modelContext).remove(article)
                         }
                     )
+                    #if os(macOS)
+                    .navigationBarBackButtonHidden(true)
+                    #endif
                 } else {
                     ContentUnavailableView(
                         "Article Unavailable",
@@ -193,7 +197,15 @@ struct NewspaperView: View {
                     )
                 }
             }
+          }
         }
+        .background { NewspaperHorizontalPaging(onTurn: navigate) }
+        .background(NewspaperPaper().ignoresSafeArea())
+        #if os(macOS)
+        // Only the dedicated control row occupies the hidden title-bar area.
+        // The masthead and article scroll views stay below it even when scrolled.
+        .ignoresSafeArea(.container, edges: .top)
+        #endif
         .environment(\.newspaperEdition, editionStyle)
         .tint(editionStyle.accent)
         .preferredColorScheme((NewspaperAppearance(rawValue: appearance) ?? .system).colorScheme)
@@ -244,6 +256,64 @@ struct NewspaperView: View {
         }
         .buttonStyle(BrowserPressStyle())
         .accessibilityLabel("Close Newspaper")
+    }
+
+    private var readerControls: some View {
+        HStack(spacing: 4) {
+            #if os(macOS)
+            Color.clear.frame(width: 100, height: 1).accessibilityHidden(true)
+            #endif
+            Button { _ = navigate(-1) } label: {
+                Image(systemName: "chevron.left").frame(width: 36, height: 40)
+            }
+            .disabled(!canNavigateBack)
+            .accessibilityLabel("Back")
+            .help("Back (⌘[)")
+            #if os(iOS)
+            .keyboardShortcut("[", modifiers: .command)
+            #endif
+            Button { _ = navigate(1) } label: {
+                Image(systemName: "chevron.right").frame(width: 36, height: 40)
+            }
+            .disabled(!canNavigateForward)
+            .accessibilityLabel("Forward")
+            .help("Forward (⌘])")
+            #if os(iOS)
+            .keyboardShortcut("]", modifiers: .command)
+            #endif
+            Spacer(minLength: 8)
+            closeButton
+        }
+        .buttonStyle(BrowserPressStyle())
+        .padding(.horizontal, 8)
+        .frame(height: 48)
+        #if os(macOS)
+        .background {
+            Color.clear.contentShape(Rectangle())
+                .gesture(WindowDragGesture()).allowsWindowActivationEvents(true)
+        }
+        #endif
+        .accessibilityIdentifier("newspaper-reader-controls")
+    }
+
+    private var supportsPages: Bool {
+        ![.cover, .feed, .newsstand, .eclectic].contains(layout) && !issueArticles.isEmpty
+    }
+    private var canNavigateBack: Bool {
+        readingHistory.canGoBack || (readingHistory.path.isEmpty && supportsPages && pageIndex > 0)
+    }
+    private var canNavigateForward: Bool {
+        readingHistory.canGoForward || (readingHistory.path.isEmpty && supportsPages &&
+            pageIndex < NewspaperPageProjection.pageCount(articleCount: issueArticles.count, layout: layout) - 1)
+    }
+    @discardableResult
+    private func navigate(_ direction: Int) -> Bool {
+        if direction < 0, readingHistory.canGoBack { return readingHistory.goBack() }
+        if direction > 0, readingHistory.canGoForward { return readingHistory.goForward() }
+        guard readingHistory.path.isEmpty,
+              direction < 0 ? canNavigateBack : canNavigateForward else { return false }
+        turnPage(direction)
+        return true
     }
 
     private func turnPage(_ direction: Int) {
@@ -298,7 +368,7 @@ struct NewspaperView: View {
         .padding(.horizontal, 18)
         .padding(.bottom, 8)
         #if os(macOS)
-        .padding(.top, 28)
+        .padding(.top, 6)
         .background {
             Color.clear.contentShape(Rectangle())
                 .gesture(WindowDragGesture()).allowsWindowActivationEvents(true)

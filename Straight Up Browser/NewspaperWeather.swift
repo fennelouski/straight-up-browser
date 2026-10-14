@@ -316,37 +316,63 @@ struct NewspaperWeatherLocationPopup: View {
     @AppStorage(NewspaperPreferences.Key.weatherCity) private var city = ""
     @AppStorage(NewspaperPreferences.Key.weatherCurrentLocation) private var currentLocation = false
     @State private var draftCity = ""
+    @State private var showingHelp = false
+    @State private var showingAdvanced = false
     @ObservedObject private var store = NewspaperWeatherStore.shared
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         ScrollView { VStack(alignment: .leading, spacing: 12) {
-            Text("Weather location").font(.headline)
-            Button("Use current location", systemImage: "location") {
+            HStack {
+                Label("Weather", systemImage: "cloud.sun.fill").font(.headline)
+                Spacer()
+                Button { showingHelp = true } label: { Image(systemName: "questionmark.circle") }
+                    .accessibilityLabel("Weather setup help")
+                    .popover(isPresented: $showingHelp) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Choose your location, enter a city or postcode, or tap a saved place. Location access is requested only when you choose it.")
+                            Text("Apple resolves place names. Forecasts use your selected provider. Saved places stay on this device; no JSON import or account connection is required.")
+                        }.font(.callout).padding(16).frame(width: 280)
+                    }
+                Button { dismiss() } label: { Image(systemName: "xmark") }
+                    .accessibilityLabel("Close weather settings")
+            }
+            Button("Use current location", systemImage: "location.fill") {
                 if enablesMasthead { enabled = true }
                 currentLocation = true
                 store.useCurrentLocation(requestPermission: true)
-            }.accessibilityIdentifier("newspaper-weather-use-current")
-            TextField("Address, postcode, or city and country", text: $draftCity).textFieldStyle(.roundedBorder)
-                .accessibilityIdentifier("newspaper-weather-city")
-                .onSubmit { saveCity() }
-            Text("Enter an address or postcode, or choose location access. Geocoding uses Apple; forecasts use your selected provider.")
-                .font(.caption).foregroundStyle(.secondary)
-            if !store.status.isEmpty { Text(store.status).font(.caption).foregroundStyle(.secondary) }
+            }.buttonStyle(.borderedProminent).accessibilityIdentifier("newspaper-weather-use-current")
             HStack {
-                Button("Cancel") { dismiss() }
-                if enabled && enablesMasthead { Button("Turn off weather") { enabled = false; store.clearIfUnneeded(); dismiss() } }
-                Spacer()
-                Button("Use this city") { saveCity() }
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("City or postcode", text: $draftCity).textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("newspaper-weather-city")
+                    .onSubmit { saveCity() }
+                Button { saveCity() } label: { Image(systemName: "arrow.right.circle.fill") }
+                    .accessibilityLabel("Use this city").help("Use this city")
                     .disabled(draftCity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            Picker("Temperature", selection: $unit) { ForEach(NewspaperTemperatureUnit.allCases) { Text($0.title).tag($0.rawValue) } }
+            if !store.status.isEmpty {
+                Text(store.status).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+            }
+            Picker("Temperature", selection: $unit) {
+                Text("Auto").tag(NewspaperTemperatureUnit.system.rawValue)
+                Text("°C").tag(NewspaperTemperatureUnit.celsius.rawValue)
+                Text("°F").tag(NewspaperTemperatureUnit.fahrenheit.rawValue)
+            }.pickerStyle(.segmented)
             Divider()
-            WeatherPlacesEditor()
+            WeatherPlacesEditor(onSelect: { alias in draftCity = alias; saveCity() })
             Divider()
-            WeatherProviderSettings(validationPlace: validationPlace ?? store.forecast?.place)
-            Divider()
-            WeatherRegionalFeedSettings()
-        }.padding(18) }.frame(width: 360, height: 600)
+            DisclosureGroup(isExpanded: $showingAdvanced) {
+                VStack(alignment: .leading, spacing: 12) {
+                    WeatherProviderSettings(validationPlace: validationPlace ?? store.forecast?.place)
+                    Divider()
+                    DisclosureGroup("Regional rain") { WeatherRegionalFeedSettings() }
+                }.padding(.top, 8)
+            } label: { Label("Providers", systemImage: "network") }
+            if enabled && enablesMasthead {
+                Button("Turn off", systemImage: "power") { enabled = false; store.clearIfUnneeded(); dismiss() }
+                    .foregroundStyle(.secondary).accessibilityLabel("Turn off weather")
+            }
+        }.padding(18) }.frame(width: 380, height: showingAdvanced ? 580 : 420)
             .onAppear { draftCity = city }
             .newspaperMotion(store.status)
     }

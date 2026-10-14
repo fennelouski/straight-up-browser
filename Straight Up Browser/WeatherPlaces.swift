@@ -134,32 +134,79 @@ nonisolated enum WeatherMapLink {
 }
 
 struct WeatherPlacesEditor: View {
+    var onSelect: ((String) -> Void)? = nil
     @ObservedObject private var places = WeatherPlacesStore.shared
     @State private var name = "home"
     @State private var address = ""
     @State private var status = ""
     @State private var importing = false
     @State private var resetting = false
+    @State private var showingHelp = false
+    @State private var failed = false
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Saved weather places").font(.headline)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Places", systemImage: "mappin.and.ellipse").font(.headline)
+                Spacer()
+                Button { showingHelp = true } label: { Image(systemName: "questionmark.circle") }
+                    .accessibilityLabel("Saved places help")
+                    .popover(isPresented: $showingHelp) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Save an address, postcode, or full Maps place link for Home, Work, or another place. Tap a saved place to use it.")
+                            Text("Places stay on this device. Google sign-in does not share Home or Work. If you already have a Google Home/Work export, use Import in the menu; no export is needed to set up weather.")
+                        }.font(.callout).padding(16).frame(width: 280)
+                    }
+                Menu {
+                    Button("Import places…", systemImage: "square.and.arrow.down") { importing = true }
+                    if !places.places.isEmpty {
+                        Button("Reset places", systemImage: "trash", role: .destructive) { resetting = true }
+                    }
+                } label: { Image(systemName: "ellipsis.circle") }
+                .accessibilityLabel("Saved places options")
+            }
             ForEach(places.places.keys.sorted(), id: \.self) { alias in
-                HStack {
-                    Button(alias.capitalized) { name = alias; address = places.places[alias] ?? "" }
-                    Text(places.places[alias] ?? "").font(.caption).lineLimit(1)
+                HStack(spacing: 8) {
+                    Button {
+                        if let onSelect { onSelect(alias) }
+                        else { name = alias; address = places.places[alias] ?? "" }
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(alias.capitalized).font(.callout.weight(.semibold))
+                                Text(places.places[alias] ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        } icon: { Image(systemName: alias == "home" ? "house.fill" : alias == "work" ? "briefcase.fill" : "mappin") }
+                    }.buttonStyle(.plain)
                     Spacer()
-                    Button("Delete", role: .destructive) { places.delete(alias) }
+                    Button { name = alias; address = places.places[alias] ?? "" } label: { Image(systemName: "pencil") }
+                        .accessibilityLabel("Edit \(alias.capitalized)")
+                    Button(role: .destructive) { places.delete(alias) } label: { Image(systemName: "trash") }
                         .accessibilityLabel("Delete \(alias.capitalized)")
                 }
             }
-            TextField("Name, such as Home or Work", text: $name).textFieldStyle(.roundedBorder)
-            TextField("Address, postcode, or full Maps link", text: $address).textFieldStyle(.roundedBorder).onSubmit(save)
-            Button("Save place", action: save).disabled(name.isEmpty || address.isEmpty)
-            Button("Import Google Home/Work JSON…") { importing = true }
-            Text("Saved places stay in this browser's local profile. Import only your own Home/Work export. Google Sign-in does not import these places. Short Maps links need a full place link or manual address.")
-                .font(.caption).foregroundStyle(.secondary)
-            if !status.isEmpty { Text(status).font(.caption).accessibilityIdentifier("weather-places-status") }
-            Button("Reset saved places", role: .destructive) { resetting = true }
+            HStack {
+                Button("Home", systemImage: "house") { name = "home"; address = places.places["home"] ?? "" }
+                    .tint(name == "home" ? .accentColor : .secondary)
+                Button("Work", systemImage: "briefcase") { name = "work"; address = places.places["work"] ?? "" }
+                    .tint(name == "work" ? .accentColor : .secondary)
+                Button { name = ""; address = "" } label: { Image(systemName: "plus") }
+                    .accessibilityLabel("Add another place")
+            }.buttonStyle(.bordered)
+            if !["home", "work"].contains(name.lowercased()) {
+                TextField("Place name", text: $name).textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Saved place name")
+            }
+            HStack {
+                TextField("Address or postcode", text: $address).textFieldStyle(.roundedBorder).onSubmit(save)
+                Button(action: save) { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
+                    .accessibilityLabel("Save place").help("Save place")
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if !status.isEmpty {
+                Label(status, systemImage: failed ? "exclamationmark.circle" : "checkmark.circle")
+                    .font(.caption).foregroundStyle(failed ? Color.red : Color.green)
+                    .accessibilityIdentifier("weather-places-status")
+            }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
             do {
@@ -167,13 +214,20 @@ struct WeatherPlacesEditor: View {
                 let access = url.startAccessingSecurityScopedResource()
                 defer { if access { url.stopAccessingSecurityScopedResource() } }
                 try places.importGooglePlaces(Data(contentsOf: url))
-                status = "Home/Work import saved locally."
-            } catch { status = "Import failed. Choose a Home/Work JSON export or enter places manually." }
+                status = "Places saved"; failed = false
+            } catch {
+                guard (error as NSError).code != NSUserCancelledError else { return }
+                status = "Couldn't import. Add an address instead."; failed = true
+            }
         }
         .confirmationDialog("Delete all saved weather places?", isPresented: $resetting) { Button("Reset", role: .destructive) { places.reset() } }
     }
     private func save() {
-        do { try places.save(name: name, query: address); status = "\(name.capitalized) saved locally." }
-        catch { status = (error as? BrowserWeatherError)?.message ?? "The place could not be saved." }
+        do {
+            try places.save(name: name, query: address)
+            status = "Saved"; failed = false; address = ""
+            onSelect?(name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        }
+        catch { status = (error as? BrowserWeatherError)?.message ?? "Couldn't save this place."; failed = true }
     }
 }

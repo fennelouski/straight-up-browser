@@ -12,6 +12,46 @@ struct NewspaperEditionCover: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
+        Group {
+            if photoLimit > 0, article.leadImage != nil {
+                illustratedCover
+            } else {
+                textCover
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(article.title)
+        .accessibilityValue("\(style.title) cover · \(article.estimatedReadingMinutes) minutes")
+    }
+
+    private var textCover: some View {
+        VStack(alignment: .leading, spacing: compact ? 14 : 22) {
+            VStack(spacing: 8) {
+                Text(NewspaperNaming.title(personalTitle, fallback: style.title).uppercased())
+                    .font(.system(size: compact ? 25 : 36, weight: .black, design: style.sansSerif ? .default : .serif))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2).minimumScaleFactor(0.7)
+                Text("YOUR READING EDITION").font(.system(size: 9, weight: .semibold)).tracking(1.5)
+            }.frame(maxWidth: .infinity)
+            Rectangle().fill(style.accent).frame(height: 2)
+            Text(article.section.uppercased()).font(.caption2.weight(.black)).tracking(1.4)
+            Text(article.title)
+                .font(.system(size: compact ? 24 : 30, weight: .black, design: style.sansSerif ? .default : .serif))
+                .lineLimit(5).fixedSize(horizontal: false, vertical: true)
+            if !compact, !article.cardExcerpt.isEmpty {
+                Text(article.cardExcerpt).font(.callout).foregroundStyle(.secondary).lineLimit(4)
+            }
+            Text(coverByline).font(.caption2.weight(.semibold))
+        }
+        .padding(compact ? 18 : 24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(NewspaperProceduralPaper(texture: selectedPaper, strength: paperStrength))
+        .background(style.accent.opacity(0.12))
+        .overlay { Rectangle().strokeBorder(style.accent, lineWidth: coverBorderWidth) }
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+    }
+
+    private var illustratedCover: some View {
         GeometryReader { geometry in
             let width = geometry.size.width
             ZStack(alignment: .bottomLeading) {
@@ -63,9 +103,6 @@ struct NewspaperEditionCover: View {
             .clipShape(RoundedRectangle(cornerRadius: 3))
         }
         .aspectRatio(0.72, contentMode: .fit)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(article.title)
-        .accessibilityValue("\(style.title) cover · \(article.estimatedReadingMinutes) minutes")
     }
     private var selectedPaper: NewspaperPaperTexture {
         let selected = NewspaperPaperTexture(rawValue: paperRaw) ?? .recommended
@@ -118,7 +155,7 @@ struct NewspaperVisualIssue: View {
                 }
             }
             .padding(20)
-            .frame(maxWidth: layout == .feed ? 720 : 1400)
+            .frame(maxWidth: layout == .feed ? 720 : 1700)
             .frame(maxWidth: .infinity)
         .newspaperMotion(articles.map(\.id))
     }
@@ -127,16 +164,30 @@ struct NewspaperVisualIssue: View {
         if let lead = articles.first {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .top, spacing: 28) {
-                    NewspaperCoverLink(article: lead, style: style, actions: actions).frame(minWidth: 320, maxWidth: 440)
-                    contents.frame(minWidth: 240, maxWidth: 400)
+                    NewspaperCoverLink(article: lead, style: style, actions: actions).frame(minWidth: 260, maxWidth: 360)
+                    coverReadingColumn.frame(minWidth: 300, maxWidth: .infinity)
                 }
                 VStack(spacing: 24) {
-                    NewspaperCoverLink(article: lead, style: style, actions: actions).frame(maxWidth: 440)
-                    contents
+                    NewspaperCoverLink(article: lead, style: style, actions: actions).frame(maxWidth: 360)
+                    coverReadingColumn
                 }
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("newspaper-cover-issue")
+        }
+    }
+    private var coverReadingColumn: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            contents
+            if articles.count > 1 {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 20)], alignment: .leading, spacing: 20) {
+                    ForEach(articles.dropFirst()) { article in
+                        NewspaperStoryLink(article: article, layout: .magazine, prominence: .standard, actions: actions)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                }
+                .accessibilityIdentifier("newspaper-cover-stories")
+            }
         }
     }
     private var contents: some View {

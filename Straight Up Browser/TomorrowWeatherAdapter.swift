@@ -151,37 +151,48 @@ struct WeatherProviderSettings: View {
     @State private var key = ""
     @State private var hasKey = false
     @State private var status = ""
+    @State private var showingHelp = false
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Weather providers").font(.headline)
+            HStack {
+                Label("Forecast", systemImage: "cloud.sun").font(.headline)
+                Spacer()
+                Button { showingHelp = true } label: { Image(systemName: "questionmark.circle") }
+                    .accessibilityLabel("Weather provider help")
+                    .popover(isPresented: $showingHelp) {
+                        Text("Keys stay in this device's Keychain. Coordinates go to your selected provider. Tomorrow.io uses your existing plan; check its limits before enabling requests. Browser does not purchase or upgrade plans. Apple limits are local safeguards, not your membership's remaining shared quota.")
+                            .font(.callout).padding(16).frame(width: 280)
+                    }
+            }
             Picker("Provider", selection: $provider) {
                 Text("Apple Weather").tag("apple")
-                Text("Tomorrow.io · your own key").tag("tomorrow")
+                Text("Tomorrow.io").tag("tomorrow")
             }
             .onChange(of: provider) { _, _ in BrowserWeatherService.shared.invalidate() }
-            SecureField(hasKey ? "Replace saved Tomorrow.io key" : "Tomorrow.io API key", text: $key).textFieldStyle(.roundedBorder)
+            if provider == "tomorrow" {
+            SecureField(hasKey ? "Replace API key" : "API key", text: $key).textFieldStyle(.roundedBorder)
             HStack {
                 Button(hasKey ? "Replace key" : "Save key") { update(key) }.disabled(key.isEmpty)
                 if hasKey { Button("Remove key", role: .destructive) { update("") } }
             }
-            Toggle("Allow requests with my existing Tomorrow.io key", isOn: $enabled)
+            Toggle("Use my Tomorrow.io plan", isOn: $enabled)
                 .disabled(!hasKey).onChange(of: enabled) { _, _ in BrowserWeatherService.shared.invalidate() }
+            Text("Uses your plan's requests.").font(.caption).foregroundStyle(.secondary)
             if let validationPlace {
-                Button(validating ? "Validating…" : "Validate key with this place") {
+                Button(validating ? "Checking…" : "Check connection") {
                     validating = true
                     Task {
                         do {
                             _ = try await BrowserWeatherService.shared.forecast(for: validationPlace, provider: .tomorrow, refresh: true)
-                            status = "Key validated with an authenticated forecast request for \(validationPlace.label)."
+                            status = "Connected"
                         } catch { status = (error as? BrowserWeatherError)?.message ?? "Validation failed." }
                         validating = false
                     }
                 }.disabled(!hasKey || !enabled || validating)
             }
-            Toggle("Allow configured Apple Weather fallback on provider outages", isOn: $fallback)
-            Text("Keys stay in this device's Keychain. The selected coordinates go to the selected provider. Confirm your existing plan before enabling requests; Browser does not purchase or upgrade a plan. Free-plan request bounds apply. Apple limits shown here are local safeguards, not your membership's remaining shared quota. Shared-service authentication and regional nowcasts are not configured.")
-                .font(.caption).foregroundStyle(.secondary)
-            if !status.isEmpty { Text(status).font(.caption) }
+            Toggle("Apple fallback", isOn: $fallback)
+            }
+            if !status.isEmpty { Text(status).font(.caption).lineLimit(3) }
         }.onAppear { hasKey = BrowserWeatherKeychain.hasKey() }
     }
     private func update(_ value: String) {
@@ -189,7 +200,7 @@ struct WeatherProviderSettings: View {
             try BrowserWeatherKeychain.write(value)
             key = ""; hasKey = !value.isEmpty; enabled = false
             revision = UUID().uuidString; BrowserWeatherService.shared.invalidate()
-            status = hasKey ? "Saved in this device's Keychain. Enable requests only after checking your plan." : "Provider key removed."
+            status = hasKey ? "Key saved. Enable your plan above." : "Key removed"
         } catch { status = (error as? BrowserWeatherError)?.message ?? "Keychain could not save the key." }
     }
 }

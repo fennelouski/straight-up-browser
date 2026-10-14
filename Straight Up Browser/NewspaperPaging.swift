@@ -3,6 +3,34 @@ import SwiftUI
 import AppKit
 #endif
 
+/// NavigationStack pops and value links share one browser-style history.
+/// A new article after going back discards the old forward branch.
+nonisolated struct NewspaperReadingHistory {
+    private var entries: [[UUID]] = [[]]
+    private var index = 0
+    var path: [UUID] { entries[index] }
+    var canGoBack: Bool { index > 0 }
+    var canGoForward: Bool { index + 1 < entries.count }
+    mutating func visit(_ path: [UUID]) {
+        guard path != self.path else { return }
+        // Native back buttons pop the stack; preserve that as Back, not a new visit.
+        if canGoBack, path == entries[index - 1] { index -= 1; return }
+        entries.removeSubrange((index + 1)..<entries.count)
+        entries.append(path)
+        index += 1
+    }
+    @discardableResult mutating func goBack() -> Bool {
+        guard canGoBack else { return false }
+        index -= 1
+        return true
+    }
+    @discardableResult mutating func goForward() -> Bool {
+        guard canGoForward else { return false }
+        index += 1
+        return true
+    }
+}
+
 nonisolated enum NewspaperPageProjection {
     static func articlesPerPage(_ layout: NewspaperLayout) -> Int { layout.isEditorial ? 4 : 1 }
     static func pageCount(articleCount: Int, layout: NewspaperLayout) -> Int {
@@ -97,12 +125,12 @@ nonisolated struct NewspaperSwipeAccumulator {
 
 #if os(macOS)
 struct NewspaperHorizontalPaging: NSViewRepresentable {
-    let onTurn: (Int) -> Void
+    let onTurn: (Int) -> Bool
     func makeNSView(context: Context) -> PagingView { let view = PagingView(); view.onTurn = onTurn; return view }
     func updateNSView(_ view: PagingView, context: Context) { view.onTurn = onTurn }
     static func dismantleNSView(_ view: PagingView, coordinator: ()) { view.stopMonitoring() }
     final class PagingView: NSView {
-        var onTurn: ((Int) -> Void)?
+        var onTurn: ((Int) -> Bool)?
         private var monitor: Any?
         private var swipe = NewspaperSwipeAccumulator()
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -110,13 +138,28 @@ struct NewspaperHorizontalPaging: NSViewRepresentable {
             super.viewDidMoveToWindow()
             stopMonitoring()
             guard window != nil else { return }
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .keyDown, .swipe]) { [weak self] event in
                 let consumed = MainActor.assumeIsolated {
-                    guard let self, !self.isHiddenOrHasHiddenAncestor, let window = self.window, event.window === window,
+                    guard let self, !self.isHiddenOrHasHiddenAncestor, let window = self.window, event.window === window else { return false }
+                    if event.type == .keyDown {
+                        guard window.isKeyWindow,
+                              event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                              let key = event.charactersIgnoringModifiers, ["[", "]"].contains(key) else { return false }
+                        // Consume the reader shortcuts even at history boundaries so
+                        // an unrelated Browser window cannot receive them via menus.
+                        _ = self.onTurn?(key == "[" ? -1 : 1)
+                        return true
+                    }
+                    guard
                           self.bounds.contains(self.convert(event.locationInWindow, from: nil)) else { return false }
+                    if event.type == .swipe {
+                        guard abs(event.deltaX) > abs(event.deltaY), event.deltaX != 0 else { return false }
+                        return self.onTurn?(event.deltaX > 0 ? -1 : 1) ?? false
+                    }
+                    guard event.hasPreciseScrollingDeltas, !event.phase.isEmpty else { return false }
                     if event.phase.contains(.began) { self.swipe.reset() }
-                    guard event.momentumPhase.isEmpty else { return abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) }
-                    if let direction = self.swipe.consume(x: event.scrollingDeltaX, y: event.scrollingDeltaY) { self.onTurn?(direction) }
+                    guard event.momentumPhase.isEmpty else { return false }
+                    if let direction = self.swipe.consume(x: event.scrollingDeltaX, y: event.scrollingDeltaY) { _ = self.onTurn?(direction) }
                     if event.phase.contains(.ended) || event.phase.contains(.cancelled) { self.swipe.reset() }
                     return abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) * 1.5
                 }
@@ -128,7 +171,7 @@ struct NewspaperHorizontalPaging: NSViewRepresentable {
 }
 #else
 struct NewspaperHorizontalPaging: View {
-    let onTurn: (Int) -> Void
+    let onTurn: (Int) -> Bool
     var body: some View { Color.clear.allowsHitTesting(false) }
 }
 #endif

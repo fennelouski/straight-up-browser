@@ -5,9 +5,53 @@ import AppKit
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
+import SwiftUI
 @testable import Browser
 
 @MainActor struct NewspaperEditionTests {
+    @Test func readerHistoryRestoresArticlesAndDiscardsForwardBranches() {
+        let first = UUID(), second = UUID()
+        var history = NewspaperReadingHistory()
+        #expect(!history.canGoBack && !history.canGoForward)
+        history.visit([first])
+        history.visit([first])
+        let wentBack = history.goBack()
+        #expect(wentBack)
+        #expect(history.path.isEmpty && history.canGoForward)
+        let wentForward = history.goForward()
+        #expect(wentForward)
+        #expect(history.path == [first])
+        // A native NavigationStack pop must preserve Forward as well.
+        history.visit([])
+        #expect(history.canGoForward)
+        history.visit([second])
+        #expect(history.path == [second] && !history.canGoForward)
+        let returnedToIssue = history.goBack()
+        #expect(returnedToIssue && history.path.isEmpty)
+        let passedBeginning = history.goBack()
+        #expect(!passedBeginning)
+    }
+    @Test func textOnlyCoverRendersWithoutAFullHeightPhotoPlaceholder() throws {
+        let article = NewspaperArticle(url: URL(string: "https://example.com/night-sky")!, title: "Why the night sky still surprises us", section: "Features")
+        article.cardExcerpt = "A closer look at the stars reveals a changing universe, and a new reason to step outside after dark."
+        article.publication = "Sample Gazette"
+        let renderer = ImageRenderer(content: NewspaperEditionCover(article: article, style: .boldWeekly)
+            .frame(width: 320).environment(\.colorScheme, .dark))
+        let image = try #require(renderer.nsImage)
+        #expect(image.size.width == 320)
+        #expect(image.size.height > 200 && image.size.height < 600)
+        let shortArticle = NewspaperArticle(url: URL(string: "https://example.com/short")!, title: "Night sky", section: "Features")
+        let shortRenderer = ImageRenderer(content: NewspaperEditionCover(article: shortArticle, style: .boldWeekly)
+            .frame(width: 320).environment(\.colorScheme, .dark))
+        let shortImage = try #require(shortRenderer.nsImage)
+        #expect(shortImage.size.height < image.size.height)
+        if let path = ProcessInfo.processInfo.environment["NEWSPAPER_COVER_PREVIEW_PATH"],
+           let tiff = image.tiffRepresentation,
+           let bitmap = NSBitmapImageRep(data: tiff),
+           let png = bitmap.representation(using: .png, properties: [:]) {
+            try png.write(to: URL(fileURLWithPath: path))
+        }
+    }
     private func defaults() -> UserDefaults { UserDefaults(suiteName: "NewspaperEditionTests." + UUID().uuidString)! }
     private func context() throws -> ModelContext {
         ModelContext(try ModelContainer(for: NewspaperArticle.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true)))
