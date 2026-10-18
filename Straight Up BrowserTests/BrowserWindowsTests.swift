@@ -83,6 +83,33 @@ struct BrowserWindowsTests {
         #expect(windowA.title == "Browser")
     }
 
+    @Test func renamingAnIsolatedWindowRetainsItsTitleMarker() throws {
+        let suite = "BrowserWindowsTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        // Inject only presentation; never select a process-global profile or
+        // initialize private resources in ordinary component tests.
+        let marker = " — ISOLATED [acceptance-window-test]"
+        let store = BrowserWindows(defaults: defaults, titleForWindow: { $0 + marker })
+        let id = store.primaryID, other = store.create(name: "Other")
+        let window = NSWindow(), otherWindow = NSWindow()
+        store.attach(window, id: id)
+        store.attach(otherWindow, id: other)
+        #expect(window.title == "Browser" + marker)
+
+        store.rename(id, to: "  Acceptance Window  ")
+        #expect(window.title == "Acceptance Window" + marker)
+        #expect(otherWindow.title == "Other" + marker)
+        #expect(store.record(id)?.name == "Acceptance Window")
+        store.rename(id, to: "   ")
+        #expect(window.title == "Acceptance Window" + marker)
+
+        let restored = BrowserWindows(defaults: defaults, titleForWindow: { $0 + marker })
+        let restoredWindow = NSWindow()
+        restored.attach(restoredWindow, id: id)
+        #expect(restoredWindow.title == "Acceptance Window" + marker)
+    }
+
     @Test func leavingAWorkspaceReturnsToThatWindowsHome() {
         let home = UUID(), other = UUID(), window = UUID()
         let manager = TabManager(windowID: window, homeWorkspaceID: home, terminateApplication: {})

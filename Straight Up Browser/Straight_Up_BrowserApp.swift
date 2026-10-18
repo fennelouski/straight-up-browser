@@ -320,7 +320,7 @@ struct Straight_Up_BrowserApp: App {
     private let modelStartup = ModelContainerStartup.makeDefault()
 
     var body: some Scene {
-        WindowGroup(id: "browser", for: UUID.self) { $windowID in
+        WindowGroup(BrowserProfile.windowTitle("Browser"), id: "browser", for: UUID.self) { $windowID in
             if let container = modelStartup.container {
                 BrowserProfileStartupView { BrowserWindowScene(id: windowID) }
                     .background(AgentDefinitionBrowserSessionRegistrationView())
