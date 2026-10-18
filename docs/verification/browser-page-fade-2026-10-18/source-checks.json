@@ -1,0 +1,73 @@
+{
+  "sourceCommit": "ca6c7033b5da96750377483a4ce37d4225bc5b04",
+  "swiftTests": 147,
+  "checks": [
+    {
+      "suite": "motion",
+      "tests": 33,
+      "exitCode": 0,
+      "command": "./scripts/verify-browser-v2-motion.sh",
+      "log": "motion.log"
+    },
+    {
+      "suite": "settings",
+      "tests": 48,
+      "exitCode": 0,
+      "command": "./scripts/verify-browser-v2-settings.sh",
+      "log": "settings.log"
+    },
+    {
+      "suite": "powerup",
+      "tests": 14,
+      "exitCode": 0,
+      "command": "./scripts/verify-browser-v2-powerup.sh",
+      "log": "powerup.log"
+    },
+    {
+      "suite": "panes",
+      "tests": 42,
+      "exitCode": 0,
+      "command": "./scripts/verify-browser-v2-panes.sh",
+      "log": "panes.log"
+    },
+    {
+      "suite": "shortcuts",
+      "tests": 10,
+      "exitCode": 0,
+      "command": "./scripts/verify-browser-v2-shortcuts.sh",
+      "log": "shortcuts.log"
+    },
+    {
+      "suite": "live-provider-review",
+      "command": "python3 scripts/check-agent-model-review.py --live",
+      "exitCode": 0,
+      "billableInference": false
+    }
+  ],
+  "otherChecks": [
+    "Six Python model-review tests passed",
+    "Release policy passed",
+    "Security policy passed",
+    "git diff --check passed"
+  ],
+  "nativeTests": {
+    "sourceCommit": "ca6c7033b5da96750377483a4ce37d4225bc5b04",
+    "reportedByAirTask": "01a14e58-2cc3-739c-88a8-c741acaab0df",
+    "host": "MacBook Air",
+    "xcode": "27.1",
+    "passed": 1061,
+    "failed": 0,
+    "skipped": 2,
+    "total": 1063,
+    "appCoveragePercent": 40.59,
+    "minimumCoveragePercent": 25,
+    "result": "Passed",
+    "includedRegressionTests": {
+      "PageFadeLifecycleTests": 5,
+      "PageFadeLifecycleInboxTests": 3
+    },
+    "airResultBundle": "/tmp/browser-air-20261018-verification/macos-tests.xcresult",
+    "airSummary": "native-final-summary.json",
+    "productionAppReplaced": false
+  }
+}

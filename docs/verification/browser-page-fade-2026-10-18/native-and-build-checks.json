@@ -1,0 +1,37 @@
+{
+  "sourceCommit": "ca6c7033b5da96750377483a4ce37d4225bc5b04",
+  "reportedByAirTask": "01a14e58-2cc3-739c-88a8-c741acaab0df",
+  "host": "MacBook Air",
+  "pipeline": "Repository verify.sh nonforeground pipeline",
+  "pipelineExitCode": 0,
+  "allOwnedPipelineProcessesJoined": true,
+  "nativeTests": {
+    "passed": 1061,
+    "failed": 0,
+    "skipped": 2,
+    "total": 1063,
+    "appCoveragePercent": 40.59,
+    "minimumCoveragePercent": 25
+  },
+  "builds": {
+    "iosRelease": "passed",
+    "macOSArm64Release": "passed",
+    "appleSiliconArchitectureGate": "passed",
+    "macOSUITestBundleCompilation": "passed"
+  },
+  "policyChecks": {
+    "modelReviewTests": 6,
+    "release": "passed",
+    "security": "passed"
+  },
+  "airBuildInputManifest": {
+    "fileCount": 390,
+    "sha256": "2ed2c548c5f9ca1385a92ce4662179a317a213cba4e4a632c5b7f21b6b62e76b"
+  },
+  "airEvidence": {
+    "receipt": "air-deployment-evidence/verify-final-result.json",
+    "log": "air-deployment-evidence/verify-final.log"
+  },
+  "actualUIExecution": "Deferred; remains local deployment gate, not a claimed result",
+  "productionInstallation": "Not performed by this Studio integration task"
+}

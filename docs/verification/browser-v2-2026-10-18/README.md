@@ -1,5 +1,10 @@
 # Browser v2 implementation verification
 
+Follow-up: the preserved Air features, page-fade notification correction and
+later native Air verification are recorded in
+[the lifecycle correction evidence](../browser-page-fade-2026-10-18/README.md).
+This document retains the original Studio implementation and validation record.
+
 Development implementation on Nathan's authorized Mac Studio, 18 October 2026.
 This record separates implemented source, executed tests, and native acceptance.
 It is not evidence of a successful installation or release.
