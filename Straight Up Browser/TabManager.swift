@@ -602,6 +602,28 @@ class TabManager: NSObject, ObservableObject {
         // At the cap (4): adding is a no-op.
     }
 
+    /// Explicit creation preserves other blank tabs and the current split at its cap.
+    @discardableResult
+    func createCommandTab(inSplit: Bool, tabs: [Tab], inheriting context: BrowsingContext) -> Tab? {
+        guard !inSplit || splitTabIds.count < Self.maxSplitTabs else { return nil }
+        let tab = createTab(inheriting: context, select: !inSplit)
+        if inSplit { toggleSplitMembership(tab, tabs: tabs + [tab]) }
+        return tab
+    }
+
+    /// Reorder the focused web or document pane without changing focus or tab order.
+    @discardableResult
+    func moveFocusedPane(by offset: Int) -> Bool {
+        guard offset == -1 || offset == 1,
+              let focused = focusedDocumentId ?? selectedTabId,
+              let index = splitTabIds.firstIndex(of: focused),
+              splitTabIds.indices.contains(index + offset) else { return false }
+        var reordered = splitTabIds
+        reordered.swapAt(index, index + offset)
+        splitTabIds = reordered
+        return true
+    }
+
     // MARK: Document panes (ADR 0008)
 
     /// Selecting a document row: solo display, dissolving a split it isn't in —

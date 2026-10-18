@@ -166,6 +166,7 @@ struct TabGridView: View {
     var refreshLivePreviews: (() -> Void)? = nil
     var labels: ((Tab) -> (title: String, detail: String))? = nil
     var onHover: ((Tab) -> Void)? = nil
+    var keyboardEnabled = true
 
     @State private var index = 0
     @State private var keyMonitor: Any?
@@ -254,6 +255,10 @@ struct TabGridView: View {
             index = tabs.firstIndex { $0.id == selectedTabId } ?? 0
             startMonitor()
         }
+        .onChange(of: keyboardEnabled) { _, _ in
+            stopMonitor()
+            startMonitor()
+        }
         .onDisappear { stopMonitor() }
         .task(id: livePreviews) {
             guard livePreviews else { return }
@@ -329,8 +334,9 @@ struct TabGridView: View {
     // A local NSEvent monitor rather than .onKeyPress: the overlay sits above a
     // WKWebView, which is a stubborn first responder (see OmnibarTextField).
     private func startMonitor() {
-        guard keyMonitor == nil else { return }
+        guard keyboardEnabled, keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection([.command, .control, .option]).isEmpty else { return event }
             switch event.keyCode {
             case 53:  // Escape
                 isPresented = false

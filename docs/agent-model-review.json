@@ -1,12 +1,12 @@
 {
-  "releaseVersion": "2.9.26",
-  "reviewedOn": "2026-10-09",
-  "notes": "Reviewed official catalogs, pricing and API compatibility for the omnibar Weather release. OpenAI Luna 6 / Sol 6.1 / Astra 6 retain fast/balanced/flagship roles; Claude Sonnet 5.5 remains the balanced Anthropic default and its Messages parameters remain compatible. Gemini 3.8 Flash retains its stable streaming/function-calling API and opaque thought-signature continuation. Reviewed OpenRouter IDs remain available. No model, adapter or pricing implementation changes are required. The changed Google pricing page removed context-caching rows for Gemini 3.8 Flash TTS and Flash-Lite TTS across Standard, Batch, Flex and Priority; Browser does not select those speech models. Text Gemini 3.8 Flash Standard input/output/cache remain $0.75/$3.75/$0.075 per million through 2026, rising to $1.50/$7.50/$0.15 on January 1, 2027. Gemini pricing remains explicit per-selected-model configuration or unknown. Custom endpoints, installed local models, pinned dated snapshots, model roles and provider boundaries remain intact. Future runs price and record their actual selected model; historical runs are unchanged. Weather uses native Apple WeatherKit with explicit city or previously authorized location and adds no AI-provider calls. No credentials or billable inference used.",
+  "releaseVersion": "2.9.28",
+  "reviewedOn": "2026-10-13",
+  "notes": "Reviewed official catalogs, pricing and API compatibility for the omnibar Weather release. OpenAI Luna 6 / Sol 6.1 / Astra 6 retain fast/balanced/flagship roles; Claude Sonnet 5.5 remains the balanced Anthropic default and its Messages parameters remain compatible. Gemini 3.8 Flash retains its stable streaming/function-calling API and opaque thought-signature continuation. Reviewed OpenRouter IDs remain available. No model, adapter or pricing implementation changes are required. The changed Google pricing page removed context-caching rows for Gemini 3.8 Flash TTS and Flash-Lite TTS across Standard, Batch, Flex and Priority; Browser does not select those speech models. Text Gemini 3.8 Flash Standard input/output/cache remain $0.75/$3.75/$0.075 per million through 2026, rising to $1.50/$7.50/$0.15 on January 1, 2027. Gemini pricing remains explicit per-selected-model configuration or unknown. Custom endpoints, installed local models, pinned dated snapshots, model roles and provider boundaries remain intact. Future runs price and record their actual selected model; historical runs are unchanged. Weather uses native Apple WeatherKit with explicit city or previously authorized location and adds no AI-provider calls. No credentials or billable inference used. Local Air update review: BrowserAgent.swift only changes agent status text from lineLimit(1) to vertical fixedSize; no model or transport behavior changed. Rechecked all official source digests; OpenAI, Claude, OpenRouter and the Gemini 3.8 Flash model page are unchanged. Reviewed changed Gemini catalog and pricing: selected stable Gemini 3.8 Flash and Standard text pricing remain as previously recorded; added or changed audio/media offerings do not affect this app model selection. No provider code/default/rate change required. Review metadata refreshed in isolated local build snapshot only. Login autofill fix release: live official provider source verification passed on 2026-10-13; no model, pricing, adapter or default changes. Configurable New command release: rechecked official catalog and pricing sources on 2026-10-13. Reviewed current Google catalog including Gemini 4 Argon, Gemini 3.8 Flash, Live/TTS and image/audio offerings; Gemini 3.8 Flash remains the stable fast text model with supported function calling, thinking and streaming. Its Standard text input/output/cache pricing remains $0.75/$3.75/$0.075 per million through 2026, with the recorded 2027 rates unchanged. No provider, default model, alias mapping or pricing implementation changes are required. Other reviewed provider sources are unchanged. Command preferences add no model calls.",
   "sourceFiles": {
     "Straight Up Browser/AgentModelCatalog.swift": "ba4459c9f003ac6cac1dab8ad802ae024190b9679f437ff5dbc32b1405d2af02",
     "Straight Up Browser/AgentModelMigration.swift": "5e02a270b6598c1b551e8cd7cbff3a1d747612a10c7f234d3c2b65b9947bcbbb",
     "Straight Up Browser/ProviderTransport.swift": "7c1d0f1b4e4403d00dd674930a3bd35f6da4ff467c6268b63b02858abbd0c0d1",
-    "Straight Up Browser/BrowserAgent.swift": "174e815e271b35a72f687350b821c40d51196d212ecc6ed2bf22f1be9ff5097c",
+    "Straight Up Browser/BrowserAgent.swift": "359d9fbec6eb6e7ac8b1756591235891eb8dff032c8f1c177567f00b1adfe7e1",
     "Straight Up Browser/AgentSettingsView.swift": "ddbae3def3238987746300216863a2b8cefd1ad80c978442bd4e4f6133779700",
     "Straight Up Browser/ProviderAdapters.swift": "79d9e0c72a525949210dbb4c890450dcd6a0aec4204162a9bd4e2ba2803804fd"
   },
@@ -39,7 +39,7 @@
     {
       "url": "https://ai.google.dev/gemini-api/docs/models",
       "format": "html-main",
-      "sha256": "fc16ea02131a7cad4703a5704f562b6988ef28672532a43c18665709f076ecbd"
+      "sha256": "8dc16565ae5e23327165714504fbf34d37c64ed648f7efbd37e4bf364935b187"
     },
     {
       "url": "https://openrouter.ai/api/v1/models",
@@ -55,12 +55,12 @@
     {
       "url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash",
       "format": "html-main",
-      "sha256": "2476bed7d4ffdf3752a46498d70984f4ef108e3131af9044b919aa2d737bfd53"
+      "sha256": "c8f7f4f70f1db75399ff7a32a706bf9f0750a78d22769ef5a4ec5d279dc82eb8"
     },
     {
       "url": "https://ai.google.dev/gemini-api/docs/pricing",
       "format": "html-main",
-      "sha256": "b1f024fc2df9a96b5cf520370b0569a0d485899aa082739160cd351d9eef1862"
+      "sha256": "770f22a730316750c468c080028a14cf5ebf4aeef0f924862a72f4701a76b69f"
     }
   ]
 }

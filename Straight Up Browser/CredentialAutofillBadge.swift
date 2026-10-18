@@ -64,6 +64,17 @@ final class CredentialManager: ObservableObject {
     private weak var webViewManager: WebViewManager?
     private var observers: [NSObjectProtocol] = []
 
+    private struct Target {
+        let frame: WKFrameInfo
+        let documentToken: String
+        let origin: String
+        let domain: String
+    }
+    private var targets: [UUID: Target] = [:]
+    private var pendingUsernames: [UUID: (domain: String, username: String, capturedAt: Date)] = [:]
+
+    func focusedDomain(tabID: UUID) -> String? { targets[tabID]?.domain }
+
     init() {
         let center = NotificationCenter.default
         observers.append(center.addMainActorObserver(
@@ -111,6 +122,11 @@ final class CredentialManager: ObservableObject {
               let url = note.userInfo?["url"] as? URL,
               let domain = Self.normalizedDomain(url)
         else { return presentation = nil }
+        if let frame = note.userInfo?["frameInfo"] as? WKFrameInfo,
+           let token = note.userInfo?["documentToken"] as? String,
+           let origin = note.userInfo?["origin"] as? String {
+            targets[tabID] = Target(frame: frame, documentToken: token, origin: origin, domain: domain)
+        }
         let usernames = SavedCredentialStore.usernames(domain: domain)
         // Nothing saved for this domain: stay quiet rather than show a badge
         // that leads nowhere. Right-click → AutoFill still works for whatever
@@ -119,10 +135,9 @@ final class CredentialManager: ObservableObject {
         presentation = Presentation(tabID: tabID, fieldRect: rect, domain: domain, usernames: usernames)
     }
 
-    /// Fills both the username and password field for one pick. Re-scans the
-    /// live page rather than trusting the focus-time snapshot: the field the
-    /// user is about to fill may not be the one that was focused (a username
-    /// suggestion picked while the password field has focus, say).
+    /// Fills the current login step in the selected frame. The isolated runtime
+    /// rechecks its document token and origin, then rescans live fields so a
+    /// username step and a later password step can use the same saved login.
     func pick(username: String) {
         guard let presentation else { return }
         let domain = presentation.domain
@@ -150,61 +165,23 @@ final class CredentialManager: ObservableObject {
             guard await Self.authenticate(reason: String(localized: "fill your password for \(domain)")) else { return }
         }
         guard let password = SavedCredentialStore.password(domain: domain, username: username) else { return }
-        let raw = try? await webView.callAsyncJavaScript(
-            SemanticPageJavaScript.snapshot,
-            arguments: ["selectors": [] as [String]],
-            in: nil,
-            contentWorld: .defaultClient
-        )
-        guard Self.normalizedDomain(webView.url ?? URL(fileURLWithPath: "/")) == domain,
-              let raw, let scan = try? AutofillPageScan.decode(raw) else { return }
-        let (usernameField, passwordField) = Self.credentialFields(in: scan)
-        guard let passwordField else { return }
-
-        var payload: [String: Any] = [
-            "password": [
-                "reference": passwordField.reference(documentToken: scan.documentToken),
-                "value": password,
-            ],
-            "submit": submit,
-        ]
-        if let usernameField {
-            payload["username"] = [
-                "reference": usernameField.reference(documentToken: scan.documentToken),
-                "value": username,
-            ]
+        let target = targets[tabID]
+        guard target?.domain == domain || (target == nil && webView.url?.host?.lowercased() == domain) else { return }
+        let origin = target?.origin ?? webView.url.flatMap { url -> String? in
+            guard url.scheme == "https", let host = url.host else { return nil }
+            return "https://" + host + (url.port.map { ":\($0)" } ?? "")
         }
-        _ = try? await webView.callAsyncJavaScript(
-            SemanticPageJavaScript.credentialApply,
-            arguments: ["request": payload],
-            in: nil,
-            contentWorld: .defaultClient
+        guard let origin else { return }
+        var payload: [String: Any] = ["origin": origin, "username": username, "password": password, "submit": submit]
+        if let target { payload["documentToken"] = target.documentToken }
+        let result = try? await webView.callAsyncJavaScript(
+            CredentialPageRuntime.apply, arguments: ["request": payload],
+            in: target?.frame, contentWorld: .defaultClient
         )
-        Logger.log("credential manager: filled saved login on \(domain)\(submit ? " and signed in" : "")")
-    }
-
-    /// The password field plus its best-guess paired username field, from a
-    /// full-page scan. `AutofillPageScan` decodes every form control
-    /// (unfiltered by type) in document order, so a password field is here
-    /// even though AutofillFieldClassifier would never classify one.
-    private static func credentialFields(
-        in scan: AutofillPageScan
-    ) -> (username: AutofillFormField?, password: AutofillFormField?) {
-        let fields = scan.fields
-        guard let passwordIndex = fields.firstIndex(where: {
-            $0.descriptor.type == "password" && $0.descriptor.isVisible && $0.descriptor.isEditable
-        }) else { return (nil, nil) }
-        let password = fields[passwordIndex]
-
-        func isUsernameish(_ field: AutofillFormField) -> Bool {
-            ["text", "email", "tel", ""].contains(field.descriptor.type)
-                && field.descriptor.isVisible && field.descriptor.isEditable
+        if (result as? [String: Any])?["filled"] as? Bool == true {
+            pendingUsernames[tabID] = (domain, username, Date())
+            Logger.log("credential manager: filled saved login on \(domain)")
         }
-        let byAutocomplete = fields.first { $0.descriptor.autocomplete.lowercased().contains("username") }
-        let before = fields[..<passwordIndex].reversed()
-        let after = fields[fields.index(after: passwordIndex)...]
-        let username = byAutocomplete ?? before.first(where: isUsernameish) ?? after.first(where: isUsernameish)
-        return (username, password)
     }
 
     // MARK: Touch ID
@@ -232,11 +209,15 @@ final class CredentialManager: ObservableObject {
 
     private func credentialSubmitted(_ note: Notification) {
         guard let tabID = note.userInfo?["tabID"] as? UUID,
-              let rawDomain = note.userInfo?["domain"] as? String,
-              let username = note.userInfo?["username"] as? String,
-              let password = note.userInfo?["password"] as? String
-        else { return }
+              let rawDomain = note.userInfo?["domain"] as? String else { return }
         let domain = rawDomain.lowercased()
+        let suppliedUsername = note.userInfo?["username"] as? String ?? ""
+        if !suppliedUsername.isEmpty { pendingUsernames[tabID] = (domain, suppliedUsername, Date()) }
+        let username = !suppliedUsername.isEmpty ? suppliedUsername :
+            (pendingUsernames[tabID]?.domain == domain &&
+             Date().timeIntervalSince(pendingUsernames[tabID]?.capturedAt ?? .distantPast) < 300
+             ? pendingUsernames[tabID]?.username ?? "" : "")
+        guard !username.isEmpty, let password = note.userInfo?["password"] as? String, !password.isEmpty else { return }
         guard CredentialPreferences.allowsSaving(host: domain) else { return }
         // Already saved with this exact password: nothing new to offer.
         let existing = SavedCredentialStore.password(domain: domain, username: username)

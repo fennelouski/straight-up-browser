@@ -76,8 +76,8 @@
 		661372C2F36F0BFA1C05D9E4 /* ShareViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		68ADAA7B926E62694E3DE4A1 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		803E20672F11607F00A31C8D /* Browser.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Browser.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		803E20762F11608100A31C8D /* Straight Up BrowserTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; name = "Straight Up BrowserTests.xctest"; path = BrowserTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		803E20802F11608100A31C8D /* Straight Up BrowserUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; name = "Straight Up BrowserUITests.xctest"; path = BrowserUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		803E20762F11608100A31C8D /* BrowserTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BrowserTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		803E20802F11608100A31C8D /* BrowserUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BrowserUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A13A00000000000000000002 /* Browser iOSUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Browser iOSUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A160EA668E249A38C55A5C48 /* BrowserShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BrowserShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B14B00000000000000000002 /* Browser iOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Browser iOSTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -240,8 +240,8 @@
 			isa = PBXGroup;
 			children = (
 				803E20672F11607F00A31C8D /* Browser.app */,
-				803E20762F11608100A31C8D /* Straight Up BrowserTests.xctest */,
-				803E20802F11608100A31C8D /* Straight Up BrowserUITests.xctest */,
+				803E20762F11608100A31C8D /* BrowserTests.xctest */,
+				803E20802F11608100A31C8D /* BrowserUITests.xctest */,
 				58AA1C45E6DEE7337895173D /* Browser.app */,
 				B14B00000000000000000002 /* Browser iOSTests.xctest */,
 				A13A00000000000000000002 /* Browser iOSUITests.xctest */,
@@ -345,7 +345,7 @@
 			);
 			name = "Straight Up BrowserTests";
 			productName = "Straight Up BrowserTests";
-			productReference = 803E20762F11608100A31C8D /* Straight Up BrowserTests.xctest */;
+			productReference = 803E20762F11608100A31C8D /* BrowserTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		803E207F2F11608100A31C8D /* Straight Up BrowserUITests */ = {
@@ -366,7 +366,7 @@
 			);
 			name = "Straight Up BrowserUITests";
 			productName = "Straight Up BrowserUITests";
-			productReference = 803E20802F11608100A31C8D /* Straight Up BrowserUITests.xctest */;
+			productReference = 803E20802F11608100A31C8D /* BrowserUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 		A13A00000000000000000001 /* Browser iOSUITests */ = {
@@ -436,16 +436,18 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2620;
-				LastUpgradeCheck = 2620;
+				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					5799E6C8B0A6D3D0970EB02B = {
 						CreatedOnToolsVersion = 26.2;
 						SystemCapabilities = {
-                            com.apple.WeatherKit = { enabled = 1; };
 							com.apple.BackgroundModes = {
 								enabled = 1;
 							};
 							com.apple.Push = {
+								enabled = 1;
+							};
+							com.apple.WeatherKit = {
 								enabled = 1;
 							};
 							com.apple.iCloud = {
@@ -454,8 +456,12 @@
 						};
 					};
 					803E20662F11607F00A31C8D = {
-                        SystemCapabilities = { com.apple.WeatherKit = { enabled = 1; }; };
 						CreatedOnToolsVersion = 26.2;
+						SystemCapabilities = {
+							com.apple.WeatherKit = {
+								enabled = 1;
+							};
+						};
 					};
 					803E20752F11608100A31C8D = {
 						CreatedOnToolsVersion = 26.2;
@@ -797,6 +803,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -826,6 +833,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -852,6 +860,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
@@ -864,6 +873,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -893,6 +903,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -912,6 +923,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_VERSION = 6.0;
@@ -921,13 +933,13 @@
 		803E208B2F11608100A31C8D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Browser.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 133;
+				CURRENT_PROJECT_VERSION = 135;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -942,7 +954,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.9.26;
+				MARKETING_VERSION = 2.9.28;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser";
 				PRODUCT_NAME = Browser;
 				REGISTER_APP_GROUPS = YES;
@@ -958,13 +970,13 @@
 		803E208C2F11608100A31C8D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Browser.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 133;
+				CURRENT_PROJECT_VERSION = 135;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -979,7 +991,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.9.26;
+				MARKETING_VERSION = 2.9.28;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser";
 				PRODUCT_NAME = Browser;
 				REGISTER_APP_GROUPS = YES;
@@ -998,6 +1010,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 32;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
@@ -1020,6 +1033,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 32;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
@@ -1041,6 +1055,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 32;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.14.3;
@@ -1060,6 +1075,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 32;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.14.3;

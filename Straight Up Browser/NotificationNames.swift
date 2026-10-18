@@ -30,6 +30,9 @@ extension Notification.Name {
     static let browserCaptureSource = Notification.Name("browserCaptureSource")
     /// A page finished loading; the seen-before banner re-checks the ledger.
     static let browserPageArrived = Notification.Name("browserPageArrived")
+    static let browserNewCommand = Notification.Name("browserNewCommand")
+    static let browserMovePaneLeft = Notification.Name("browserMovePaneLeft")
+    static let browserMovePaneRight = Notification.Name("browserMovePaneRight")
     static let browserNewTab = Notification.Name("browserNewTab")
     static let browserForceNewTab = Notification.Name("browserForceNewTab")
     static let reopenLastClosedTab = Notification.Name("reopenLastClosedTab")

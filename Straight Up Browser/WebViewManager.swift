@@ -1019,6 +1019,10 @@ class WebViewManager: NSObject, ObservableObject {
                 in: .defaultClient
             )
         )
+        controller.addUserScript(WKUserScript(
+            source: CredentialPageRuntime.bootstrap, injectionTime: .atDocumentStart,
+            forMainFrameOnly: false, in: .defaultClient
+        ))
         controller.addUserScript(
             WKUserScript(source: Self.translateScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         )
@@ -1618,17 +1622,21 @@ extension WebViewManager: WKScriptMessageHandler {
     /// position — is in hand.
     private func handleSemanticRuntimeMessage(_ body: [String: Any], from message: WKScriptMessage) {
         guard let type = body["type"] as? String else { return }
-        // The runtime is main-frame-only, but assert it: an iframe must never be
-        // able to summon a suggestion list.
+        if type.hasPrefix("login") {
+            handleCredentialRuntimeMessage(body, from: message)
+            return
+        }
+        // Name/address autofill and the agent runtime remain main-frame-only.
+        // Frame-scoped credential messages are handled separately above.
         guard message.frameInfo.isMainFrame else { return }
 
         switch type {
-        case "autofillFieldFocused", "credentialFieldFocused":
+        case "autofillFieldFocused":
             guard let webView = message.webView,
                   let tabID = tabId(for: webView),
                   let signal = try? AutofillFocusSignal.decode(body) else { return }
             NotificationCenter.default.post(
-                name: type == "credentialFieldFocused" ? .browserCredentialFieldFocused : .browserAutofillFieldFocused,
+                name: .browserAutofillFieldFocused,
                 object: nil,
                 userInfo: [
                     "signal": signal,
@@ -1639,23 +1647,39 @@ extension WebViewManager: WKScriptMessageHandler {
             )
         case "autofillFieldDismissed":
             NotificationCenter.default.post(name: .browserAutofillDismissed, object: nil)
-        case "credentialSubmitted":
-            guard let webView = message.webView,
-                  let tabID = tabId(for: webView),
-                  !isPrivateTab(tabID),
-                  let domain = body["domain"] as? String, !domain.isEmpty,
-                  let username = body["username"] as? String, !username.isEmpty,
-                  let password = body["password"] as? String, !password.isEmpty
-            else { return }
-            var userInfo: [String: Any] = ["tabID": tabID, "domain": domain, "username": username, "password": password]
-            if let raw = body["rect"] as? [String: Any],
-               let x = (raw["x"] as? NSNumber)?.doubleValue, let y = (raw["y"] as? NSNumber)?.doubleValue,
-               let w = (raw["width"] as? NSNumber)?.doubleValue, let h = (raw["height"] as? NSNumber)?.doubleValue {
-                userInfo["rect"] = windowRect(css: CGRect(x: x, y: y, width: w, height: h), in: webView)
-            }
-            NotificationCenter.default.post(name: .browserCredentialSubmitted, object: nil, userInfo: userInfo)
         default:
             break
+        }
+    }
+
+    /// Frame identity and origin come from WebKit, never a page-supplied host.
+    private func handleCredentialRuntimeMessage(_ body: [String: Any], from message: WKScriptMessage) {
+        guard let webView = message.webView, let tabID = tabId(for: webView),
+              let frameURL = message.frameInfo.request.url,
+              frameURL.scheme == "https", let domain = frameURL.host?.lowercased(),
+              message.frameInfo.securityOrigin.host.lowercased() == domain,
+              let token = body["documentToken"] as? String, !token.isEmpty,
+              let origin = Self.agentOrigin(frameURL), body["origin"] as? String == origin else { return }
+        switch body["type"] as? String {
+        case "loginFieldFocused":
+            var rect = CGRect(x: 16, y: 16, width: 220, height: 30)
+            if message.frameInfo.isMainFrame, let raw = body["rect"] as? [String: NSNumber] {
+                rect = CGRect(x: raw["x"]?.doubleValue ?? 16, y: raw["y"]?.doubleValue ?? 16,
+                              width: raw["width"]?.doubleValue ?? 220, height: raw["height"]?.doubleValue ?? 30)
+            }
+            NotificationCenter.default.post(name: .browserCredentialFieldFocused, object: nil, userInfo: [
+                "tabID": tabID, "rect": windowRect(css: rect, in: webView), "url": frameURL,
+                "frameInfo": message.frameInfo, "documentToken": token, "origin": origin,
+            ])
+        case "loginFieldDismissed":
+            NotificationCenter.default.post(name: .browserAutofillDismissed, object: nil)
+        case "loginSubmitted":
+            guard !isPrivateTab(tabID) else { return }
+            NotificationCenter.default.post(name: .browserCredentialSubmitted, object: nil, userInfo: [
+                "tabID": tabID, "domain": domain, "username": body["username"] as? String ?? "",
+                "password": body["password"] as? String ?? "",
+            ])
+        default: break
         }
     }
 

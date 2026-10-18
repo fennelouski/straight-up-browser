@@ -64,6 +64,10 @@ struct Shortcut: Codable, Equatable, Hashable {
         switch key {
         case "\t": return .tab
         case " ": return .space
+        case "\u{F702}": return .leftArrow
+        case "\u{F703}": return .rightArrow
+        case "\u{F700}": return .upArrow
+        case "\u{F701}": return .downArrow
         default: return KeyEquivalent(key.first ?? "?")
         }
     }
@@ -279,18 +283,19 @@ extension ShortcutCommand {
     // features off can take it out of the overview (see availableOnCurrentPlatform).
     static let agentPanel = Self("agentPanel", "AI Agent", .app, Shortcut(key: "a", command: true, shift: true))
     #if os(macOS)
+    static let newCommand = Self("newCommand", "New (Configured Action)", .tabs, Shortcut(key: "n", command: true))
+    static let movePaneLeft = Self("movePaneLeft", "Move Pane Left", .tabs, Shortcut(key: "\u{F702}", command: true, option: true, control: true))
+    static let movePaneRight = Self("movePaneRight", "Move Pane Right", .tabs, Shortcut(key: "\u{F703}", command: true, option: true, control: true))
     static let windowLayout = Self("windowLayout", "Snap Window to Size", .app, Shortcut(key: "f", command: true, shift: true))
     // Arrow-key half-screen snapping. The key strings are the private-use
     // codes AppKit hands back via charactersIgnoringModifiers for the arrow
     // keys (NSUpArrowFunctionKey and friends) — see Shortcut.keyGlyph for the
     // matching display symbols. Repeat presses of the same arrow cycle
     // through smaller sizes at the same edge; see WindowLayout.snap.
-    // ⌘⌥⌃ (not ⌘⇧) because ⇧ collides with AppKit's own text-editing
-    // selection chords (⌘⇧←/→/↑/↓ select to line/document start/end) — a
-    // menu-bound shortcut always wins that race over a focused text field,
-    // native or in a web page, so the reserved arrow chords stay off ⇧.
-    static let windowSnapLeft   = Self("windowSnapLeft", "Snap Window Left", .app, Shortcut(key: "\u{F702}", command: true, option: true, control: true))
-    static let windowSnapRight  = Self("windowSnapRight", "Snap Window Right", .app, Shortcut(key: "\u{F703}", command: true, option: true, control: true))
+    // Left/right without Shift reorder panes. Window snapping keeps a separate
+    // four-modifier chord; custom bindings remain available in Settings.
+    static let windowSnapLeft   = Self("windowSnapLeft", "Snap Window Left", .app, Shortcut(key: "\u{F702}", command: true, shift: true, option: true, control: true))
+    static let windowSnapRight  = Self("windowSnapRight", "Snap Window Right", .app, Shortcut(key: "\u{F703}", command: true, shift: true, option: true, control: true))
     static let windowSnapTop    = Self("windowSnapTop", "Snap Window Top", .app, Shortcut(key: "\u{F700}", command: true, option: true, control: true))
     static let windowSnapBottom = Self("windowSnapBottom", "Snap Window Bottom", .app, Shortcut(key: "\u{F701}", command: true, option: true, control: true))
     #endif
@@ -310,7 +315,7 @@ extension ShortcutCommand {
 
     #if os(macOS)
     private static let platformCommands: [ShortcutCommand] =
-        [showDownloads, windowLayout, windowSnapLeft, windowSnapRight, windowSnapTop, windowSnapBottom]
+        [newCommand, movePaneLeft, movePaneRight, showDownloads, windowLayout, windowSnapLeft, windowSnapRight, windowSnapTop, windowSnapBottom]
     #else
     private static let platformCommands: [ShortcutCommand] = [showDownloads]
     #endif
