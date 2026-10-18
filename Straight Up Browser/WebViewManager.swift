@@ -19,11 +19,11 @@ import UIKit
 // read-access variant. Every URL load goes through here so local files (Finder's
 // "Open With", drag-and-drop) actually render.
 extension WKWebView {
-    func loadURL(_ url: URL) {
+    @discardableResult func loadURL(_ url: URL) -> WKNavigation? {
         if url.isFileURL {
-            loadFileURL(url, allowingReadAccessTo: url)
+            return loadFileURL(url, allowingReadAccessTo: url)
         } else {
-            load(URLRequest(url: url))
+            return load(URLRequest(url: url))
         }
     }
 }
@@ -388,7 +388,7 @@ class WebViewManager: NSObject, ObservableObject {
         // this posts there really is content on screen. beginFadeIn is waiting.
         requestAnimationFrame(function() {
             requestAnimationFrame(function() {
-                window.webkit.messageHandlers.sub.postMessage({type: 'painted'});
+                window.webkit.messageHandlers.sub.postMessage({type: 'painted', fadeEpisode: window.__subPageFadeEpisode || null});
             });
         });
         window.webkit.messageHandlers.sub.postMessage({type: 'agentDOMContentLoaded'});
@@ -688,6 +688,8 @@ class WebViewManager: NSObject, ObservableObject {
     // has something to look at immediately. A real snapshot always wins.
     @Published private(set) var linkPreviewImages: [UUID: WebViewThumbnail] = [:]
     private var linkPreviewRequested: Set<UUID> = []
+    var shouldDeferColdLayoutStarter: ((UUID) -> Bool)?
+    var onWebViewDisposed: ((UUID, Bool) -> Void)?
 
     func thumbnail(for tabId: UUID) -> WebViewThumbnail? {
         thumbnails[tabId] ?? linkPreviewImages[tabId]
@@ -697,7 +699,7 @@ class WebViewManager: NSObject, ObservableObject {
     /// tabs: this fetch happens outside the tab's ephemeral data store.
     func warmLinkPreviews(for targets: [(id: UUID, url: URL?)]) {
         for target in targets {
-            guard let url = target.url,
+            guard shouldDeferColdLayoutStarter?(target.id) != true, let url = target.url,
                   url.scheme == "http" || url.scheme == "https",
                   thumbnails[target.id] == nil,
                   linkPreviewImages[target.id] == nil,
@@ -802,6 +804,7 @@ class WebViewManager: NSObject, ObservableObject {
         NotificationCenter.default.addObserver(
             self, selector: #selector(persistInteractionStatesAtTermination),
             name: NSApplication.willTerminateNotification, object: nil)
+        installPageFadeLifecycleObservers()
         #endif
         startMemoryPressureMonitoring()
         Logger.log("WebViewManager initialized", type: "WebViewManager")
@@ -1145,7 +1148,8 @@ class WebViewManager: NSObject, ObservableObject {
         WebExtensionManager.shared.tabOpened(tabId, in: self)
         #endif
         // Restore scroll + back/forward if this tab was unloaded under memory pressure
-        if #available(macOS 12.0, *), let state = savedInteractionStates.removeValue(forKey: tabId) {
+        if #available(macOS 12.0, *), shouldDeferColdLayoutStarter?(tabId) != true,
+           let state = savedInteractionStates.removeValue(forKey: tabId) {
             webView.interactionState = state
         }
         Logger.log("WebViewManager: Created new WebView \(Unmanaged.passUnretained(webView).toOpaque()) for tab \(tabId)", type: "WebViewManager")
@@ -1194,7 +1198,11 @@ class WebViewManager: NSObject, ObservableObject {
     // for a memory unload (the tab lives on), so the extension bridge only sees
     // genuine closes rather than unload/reactivate churn.
     func removeWebView(for tabId: UUID, notifyClosed: Bool = true) {
+        let hadLiveView = webViews[tabId] != nil
         if let webView = webViews[tabId] {
+            cancelPageFade(webView)
+            pageFadeTargets.removeValue(forKey: ObjectIdentifier(webView))
+            pageFadePolicy.setResidence(context: tabId, committedURL: pageFadeCommittedURLs[tabId], eligible: false)
             // Stop any loading and detach so the view can actually deallocate
             webView.stopLoading()
             webView.navigationDelegate = nil
@@ -1214,6 +1222,7 @@ class WebViewManager: NSObject, ObservableObject {
 
             // Remove from storage
             webViews.removeValue(forKey: tabId)
+            onWebViewDisposed?(tabId, notifyClosed)
             Self.reportContentBlocking(false, for: tabId)
 
             // If this was the active web view, clear it
@@ -1234,6 +1243,10 @@ class WebViewManager: NSObject, ObservableObject {
         // rebuild in the same store); drop it only on a genuine close. This must
         // run even when the tab never materialized a WebView.
         if notifyClosed {
+            if !hadLiveView { onWebViewDisposed?(tabId, true) }
+            pageFadePolicy.close(context: tabId)
+            pageFadeCommittedURLs.removeValue(forKey: tabId)
+            pageFadeDisplayedTabs.remove(tabId)
             Task {
                 await BrowserAgentWebKitSignalRuntime.shared.pageClosed(tabID: tabId)
             }
@@ -1258,7 +1271,7 @@ class WebViewManager: NSObject, ObservableObject {
     func unloadWebView(for tabId: UUID) {
         guard let webView = webViews[tabId] else { return }
         var state: Any?
-        if #available(macOS 12.0, *) { state = webView.interactionState }
+        if #available(macOS 12.0, *), shouldDeferColdLayoutStarter?(tabId) != true { state = webView.interactionState }
         removeWebView(for: tabId, notifyClosed: false)  // unload, not close: keep the extension's tab
 
         if let state { savedInteractionStates[tabId] = state }  // set AFTER teardown clears it
@@ -1474,33 +1487,235 @@ class WebViewManager: NSObject, ObservableObject {
 
     // MARK: - Fade in on first paint
 
-    // Between didCommit (old document gone) and the page's first paint there is
-    // nothing to show, and WebKit flashes its background. So: hide at commit,
-    // fade in when the page's double-rAF ping says pixels exist. Backstops —
-    // didFinish, didFail, and a hard timer — cover content that never runs our
-    // script (PDFs, downloads, plugin content) so a tab can't be left blank.
-    private var fadePending: Set<ObjectIdentifier> = []
+    private struct PageFadeEpisode {
+        let id: UUID
+        let context: UUID
+        var navigation: ObjectIdentifier?
+        var committed = false
+        var attempted = false
+        var pending = false
+        var completed = false
+        var targetURL: URL?
+    }
+    private let pageFadePolicy = PageFadeCircuitBreaker()
+    private var pageFadeEpisodes: [ObjectIdentifier: PageFadeEpisode] = [:]
+    private var pageFadeTargets: [ObjectIdentifier: URL] = [:]
+    private var pageFadeCommittedURLs: [UUID: URL] = [:]
+    private var pageFadeDisplayedTabs: Set<UUID> = []
+    private var pageFadeSuspensions: Set<String> = []
 
-    func beginFadeIn(_ webView: WKWebView) {
+    func setFadeDisplayedTabs(_ ids: [UUID]) {
+        pageFadeDisplayedTabs = Set(ids)
+        for id in ids where pageFadeCommittedURLs[id] == nil {
+            if let webView = webViews[id], pageFadeEpisodes[ObjectIdentifier(webView)] == nil {
+                pageFadeCommittedURLs[id] = webView.url
+            }
+        }
+        refreshPageFadeResidence()
+    }
+
+    /// The pane host calls this after its actual frame projection is committed.
+    func refreshPageFadeVisibility() { refreshPageFadeResidence() }
+
+    /// pushState/hash changes commit without a navigation delegate callback.
+    /// A provisional URL notification must not reset the previous residence.
+    func pageFadeURLDidChange(_ webView: WKWebView) {
+        guard !webView.isLoading, let id = tabId(for: webView),
+              pageFadeEpisodes[ObjectIdentifier(webView)]?.committed != false else { return }
+        pageFadeCommittedURLs[id] = webView.url
+        refreshPageFadeResidence()
+    }
+
+    /// Capture a main-frame target without attributing it to the previous page.
+    func notePageFadeTarget(_ url: URL?, in webView: WKWebView) {
+        pageFadeTargets[ObjectIdentifier(webView)] = url
+    }
+
+    /// The pre-load and commit paths share this episode. A new navigation gets
+    /// a new opaque ID; timers, delegates and paint must present that same ID.
+    func preparePageFade(_ webView: WKWebView, targetURL: URL?) {
+        cancelPageFade(webView)
+        guard let context = tabId(for: webView) else { return }
+        let key = ObjectIdentifier(webView)
+        pageFadeTargets[key] = targetURL
+        pageFadeEpisodes[key] = PageFadeEpisode(id: UUID(), context: context, targetURL: targetURL)
+        beginPageFadeIfEligible(webView)
+    }
+
+    func pageFadeDidStart(_ webView: WKWebView, navigation: WKNavigation?) {
+        let key = ObjectIdentifier(webView)
+        if let navigation, let current = pageFadeEpisodes[key], !current.completed,
+           current.navigation == ObjectIdentifier(navigation) { return }
+        if pageFadeEpisodes[key]?.navigation != nil || pageFadeEpisodes[key]?.completed != false {
+            preparePageFade(webView, targetURL: pageFadeTargets[key])
+        } else if pageFadeEpisodes[key] == nil {
+            preparePageFade(webView, targetURL: pageFadeTargets[key])
+        }
+        pageFadeEpisodes[key]?.navigation = navigation.map(ObjectIdentifier.init)
+        pageFadeTargets.removeValue(forKey: key)
+        beginPageFadeIfEligible(webView)
+    }
+
+    func pageFadeDidCommit(_ webView: WKWebView, navigation: WKNavigation?) {
+        let key = ObjectIdentifier(webView)
+        guard var episode = pageFadeEpisodes[key],
+              episode.navigation == navigation.map(ObjectIdentifier.init), !episode.committed else { return }
+        episode.committed = true
+        episode.targetURL = webView.url
+        pageFadeEpisodes[key] = episode
+        pageFadeCommittedURLs[episode.context] = webView.url
+        if episode.attempted,
+           pageFadePolicy.reconcile(context: episode.context, episode: episode.id, committedURL: webView.url) {
+            revealPage(webView, episodeID: episode.id, animated: false)
+        }
+        refreshPageFadeResidence()
+        beginPageFadeIfEligible(webView)
+        // The page's ping includes this opaque ID. Missing/stale pings use the
+        // navigation-scoped finish/failure or timeout backstop instead.
+        webView.evaluateJavaScript("window.__subPageFadeEpisode = '\(episode.id.uuidString)';", completionHandler: nil)
+    }
+
+    func finishPageFade(_ webView: WKWebView, navigation: WKNavigation?, failed: Bool = false) {
+        let key = ObjectIdentifier(webView)
+        guard let episode = pageFadeEpisodes[key], episode.navigation == navigation.map(ObjectIdentifier.init) else { return }
+        revealPage(webView, episodeID: episode.id, animated: !failed)
+        pageFadePolicy.complete(context: episode.context, episode: episode.id)
+        pageFadeEpisodes[key]?.completed = true
+    }
+
+    private var pageFadeReducedMotion: Bool {
+        #if canImport(AppKit)
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        #else
+        UIAccessibility.isReduceMotionEnabled
+        #endif
+    }
+
+    private func pageFadeVisible(_ webView: WKWebView, context: UUID) -> Bool {
+        guard pageFadeSuspensions.isEmpty, pageFadeDisplayedTabs.contains(context) else { return false }
+        #if canImport(AppKit)
+        guard NSApp.isActive, let window = webView.window, window.isVisible,
+              !window.isMiniaturized, window.occlusionState.contains(.visible),
+              !webView.isHiddenOrHasHiddenAncestor, !webView.visibleRect.isEmpty,
+              let contentView = window.contentView,
+              !webView.convert(webView.visibleRect, to: nil)
+                .intersection(contentView.convert(contentView.bounds, to: nil)).isEmpty else { return false }
+        #endif
+        return true
+    }
+
+    private func beginPageFadeIfEligible(_ webView: WKWebView) {
+        let key = ObjectIdentifier(webView)
+        guard var episode = pageFadeEpisodes[key], !episode.attempted, !episode.completed else { return }
         let defaults = UserDefaults.standard
-        guard defaults.object(forKey: "fadeInPages") == nil || defaults.bool(forKey: "fadeInPages") else { return }
-        fadePending.insert(ObjectIdentifier(webView))
+        guard defaults.object(forKey: "fadeInPages") == nil || defaults.bool(forKey: "fadeInPages"),
+              PageFadeCircuitBreaker.identity(for: episode.targetURL) != nil,
+              pageFadeVisible(webView, context: episode.context) else {
+            setAlpha(webView, 1, duration: 0)
+            return
+        }
+        episode.attempted = true
+        let decision = pageFadePolicy.attempt(context: episode.context, url: episode.targetURL,
+                                             episode: episode.id, reducedMotion: pageFadeReducedMotion)
+        episode.pending = decision.shouldAnimate
+        pageFadeEpisodes[key] = episode
+        guard decision.shouldAnimate else { setAlpha(webView, 1, duration: 0); return }
+        // The gate must precede alpha=0. Suppressed/Reduce Motion paths never hide.
         setAlpha(webView, 0, duration: 0)
+        let id = episode.id
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self, weak webView] in
             guard let webView else { return }
-            self?.revealPage(webView)
+            self?.revealPage(webView, episodeID: id)
         }
     }
 
-    func revealPage(_ webView: WKWebView) {
-        guard fadePending.remove(ObjectIdentifier(webView)) != nil else { return }
-        let ms = UserDefaults.standard.object(forKey: "fadeInDuration") as? Double ?? 250
-        setAlpha(webView, 1, duration: min(max(ms, 100), 1000) / 1000)
+    private func revealPage(_ webView: WKWebView, episodeID: UUID, animated: Bool = true) {
+        let key = ObjectIdentifier(webView)
+        guard let episode = pageFadeEpisodes[key], episode.id == episodeID else { return }
+        let wasPending = episode.pending
+        pageFadeEpisodes[key]?.pending = false
+        let defaults = UserDefaults.standard
+        let enabled = defaults.object(forKey: "fadeInPages") == nil || defaults.bool(forKey: "fadeInPages")
+        let animate = animated && wasPending && enabled && !pageFadeReducedMotion
+            && pageFadeVisible(webView, context: episode.context)
+            && !pageFadePolicy.isSuppressed(context: episode.context, url: episode.targetURL)
+        let ms = defaults.object(forKey: "fadeInDuration") as? Double ?? 250
+        // Repeated terminal callbacks never restart a reveal animation.
+        guard wasPending || !animated else { return }
+        setAlpha(webView, 1, duration: animate ? min(max(ms, 100), 1000) / 1000 : 0)
     }
+
+    private func cancelPageFade(_ webView: WKWebView) {
+        if let episode = pageFadeEpisodes.removeValue(forKey: ObjectIdentifier(webView)) {
+            pageFadePolicy.complete(context: episode.context, episode: episode.id)
+        }
+        setAlpha(webView, 1, duration: 0)
+    }
+
+    private func refreshPageFadeResidence() {
+        let defaults = UserDefaults.standard
+        let fadeEnabled = defaults.object(forKey: "fadeInPages") == nil || defaults.bool(forKey: "fadeInPages")
+        for (id, webView) in webViews {
+            pageFadePolicy.setResidence(context: id, committedURL: pageFadeCommittedURLs[id],
+                                        eligible: pageFadeVisible(webView, context: id))
+            if !fadeEnabled || pageFadeReducedMotion || !pageFadeVisible(webView, context: id) {
+                if let episode = pageFadeEpisodes[ObjectIdentifier(webView)] {
+                    revealPage(webView, episodeID: episode.id, animated: false)
+                }
+            }
+        }
+    }
+
+    #if canImport(AppKit)
+    private func installPageFadeLifecycleObservers() {
+        let center = NotificationCenter.default
+        for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
+                     NSApplication.didHideNotification, NSApplication.didUnhideNotification,
+                     NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification,
+                     NSWindow.didDeminiaturizeNotification, NSWindow.didExposeNotification] {
+            center.addObserver(self, selector: #selector(pageFadeVisibilityChanged), name: name, object: nil)
+        }
+        center.addObserver(self, selector: #selector(pageFadeVisibilityChanged), name: UserDefaults.didChangeNotification, object: nil)
+        let workspace = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification,
+                     NSWorkspace.sessionDidResignActiveNotification] {
+            workspace.addObserver(self, selector: #selector(pageFadeWillSuspend(_:)), name: name, object: nil)
+        }
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification,
+                     NSWorkspace.sessionDidBecomeActiveNotification] {
+            workspace.addObserver(self, selector: #selector(pageFadeDidResume(_:)), name: name, object: nil)
+        }
+        workspace.addObserver(self, selector: #selector(pageFadeVisibilityChanged),
+                              name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+    }
+
+    @objc private func pageFadeVisibilityChanged() { refreshPageFadeResidence() }
+    @objc private func pageFadeWillSuspend(_ notification: Notification) {
+        let reason = notification.name == NSWorkspace.willSleepNotification ? "system"
+            : notification.name == NSWorkspace.screensDidSleepNotification ? "display" : "session"
+        pageFadeSuspensions.insert(reason)
+        pageFadePolicy.interrupt(clearRecentAttempts: true)
+        refreshPageFadeResidence()
+    }
+    @objc private func pageFadeDidResume(_ notification: Notification) {
+        let reason = notification.name == NSWorkspace.didWakeNotification ? "system"
+            : notification.name == NSWorkspace.screensDidWakeNotification ? "display" : "session"
+        pageFadeSuspensions.remove(reason)
+        refreshPageFadeResidence()
+    }
+    #endif
 
     private func setAlpha(_ webView: WKWebView, _ alpha: CGFloat, duration: TimeInterval) {
         #if os(macOS)
-        guard duration > 0 else { webView.alphaValue = alpha; return }
+        guard duration > 0 else {
+            webView.layer?.removeAnimation(forKey: "opacity")
+            NSAnimationContext.runAnimationGroup {
+                $0.duration = 0
+                $0.allowsImplicitAnimation = false
+                webView.alphaValue = alpha
+            }
+            return
+        }
         NSAnimationContext.runAnimationGroup {
             $0.duration = duration
             webView.animator().alphaValue = alpha
@@ -1601,6 +1816,11 @@ class WebViewManager: NSObject, ObservableObject {
 
     // Clean up all web views
     func cleanup() {
+        pageFadePolicy.removeAll()
+        pageFadeEpisodes.removeAll()
+        pageFadeTargets.removeAll()
+        pageFadeCommittedURLs.removeAll()
+        pageFadeDisplayedTabs.removeAll()
         for (_, webView) in webViews {
             webView.stopLoading()
             webView.navigationDelegate = nil
@@ -1624,6 +1844,9 @@ class WebViewManager: NSObject, ObservableObject {
 
     isolated deinit {
         NotificationCenter.default.removeObserver(self)
+        #if canImport(AppKit)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        #endif
         cleanup()
         Logger.log("WebViewManager deallocated", type: "WebViewManager")
     }
@@ -1832,7 +2055,9 @@ extension WebViewManager: WKScriptMessageHandler {
             }
         case "painted":
             if let webView = message.webView {
-                revealPage(webView)
+                if let rawID = body["fadeEpisode"] as? String, let id = UUID(uuidString: rawID), message.frameInfo.isMainFrame {
+                    revealPage(webView, episodeID: id)
+                }
                 if let tabID = tabId(for: webView) {
                     NotificationCenter.default.post(
                         name: .browserDeveloperPageDidLoad,

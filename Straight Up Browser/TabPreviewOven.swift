@@ -28,7 +28,7 @@ extension WebViewManager {
     /// Already-displayed tabs are snapshotted where they are instead.
     func warmThumbnails(for targets: [(id: UUID, url: URL?)]) {
         let fresh = targets.filter { target in
-            target.id != ovenBaking && !ovenQueue.contains { $0.id == target.id }
+            shouldDeferColdLayoutStarter?(target.id) != true && target.id != ovenBaking && !ovenQueue.contains { $0.id == target.id }
         }
         guard !fresh.isEmpty else { return }
         ovenQueue.append(contentsOf: fresh)
@@ -51,6 +51,10 @@ extension WebViewManager {
     }
 
     private func bake(_ tabId: UUID, url: URL?) async {
+        guard shouldDeferColdLayoutStarter?(tabId) != true else {
+            completeLiveThumbnail(for: tabId, image: nil)
+            return
+        }
         let existing = existingWebView(for: tabId)
 
         // On screen already: nothing to borrow, just take the picture.

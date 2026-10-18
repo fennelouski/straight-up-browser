@@ -641,14 +641,14 @@ struct Straight_Up_BrowserApp: App {
                 }
                 .keyboardShortcut(sc(.windowSnapRight))
 
-                Button("Snap Window Top") {
+                Button("Cycle Top and Center Placements") {
                     if let window = NSApp.keyWindow ?? NSApp.mainWindow {
                         WindowLayout.snap(window, direction: .top)
                     }
                 }
                 .keyboardShortcut(sc(.windowSnapTop))
 
-                Button("Snap Window Bottom") {
+                Button("Cycle Bottom and Center Placements") {
                     if let window = NSApp.keyWindow ?? NSApp.mainWindow {
                         WindowLayout.snap(window, direction: .bottom)
                     }
@@ -831,6 +831,10 @@ struct Straight_Up_BrowserApp: App {
 
             // Window menu commands
             CommandGroup(after: .windowArrangement) {
+                Button("Arrange Panes…") {
+                    NotificationCenter.default.post(name: .browserArrangePanes, object: NSApp.keyWindow)
+                }
+                .keyboardShortcut(sc(.arrangePanes))
                 Button("Show Next Tab") {
                     NotificationCenter.default.post(name: .browserNextTab, object: nil)
                 }
@@ -872,6 +876,10 @@ struct Straight_Up_BrowserApp: App {
             }
 
             CommandGroup(replacing: .help) {
+                Button("Power Up") {
+                    UserDefaults.standard.set(SettingsPane.powerUp.rawValue, forKey: "settingsPane")
+                    openWindow(id: "settings")
+                }
                 #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("-uiTesting"),
                    ProcessInfo.processInfo.arguments.contains("-globalOmnibarUITesting") {

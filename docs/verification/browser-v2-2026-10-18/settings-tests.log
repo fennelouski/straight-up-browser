@@ -1,0 +1,114 @@
+Building for debugging...
+[Pre-planning 1 / 95]
+[Planning deferred tasks]
+[28 / 52]
+[29 / 53] Browser
+[33 / 96]
+[39 / 96]
+[44 / 96]
+[47 / 96]
+[49 / 96]
+[53 / 96]
+[55 / 96]
+[58 / 96]
+[61 / 96]
+[64 / 96]
+[65 / 96]
+[69 / 96] Browser
+[71 / 96] Browser
+[78 / 96] BrowserTests-product
+[80 / 96] Browser
+[86 / 97] BrowserTests-product
+[87 / 102]
+[91 / 102] BrowserTests-product
+[96 / 102] BrowserTests-product
+[98 / 102] BrowserTests-product
+Build complete! (10.82 sec)
+Test Suite 'All tests' started at 2026-10-18 09:46:20.164.
+Test Suite 'All tests' passed at 2026-10-18 09:46:20.166.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+􀟈  Test run started.
+􀄵  Testing Library Version: 2084
+􀄵  Target Platform: arm64e-apple-macos14.0
+􀟈  Suite SettingsAssistantPolicyTests started.
+􀟈  Suite SettingsAssistantTests started.
+􀟈  Test legacyCLIUnknownAndSettingsCapabilitiesFailClosed() started.
+􀟈  Test broadRunAndExactLegacyGrantCannotAuthorizeSettings() started.
+􀟈  Test settingsProfileDoesNotExpandLegacyProfiles() started.
+􀟈  Test explicitApplyIsIdempotentAndUndoRestoresAbsence() started.
+􀟈  Test excessiveDepthAndSizeAreRejected() started.
+􀟈  Test callAndVagueMotionAdviceDoNotBundlePreferences() started.
+􀟈  Test validSuggestionDoesNotWriteAndQuestionOnlyRejectsProposal() started.
+􀟈  Test expiredAndWrongSessionCannotCommit() started.
+􀟈  Test invalidDurationValuesAreRejected(value:) started.
+􀟈  Test previewIsTypedAppScopedAndNoOpHasNoReceipt() started.
+􀟈  Test manualDraftBlocksOnlyItsTargetAndClosingRestoresEligibility() started.
+􀟈  Test questionInPreviewModeCannotCreateChange() started.
+􀟈  Test externalValueChangeIsRecheckedBeforeCommit() started.
+􀟈  Test revocationBeforeCommitPreventsWrite() started.
+􀟈  Test unknownFieldsDuplicateKeysScopeAndContextAreRejected() started.
+􀟈  Test questionAndPreviewNeverWrite() started.
+􀟈  Test failureFreezesWriterWithoutClaimingSuccess() started.
+􀟈  Test unknownAndSensitiveIDsAreRejected(id:) started.
+􀟈  Test productionCacheOnlyAdapterWithholdsApply() started.
+􀟈  Test manualEditAndABACycleInvalidatePreview() started.
+􀟈  Test scopedAndNegatedRequestsNeverBroadenToAppChange(request:) started.
+􀟈  Test switchingToAskAndChangingRequestInvalidateOldCard() started.
+􀟈  Test revocationAfterCommitBlocksSubsequentOperations() started.
+􀟈  Test draftOpenedAfterPreviewBlocksApply() started.
+􀟈  Test sameValueManualWriteBlocksUndo() started.
+􀟈  Test legacyValuesAreReadAccuratelyAndNeverNormalizedWithoutPreview() started.
+􀟈  Test case passing 1 argument value → "50" to invalidDurationValuesAreRejected(value:) started.
+􀟈  Test case passing 1 argument value → "275" to invalidDurationValuesAreRejected(value:) started.
+􀟈  Test case passing 1 argument value → "1001" to invalidDurationValuesAreRejected(value:) started.
+􀟈  Test case passing 1 argument id → "security.strictSSL" to unknownAndSensitiveIDsAreRejected(id:) started.
+􀟈  Test case passing 1 argument value → "true" to invalidDurationValuesAreRejected(value:) started.
+􀟈  Test availabilityRequiresExplicitOptInAndMasterSwitch() started.
+􀟈  Test wrongBooleanTypesAreRejected(value:) started.
+􀟈  Test case passing 1 argument id → "arbitrary.key" to unknownAndSensitiveIDsAreRejected(id:) started.
+􀟈  Test case passing 1 argument value → "1e9999" to invalidDurationValuesAreRejected(value:) started.
+􀟈  Test case passing 1 argument request → "Disable page fades in this window" to scopedAndNegatedRequestsNeverBroadenToAppChange(request:) started.
+􀟈  Test case passing 1 argument id → "agent.externalConnections" to unknownAndSensitiveIDsAreRejected(id:) started.
+􀟈  Test case passing 1 argument value → "0" to wrongBooleanTypesAreRejected(value:) started.
+􀟈  Test case passing 1 argument request → "Do not disable page fading" to scopedAndNegatedRequestsNeverBroadenToAppChange(request:) started.
+􀟈  Test case passing 1 argument request → "Don't turn page fades off" to scopedAndNegatedRequestsNeverBroadenToAppChange(request:) started.
+􀟈  Test case passing 1 argument value → "{}" to wrongBooleanTypesAreRejected(value:) started.
+􀟈  Test case passing 1 argument request → "Disable page fades for example.com" to scopedAndNegatedRequestsNeverBroadenToAppChange(request:) started.
+􀟈  Test case passing 1 argument value → "NaN" to invalidDurationValuesAreRejected(value:) started.
+􀟈  Test case passing 1 argument value → "[]" to wrongBooleanTypesAreRejected(value:) started.
+􀟈  Test case passing 1 argument id → "appearance.reduceMotion" to unknownAndSensitiveIDsAreRejected(id:) started.
+􀟈  Test case passing 1 argument value → "null" to wrongBooleanTypesAreRejected(value:) started.
+􀟈  Test case passing 1 argument value → "1" to wrongBooleanTypesAreRejected(value:) started.
+􀟈  Test case passing 1 argument value → ""false"" to wrongBooleanTypesAreRejected(value:) started.
+􀟈  Test case passing 1 argument request → "Turn page fades off on this site" to scopedAndNegatedRequestsNeverBroadenToAppChange(request:) started.
+􁁛  Test broadRunAndExactLegacyGrantCannotAuthorizeSettings() passed after 0.002 seconds.
+􁁛  Test settingsProfileDoesNotExpandLegacyProfiles() passed after 0.003 seconds.
+􁁛  Test manualDraftBlocksOnlyItsTargetAndClosingRestoresEligibility() passed after 0.003 seconds.
+􁁛  Test revocationBeforeCommitPreventsWrite() passed after 0.006 seconds.
+􁁛  Test explicitApplyIsIdempotentAndUndoRestoresAbsence() passed after 0.006 seconds.
+􁁛  Test excessiveDepthAndSizeAreRejected() passed after 0.006 seconds.
+􁁛  Test validSuggestionDoesNotWriteAndQuestionOnlyRejectsProposal() passed after 0.006 seconds.
+􁁛  Test legacyCLIUnknownAndSettingsCapabilitiesFailClosed() passed after 0.006 seconds.
+􁁛  Test previewIsTypedAppScopedAndNoOpHasNoReceipt() passed after 0.006 seconds.
+􁁛  Suite SettingsAssistantPolicyTests passed after 0.007 seconds.
+􁁛  Test questionInPreviewModeCannotCreateChange() passed after 0.007 seconds.
+􁁛  Test callAndVagueMotionAdviceDoNotBundlePreferences() passed after 0.007 seconds.
+􁁛  Test externalValueChangeIsRecheckedBeforeCommit() passed after 0.007 seconds.
+􁁛  Test expiredAndWrongSessionCannotCommit() passed after 0.009 seconds.
+􁁛  Test unknownFieldsDuplicateKeysScopeAndContextAreRejected() passed after 0.014 seconds.
+􁁛  Test draftOpenedAfterPreviewBlocksApply() passed after 0.013 seconds.
+􁁛  Test switchingToAskAndChangingRequestInvalidateOldCard() passed after 0.014 seconds.
+􁁛  Test manualEditAndABACycleInvalidatePreview() passed after 0.014 seconds.
+􁁛  Test invalidDurationValuesAreRejected(value:) with 6 test cases passed after 0.014 seconds.
+􁁛  Test questionAndPreviewNeverWrite() passed after 0.014 seconds.
+􁁛  Test legacyValuesAreReadAccuratelyAndNeverNormalizedWithoutPreview() passed after 0.013 seconds.
+􁁛  Test wrongBooleanTypesAreRejected(value:) with 6 test cases passed after 0.013 seconds.
+􁁛  Test scopedAndNegatedRequestsNeverBroadenToAppChange(request:) with 5 test cases passed after 0.014 seconds.
+􁁛  Test sameValueManualWriteBlocksUndo() passed after 0.013 seconds.
+􁁛  Test availabilityRequiresExplicitOptInAndMasterSwitch() passed after 0.013 seconds.
+􁁛  Test failureFreezesWriterWithoutClaimingSuccess() passed after 0.014 seconds.
+􁁛  Test unknownAndSensitiveIDsAreRejected(id:) with 4 test cases passed after 0.014 seconds.
+􁁛  Test revocationAfterCommitBlocksSubsequentOperations() passed after 0.014 seconds.
+􁁛  Test productionCacheOnlyAdapterWithholdsApply() passed after 0.014 seconds.
+􁁛  Suite SettingsAssistantTests passed after 0.014 seconds.
+􁁛  Test run with 28 tests in 2 suites passed after 0.015 seconds.

@@ -101,6 +101,11 @@ struct WebView: NSViewRepresentable {
         context.coordinator.parent = self
         context.coordinator.tabs = tabs
         context.coordinator.tabManager = tabManager
+        tabManager?.onColdStarterPumpRequested = { [weak coordinator = context.coordinator] in coordinator?.scheduleColdStarterPump() }
+        tabManager?.canRetryColdStarter = { [weak coordinator = context.coordinator] id, url in coordinator?.canRetryColdStarter(id, startingURL: url) ?? false }
+        nsView.onColdStarterPump = { [weak coordinator = context.coordinator] in coordinator?.scheduleColdStarterPump() }
+        nsView.coldStarterDeferredIDs = tabManager?.coldLayoutStarters.deferredTabIDs ?? []
+        nsView.onColdStarterLoad = { [weak tabManager, tabs] id in try? tabManager?.loadDeferredLayoutStarter(id, tabs: tabs ?? []) }
 
         // Update the displayed panes (one pane normally, 2–4 in a split)
         nsView.documentPaneProvider = documentPaneProvider
@@ -116,7 +121,25 @@ struct WebView: NSViewRepresentable {
         }
         nsView.whitePoint = toneSchedule.isActive ? pageWhitePoint : 100
         nsView.blackPoint = toneSchedule.isActive ? pageBlackPoint : 0
+        nsView.paneLayoutsEnabled = tabManager?.paneLayoutsEnabled ?? false
+        nsView.setPaneLayout(nsView.paneLayoutsEnabled ? tabManager?.paneLayout : nil)
+        nsView.paneLayoutRevision = tabManager?.paneLayoutRevision ?? 0
+        nsView.maximizedPaneContentID = tabManager?.maximizedPaneContentID
+        nsView.protectedPaneIDs = Set(displayedTabIds.filter { tabManager?.paneIsProtected($0, tabs: tabs ?? []) == true })
+        tabManager?.paneLayoutFits = { [weak nsView] tree in
+            guard let host = nsView, host.bounds.width > 0, host.bounds.height > 0 else { return true }
+            let minimum = tree.minimumSize
+            return minimum.width <= host.bounds.width && minimum.height <= host.bounds.height
+        }
+        nsView.onPaneLayoutResize = { [weak tabManager, weak nsView, tabs] tree, expectedRevision in
+            guard let tabManager else { return }
+            guard tabManager.paneLayoutsEnabled, tabManager.paneLayoutRevision == expectedRevision else { nsView?.setPaneLayout(tabManager.paneLayoutsEnabled ? tabManager.paneLayout : nil); return }
+            if let preview = try? tabManager.previewPaneTree(tree, summary: "Resize divider", tabs: tabs ?? [], action: .resize) {
+                _ = try? tabManager.applyPaneLayout(preview, tabs: tabs ?? [])
+            } else { nsView?.setPaneLayout(tabManager.paneLayout) }
+        }
         nsView.setDisplayedTabs(displayedTabIds, focusedTabId: activeTabId)
+        webViewManager?.setFadeDisplayedTabs(displayedTabIds)
         nsView.refreshFocusOutline()
         for id in displayedTabIds {
             if let tab = tabs?.first(where: { $0.id == id }) {
@@ -127,13 +150,14 @@ struct WebView: NSViewRepresentable {
         // Non-focused panes never go through the url-binding load path below, so a
         // pane restored at launch would sit blank: load its tab's URL once here.
         for id in displayedTabIds where id != activeTabId {
+            guard tabManager?.shouldDeferColdLayoutStarter(id) != true else { continue }
             guard let paneWebView = webViewManager?.existingWebView(for: id),
                   paneWebView.url == nil, !paneWebView.isLoading,
                   let tab = tabs?.first(where: { $0.id == id }) else { continue }
             if TabSync.restoreInteractionState(tab, into: paneWebView) { continue }
             if let paneURL = tab.url {
                 context.coordinator.beginLoad(paneURL, in: paneWebView)
-                webViewManager?.beginFadeIn(paneWebView)
+                webViewManager?.preparePageFade(paneWebView, targetURL: paneURL)
                 paneWebView.loadURL(paneURL)
             }
         }
@@ -163,6 +187,10 @@ struct WebView: NSViewRepresentable {
         // Pinch / two-finger double-tap smart zoom, live per the setting.
         activeWebView.allowsMagnification = pinchToZoomEnabled
 
+        // Only the scheduled pump may start a registered cold recipe page.
+        // This guard precedes interaction-state restoration as well as loadURL.
+        if let activeTabId, tabManager?.shouldDeferColdLayoutStarter(activeTabId) == true { return }
+
         // Cache-state sync: restore a synced tab's page state into a fresh web view
         // (scroll + history), then skip the plain URL load.
         if activeWebView.url == nil,
@@ -189,7 +217,7 @@ struct WebView: NSViewRepresentable {
             // callback arrives after WebKit has already swapped the compositor
             // layer, so the old/blank frame flickers through for a frame or two
             // before the fade catches up.
-            webViewManager?.beginFadeIn(activeWebView)
+            webViewManager?.preparePageFade(activeWebView, targetURL: url)
             activeWebView.loadURL(url)
         } else if let url = url,
                   Tab.normalizeURLForComparison(url) == Tab.normalizeURLForComparison(activeWebView.url) {
@@ -219,6 +247,30 @@ struct WebView: NSViewRepresentable {
         var lastRequestedURL: URL?
         private var downloadNavigationHistory = DownloadNavigationHistory()
         private var certificateOverrideWebViews: Set<ObjectIdentifier> = []
+        private struct ColdNavigationBinding {
+            let navigation: WKNavigation
+            weak var webView: WKWebView?
+            let permit: ColdLayoutStarterScheduler.Permit
+            let scheduler: ColdLayoutStarterScheduler
+        }
+        private struct ColdDownloadClaim {
+            let object: AnyObject
+            var association: ColdLayoutStarterScheduler.DownloadAssociation
+        }
+        private struct ColdRetryableEngine {
+            weak var webView: WKWebView?
+            let startingURL: URL
+            let nativeURL: URL?
+            let tabURL: URL?
+        }
+        private var coldRetryableEngines: [UUID: ColdRetryableEngine] = [:]
+        private var coldNavigationBindings: [ObjectIdentifier: ColdNavigationBinding] = [:]
+        private var currentNativeNavigation: [ObjectIdentifier: ObjectIdentifier] = [:]
+        private var stagedColdPermits: [ObjectIdentifier: ColdLayoutStarterScheduler.Permit] = [:]
+        private var coldDownloadClaims: [ObjectIdentifier: ColdDownloadClaim] = [:]
+        private var earlyColdTerminals: [(navigation: WKNavigation, token: ColdLayoutStarterScheduler.Token, outcome: ColdLayoutStarterScheduler.TerminalOutcome)] = []
+        private var earlyColdDownloads = Set<ColdLayoutStarterScheduler.Token>()
+        private var coldStarterPumpScheduled = false
         private var agentNavigationObservationIDs: [ObjectIdentifier: UUID] = [:]
         private var agentLastNavigationURLs: [ObjectIdentifier: URL] = [:]
         private weak var contextMenuWebView: WKWebView?
@@ -246,6 +298,156 @@ struct WebView: NSViewRepresentable {
 
         private func endLoad(in webView: WKWebView) {
             inFlightLoads.removeValue(forKey: ObjectIdentifier(webView))
+        }
+
+        func coldStarterLoadDidNotStart(in webView: WKWebView, requestedURL: URL) {
+            endLoad(in: webView)
+            if isActiveWebView(webView), lastRequestedURL == requestedURL { lastRequestedURL = nil }
+            parent.webViewManager?.finishPageFade(webView, navigation: nil, failed: true)
+        }
+
+        func scheduleColdStarterPump() {
+            guard !coldStarterPumpScheduled else { return }
+            coldStarterPumpScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.coldStarterPumpScheduled = false
+                self.pumpColdStarters()
+            }
+        }
+
+        private func starterIsActuallyVisible(_ webView: WKWebView) -> Bool {
+            guard !webView.isHidden, webView.bounds.width > 0, webView.bounds.height > 0,
+                  let window = webView.window, window.isVisible, !window.isMiniaturized,
+                  window.occlusionState.contains(.visible), let content = window.contentView else { return false }
+            let intersection = webView.convert(webView.visibleRect, to: content).intersection(content.bounds)
+            return intersection.width > 0 && intersection.height > 0
+        }
+
+        func canRetryColdStarter(_ id: UUID, startingURL: URL) -> Bool {
+            guard let record = coldRetryableEngines[id], record.startingURL == startingURL,
+                  tabs?.first(where: { $0.id == id })?.url == record.tabURL else { return false }
+            guard let existing = parent.webViewManager?.existingWebView(for: id) else { return true }
+            if existing.url == nil, !existing.isLoading { return true }
+            return record.webView === existing && !existing.isLoading && existing.url == record.nativeURL
+        }
+
+        private func mayStartColdPermit(_ permit: ColdLayoutStarterScheduler.Permit, in webView: WKWebView) -> Bool {
+            guard !webView.isLoading else { return false }
+            if webView.url == nil { return true }
+            guard let record = coldRetryableEngines[permit.token.tabID], record.startingURL == permit.startingURL else { return false }
+            return record.webView === webView && webView.url == record.nativeURL
+        }
+
+        private func pumpColdStarters() {
+            guard let manager = tabManager, let views = parent.webViewManager else { return }
+            let gateEnabled = manager.prepareColdStarterAdmission()
+            let scheduler = manager.coldLayoutStarters
+            // Disposed engines acknowledge their exact permit through the
+            // manager hook; prune the now-obsolete native binding references.
+            for binding in coldNavigationBindings.values where binding.scheduler.activePermit(for: binding.permit.token.tabID)?.token != binding.permit.token {
+                if binding.scheduler.ownsStarter(binding.permit.token.tabID) {
+                    coldRetryableEngines[binding.permit.token.tabID] = ColdRetryableEngine(webView: binding.webView, startingURL: binding.permit.startingURL,
+                                                                                       nativeURL: binding.webView?.url, tabURL: tabs?.first(where: { $0.id == binding.permit.token.tabID })?.url)
+                }
+            }
+            coldNavigationBindings = coldNavigationBindings.filter { _, binding in
+                binding.scheduler.activePermit(for: binding.permit.token.tabID)?.token == binding.permit.token
+            }
+            coldDownloadClaims = coldDownloadClaims.filter { _, claim in
+                if let id = claim.association.navigationID {
+                    return coldNavigationBindings[id].map { claim.association.matches(navigationID: id, token: $0.permit.token) } == true
+                }
+                return stagedColdPermits.values.contains { $0.token == claim.association.token }
+            }
+            let liveViewIDs = Set(views.liveTabIds.compactMap { views.existingWebView(for: $0).map(ObjectIdentifier.init) })
+            currentNativeNavigation = currentNativeNavigation.filter { liveViewIDs.contains($0.key) }
+            var changed = false
+            while true {
+                let visible = Set((tabs ?? []).filter { tab in
+                    (parent.displayedTabIds.contains(tab.id)) && views.existingWebView(for: tab.id).map(starterIsActuallyVisible) == true
+                }.map(\.id))
+                guard let permit = scheduler.reserveNext(visibleTabIDs: visible, focusedTabID: manager.focusedDocumentId ?? manager.selectedTabId,
+                                                         workspaceID: manager.activeWorkspaceId, layoutRevision: manager.paneLayoutRevision, gateEnabled: gateEnabled) else { break }
+                changed = true
+                guard let tab = tabs?.first(where: { $0.id == permit.token.tabID }),
+                      let webView = views.existingWebView(for: tab.id), starterIsActuallyVisible(webView),
+                      parent.displayedTabIds.contains(tab.id), manager.splitTabIds.isEmpty || manager.splitTabIds.contains(tab.id),
+                      tab.workspaceId == permit.workspaceID, tab.sessionKind != .incognito, tab.sessionId == permit.profileID,
+                      tab.url == permit.startingURL, mayStartColdPermit(permit, in: webView),
+                      manager.prepareColdStarterAdmission(), scheduler.currentGenerationID == permit.token.generationID else {
+                    scheduler.terminal(permit.token, outcome: .notStarted)
+                    scheduler.cancelPending(reason: .layoutChanged)
+                    break
+                }
+                let viewID = ObjectIdentifier(webView)
+                stagedColdPermits[viewID] = permit
+                coldRetryableEngines.removeValue(forKey: permit.token.tabID)
+                beginLoad(permit.startingURL, in: webView)
+                if isActiveWebView(webView) { lastRequestedURL = permit.startingURL }
+                views.preparePageFade(webView, targetURL: permit.startingURL)
+                let navigation = webView.loadURL(permit.startingURL)
+                stagedColdPermits.removeValue(forKey: viewID)
+                if let navigation {
+                    let navigationID = ObjectIdentifier(navigation)
+                    coldNavigationBindings[navigationID] = ColdNavigationBinding(navigation: navigation, webView: webView, permit: permit, scheduler: scheduler)
+                    for id in Array(coldDownloadClaims.keys) {
+                        guard var claim = coldDownloadClaims[id], claim.association.token == permit.token else { continue }
+                        claim.association.bindReturnedNavigation(navigationID, token: permit.token)
+                        coldDownloadClaims[id] = claim
+                    }
+                    let early = earlyColdTerminals.filter { $0.token == permit.token && $0.navigation === navigation }
+                    earlyColdTerminals.removeAll { $0.token == permit.token }
+                    if earlyColdDownloads.remove(permit.token) != nil { finishColdNavigation(navigation, in: webView, outcome: .download) }
+                    else if let terminal = early.first { finishColdNavigation(navigation, in: webView, outcome: terminal.outcome) }
+                } else {
+                    coldStarterLoadDidNotStart(in: webView, requestedURL: permit.startingURL)
+                    scheduler.terminal(permit.token, outcome: .notStarted)
+                    earlyColdTerminals.removeAll { $0.token == permit.token }
+                    earlyColdDownloads.remove(permit.token)
+                }
+            }
+            if changed { manager.noteColdStarterStateChanged() }
+        }
+
+        private func finishColdNavigation(_ navigation: WKNavigation?, in webView: WKWebView, outcome: ColdLayoutStarterScheduler.TerminalOutcome) {
+            guard let navigation else { return }
+            let key = ObjectIdentifier(navigation)
+            if let binding = coldNavigationBindings.removeValue(forKey: key) {
+                guard binding.webView === webView else { coldNavigationBindings[key] = binding; return }
+                if binding.scheduler.terminal(binding.permit.token, outcome: outcome) {
+                    if outcome != .finished, binding.scheduler.ownsStarter(binding.permit.token.tabID) {
+                        coldRetryableEngines[binding.permit.token.tabID] = ColdRetryableEngine(webView: webView, startingURL: binding.permit.startingURL,
+                                                                                           nativeURL: webView.url, tabURL: tab(for: webView)?.url)
+                    } else { coldRetryableEngines.removeValue(forKey: binding.permit.token.tabID) }
+                    tabManager?.noteColdStarterStateChanged()
+                }
+                coldDownloadClaims = coldDownloadClaims.filter { $0.value.association.navigationID != key }
+                if currentNativeNavigation[ObjectIdentifier(webView)] == key { currentNativeNavigation.removeValue(forKey: ObjectIdentifier(webView)) }
+            } else if let staged = stagedColdPermits[ObjectIdentifier(webView)] {
+                // A synchronous terminal cannot free an unrelated permit. It
+                // waits until loadURL returns the exact native navigation.
+                earlyColdTerminals.append((navigation, staged.token, outcome))
+            }
+            scheduleColdStarterPump()
+        }
+
+        private func claimColdDownload(_ object: AnyObject, from webView: WKWebView) {
+            let viewID = ObjectIdentifier(webView)
+            if let navigationID = currentNativeNavigation[viewID], let binding = coldNavigationBindings[navigationID], binding.webView === webView {
+                coldDownloadClaims[ObjectIdentifier(object)] = ColdDownloadClaim(object: object, association: .init(token: binding.permit.token, navigationID: navigationID))
+            } else if let permit = stagedColdPermits[viewID] {
+                coldDownloadClaims[ObjectIdentifier(object)] = ColdDownloadClaim(object: object, association: .init(token: permit.token))
+            }
+        }
+
+        private func finishColdDownload(_ object: AnyObject, from webView: WKWebView) {
+            guard let claim = coldDownloadClaims.removeValue(forKey: ObjectIdentifier(object)), claim.object === object else { return }
+            if let id = claim.association.navigationID, let binding = coldNavigationBindings[id], claim.association.matches(navigationID: id, token: binding.permit.token) {
+                finishColdNavigation(binding.navigation, in: webView, outcome: .download)
+            } else if stagedColdPermits[ObjectIdentifier(webView)]?.token == claim.association.token {
+                earlyColdDownloads.insert(claim.association.token)
+            }
         }
 
         private func shouldBlockRedirect(to url: URL, in webView: WKWebView) -> Bool {
@@ -333,6 +535,16 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            let viewID = ObjectIdentifier(webView)
+            if let navigation {
+                currentNativeNavigation[viewID] = ObjectIdentifier(navigation)
+                if coldNavigationBindings[ObjectIdentifier(navigation)] == nil, stagedColdPermits[viewID] == nil,
+                   let id = parent.webViewManager?.tabId(for: webView) {
+                    coldRetryableEngines.removeValue(forKey: id)
+                    tabManager?.noteExplicitColdStarterNavigation(id)
+                }
+            }
+            parent.webViewManager?.pageFadeDidStart(webView, navigation: navigation)
             certificateOverrideWebViews.remove(ObjectIdentifier(webView))
             if let tabId = parent.webViewManager?.tabId(for: webView) {
                 TabInsights.shared.loadStarted(tabId)
@@ -417,7 +629,7 @@ struct WebView: NSViewRepresentable {
             )
             // Old document is gone and the new one hasn't painted: hold the view
             // invisible until it has, so the gap isn't a flash of white.
-            parent.webViewManager?.beginFadeIn(webView)
+            parent.webViewManager?.pageFadeDidCommit(webView, navigation: navigation)
             // Push the current spacebar-scroll percentage into the new page;
             // the injected user script reads it on each keypress
             let pct = UserDefaults.standard.object(forKey: "spaceScrollPercent") as? Double ?? 90
@@ -445,7 +657,7 @@ struct WebView: NSViewRepresentable {
                 from: webView
             )
             if let url = webView.url { agentLastNavigationURLs[ObjectIdentifier(webView)] = url }
-            parent.webViewManager?.revealPage(webView)  // backstop: content that never pings
+            parent.webViewManager?.finishPageFade(webView, navigation: navigation)
             if isActiveWebView(webView) {
                 parent.isLoading = false
                 parent.hasRenderedContent = true
@@ -532,6 +744,7 @@ struct WebView: NSViewRepresentable {
             }
 
             // Removed JavaScript injection that may interfere with user interactions
+            finishColdNavigation(navigation, in: webView, outcome: .finished)
         }
 
         private func loadFavicon(for webView: WKWebView) {
@@ -637,6 +850,7 @@ struct WebView: NSViewRepresentable {
                     // bug. Deliberately leaves downloadNavigationHistory alone -
                     // the download path needs it pointing at the last real page.
                     guard let newURL = webView.url else { return }
+                    self.parent.webViewManager?.pageFadeURLDidChange(webView)
                     if self.isActiveWebView(webView) {
                         self.lastRequestedURL = newURL
                     }
@@ -651,7 +865,7 @@ struct WebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             publishAgentNavigationFailure(error, from: webView)
-            parent.webViewManager?.revealPage(webView)  // don't leave a failed load invisible
+            parent.webViewManager?.finishPageFade(webView, navigation: navigation, failed: true)
             parent.isLoading = false
             Logger.log("WebView navigation failed: \(error.localizedDescription)", type: "WebView")
             Logger.log("Error domain: \(error._domain), code: \((error as NSError).code)", type: "WebView")
@@ -662,9 +876,11 @@ struct WebView: NSViewRepresentable {
             if (error as NSError).code != NSURLErrorCancelled {
                 resetRedirectLoopGuard(for: webView)
             }
+            finishColdNavigation(navigation, in: webView, outcome: (error as NSError).code == NSURLErrorCancelled ? .cancelled : .failed)
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            parent.webViewManager?.finishPageFade(webView, navigation: navigation, failed: true)
             publishAgentNavigationFailure(error, from: webView)
             parent.isLoading = false
             Logger.log("WebView provisional navigation failed: \(error.localizedDescription)", type: "WebView")
@@ -679,10 +895,14 @@ struct WebView: NSViewRepresentable {
             if (error as NSError).code != NSURLErrorCancelled {
                 resetRedirectLoopGuard(for: webView)
             }
+            finishColdNavigation(navigation, in: webView, outcome: (error as NSError).code == NSURLErrorCancelled ? .cancelled : .failed)
         }
 
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
             endLoad(in: webView)
+            let terminated = coldNavigationBindings.values.filter { $0.webView === webView }.map(\.navigation)
+            for navigation in terminated { finishColdNavigation(navigation, in: webView, outcome: .terminated) }
+            currentNativeNavigation.removeValue(forKey: ObjectIdentifier(webView))
             publishAgentSignal(
                 .pageLifecycle(.init(
                     phase: .webContentProcessTerminated,
@@ -698,8 +918,16 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, preferences: WKWebpagePreferences, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
+            if navigationAction.targetFrame?.isMainFrame == true, navigationAction.navigationType != .other,
+               let id = parent.webViewManager?.tabId(for: webView) {
+                coldRetryableEngines.removeValue(forKey: id)
+                tabManager?.noteExplicitColdStarterNavigation(id)
+            }
             // <a download> links
             if navigationAction.shouldPerformDownload {
+                // A user link has its own request; it cannot acknowledge the
+                // older starter's navigation merely by sharing this web view.
+                if navigationAction.navigationType == .other, navigationAction.targetFrame?.isMainFrame == true { claimColdDownload(navigationAction, from: webView) }
                 decisionHandler(.download, preferences)
                 return
             }
@@ -775,6 +1003,9 @@ struct WebView: NSViewRepresentable {
                 return
             }
 
+            if navigationAction.targetFrame?.isMainFrame == true {
+                parent.webViewManager?.notePageFadeTarget(navigationAction.request.url, in: webView)
+            }
             decisionHandler(.allow, preferences)
         }
 
@@ -796,6 +1027,7 @@ struct WebView: NSViewRepresentable {
             )
             // Anything WebKit can't render inline (zip, dmg, attachments…) is a download
             if !navigationResponse.canShowMIMEType {
+                if navigationResponse.isForMainFrame { claimColdDownload(navigationResponse, from: webView) }
                 decisionHandler(.download)
                 return
             }
@@ -808,11 +1040,13 @@ struct WebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
             track(download, from: webView)
             resetTabURLAfterDownload(webView)
+            finishColdDownload(navigationAction, from: webView)
         }
 
         func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
             track(download, from: webView)
             resetTabURLAfterDownload(webView)
+            finishColdDownload(navigationResponse, from: webView)
         }
 
         func track(_ download: WKDownload, from webView: WKWebView, transferId existingId: UUID? = nil) {
@@ -1620,6 +1854,44 @@ class WebViewContainer: NSView {
     private weak var coordinator: WebView.Coordinator?
     private var focusedTabId: UUID?
     private var displayedTabIds: [UUID] = []
+    private var paneLayout: PaneLayoutTree?
+    var paneLayoutsEnabled = false {
+        didSet {
+            guard oldValue != paneLayoutsEnabled else { return }
+            if !paneLayoutsEnabled {
+                // Cancel first: onEndDrag restores its baseline before the host
+                // switches to fallback, and a late mouseUp cannot commit it.
+                dividers.forEach { $0.cancelOperation(nil) }
+                dividerLayoutBaseline = nil
+                paneLayout = nil
+                maximizedPaneContentID = nil
+            }
+            dividers.forEach { $0.isResizeEnabled = paneLayoutsEnabled || displayedTabIds.count <= 4 }
+            DispatchQueue.main.async { [weak self] in self?.layoutPanes() }
+        }
+    }
+    private var treeDividerGeometry: [PaneLayoutTree.Divider] = []
+    private var dividerLayoutBaseline: PaneLayoutTree?
+    private var dividerBaselineRevision: UInt64 = 0
+    var paneLayoutRevision: UInt64 = 0
+    var onPaneLayoutResize: ((PaneLayoutTree, UInt64) -> Void)?
+    var protectedPaneIDs = Set<UUID>()
+    var maximizedPaneContentID: UUID? {
+        didSet {
+            if oldValue != maximizedPaneContentID { DispatchQueue.main.async { [weak self] in self?.layoutPanes() } }
+        }
+    }
+    private let compactLayoutNote = NSTextField(labelWithString: "")
+
+    func setPaneLayout(_ tree: PaneLayoutTree?) {
+        guard paneLayoutsEnabled || tree == nil else { return }
+        if let baseline = dividerLayoutBaseline, baseline != tree { dividers.forEach { $0.cancelOperation(nil) } }
+        guard tree != paneLayout, dividerLayoutBaseline == nil else { return }
+        paneLayout = tree
+        // Frames are applied on the same deferred pass as membership. Updating
+        // shape alone (e.g. columns to rows) must also schedule a layout.
+        DispatchQueue.main.async { [weak self] in self?.layoutPanes() }
+    }
     // Web views we hold KVO registrations on. Not the same as "our subviews":
     // WebKit's element-fullscreen controller reparents the web view into its own
     // full-screen window and hands it back on exit, without going through
@@ -1646,6 +1918,44 @@ class WebViewContainer: NSView {
     private var rowFraction: CGFloat = 0.5
     private var dividers: [PaneDivider] = []
     private var clickMonitor: Any?
+    var onColdStarterPump: (() -> Void)?
+    var onColdStarterLoad: ((UUID) -> Void)?
+    var coldStarterDeferredIDs = Set<UUID>() {
+        didSet {
+            guard oldValue != coldStarterDeferredIDs else { return }
+            DispatchQueue.main.async { [weak self] in self?.layoutPanes() }
+        }
+    }
+    private final class DeferredStarterButton: NSButton { var tabID: UUID? }
+    private var coldStarterButtons: [UUID: DeferredStarterButton] = [:]
+    private var coldStarterWindowObservers: [NSObjectProtocol] = []
+
+    @objc private func loadColdStarter(_ sender: DeferredStarterButton) {
+        if let id = sender.tabID { onColdStarterLoad?(id) }
+    }
+
+    private func updateColdStarterControls() {
+        let visibleDeferred = Set(displayedTabIds.filter { id in
+            coldStarterDeferredIDs.contains(id) && paneView(for: id).map { !$0.frame.isEmpty } == true
+        })
+        for id in Array(coldStarterButtons.keys) where !visibleDeferred.contains(id) {
+            coldStarterButtons.removeValue(forKey: id)?.removeFromSuperview()
+        }
+        for id in visibleDeferred {
+            guard let pane = paneView(for: id) else { continue }
+            let button = coldStarterButtons[id] ?? DeferredStarterButton(title: "Load Saved Page", target: self, action: #selector(loadColdStarter(_:)))
+            button.tabID = id
+            button.title = paneLayoutsEnabled ? "Load Saved Page" : "Enable Pane Layouts to Load"
+            button.isEnabled = paneLayoutsEnabled
+            button.bezelStyle = .rounded
+            button.setAccessibilityLabel("Load saved page in this pane")
+            button.toolTip = paneLayoutsEnabled ? "Queue this saved page within the two-page restore limit." : "Enable pane layouts in Arrange Panes before restoring this saved page."
+            button.sizeToFit()
+            button.frame.origin = CGPoint(x: max(pane.frame.minX, pane.frame.midX - button.frame.width / 2), y: pane.frame.midY - button.frame.height / 2)
+            coldStarterButtons[id] = button
+            if button.superview !== self { addSubview(button, positioned: .above, relativeTo: nil) }
+        }
+    }
     // Clicking inside a non-focused pane moves focus there (sets selectedTabId).
     var onPaneFocus: ((UUID) -> Void)?
 
@@ -1801,14 +2111,14 @@ class WebViewContainer: NSView {
         let focusedIsDocument = focusedTabId.map { documentPaneProvider?($0) != nil } ?? false
         webViewManager?.setActiveTab(focusedIsDocument ? nil : focusedTabId)
 
-        // Hide all currently visible panes. Read the hierarchy rather than a
-        // tracked set: WebKit takes the web view away for fullscreen and puts it
-        // back on its own, so a set would go stale and strand a page on screen.
+        // Retained visible views stay attached and visible through a geometry
+        // transaction. In particular a swap must not hide/show a live call.
+        let retainedViews = Set(ids.compactMap { paneView(for: $0) })
         for case let webView as WKWebView in subviews {
-            webView.isHidden = true
+            if !retainedViews.contains(webView) { webView.isHidden = true }
         }
         for documentView in visibleDocumentViews {
-            documentView.isHidden = true
+            if !retainedViews.contains(documentView) { documentView.isHidden = true }
         }
         visibleDocumentViews.removeAll()
 
@@ -1821,13 +2131,13 @@ class WebViewContainer: NSView {
         for id in ids {
             if let documentView = documentPaneProvider?(id) {
                 attachPane(documentView)
-                documentView.isHidden = false
+                if documentView.isHidden { documentView.isHidden = false }
                 visibleDocumentViews.insert(documentView)
                 continue
             }
             let webView = webViewManager.getWebView(for: id)
             attach(webView)
-            webView.isHidden = false
+            if webView.isHidden { webView.isHidden = false }
 
             // Ensure WebView can accept user interactions
             webView.allowsBackForwardNavigationGestures = true
@@ -1835,7 +2145,7 @@ class WebViewContainer: NSView {
             webView.allowsLinkPreview = true
         }
 
-        layoutPanes(animated: paneShapeChanged)
+        layoutPanes(animated: paneShapeChanged && paneLayout == nil)
 
         // Give the page key focus so arrow keys / space / cmd+arrows scroll
         // it. Only on a real tab change (or when nothing has focus) so
@@ -1922,8 +2232,47 @@ class WebViewContainer: NSView {
             target(view).frame = frame
             if view === focusedView { target(focusOutline).frame = frame }
         }
+        if paneLayout == nil { compactLayoutNote.removeFromSuperview() }
 
-        if views.count == 4 {
+        let renderingMode = PaneLayoutRolloutPolicy.renderingMode(enabled: paneLayoutsEnabled, hasTree: paneLayout?.contentIDs == displayedTabIds, memberCount: views.count)
+        if renderingMode == .recursive, let tree = paneLayout {
+            let preferredProjection: PaneLayoutTree
+            if let maximizedPane = tree.panes.first(where: { $0.content.id == maximizedPaneContentID }) {
+                let required = [maximizedPane] + tree.panes.filter { $0.id != maximizedPane.id && protectedPaneIDs.contains($0.content.id) }
+                preferredProjection = PaneLayoutTree.columns(required)!
+            } else { preferredProjection = tree }
+            let projection = preferredProjection.compactProjection(in: b.size, protecting: protectedPaneIDs, focused: maximizedPaneContentID ?? focusedTabId)
+            let geometry = projection.geometry(in: b)
+            let projectedIDs = Set(projection.contentIDs)
+            for (id, view) in zip(displayedTabIds, views) {
+                if let frame = geometry.panes[id] {
+                    place(view, in: frame)
+                } else { place(view, in: .zero) }
+            }
+            let omitted = displayedTabIds.count - projectedIDs.count
+            if omitted > 0 || projection.minimumSize.width > b.width || projection.minimumSize.height > b.height {
+                compactLayoutNote.stringValue = omitted > 0
+                    ? maximizedPaneContentID != nil ? "Focused pane · \(omitted) panes remain in the sidebar. Choose Restore Full Layout in Arrange Panes."
+                        : "Compact view · \(omitted) panes remain in the sidebar. Enlarge the window to restore the layout."
+                    : "Enlarge the window to give every protected pane its minimum space."
+                compactLayoutNote.font = .systemFont(ofSize: 11)
+                compactLayoutNote.textColor = .secondaryLabelColor
+                compactLayoutNote.drawsBackground = true
+                compactLayoutNote.backgroundColor = .windowBackgroundColor
+                compactLayoutNote.frame = CGRect(x: 8, y: b.maxY - 24, width: max(0, b.width - 16), height: 20)
+                if compactLayoutNote.superview !== self { addSubview(compactLayoutNote, positioned: .above, relativeTo: nil) }
+            } else { compactLayoutNote.removeFromSuperview() }
+            treeDividerGeometry = geometry.dividers
+            // Compact dividers describe a projection, so resizing them must not
+            // accidentally rewrite the user's full preferred tree.
+            ensureDividers(projection == tree ? geometry.dividers.map { $0.axis == .x } : [])
+            for (divider, spec) in zip(dividers, geometry.dividers) {
+                divider.frame = spec.frame
+                divider.setAccessibilityLabel(spec.axis == .x ? "Resize left and right panes" : "Resize top and bottom panes")
+                divider.setAccessibilityValue("\(Int(spec.ratio * 100)) percent")
+            }
+        } else if renderingMode == .legacyGrid {
+            compactLayoutNote.removeFromSuperview()
             // Rigid 2×2 grid in reading order: dividers span the full grid.
             let leftWidth = floor(b.width * colFractions[0])
             let topHeight = floor(b.height * rowFraction)
@@ -1949,6 +2298,15 @@ class WebViewContainer: NSView {
                 edge += floor(b.width * colFractions[index])
                 divider.frame = NSRect(x: edge - 4, y: 0, width: 8, height: b.height)
             }
+            if !paneLayoutsEnabled, views.count > 4 {
+                compactLayoutNote.stringValue = "Pane layouts are off. All panes remain visible; enable pane layouts to resize this expanded arrangement."
+                compactLayoutNote.font = .systemFont(ofSize: 11)
+                compactLayoutNote.textColor = .secondaryLabelColor
+                compactLayoutNote.drawsBackground = true
+                compactLayoutNote.backgroundColor = .windowBackgroundColor
+                compactLayoutNote.frame = CGRect(x: 8, y: b.maxY - 24, width: max(0, b.width - 16), height: 20)
+                if compactLayoutNote.superview !== self { addSubview(compactLayoutNote, positioned: .above, relativeTo: nil) }
+            }
         } else {
             place(views[0], in: b)
             ensureDividers([])
@@ -1956,7 +2314,7 @@ class WebViewContainer: NSView {
 
         // Trace the actual pane border: internal joins are square, while
         // corners at the outside of the window follow its continuous mask.
-        if views.count > 1, focusedView != nil {
+        if views.count > 1, let focusedView, !focusedView.frame.isEmpty {
             refreshFocusOutline()
             if subviews.last !== focusOutline {
                 addSubview(focusOutline, positioned: .above, relativeTo: nil)
@@ -1964,6 +2322,11 @@ class WebViewContainer: NSView {
         } else {
             focusOutline.removeFromSuperview()
         }
+        // Projection may leave structural members with zero visible area.
+        // Fade's continuous observation clock follows actual native visibility.
+        webViewManager?.refreshPageFadeVisibility()
+        updateColdStarterControls()
+        onColdStarterPump?()
     }
 
     // Rebuild divider views only when the shape changes; orientation per divider
@@ -1973,13 +2336,38 @@ class WebViewContainer: NSView {
         dividers.forEach { $0.removeFromSuperview() }
         dividers = orientations.enumerated().map { index, isVertical in
             let divider = PaneDivider(isVertical: isVertical)
+            divider.isResizeEnabled = paneLayoutsEnabled || displayedTabIds.count <= 4
             divider.onDrag = { [weak self] delta in self?.dividerDragged(index: index, isVertical: isVertical, delta: delta) }
+            divider.onBeginDrag = { [weak self] in
+                guard let self else { return }
+                self.dividerLayoutBaseline = self.paneLayout
+                self.dividerBaselineRevision = self.paneLayoutRevision
+            }
+            divider.onEndDrag = { [weak self] cancelled in
+                guard let self, let baseline = self.dividerLayoutBaseline else { return }
+                self.dividerLayoutBaseline = nil
+                if cancelled { self.paneLayout = baseline; self.layoutPanes() }
+                else if let tree = self.paneLayout, tree != baseline { self.onPaneLayoutResize?(tree, self.dividerBaselineRevision) }
+            }
             addSubview(divider, positioned: .above, relativeTo: nil)
             return divider
         }
     }
 
     private func dividerDragged(index: Int, isVertical: Bool, delta: CGFloat) {
+        guard paneLayoutsEnabled || displayedTabIds.count <= 4 else { return }
+        if let tree = paneLayout, treeDividerGeometry.indices.contains(index) {
+            let spec = treeDividerGeometry[index]
+            let length = spec.axis == .x ? spec.region.width : spec.region.height
+            guard length > 0 else { return }
+            let next = tree.settingRatio(nodeID: spec.id, ratio: spec.ratio + Double(delta / length))
+            let geometry = next.geometry(in: bounds)
+            // Do not crush a child below its content minimum during a drag.
+            guard geometry.panes.values.allSatisfy({ $0.width >= 240 && $0.height >= 160 }) else { return }
+            paneLayout = next
+            layoutPanes()
+            return
+        }
         let minFraction: CGFloat = 0.15
         if displayedTabIds.count == 4 {
             if isVertical {
@@ -2001,6 +2389,17 @@ class WebViewContainer: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        coldStarterWindowObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        coldStarterWindowObservers.removeAll()
+        if let window {
+            for name in [NSWindow.didBecomeKeyNotification, NSWindow.didDeminiaturizeNotification,
+                         NSWindow.didChangeOcclusionStateNotification, NSWindow.didExposeNotification, NSWindow.didResizeNotification] {
+                coldStarterWindowObservers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    Task { @MainActor [weak self] in self?.onColdStarterPump?() }
+                })
+            }
+            onColdStarterPump?()
+        }
         if window == nil {
             if let monitor = clickMonitor { NSEvent.removeMonitor(monitor); clickMonitor = nil }
         } else if clickMonitor == nil {
@@ -2027,6 +2426,7 @@ class WebViewContainer: NSView {
 
     isolated deinit {
         if let monitor = clickMonitor { NSEvent.removeMonitor(monitor) }
+        coldStarterWindowObservers.forEach { NotificationCenter.default.removeObserver($0) }
         // No KVO teardown here: NSView's own dealloc removes every subview, which
         // runs willRemoveSubview for each attached pane. Unregistering here too
         // made that second pass throw ("not registered as an observer").
@@ -2125,6 +2525,14 @@ final class PageOverlay: NSView {
 final class PaneDivider: NSView {
     let isVertical: Bool
     var onDrag: ((CGFloat) -> Void)?
+    var onBeginDrag: (() -> Void)?
+    var onEndDrag: ((Bool) -> Void)?
+    private var dragging = false
+    var isResizeEnabled = false
+    private var cancelledUntilMouseUp = false
+    private var dragKeyMonitor: Any?
+    private var dragNotificationTokens: [NSObjectProtocol] = []
+    private weak var priorResponder: NSResponder?
 
     init(isVertical: Bool) {
         self.isVertical = isVertical
@@ -2134,11 +2542,78 @@ final class PaneDivider: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func resetCursorRects() {
+        guard isResizeEnabled else { return }
         addCursorRect(bounds, cursor: isVertical ? .resizeLeftRight : .resizeUpDown)
     }
 
     override func mouseDragged(with event: NSEvent) {
+        guard isResizeEnabled, !cancelledUntilMouseUp else { return }
+        if !dragging {
+            dragging = true
+            priorResponder = window?.firstResponder
+            onBeginDrag?()
+            beginDragCancellationMonitoring()
+        }
         onDrag?(isVertical ? event.deltaX : event.deltaY)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        cancelledUntilMouseUp = false
+        finishDrag(cancelled: false)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        cancelledUntilMouseUp = false
+        super.mouseDown(with: event)
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        finishDrag(cancelled: true)
+    }
+
+    private func beginDragCancellationMonitoring() {
+        guard let window else { return }
+        dragKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak window] event in
+            guard let self, let window, self.dragging, event.window === window, event.keyCode == 53 else { return event }
+            if event.isARepeat { return nil }
+            // Composition owns its first Escape. A later physical press can
+            // cancel this layout drag without reaching the page's key handler.
+            if (window.firstResponder as? NSTextInputClient)?.hasMarkedText() == true { return event }
+            self.finishDrag(cancelled: true)
+            return nil
+        }
+        for name in [NSWindow.didResignKeyNotification] {
+            dragNotificationTokens.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.finishDrag(cancelled: true) }
+            })
+        }
+        for name in [NSApplication.didResignActiveNotification, NSApplication.didChangeScreenParametersNotification] {
+            dragNotificationTokens.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.finishDrag(cancelled: true) }
+            })
+        }
+    }
+
+    private func finishDrag(cancelled: Bool) {
+        guard dragging else { return }
+        dragging = false
+        cancelledUntilMouseUp = cancelled
+        if let monitor = dragKeyMonitor { NSEvent.removeMonitor(monitor); dragKeyMonitor = nil }
+        dragNotificationTokens.forEach { NotificationCenter.default.removeObserver($0) }
+        dragNotificationTokens = []
+        onEndDrag?(cancelled)
+        if let view = priorResponder as? NSView, view.window === window { window?.makeFirstResponder(view) }
+        priorResponder = nil
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow !== window { finishDrag(cancelled: true) }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    isolated deinit {
+        if let monitor = dragKeyMonitor { NSEvent.removeMonitor(monitor) }
+        dragNotificationTokens.forEach { NotificationCenter.default.removeObserver($0) }
     }
 
     override func draw(_ dirtyRect: NSRect) {

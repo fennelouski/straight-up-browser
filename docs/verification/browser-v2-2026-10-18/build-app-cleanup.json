@@ -1,0 +1,58 @@
+{
+  "timeUTC": "2026-10-18T08:32:23.927834+00:00",
+  "reason": "Repository verify.sh requires removing unsigned temporary shipping-ID app products to avoid LaunchServices selection conflicts.",
+  "scope": "Only these three task-owned /tmp derived-data Build/Products trees; no production installation touched.",
+  "priorPartialPass": "The baseline Debug/Browser.app was removed before the first cleanup stopped at a guarded in-tree Sparkle Updater.app symlink. Its absence was verified before retry; no outside target was traversed.",
+  "removed": [
+    {
+      "path": "/tmp/browser-v2-20261018-baseline-derived/Build/Products/Debug/Sparkle.framework/Updater.app",
+      "kind": "in-tree product symlink",
+      "removed": true
+    },
+    {
+      "path": "/tmp/browser-v2-20261018-baseline-derived/Build/Products/Debug/Sparkle.framework/Versions/B/Updater.app",
+      "unregisterExitCode": 1,
+      "removed": true
+    },
+    {
+      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Release/Browser.app",
+      "unregisterExitCode": 0,
+      "removed": true
+    },
+    {
+      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Release/Sparkle.framework/Updater.app",
+      "kind": "in-tree product symlink",
+      "removed": true
+    },
+    {
+      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Release/Sparkle.framework/Versions/B/Updater.app",
+      "unregisterExitCode": 1,
+      "removed": true
+    },
+    {
+      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Debug/Browser.app",
+      "unregisterExitCode": 0,
+      "removed": true
+    },
+    {
+      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Debug/BrowserUITests-Runner.app",
+      "unregisterExitCode": 1,
+      "removed": true
+    },
+    {
+      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Debug/Sparkle.framework/Updater.app",
+      "kind": "in-tree product symlink",
+      "removed": true
+    },
+    {
+      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Debug/Sparkle.framework/Versions/B/Updater.app",
+      "unregisterExitCode": 1,
+      "removed": true
+    },
+    {
+      "path": "/tmp/browser-v2-20261018-ios-derived/Build/Products/Release-iphonesimulator/Browser.app",
+      "unregisterExitCode": 1,
+      "removed": true
+    }
+  ]
+}

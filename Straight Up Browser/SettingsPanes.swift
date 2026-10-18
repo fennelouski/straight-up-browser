@@ -111,7 +111,7 @@ struct GeneralSettingsView: View {
 
             CollapsibleSection(searchID: "general.new-tab-links") {
                 Toggle("Show a mitosis animation in the sidebar", isOn: $automaticLinkMitosis)
-                Toggle("Open the new tab beside its source", isOn: $automaticLinkSplit)
+                Toggle("Open the new tab beside its source", isOn: SettingsTrackedBinding.binding($automaticLinkSplit, id: .automaticLinkSplit))
             } header: {
                 SettingsLabel("Links That Open New Tabs", systemImage: "arrow.up.right.square", tint: SettingsTint.general)
             } footer: {
@@ -246,11 +246,12 @@ struct GeneralSettingsView: View {
                     value: $defaultBrowserPrompt
                 ) { DefaultBrowserPromptDemo(enabled: $0) }
 
-                Picker("Global omnibar hotkey", selection: $globalOmnibarHotkey) {
+                Picker("Global omnibar hotkey", selection: Binding(get: { globalOmnibarHotkey }, set: { _ = GlobalOmnibarHotkey.select($0) })) {
                     Text("⌥ Space").tag("optSpace")
                     Text("⌃⌥ Space").tag("ctrlOptSpace")
                     Text("Off").tag("off")
                 }
+                GlobalOmnibarStatusView()
                 SettingCaptionRow(
                     caption: "Opens the omnibar from any app, even when Browser isn't focused.",
                     title: "Global Omnibar Hotkey",
@@ -434,15 +435,7 @@ struct ShortcutsSettingsView: View {
                 .delayedHelp(String(localized: "Reset to default"))
             }
             Spacer(minLength: 12)
-            if conflicting {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                    .delayedHelp(String(localized: "This shortcut is used by more than one command"))
-            } else if let systemName = store.systemConflict(store.shortcut(for: command)) {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundStyle(.yellow)
-                    .delayedHelp(String(localized: "May conflict with the macOS \(systemName) shortcut"))
-            }
+            ShortcutIssueButton(command: command)
             ShortcutRecorder(command: command)
         }
     }
@@ -1519,7 +1512,7 @@ struct AppearanceSettingsView: View {
             }
 
             CollapsibleSection(searchID: "appearance.theme") {
-                Picker("Theme", selection: $theme) {
+                Picker("Theme", selection: SettingsTrackedBinding.binding($theme, id: .theme)) {
                     ForEach(themes, id: \.self) { Text($0) }
                 }
                 .pickerStyle(.radioGroup)
@@ -1527,7 +1520,8 @@ struct AppearanceSettingsView: View {
                     caption: "Light, Dark, or follow your Mac.",
                     title: "Theme",
                     explanation: "Sets the browser's own chrome — toolbar, tabs, menus. System follows your Mac's appearance and switches with it at sunset if you have that on. (Pages render in whatever appearance the site itself chooses.)",
-                    value: $theme
+                    value: SettingsTrackedBinding.binding($theme, id: .theme),
+                    settingID: .theme
                 ) { ThemeDemo(theme: $0) }
             } header: {
                 SettingsLabel("Theme", systemImage: "paintbrush", tint: SettingsTint.appearance)
@@ -1568,11 +1562,11 @@ struct AppearanceSettingsView: View {
             }
 
             CollapsibleSection(searchID: "appearance.page-fade") {
-                Toggle("Fade pages in once they've drawn", isOn: $fadeInPages)
+                Toggle("Fade pages in once they've drawn", isOn: SettingsTrackedBinding.binding($fadeInPages, id: .fadeInPages))
                 if fadeInPages {
                     LabeledContent("Fade length") {
                         HStack {
-                            Slider(value: $fadeInDuration, in: 100...1000, step: 50).frame(width: 180)
+                            Slider(value: SettingsTrackedBinding.binding($fadeInDuration, id: .fadeDuration), in: 100...1000, step: 50).frame(width: 180)
                             Text("\(Int(fadeInDuration)) ms").monospacedDigit().frame(width: 60, alignment: .trailing)
                         }
                     }
@@ -1581,7 +1575,8 @@ struct AppearanceSettingsView: View {
                     caption: "No white flash between tabs — the page appears only once it has pixels.",
                     title: "Fade Pages In",
                     explanation: "A loading page has nothing to draw yet, so browsers flash their background — usually white — until the first frame arrives. With this on, Browser keeps the page hidden through that gap and fades it in the moment the page actually paints. Pages that can't report a paint (PDFs, downloads, error pages) appear as soon as they finish loading.",
-                    value: $fadeInDuration
+                    value: SettingsTrackedBinding.binding($fadeInDuration, id: .fadeDuration),
+                    settingID: .fadeDuration
                 ) { FadeInDemo(duration: $0) }
             } header: {
                 SettingsLabel("Page Fade", systemImage: "circle.lefthalf.filled", tint: SettingsTint.appearance)

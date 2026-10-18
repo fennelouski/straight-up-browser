@@ -352,11 +352,13 @@ private enum ContentAccessibilityFocus: Hashable {
 private enum ContentModal: Identifiable, Equatable {
     case library
     case reader(ReaderArticle)
+    case arrangePanes
 
     var id: String {
         switch self {
         case .library: "library"
         case .reader: "reader"
+        case .arrangePanes: "arrangePanes"
         }
     }
 }
@@ -729,6 +731,7 @@ struct ContentView: View {
         // visible too and must not go blank under pressure.
         let displayed = displayedTabIds
         for tab in tabs where !displayed.contains(tab.id)
+            && !tabManager.paneIsProtected(tab.id, tabs: tabs + tabManager.incognitoTabs)
             && BrowserResourcePolicy.shouldUnload(tab.memoryPolicy, url: tab.url, critical: critical) {
             webViewManager?.unloadWebView(for: tab.id)
         }
@@ -786,6 +789,23 @@ struct ContentView: View {
         tabManager.splitTabIds.isEmpty
             ? [tabManager.focusedDocumentId ?? tabManager.selectedTabId].compactMap { $0 }
             : tabManager.splitTabIds
+    }
+
+    private var paneArrangementContent: [PaneArrangementContent] {
+        var items = allTabs.map { tab in
+            let protected = tabManager.paneIsProtected(tab.id, tabs: allTabs)
+            let title = tab.sessionKind == .incognito ? "Private tab"
+                : protected ? "Protected tab"
+                : tab.title.contains("://") ? (tab.url?.host ?? "Tab")
+                : String(tab.title.prefix(80))
+            return PaneArrangementContent(reference: .tab(tab.id), title: title, isProtected: protected)
+        }
+        if let workspaceID = tabManager.activeWorkspaceId, let documentStore {
+            items += documentStore.documents(workspaceId: workspaceID).map {
+                PaneArrangementContent(reference: .document($0.id), title: $0.displayName, isProtected: false)
+            }
+        }
+        return items
     }
 
     // The tint for a tab's isolated session (nil for a normal tab): a container's
@@ -3106,6 +3126,9 @@ struct ContentView: View {
                 addWindowObserver(forName: .browserClearAllData, object: nil, queue: .main) { [self] _ in
                     clearAllData()
                 }
+                addWindowObserver(forName: .browserArrangePanes, object: nil, queue: .main) { [self] _ in
+                    contentModal = .arrangePanes
+                }
 
                 // SwiftData is the session store: tabs are already loaded via @Query.
                 // Register any restored container tabs' sessions before they activate.
@@ -3153,6 +3176,7 @@ struct ContentView: View {
                 switch modal {
                 case .library: accessibilityFocus = .library
                 case .reader: accessibilityFocus = .reader
+                case .arrangePanes: accessibilityFocus = nil
                 case nil: accessibilityFocus = .page
                 }
             }
@@ -3279,6 +3303,8 @@ struct ContentView: View {
                 librarySheet
             case .reader(let article):
                 readerSheet(article)
+            case .arrangePanes:
+                PaneArrangementPanel(tabManager: tabManager, tabs: allTabs, content: paneArrangementContent)
             }
         }
         .alert(item: $persistenceDiagnostics.latestIssue, content: persistenceAlert)
@@ -3647,6 +3673,7 @@ struct ContentView: View {
             Button(tabManager.splitTabIds.isEmpty ? "Open in Split" : "Add to Split",
                    action: { tabManager.toggleSplitMembership(tab, tabs: allTabs) })
         }
+        Button("Arrange Panes / Saved Layouts…") { contentModal = .arrangePanes }
         Divider()
 
         let newspaperSourceKey = tab.url.map {
@@ -4350,6 +4377,7 @@ struct ContentView: View {
         // tab a real snapshot, the og:image is only what it shows until then.
         let cold = allTabs.filter {
             !displayed.contains($0.id) && $0.url != nil
+                && !tabManager.shouldDeferColdLayoutStarter($0.id)
                 && !warmedTabIds.contains($0.id)
                 && webViewManager?.thumbnails[$0.id] == nil
         }

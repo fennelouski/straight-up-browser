@@ -220,6 +220,12 @@ nonisolated enum AgentCapability: String, Codable, CaseIterable, Hashable, Senda
     case researchWrite
     case runDelegation
     case externalMCP
+    // Distinct authority. Browser/page control never implies Settings access.
+    case settingsCatalogRead = "settings.catalog.read"
+    case settingsValuesRead = "settings.values.read"
+    case settingsProposalsCreate = "settings.proposals.create"
+
+    static let settingsCapabilities: Set<Self> = [.settingsCatalogRead, .settingsValuesRead, .settingsProposalsCreate]
 }
 
 nonisolated enum AgentToolVisibility: String, Codable, CaseIterable, Hashable, Sendable {
@@ -230,6 +236,9 @@ nonisolated enum AgentToolVisibility: String, Codable, CaseIterable, Hashable, S
     case localMCP
     case builtInAgent
     case scheduler
+    /// Reserved, opt-in contract. No shipped transport negotiates this profile
+    /// until authenticated inbound pairing and scoped grants are implemented.
+    case settingsAssistantV1
 }
 
 nonisolated enum AgentToolRoute: String, Codable, Equatable, Sendable {
@@ -288,7 +297,7 @@ nonisolated struct AgentToolCatalog: Sendable {
     }
 
     static let canonical = AgentToolCatalog(
-        descriptors: makeCanonicalDescriptors(),
+        descriptors: makeCanonicalDescriptors() + makeSettingsDescriptors(),
         aliases: [
             AgentToolAlias(
                 name: "wait_for_page",
@@ -405,6 +414,19 @@ nonisolated struct AgentToolCatalog: Sendable {
 }
 
 private extension AgentToolCatalog {
+    nonisolated static func makeSettingsDescriptors() -> [AgentToolDescriptor] {
+        let ids = AgentJSONSchema.array(description: "Explicit ordinary app SettingIDs; never preference keys.", items: .string())
+        let entries: [(String, String, AgentJSONSchema, AgentCapability, AgentToolRisk)] = [
+            ("browser_settings_list", "List a bounded safe Settings catalog. Requires separately authenticated Settings access.", .object(), .settingsCatalogRead, .observe),
+            ("browser_settings_get", "Read only specifically granted ordinary app SettingIDs. No secrets or preference dumps.", .object(["settingIDs": ids], required: ["settingIDs"]), .settingsValuesRead, .observe),
+            ("browser_settings_propose", "Stage an untrusted single-setting suggestion for a user-initiated Settings session. Never applies it or grants permission.", .object(["suggestionJSON": .string(description: "Strict v1 Settings suggestion, at most 16 KiB.")], required: ["suggestionJSON"]), .settingsProposalsCreate, .mutateLocal),
+            ("browser_settings_proposal_status", "Read minimal status of a proposal owned by the authenticated principal. Does not return approval material.", .object(["proposalID": .string()], required: ["proposalID"]), .settingsProposalsCreate, .observe),
+        ]
+        return entries.map { name, description, schema, capability, risk in
+            AgentToolDescriptor(name: name, version: 1, description: description, inputSchema: schema, outputSchema: .object(["status": .string()], required: ["status"]), requiredCapabilities: [capability], risk: risk, origin: .internalTool, route: .internalTool, visibility: [.settingsAssistantV1], deprecation: nil)
+        }
+    }
+
     nonisolated static func makeCanonicalDescriptors() -> [AgentToolDescriptor] {
         let page = AgentJSONSchema.string(description: "Stable page ID from list_pages. Omit to use the focused page.")
         let window = AgentJSONSchema.string(description: "Stable window ID from list_windows. Omit to use the focused window.")

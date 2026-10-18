@@ -1,0 +1,16 @@
+{
+  "purpose": "Compile-only unsigned products; hashes captured before required temporary-bundle cleanup",
+  "architectureCheckExitCode": 0,
+  "artifacts": [
+    {
+      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Release/Browser.app/Contents/MacOS/Browser",
+      "bytes": 48693640,
+      "sha256": "85b79e4bddc884931eba73229922a0bcb5a753d98dc4f708c609ff50b2eb093f"
+    },
+    {
+      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Release/Browser.app/Contents/Helpers/browser-cli",
+      "bytes": 485568,
+      "sha256": "015486c0f6016e80d51eba166a1f5c467a503477cacd6376db6965d77e57f6af"
+    }
+  ]
+}

@@ -313,6 +313,13 @@ nonisolated struct AgentPolicyEngine: Sendable {
         guard argumentErrors.isEmpty else {
             return .deny(code: .invalidArguments, reason: argumentErrors.joined(separator: "; "))
         }
+        // Must precede generic matching grants. The legacy run scope, FIFO
+        // caller, browser-control grants, and outbound MCP trust do not prove an
+        // inbound Settings principal. No provider/legacy agent can Apply/Undo.
+        // The optional Settings profile is reserved until that channel exists.
+        if descriptor.name.hasPrefix("browser_settings_") || !descriptor.requiredCapabilities.intersection(AgentCapability.settingsCapabilities).isEmpty {
+            return .deny(code: .capabilityOutsideRunScope, reason: "Settings tools require a separately authenticated, scoped Settings connection. This transport does not provide one. Use native Settings help.")
+        }
         guard descriptor.requiredCapabilities.isSubset(of: context.runScope.capabilities) else {
             return .deny(
                 code: .capabilityOutsideRunScope,

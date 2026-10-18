@@ -13,6 +13,10 @@ import Combine
 import AppKit
 #endif
 
+extension Notification.Name {
+    static let browserAppRequestedTabNavigation = Notification.Name("browserAppRequestedTabNavigation")
+}
+
 #if os(macOS)
 private let defaultTerminateApplication: () -> Void = {
     NSApp.terminate(nil)
@@ -95,6 +99,9 @@ class TabManager: NSObject, ObservableObject {
             if !splitTabIds.isEmpty, let id = selectedTabId, !splitTabIds.contains(id) {
                 splitTabIds = []
             }
+            if !applyingPaneLayout, !restoringPaneLayout, let tree = paneLayout {
+                persistPaneLayoutRecovery(tree, focus: focusedDocumentId ?? selectedTabId)
+            }
             // Focusing a fast-forwarded pane means the guess was useful.
             let focusedTabId = selectedTabId
             let fastForward = fastForward
@@ -106,7 +113,57 @@ class TabManager: NSObject, ObservableObject {
     // Split view: ordered member tab ids (2–4; empty = normal single view).
     // Window view state, not a SwiftData entity — persisted to UserDefaults only.
     @Published var splitTabIds: [UUID] = [] {
-        didSet { UserDefaults.standard.set(splitTabIds.map(\.uuidString), forKey: persistenceKey(Self.splitKey)) }
+        didSet {
+            // Private membership must never become a disk-backed recovery record.
+            let privateIDs = Set(incognitoTabs.map(\.id))
+            let publicIDs = splitTabIds.filter { !privateIDs.contains($0) }
+            UserDefaults.standard.set(publicIDs.map(\.uuidString), forKey: persistenceKey(Self.splitKey))
+            if !applyingPaneLayout {
+                let changedGate = refreshPaneLayoutRollout()
+                if paneLayoutsEnabled {
+                    if !changedGate { reconcilePaneLayout() }
+                } else {
+                    // Legacy membership still works, but the v2 tree remains
+                    // untouched until an explicit rollout enable.
+                    disabledPreviewLayout = nil
+                    paneLayoutRevision &+= 1
+                }
+            }
+        }
+    }
+    @Published private(set) var paneLayout: PaneLayoutTree?
+    @Published private(set) var paneLayoutRevision: UInt64 = 0
+    @Published private(set) var canUndoPaneLayout = false
+    @Published private(set) var canRedoPaneLayout = false
+    @Published private(set) var paneLayoutsEnabled: Bool
+    let coldLayoutStarters = ColdLayoutStarterScheduler()
+    @Published private(set) var coldLayoutStarterStateRevision: UInt64 = 0
+    private var explicitColdStarterOverrides = Set<UUID>()
+    var onColdStarterPumpRequested: (() -> Void)?
+    var canRetryColdStarter: ((UUID, URL) -> Bool)?
+    private let paneLayoutDefaults: UserDefaults
+    private var paneRolloutObserverTokens: [NSObjectProtocol] = []
+    private var paneRecoveryWriteBlocked = false
+    private var retainedPaneWorkspaceID: UUID?
+    private var disabledPreviewLayout: PaneLayoutTree?
+    private var disabledPreviewMembers: [PaneContentReference] = []
+    /// The stable AppKit host supplies viewport validation; nil in pure model tests.
+    var paneLayoutFits: ((PaneLayoutTree) -> Bool)?
+    private var applyingPaneLayout = false
+    private var restoringPaneLayout = false
+    private var paneLayoutUndo: [(tree: PaneLayoutTree, focus: UUID?)] = []
+    private var paneLayoutRedo: [(tree: PaneLayoutTree, focus: UUID?)] = []
+    private var paneIDsByContent: [UUID: UUID] = [:]
+    private var liveRecipeBindings: [UUID: [UUID: UUID]] = [:]
+    private final class WeakLayoutOwner { weak var manager: TabManager?; init(_ manager: TabManager) { self.manager = manager } }
+    private static var liveLayoutOwners: [UUID: WeakLayoutOwner] = [:]
+    @Published private(set) var activeLayoutRecipeID: UUID?
+    @Published private(set) var maximizedPaneContentID: UUID?
+    private var paneFocusBeforeMaximize: UUID?
+    private var savedLiveLayoutTree: PaneLayoutTree?
+    var hasUnsavedPaneLayoutChanges: Bool {
+        let retainedMatches = paneLayout?.panes.map(\.content) == currentPaneMembers && retainedPaneWorkspaceID == activeWorkspaceId
+        return activeLayoutRecipeID != nil && (retainedMatches ? paneLayout : currentPaneLayout()) != savedLiveLayoutTree
     }
     // A Split is an arrangement of 2–4 PANES: tabs or workspace documents
     // (ADR 0008). splitTabIds keeps its name and persistence key but holds pane
@@ -116,7 +173,13 @@ class TabManager: NSObject, ObservableObject {
     // Non-nil = a document owns focus (omnibar shows its name, ⌘W closes its
     // pane and never writes a disposition). selectedTabId stays tabs-only so its
     // many call sites keep meaning what they meant; selecting any tab clears this.
-    @Published var focusedDocumentId: UUID?
+    @Published var focusedDocumentId: UUID? {
+        didSet {
+            if !applyingPaneLayout, !restoringPaneLayout, let tree = paneLayout {
+                persistPaneLayoutRecovery(tree, focus: focusedDocumentId ?? selectedTabId)
+            }
+        }
+    }
 
     /// Set by the content view once the DocumentStore exists: whether a pane id
     /// is a workspace document. Nil (tests, startup) means "no id is".
@@ -149,7 +212,12 @@ class TabManager: NSObject, ObservableObject {
     static func restoredActiveWorkspaceId() -> UUID? {
         UserDefaults.standard.string(forKey: activeWorkspaceKey).flatMap(UUID.init(uuidString:))
     }
-    static let maxSplitTabs = 4
+    static var maxSplitTabs: Int {
+        PaneLayoutRolloutPolicy.newMembershipLimit(enabled: UserDefaults.standard.bool(forKey: PaneLayoutRolloutPolicy.defaultsKey))
+    }
+    private var paneMembershipLimit: Int {
+        PaneLayoutRolloutPolicy.newMembershipLimit(enabled: paneLayoutDefaults.bool(forKey: PaneLayoutRolloutPolicy.defaultsKey))
+    }
 
     let windowID: UUID?
     let homeWorkspaceID: UUID?
@@ -178,7 +246,10 @@ class TabManager: NSObject, ObservableObject {
             // Document panes and their edit sessions belong to the workspace
             // being left; the owner (ContentView / BrowserView_iOS) closes and
             // discards them here so they don't accumulate across switches.
-            if oldValue != activeWorkspaceId { workspaceSwitched?() }
+            if oldValue != activeWorkspaceId {
+                cancelColdLayoutStarters(reason: .workspaceChanged)
+                workspaceSwitched?()
+            }
         }
     }
 
@@ -207,14 +278,18 @@ class TabManager: NSObject, ObservableObject {
         windowID: UUID? = nil,
         homeWorkspaceID: UUID? = nil,
         webViewManager: WebViewManager? = nil,
+        paneLayoutDefaults: UserDefaults = .standard,
         terminateApplication: @escaping () -> Void = defaultTerminateApplication
     ) {
         self.windowID = windowID
         self.homeWorkspaceID = homeWorkspaceID
         self.modelContext = modelContext
         self.webViewManager = webViewManager
+        self.paneLayoutDefaults = paneLayoutDefaults
+        self.paneLayoutsEnabled = paneLayoutDefaults.bool(forKey: PaneLayoutRolloutPolicy.defaultsKey)
         self.terminateApplication = terminateApplication
         super.init()
+        connectColdStarterHooks()
         #if os(macOS)
         // Preserve the original window's split and undo stack on upgrade.
         if let windowID, BrowserWindows.shared.records.first?.id == windowID {
@@ -238,6 +313,13 @@ class TabManager: NSObject, ObservableObject {
             name: .browserHistoryDidClear,
             object: nil
         )
+        paneRolloutObserverTokens.append(NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: paneLayoutDefaults, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.refreshPaneLayoutRollout() }
+        })
+        paneRolloutObserverTokens.append(NotificationCenter.default.addObserver(forName: .browserAppRequestedTabNavigation, object: nil, queue: .main) { [weak self] note in
+            let id = note.object as? UUID
+            Task { @MainActor [weak self] in if let id { self?.noteExplicitColdStarterNavigation(id) } }
+        })
     }
 
     // Keep only the most recent entries on disk; the in-session stack is small
@@ -269,6 +351,7 @@ class TabManager: NSObject, ObservableObject {
     }
 
     isolated deinit {
+        paneRolloutObserverTokens.forEach { NotificationCenter.default.removeObserver($0) }
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -278,6 +361,73 @@ class TabManager: NSObject, ObservableObject {
 
     func setWebViewManager(_ webViewManager: WebViewManager) {
         self.webViewManager = webViewManager
+        connectColdStarterHooks()
+    }
+
+    private func connectColdStarterHooks() {
+        webViewManager?.shouldDeferColdLayoutStarter = { [weak self] id in self?.shouldDeferColdLayoutStarter(id) ?? false }
+        webViewManager?.onWebViewDisposed = { [weak self] id, closed in
+            guard let self else { return }
+            if let permit = self.coldLayoutStarters.activePermit(for: id) {
+                // removeWebView has actually stopped and disposed this engine;
+                // no navigation delegate terminal is guaranteed after disposal.
+                self.coldLayoutStarters.terminal(permit.token, outcome: .terminated)
+            }
+            if closed { self.coldLayoutStarters.forgetDeferredTab(id); self.explicitColdStarterOverrides.remove(id) }
+            self.noteColdStarterStateChanged()
+        }
+    }
+
+    func shouldDeferColdLayoutStarter(_ id: UUID) -> Bool {
+        !explicitColdStarterOverrides.contains(id) && coldLayoutStarters.ownsStarter(id)
+    }
+
+    func prepareColdStarterAdmission() -> Bool {
+        refreshPaneLayoutRollout()
+        return paneLayoutsEnabled
+    }
+
+    func noteColdStarterStateChanged() {
+        coldLayoutStarterStateRevision &+= 1
+        onColdStarterPumpRequested?()
+    }
+
+    func cancelColdLayoutStarters(reason: ColdLayoutStarterScheduler.CancellationReason) {
+        coldLayoutStarters.cancelPending(reason: reason)
+        noteColdStarterStateChanged()
+    }
+
+    /// Called only by explicit browser navigation or the labeled Load action,
+    /// never from generic selection (Undo/workspace focus is not user intent).
+    func noteExplicitColdStarterNavigation(_ id: UUID) {
+        guard coldLayoutStarters.ownsStarter(id) else { return }
+        coldLayoutStarters.cancelForManualNavigation(tabID: id)
+        explicitColdStarterOverrides.insert(id)
+        noteColdStarterStateChanged()
+    }
+
+    func loadDeferredLayoutStarter(_ id: UUID, tabs: [Tab]) throws {
+        try requirePaneLayoutRollout()
+        guard coldLayoutStarters.isDeferred(id), let tab = tabs.first(where: { $0.id == id }),
+              tab.workspaceId == activeWorkspaceId,
+              splitTabIds.isEmpty ? selectedTabId == id : splitTabIds.contains(id) else { throw PaneLayoutError.unavailableContent }
+        if coldLayoutStarters.pendingTabIDs.contains(id) {
+            // Promote a still-queued page; the explicit button must not bypass
+            // the automatic two-load budget while this restore remains live.
+            selectedTabId = id
+            noteColdStarterStateChanged()
+            return
+        }
+        guard let original = coldLayoutStarters.registeredStarter(for: id), let startingURL = original.startingURL,
+              tab.sessionId == original.profileID, tab.sessionKind != .incognito,
+              tab.url == startingURL || canRetryColdStarter?(id, startingURL) == true,
+              coldLayoutStarters.retryDeferredStarter(starter: original,
+                                                     workspaceID: activeWorkspaceId, layoutRevision: paneLayoutRevision, gateEnabled: paneLayoutsEnabled) else { throw PaneLayoutError.unavailableContent }
+        tab.url = startingURL
+        noteColdStarterStateChanged()
+        // A saved-page retry remains subject to the same budget, including
+        // retired generations. Only a new browser navigation bypasses it.
+        selectedTabId = id
     }
 
     @discardableResult
@@ -558,7 +708,7 @@ class TabManager: NSObject, ObservableObject {
         // come from a displayed but unfocused pane, and toggleSplitMembership
         // uses the focused tab as its anchor for a new split.
         selectedTabId = sourceTabId
-        if splitTabIds.count < Self.maxSplitTabs {
+        if splitTabIds.count < paneMembershipLimit {
             toggleSplitMembership(tab, tabs: tabs)
         } else {
             selectedTabId = tab.id
@@ -594,7 +744,7 @@ class TabManager: NSObject, ObservableObject {
             splitTabIds = [current, tab.id]
             gatherSplitTabs(tabs: tabs)
             selectedTabId = tab.id
-        } else if splitTabIds.count < Self.maxSplitTabs {
+        } else if splitTabIds.count < paneMembershipLimit {
             splitTabIds.append(tab.id)
             gatherSplitTabs(tabs: tabs)
             selectedTabId = tab.id
@@ -603,6 +753,425 @@ class TabManager: NSObject, ObservableObject {
     }
 
     // MARK: Document panes (ADR 0008)
+
+    // MARK: Local pane arrangements
+
+    private var currentPaneMembers: [PaneContentReference] {
+        splitTabIds.map { isDocumentPaneId?($0) == true ? .document($0) : .tab($0) }
+    }
+
+    func setPaneLayoutsEnabled(_ enabled: Bool) {
+        paneLayoutDefaults.set(enabled, forKey: PaneLayoutRolloutPolicy.defaultsKey)
+        refreshPaneLayoutRollout()
+    }
+
+    @discardableResult private func refreshPaneLayoutRollout() -> Bool {
+        let enabled = paneLayoutDefaults.bool(forKey: PaneLayoutRolloutPolicy.defaultsKey)
+        guard paneLayoutsEnabled != enabled else { return false }
+        let currentMembers = currentPaneMembers
+        if !enabled {
+            cancelColdLayoutStarters(reason: .rolloutDisabled)
+            retainedPaneWorkspaceID = activeWorkspaceId
+            maximizedPaneContentID = nil
+            paneFocusBeforeMaximize = nil
+            canUndoPaneLayout = false
+            canRedoPaneLayout = false
+            // No membership writes or session work on revocation. The native
+            // host falls back to nonrecursive geometry for every current ID.
+            paneLayoutsEnabled = false
+        } else {
+            paneLayoutsEnabled = true
+            // Recheck current bytes even when the retained live tree wins.
+            // An unknown record written while off must never be downgraded by
+            // a later focus/reconcile write after re-enabling that same tree.
+            let recovery = validatedPaneRecovery(matching: currentMembers)
+            let canRetain = paneLayout.map {
+                PaneLayoutRolloutPolicy.canRestoreRetainedTree(enabled: enabled, retainedMembers: $0.panes.map(\.content), currentMembers: currentMembers,
+                                                              retainedWorkspaceID: retainedPaneWorkspaceID, currentWorkspaceID: activeWorkspaceId)
+            } ?? false
+            if !canRetain {
+                paneLayout = nil
+                paneLayoutUndo = []; paneLayoutRedo = []
+                // Read recovery only after opt-in. A stale/corrupt record is
+                // not authority to change legacy membership or focus.
+                if let recovery {
+                    paneLayout = recovery.tree
+                    for pane in recovery.tree.panes { paneIDsByContent[pane.content.id] = pane.id }
+                } else { reconcilePaneLayout() }
+            }
+            canUndoPaneLayout = !paneLayoutUndo.isEmpty
+            canRedoPaneLayout = !paneLayoutRedo.isEmpty
+        }
+        disabledPreviewLayout = nil
+        paneLayoutRevision &+= 1
+        return true
+    }
+
+    private func requirePaneLayoutRollout() throws {
+        refreshPaneLayoutRollout()
+        guard paneLayoutsEnabled else { throw PaneLayoutError.rolloutDisabled }
+    }
+
+    /// Called by legacy split membership changes too. This makes the old
+    /// sidebar reorder use the same tree, rather than maintaining two layouts.
+    private func reconcilePaneLayout() {
+        guard paneLayoutsEnabled, paneLayoutDefaults.bool(forKey: PaneLayoutRolloutPolicy.defaultsKey) else { return }
+        cancelColdLayoutStarters(reason: .layoutChanged)
+        if let current = paneLayout {
+            for pane in current.panes { paneIDsByContent[pane.content.id] = pane.id }
+        }
+        guard splitTabIds.count >= 2 else {
+            paneLayout = nil
+            maximizedPaneContentID = nil
+            paneLayoutRevision &+= 1
+            return
+        }
+        let refs = splitTabIds.map { id -> PaneContentReference in
+            isDocumentPaneId?(id) == true ? .document(id) : .tab(id)
+        }
+        if let current = paneLayout,
+           let reconciled = try? current.reconciling(refs, anchorContentID: focusedDocumentId ?? selectedTabId) {
+            paneLayout = reconciled
+            if splitTabIds != reconciled.contentIDs {
+                applyingPaneLayout = true
+                splitTabIds = reconciled.contentIDs
+                applyingPaneLayout = false
+            }
+        } else {
+            paneLayout = PaneLayoutTree.legacy(refs.map { reference in
+                let id = paneIDsByContent[reference.id] ?? UUID()
+                paneIDsByContent[reference.id] = id
+                return LayoutPane(id: id, content: reference)
+            })
+        }
+        if let tree = paneLayout {
+            for pane in tree.panes { paneIDsByContent[pane.content.id] = pane.id }
+            if !restoringPaneLayout { persistPaneLayoutRecovery(tree, focus: focusedDocumentId ?? selectedTabId) }
+        }
+        paneLayoutRevision &+= 1
+    }
+
+    func currentPaneLayout() -> PaneLayoutTree? {
+        if paneLayoutsEnabled, paneLayoutDefaults.bool(forKey: PaneLayoutRolloutPolicy.defaultsKey), let paneLayout { return paneLayout }
+        if splitTabIds.count >= 2 {
+            let members = currentPaneMembers
+            if disabledPreviewMembers != members || disabledPreviewLayout == nil {
+                disabledPreviewMembers = members
+                disabledPreviewLayout = PaneLayoutTree.legacy(members.map { reference in
+                    let id = paneIDsByContent[reference.id] ?? UUID()
+                    paneIDsByContent[reference.id] = id
+                    return LayoutPane(id: id, content: reference)
+                })
+            }
+            return disabledPreviewLayout
+        }
+        guard let contentID = focusedDocumentId ?? selectedTabId else { return nil }
+        let id = paneIDsByContent[contentID] ?? UUID()
+        paneIDsByContent[contentID] = id
+        return .pane(LayoutPane(id: id, content: isDocumentPaneId?(contentID) == true ? .document(contentID) : .tab(contentID)))
+    }
+
+    func togglePaneMaximize(_ contentID: UUID, tabs: [Tab]) throws {
+        try requirePaneLayoutRollout()
+        if maximizedPaneContentID != nil {
+            maximizedPaneContentID = nil
+            if let prior = paneFocusBeforeMaximize, currentPaneLayout()?.contentIDs.contains(prior) == true {
+                if isDocumentPaneId?(prior) == true { focusedDocumentId = prior }
+                else { selectedTabId = prior }
+            }
+            paneFocusBeforeMaximize = nil
+            paneLayoutRevision &+= 1
+            return
+        }
+        guard let tree = currentPaneLayout(), tree.contentIDs.contains(contentID) else { throw PaneLayoutError.unavailableContent }
+        guard !tree.contentIDs.contains(where: { $0 != contentID && paneIsProtected($0, tabs: tabs) }) else { throw PaneLayoutError.protectedPane }
+        paneFocusBeforeMaximize = focusedDocumentId ?? selectedTabId
+        maximizedPaneContentID = contentID
+        if isDocumentPaneId?(contentID) == true { focusedDocumentId = contentID }
+        else { selectedTabId = contentID }
+        paneLayoutRevision &+= 1
+    }
+
+    func paneIsProtected(_ id: UUID, tabs: [Tab]) -> Bool {
+        guard let tab = tabs.first(where: { $0.id == id }) else { return false }
+        if (tab.memoryPolicy == .never && tab.url != nil) || MemoryPinnedSites.isPinned(tab.url) || LayoutStarterURLPolicy.isMeeting(tab.url) { return true }
+        guard let view = webViewManager?.existingWebView(for: id) else { return false }
+        return view.microphoneCaptureState != .none || view.cameraCaptureState != .none
+    }
+
+    private func validatePaneContent(_ tree: PaneLayoutTree, tabs: [Tab], plannedIDs: Set<UUID> = []) throws {
+        // Read-only previews remain available even before rollout. Mutation
+        // entry points separately enforce the default-off rollout gate.
+        _ = try tree.validated(maximumPanes: PaneLayoutRolloutPolicy.newMembershipLimit(enabled: true))
+        for pane in tree.panes {
+            switch pane.content {
+            case .tab(let id):
+                guard plannedIDs.contains(id) || tabs.contains(where: { $0.id == id }) else { throw PaneLayoutError.unavailableContent }
+            case .document(let id):
+                guard isDocumentPaneId?(id) == true else { throw PaneLayoutError.unavailableContent }
+            }
+        }
+        let visible = currentPaneLayout()?.contentIDs ?? []
+        guard !visible.contains(where: { !tree.contentIDs.contains($0) && paneIsProtected($0, tabs: tabs) }) else { throw PaneLayoutError.protectedPane }
+        guard paneLayoutFits?(tree) != false else { throw PaneLayoutError.invalidTree }
+    }
+
+    func previewPanePlacement(source: PaneContentReference, targetPaneID: UUID, edge: PanePlacement, tabs: [Tab]) throws -> PaneLayoutPreview {
+        guard let current = currentPaneLayout(), let target = current.panes.first(where: { $0.id == targetPaneID }) else { throw PaneLayoutError.unavailableContent }
+        let visibleSource = current.panes.contains { $0.content == source }
+        if edge == .center, !visibleSource, paneIsProtected(target.content.id, tabs: tabs) { throw PaneLayoutError.protectedPane }
+        if let a = tabs.first(where: { $0.id == source.id }), let b = tabs.first(where: { $0.id == target.content.id }),
+           (a.sessionKind != b.sessionKind || a.sessionId != b.sessionId) { throw PaneLayoutError.profileBoundary }
+        let next = try current.placing(source, at: targetPaneID, edge: edge)
+        try validatePaneContent(next, tabs: tabs)
+        let summary = edge == .center ? (visibleSource ? "Swap visible occupants; keep divider sizes." : "Place existing content; keep the previous occupant open in the sidebar.") : "Move existing content \(edge.label.lowercased()); keep its live session."
+        return PaneLayoutPreview(expectedRevision: paneLayoutRevision, tree: next, focusedContentID: source.id, summary: summary,
+                                 action: edge == .center && visibleSource ? .swap : .arrangement)
+    }
+
+    func previewPaneTree(_ tree: PaneLayoutTree, summary: String, tabs: [Tab], focus: UUID? = nil, action: PaneLayoutAction = .arrangement) throws -> PaneLayoutPreview {
+        try validatePaneContent(tree, tabs: tabs)
+        return PaneLayoutPreview(expectedRevision: paneLayoutRevision, tree: tree,
+                                 focusedContentID: focus ?? focusedDocumentId ?? selectedTabId, summary: summary, action: action)
+    }
+
+    func previewNewBlankPane(targetPaneID: UUID, edge: PanePlacement, tabs: [Tab]) throws -> PaneLayoutPreview {
+        guard edge != .center, let tree = currentPaneLayout(),
+              let target = tree.panes.first(where: { $0.id == targetPaneID }) else { throw PaneLayoutError.invalidTree }
+        let anchor = tabs.first(where: { $0.id == target.content.id })
+        let plan = LayoutPlannedTab(startingURL: nil, profileID: anchor?.sessionId,
+                                   label: "New blank pane", isPrivate: anchor?.sessionKind == .incognito)
+        let next = try tree.placing(.tab(plan.id), at: targetPaneID, edge: edge)
+        try validatePaneContent(next, tabs: tabs, plannedIDs: [plan.id])
+        return PaneLayoutPreview(expectedRevision: paneLayoutRevision, tree: next, focusedContentID: plan.id,
+                                 summary: "Create one blank pane \(edge.label.lowercased()). Existing tabs and documents keep their sessions.", newTabs: [plan], action: .newSplit)
+    }
+
+    func previewLayoutRecipe(_ recipe: LocalLayoutRecipe, tabs: [Tab], keepProtectedVisible: Bool = false) throws -> PaneLayoutPreview {
+        _ = try recipe.validated()
+        if let owner = Self.liveLayoutOwners[recipe.id]?.manager, owner !== self { throw PaneLayoutError.liveElsewhere }
+        guard recipe.linkedResearchWorkspaceID == activeWorkspaceId else { throw PaneLayoutError.wrongWorkspace }
+        guard recipe.slots.count == recipe.tree.panes.count, Set(recipe.slots.map(\.id)) == Set(recipe.tree.contentIDs) else { throw PaneLayoutError.invalidTree }
+        var tree = recipe.tree, created: [LayoutPlannedTab] = [], bindings: [UUID: UUID] = [:]
+        let liveBindings = liveRecipeBindings[recipe.id] ?? [:]
+        for slot in recipe.slots {
+            guard let pane = recipe.tree.panes.first(where: { $0.content.id == slot.id }) else { throw PaneLayoutError.invalidTree }
+            var reference: PaneContentReference?
+            if case .document(let documentID) = slot.restore, isDocumentPaneId?(documentID) == true {
+                reference = .document(documentID)
+            } else if let liveID = liveBindings[slot.id], let tab = tabs.first(where: { $0.id == liveID }),
+                      tab.sessionKind != .incognito, tab.sessionId == slot.profileID {
+                reference = .tab(liveID)
+            }
+            if reference == nil {
+                // A deleted profile never silently falls back to the normal store.
+                if let profileID = slot.profileID {
+                    let profiles = (try? modelContext?.fetch(FetchDescriptor<BrowserSession>())) ?? []
+                    guard profiles.contains(where: { $0.id == profileID }) else { throw PaneLayoutError.profileBoundary }
+                }
+                let url: URL?
+                let label: String
+                switch slot.restore {
+                case .safeStarter(let starter):
+                    guard LayoutStarterURLPolicy.safeStarter(starter) == starter, !MemoryPinnedSites.isPinned(starter) else { throw PaneLayoutError.invalidTree }
+                    url = starter; label = starter.host ?? "Starting page"
+                case .chooseCurrentMeeting: url = nil; label = "Choose a current meeting"
+                case .document: url = nil; label = "Document unavailable — choose content"
+                case .empty: url = nil; label = "Empty layout slot — choose content"
+                }
+                let planned = LayoutPlannedTab(startingURL: url, profileID: slot.profileID, label: label)
+                created.append(planned)
+                reference = .tab(planned.id)
+            }
+            bindings[slot.id] = reference!.id
+            tree = tree.replacing(pane.id, with: .pane(LayoutPane(id: pane.id, content: reference!)))
+        }
+        let protected = (currentPaneLayout()?.panes ?? []).filter { paneIsProtected($0.content.id, tabs: tabs) && !tree.contentIDs.contains($0.content.id) }
+        if !protected.isEmpty, keepProtectedVisible {
+            tree = .split(id: UUID(), axis: .x, ratio: 0.65, first: tree, second: PaneLayoutTree.columns(protected)!)
+        }
+        try validatePaneContent(tree, tabs: tabs, plannedIDs: Set(created.map(\.id)))
+        return PaneLayoutPreview(expectedRevision: paneLayoutRevision, tree: tree,
+                                 focusedContentID: recipe.focusedContentID.flatMap { bindings[$0] },
+                                 summary: "Reuse \(bindings.count - created.count) live bindings; create \(created.filter { $0.startingURL != nil }.count) safe starting pages and \(created.filter { $0.startingURL == nil }.count) manual empty slots. Extra tabs stay open. Calls are never automatically joined.",
+                                 newTabs: created, recipeID: recipe.id, recipeBindings: bindings, action: .restoreRecipe)
+    }
+
+    @discardableResult func applyPaneLayout(_ preview: PaneLayoutPreview, tabs: [Tab]) throws -> Bool {
+        try requirePaneLayoutRollout()
+        guard preview.expectedRevision == paneLayoutRevision else { throw PaneLayoutError.stalePreview }
+        let plannedIDs = Set(preview.newTabs.map(\.id))
+        try validatePaneContent(preview.tree, tabs: tabs, plannedIDs: plannedIDs)
+        guard plannedIDs.count == preview.newTabs.count, plannedIDs.isDisjoint(with: Set(tabs.map(\.id))) else { throw PaneLayoutError.stalePreview }
+        guard preview.newTabs.allSatisfy(\.isPrivate) || modelContext != nil else { throw PaneLayoutError.unavailableContent }
+        guard preview.tree != currentPaneLayout() else { return false }
+        #if os(macOS)
+        let privateIDs = Set(tabs.filter { $0.sessionKind == .incognito }.map(\.id))
+        let actionWasPrivate = preview.newTabs.contains(where: \.isPrivate)
+            || !(privateIDs.intersection(preview.tree.contentIDs).isEmpty)
+            || !(privateIDs.intersection(currentPaneLayout()?.contentIDs ?? []).isEmpty)
+        #endif
+        if let current = currentPaneLayout() {
+            paneLayoutUndo.append((current, focusedDocumentId ?? selectedTabId))
+            paneLayoutUndo = Array(paneLayoutUndo.suffix(30))
+        }
+        paneLayoutRedo = []
+        // All validation precedes insertion. Preview/Cancel creates no tabs;
+        // the final commit retains existing sessions and only inserts the
+        // explicitly reviewed cold-restore slots. Undo leaves these in the tray.
+        let created = preview.newTabs.enumerated().map { index, plan in
+            let tab = Tab(title: plan.label, url: plan.startingURL, isActive: false)
+            tab.id = plan.id
+            tab.workspaceId = activeWorkspaceId
+            tab.orderIndex = (tabs.map(\.orderIndex).max() ?? -1) + 1 + index
+            if plan.isPrivate {
+                tab.sessionKind = .incognito; tab.sessionId = plan.profileID ?? UUID(); tab.memoryPolicy = .never
+                incognitoTabs.append(tab)
+                webViewManager?.registerSession(for: tab.id, kind: .incognito, sessionId: tab.sessionId)
+            } else {
+                if let profileID = plan.profileID { tab.sessionKind = .container; tab.sessionId = profileID }
+                modelContext?.insert(tab)
+                if let profileID = plan.profileID { webViewManager?.registerSession(for: tab.id, kind: .container, sessionId: profileID) }
+            }
+            return tab
+        }
+        if let recipeID = preview.recipeID {
+            liveRecipeBindings[recipeID] = preview.recipeBindings
+            Self.liveLayoutOwners[recipeID] = WeakLayoutOwner(self)
+            activeLayoutRecipeID = recipeID
+            savedLiveLayoutTree = preview.tree
+        }
+        commitPaneLayout(preview.tree, focus: preview.focusedContentID, tabs: tabs + created)
+        if preview.action == .restoreRecipe {
+            coldLayoutStarters.register(starters: preview.newTabs.map {
+                .init(tabID: $0.id, startingURL: $0.startingURL, profileID: $0.profileID, isPrivate: $0.isPrivate)
+            }, workspaceID: activeWorkspaceId, layoutRevision: paneLayoutRevision, gateEnabled: paneLayoutsEnabled)
+            noteColdStarterStateChanged()
+        }
+        #if os(macOS)
+        if preview.action != .resize {
+            PowerUpLearning.shared.recordSuccess(feature: preview.action == .restoreRecipe ? .savedWorkspace : preview.action == .swap ? .swapPanes : .splitLayout,
+                                                 method: .button, isPrivate: actionWasPrivate)
+        }
+        #endif
+        return true
+    }
+
+    private func commitPaneLayout(_ tree: PaneLayoutTree, focus: UUID?, tabs: [Tab]) {
+        cancelColdLayoutStarters(reason: .layoutChanged)
+        applyingPaneLayout = true
+        for pane in tree.panes { paneIDsByContent[pane.content.id] = pane.id }
+        maximizedPaneContentID = nil
+        paneFocusBeforeMaximize = nil
+        paneLayout = tree.panes.count > 1 ? tree : nil
+        splitTabIds = tree.panes.count > 1 ? tree.contentIDs : []
+        let target = focus.flatMap { tree.contentIDs.contains($0) ? $0 : nil } ?? tree.contentIDs.first
+        if let target, isDocumentPaneId?(target) == true { focusedDocumentId = target }
+        else { selectedTabId = target; focusedDocumentId = nil }
+        applyingPaneLayout = false
+        paneLayoutRevision &+= 1
+        canUndoPaneLayout = !paneLayoutUndo.isEmpty
+        canRedoPaneLayout = !paneLayoutRedo.isEmpty
+        // Private working state remains in memory. Existing legacy membership
+        // is kept until the new recovery record has been written successfully.
+        persistPaneLayoutRecovery(tree, focus: target)
+    }
+
+    private func persistPaneLayoutRecovery(_ tree: PaneLayoutTree, focus: UUID?) {
+        guard paneLayoutsEnabled, paneLayoutDefaults.bool(forKey: PaneLayoutRolloutPolicy.defaultsKey), !paneRecoveryWriteBlocked else { return }
+        let privateIDs = Set(incognitoTabs.map(\.id))
+        if privateIDs.isDisjoint(with: tree.contentIDs),
+           let data = try? JSONEncoder().encode(PaneLayoutRecovery(linkedResearchWorkspaceID: activeWorkspaceId, tree: tree, focusedContentID: focus)) {
+            UserDefaults.standard.set(data, forKey: persistenceKey("paneLayoutRecovery.v1"))
+        } else {
+            UserDefaults.standard.removeObject(forKey: persistenceKey("paneLayoutRecovery.v1"))
+        }
+    }
+
+    private func validatedPaneRecovery(matching members: [PaneContentReference]) -> PaneLayoutRecovery? {
+        guard paneLayoutsEnabled, paneLayoutDefaults.bool(forKey: PaneLayoutRolloutPolicy.defaultsKey) else { return nil }
+        guard let data = UserDefaults.standard.data(forKey: persistenceKey("paneLayoutRecovery.v1")) else {
+            paneRecoveryWriteBlocked = false
+            return nil
+        }
+        guard data.count <= 1_048_576,
+              let recovery = try? JSONDecoder().decode(PaneLayoutRecovery.self, from: data),
+              recovery.schemaVersion == 1, recovery.linkedResearchWorkspaceID == activeWorkspaceId,
+              (try? recovery.tree.validated(maximumPanes: PaneLayoutRolloutPolicy.newMembershipLimit(enabled: true))) != nil,
+              recovery.tree.panes.map(\.content) == members,
+              Set(incognitoTabs.map(\.id)).isDisjoint(with: recovery.tree.contentIDs) else {
+            // Never downgrade future/corrupt/stale data during opt-in or a
+            // later focus change. Saved recipes remain independently writable.
+            paneRecoveryWriteBlocked = true
+            return nil
+        }
+        paneRecoveryWriteBlocked = false
+        return recovery
+    }
+
+    func undoPaneLayout(tabs: [Tab], redo: Bool = false) throws {
+        try requirePaneLayoutRollout()
+        cancelColdLayoutStarters(reason: .undo)
+        guard let prior = redo ? paneLayoutRedo.last : paneLayoutUndo.last else { return }
+        try validatePaneContent(prior.tree, tabs: tabs)
+        if let current = currentPaneLayout() {
+            if redo { paneLayoutUndo.append((current, focusedDocumentId ?? selectedTabId)) }
+            else { paneLayoutRedo.append((current, focusedDocumentId ?? selectedTabId)) }
+        }
+        if redo { paneLayoutRedo.removeLast() } else { paneLayoutUndo.removeLast() }
+        commitPaneLayout(prior.tree, focus: prior.focus, tabs: tabs)
+    }
+
+    func makeLayoutRecipe(named name: String, tabs: [Tab], updating oldRecipe: LocalLayoutRecipe? = nil) throws -> LocalLayoutRecipe {
+        guard let tree = currentPaneLayout() else { throw PaneLayoutError.unavailableContent }
+        try validatePaneContent(tree, tabs: tabs)
+        guard !tree.contentIDs.contains(where: { id in tabs.contains { $0.id == id && $0.sessionKind == .incognito } }) else { throw PaneLayoutError.privateLayout }
+        var configurationTree = tree, slots: [LayoutRecipeSlot] = [], bindings: [UUID: UUID] = [:]
+        let focusedID = focusedDocumentId ?? selectedTabId
+        var focusedSlot: UUID?
+        for pane in tree.panes {
+            // Stable slot identity is kept when updating a still-bound recipe.
+            let existingSlot = oldRecipe.flatMap { recipe in liveRecipeBindings[recipe.id]?.first(where: { $0.value == pane.content.id })?.key }
+            let slotID = existingSlot ?? UUID()
+            let restore: LayoutRestoreSpecification
+            var profileID: UUID?
+            switch pane.content {
+            case .document(let id): restore = .document(id)
+            case .tab(let id):
+                guard let tab = tabs.first(where: { $0.id == id }) else { throw PaneLayoutError.unavailableContent }
+                profileID = tab.sessionKind == .container ? tab.sessionId : nil
+                if paneIsProtected(id, tabs: tabs) || LayoutStarterURLPolicy.isMeeting(tab.url) { restore = .chooseCurrentMeeting }
+                else if let url = LayoutStarterURLPolicy.safeStarter(tab.url) { restore = .safeStarter(url) }
+                else { restore = .empty }
+            }
+            slots.append(LayoutRecipeSlot(id: slotID, restore: restore, profileID: profileID))
+            bindings[slotID] = pane.content.id
+            if pane.content.id == focusedID { focusedSlot = slotID }
+            let ref: PaneContentReference
+            if case .document = pane.content { ref = .document(slotID) } else { ref = .tab(slotID) }
+            configurationTree = configurationTree.replacing(pane.id, with: .pane(LayoutPane(id: pane.id, content: ref)))
+        }
+        var recipe = LocalLayoutRecipe(name: name, linkedResearchWorkspaceID: activeWorkspaceId,
+                                       tree: configurationTree, slots: slots, focusedContentID: focusedSlot)
+        if let oldRecipe { recipe.id = oldRecipe.id; recipe.revision = oldRecipe.revision }
+        liveRecipeBindings[recipe.id] = bindings
+        return recipe
+    }
+
+    func markLayoutRecipeSaved(_ recipeID: UUID) {
+        Self.liveLayoutOwners[recipeID] = WeakLayoutOwner(self)
+        activeLayoutRecipeID = recipeID
+        savedLiveLayoutTree = currentPaneLayout()
+    }
+
+    #if os(macOS)
+    @discardableResult func revealLiveLayoutRecipe(_ recipeID: UUID) -> Bool {
+        guard let owner = Self.liveLayoutOwners[recipeID]?.manager, owner !== self,
+              let id = owner.windowID, let window = BrowserWindows.shared.window(id) else { return false }
+        window.makeKeyAndOrderFront(nil)
+        return true
+    }
+    #endif
 
     /// Selecting a document row: solo display, dissolving a split it isn't in —
     /// the same rule as selecting a non-member tab.
@@ -625,7 +1194,7 @@ class TabManager: NSObject, ObservableObject {
             }
             splitTabIds = [current, documentId]
             focusedDocumentId = documentId
-        } else if splitTabIds.count < Self.maxSplitTabs {
+        } else if splitTabIds.count < paneMembershipLimit {
             splitTabIds.append(documentId)
             focusedDocumentId = documentId
         }
@@ -676,7 +1245,10 @@ class TabManager: NSObject, ObservableObject {
     // device, incognito tabs that died with the app) are silently dropped; fewer
     // than 2 survivors means a plain single view.
     func restoreSplit(from tabs: [Tab]) {
+        refreshPaneLayoutRollout()
         guard let strings = UserDefaults.standard.stringArray(forKey: persistenceKey(Self.splitKey)) else { return }
+        restoringPaneLayout = true
+        defer { restoringPaneLayout = false }
         // Pane ids resolve against the tab list first, then the active
         // workspace's documents (ADR 0008); unresolved ids drop as before.
         let isDocument = isDocumentPaneId ?? { _ in false }
@@ -688,6 +1260,18 @@ class TabManager: NSObject, ObservableObject {
             return
         }
         splitTabIds = ids
+        // A versioned recovery snapshot extends the old local membership
+        // record. It is separate from explicit saved recipe revisions.
+        let recoveryKey = persistenceKey("paneLayoutRecovery.v1")
+        if paneLayoutsEnabled, UserDefaults.standard.data(forKey: recoveryKey) != nil {
+            if let recovery = validatedPaneRecovery(matching: currentPaneMembers) {
+                commitPaneLayout(recovery.tree, focus: recovery.focusedContentID, tabs: tabs)
+            }
+            // A malformed or stale record is retained for recovery inspection;
+            // the validated legacy membership still gives a usable fallback.
+        } else if paneLayoutsEnabled, let tree = paneLayout {
+            commitPaneLayout(tree, focus: focusedDocumentId ?? selectedTabId, tabs: tabs)
+        }
         if let selected = selectedTabId, !ids.contains(selected) {
             // selectedTabId stays tabs-only; an all-document split focuses its
             // first pane through focusedDocumentId instead.

@@ -1,0 +1,42 @@
+{
+  "kind": "Standalone production-source model/policy tests; not native app acceptance",
+  "total": 124,
+  "suites": [
+    {
+      "suite": "motion",
+      "testCount": 30,
+      "result": "passed",
+      "log": "motion-tests.log"
+    },
+    {
+      "suite": "settings",
+      "testCount": 28,
+      "result": "passed",
+      "log": "settings-tests.log"
+    },
+    {
+      "suite": "powerup",
+      "testCount": 14,
+      "result": "passed",
+      "log": "powerup-tests.log"
+    },
+    {
+      "suite": "panes",
+      "testCount": 42,
+      "result": "passed",
+      "log": "panes-tests.log"
+    },
+    {
+      "suite": "shortcuts",
+      "testCount": 10,
+      "result": "passed",
+      "log": "shortcuts-tests.log"
+    }
+  ],
+  "paneBreakdown": {
+    "PaneLayoutModelTests": 22,
+    "ColdLayoutStarterSchedulerTests": 20
+  },
+  "fullHostedSuite": "blocked: Xcode LaunchServices childPID > 0 assertion; no completed suite result",
+  "nativeMediaAndAccessibility": "unobserved"
+}
