@@ -2,6 +2,13 @@ Executable=/private/tmp/browser-v2-20261018-implementation-derived/Build/Product
 Identifier=browser-cli-55554944c74f7102fe3934af82bfb138a757a8ae
 Format=Mach-O thin (arm64)
 CodeDirectory v=20400 size=1133 flags=0x2(adhoc) hashes=29+2 location=embedded
+Hash type=sha256 size=32
+CandidateCDHash sha256=307d011aec9cb6831683d79ecc71b56b32c3563c
+CandidateCDHashFull sha256=307d011aec9cb6831683d79ecc71b56b32c3563c16f385789db053e8815f4c90
+Hash choices=sha256
+CMSDigest=307d011aec9cb6831683d79ecc71b56b32c3563c16f385789db053e8815f4c90
+CMSDigestType=2
+CDHash=307d011aec9cb6831683d79ecc71b56b32c3563c
 Signature=adhoc
 Info.plist=not bound
 TeamIdentifier=not set

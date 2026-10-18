@@ -24,7 +24,7 @@ struct SettingsHelpSetupView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Show local Settings help", isOn: $settingsAssistantEnabled)
                     .disabled(!aiFeaturesEnabled)
-                Text("Explains page fades, fade length, theme, and link splits using local rules. No text or values are sent to a provider. Previews open the native control until a recoverable settings writer is verified.")
+                Text("Explains page fades, fade length, theme, and link splits using local rules. No text or values are sent to a provider. Theme supports a reviewed local Apply and Undo; the other preferences open their native controls.")
                 Text("External Settings agents require authenticated pairing and separate scoped grants. Existing browser automation does not grant Settings access.")
                 if !aiFeaturesEnabled { Text("Enable Show AI features in Agent to use local Settings help.") }
             }

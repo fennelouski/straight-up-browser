@@ -16,8 +16,12 @@ matrix remains the acceptance contract.
   Verify no unsolicited tip appears without a complete safety snapshot.
 - Settings → Agent → Settings help: enable local help; use Ask and Preview for
   each of page fading, fade length, theme and automatic link splits. Ask must
-  produce no proposal or write. Production Preview opens the manual setting;
-  assistant Apply remains unavailable with the current persistence adapter.
+  produce no proposal or write. Theme Preview has an explicit native Apply and
+  guarded Undo; the other three settings open manual controls. Check absence
+  Undo, same-value/ABA edits in another window, durable reopen, transient writer
+  contention and explicit Retry. No preview/question may reconcile an orphan
+  immediately or after a delay. Abrupt real Browser-death recovery remains
+  unobserved; injected post-operation throws are separate evidence.
   Toggle either opt-in off while the panel is open and confirm revocation.
 
 ## Geometry, sessions and input

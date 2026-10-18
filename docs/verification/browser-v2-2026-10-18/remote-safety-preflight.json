@@ -1,0 +1,27 @@
+{
+  "recordedAt": "2026-10-18T08:45:33.129026+00:00",
+  "repository": "fennelouski/straight-up-browser",
+  "remoteMainObserved": "666bb5729a3a1e3797cceac6ad5e101f0d03f731",
+  "defaultBranch": "main",
+  "archived": false,
+  "visibility": "public",
+  "hasPages": false,
+  "activeActionsWorkflows": [],
+  "repositoryWebhooks": [],
+  "deploymentEnvironments": [],
+  "localNonSampleGitHooks": [],
+  "customCoreHooksPath": null,
+  "sourcePushEffect": "No repository workflow, webhook, Pages, environment or local hook deployment/install trigger observed. Browser website release is a separate explicit copy/commit/push into nathanfennel.com, which this task has not performed.",
+  "commands": [
+    "git fetch origin main",
+    "gh api repos/fennelouski/straight-up-browser --jq {default_branch,has_pages,visibility,archived}",
+    "gh api repos/fennelouski/straight-up-browser/actions/workflows",
+    "gh api repos/fennelouski/straight-up-browser/hooks (metadata only)",
+    "gh api repos/fennelouski/straight-up-browser/environments (names only)"
+  ],
+  "credentialsReadOrChanged": false,
+  "automaticReleaseTriggered": false,
+  "latestFetchRecheckAt": "2026-10-18T09:06:50.555800+00:00",
+  "latestRemoteMain": "666bb5729a3a1e3797cceac6ad5e101f0d03f731",
+  "latestWorkflowsAndHooksRecheck": "zero workflows, zero hooks"
+}

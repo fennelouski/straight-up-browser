@@ -393,7 +393,7 @@ struct SettingsWindow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AppStorage("settingsPane") private var paneRaw = SettingsPane.general.rawValue
     @AppStorage("settingsPaneOrder") private var paneOrderRaw = ""
-    @AppStorage("theme") private var theme = "System"
+    @BrowserThemeStorage private var theme
     @State private var searchQuery = ""
     @FocusState private var searchFieldFocused: Bool
     @FocusState private var headingFocused: Bool

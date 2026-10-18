@@ -1,42 +1,80 @@
 {
-  "kind": "Standalone production-source model/policy tests; not native app acceptance",
-  "total": 124,
+  "kind": "Standalone production-source model/policy/filesystem tests; not native Browser acceptance",
+  "total": 144,
   "suites": [
     {
       "suite": "motion",
+      "command": [
+        "./scripts/verify-browser-v2-motion.sh"
+      ],
       "testCount": 30,
-      "result": "passed",
-      "log": "motion-tests.log"
+      "exitCode": 0,
+      "sourceUnchanged": true,
+      "startedAt": "2026-10-18T08:55:58.364875+00:00",
+      "finishedAt": "2026-10-18T08:56:14.665434+00:00",
+      "log": "motion-tests.log",
+      "result": "passed"
     },
     {
       "suite": "settings",
-      "testCount": 28,
-      "result": "passed",
-      "log": "settings-tests.log"
+      "command": [
+        "./scripts/verify-browser-v2-settings.sh"
+      ],
+      "testCount": 48,
+      "exitCode": 0,
+      "sourceUnchanged": true,
+      "startedAt": "2026-10-18T08:56:14.706190+00:00",
+      "finishedAt": "2026-10-18T08:56:40.856014+00:00",
+      "log": "settings-tests.log",
+      "result": "passed"
     },
     {
       "suite": "powerup",
+      "command": [
+        "./scripts/verify-browser-v2-powerup.sh"
+      ],
       "testCount": 14,
-      "result": "passed",
-      "log": "powerup-tests.log"
+      "exitCode": 0,
+      "sourceUnchanged": true,
+      "startedAt": "2026-10-18T08:56:40.898927+00:00",
+      "finishedAt": "2026-10-18T08:56:51.941708+00:00",
+      "log": "powerup-tests.log",
+      "result": "passed"
     },
     {
       "suite": "panes",
+      "command": [
+        "./scripts/verify-browser-v2-panes.sh"
+      ],
       "testCount": 42,
-      "result": "passed",
-      "log": "panes-tests.log"
+      "exitCode": 0,
+      "sourceUnchanged": true,
+      "startedAt": "2026-10-18T08:56:51.984242+00:00",
+      "finishedAt": "2026-10-18T08:57:08.802781+00:00",
+      "log": "panes-tests.log",
+      "result": "passed"
     },
     {
       "suite": "shortcuts",
+      "command": [
+        "./scripts/verify-browser-v2-shortcuts.sh"
+      ],
       "testCount": 10,
-      "result": "passed",
-      "log": "shortcuts-tests.log"
+      "exitCode": 0,
+      "sourceUnchanged": true,
+      "startedAt": "2026-10-18T08:57:08.843070+00:00",
+      "finishedAt": "2026-10-18T08:57:23.091427+00:00",
+      "log": "shortcuts-tests.log",
+      "result": "passed"
     }
   ],
+  "settingsCases": 75,
   "paneBreakdown": {
     "PaneLayoutModelTests": 22,
     "ColdLayoutStarterSchedulerTests": 20
   },
-  "fullHostedSuite": "blocked: Xcode LaunchServices childPID > 0 assertion; no completed suite result",
+  "sourceDriftCheck": "all five harnesses compared the same source manifest before/after; unchanged",
+  "setupCorrection": "First final run stopped before Settings tests because SwiftPM manifest used the default home clang cache. Scoped all Settings module/package/config/security caches to its temporary harness and reran all five successfully. No production source changed.",
+  "fullHostedSuite": "blocked: independent minimal host and Browser baseline both abort in Xcode IDELaunchServicesLauncher childPID > 0, exit134; no completed result",
   "nativeMediaAndAccessibility": "unobserved"
 }

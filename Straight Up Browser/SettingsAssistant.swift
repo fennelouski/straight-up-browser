@@ -125,12 +125,24 @@ nonisolated enum SettingsAssistantError: String, Error, LocalizedError, Equatabl
 // attests to that property. The native manual controls remain fully functional.
 @MainActor protocol SettingsPreferenceStore: AnyObject {
     var supportsRecoverableCommit: Bool { get }
+    func supportsRecoverableCommit(for id: BrowserSettingID) -> Bool
     func read(_ descriptor: BrowserSettingDescriptor) -> BrowserSettingValue?
+    func readVersioned(_ descriptor: BrowserSettingDescriptor) throws -> SettingsStoreSnapshot
     func write(_ value: BrowserSettingValue?, for descriptor: BrowserSettingDescriptor) throws
     /// A production implementation must durably record/reconcile this operation
     /// identity and compare the expected stored state before writing. A thrown
     /// error is treated as uncertain, freezes the writer, and is never replayed.
-    func commit(operationID: UUID, value: BrowserSettingValue?, expected: BrowserSettingValue?, for descriptor: BrowserSettingDescriptor) throws
+    func commit(operationID: UUID, value: BrowserSettingValue?, expected: BrowserSettingValue?, expectedRevision: UInt64?, for descriptor: BrowserSettingDescriptor) throws -> SettingsStoreSnapshot
+}
+
+nonisolated struct SettingsStoreSnapshot: Equatable, Sendable {
+    let stored: BrowserSettingValue?
+    let revision: UInt64?
+}
+
+extension SettingsPreferenceStore {
+    func supportsRecoverableCommit(for id: BrowserSettingID) -> Bool { supportsRecoverableCommit }
+    func readVersioned(_ descriptor: BrowserSettingDescriptor) throws -> SettingsStoreSnapshot { .init(stored: read(descriptor), revision: nil) }
 }
 
 @MainActor final class SettingsDefaultsStore: SettingsPreferenceStore {
@@ -143,16 +155,17 @@ nonisolated enum SettingsAssistantError: String, Error, LocalizedError, Equatabl
         switch descriptor.id {
         case .fadeInPages, .automaticLinkSplit: return .bool(defaults.bool(forKey: descriptor.key))
         case .fadeDuration: return .number(defaults.double(forKey: descriptor.key))
-        case .theme: return .choice(defaults.string(forKey: descriptor.key) ?? "System")
+        case .theme: return nil // migrated: raw defaults no longer own theme
         }
     }
 
     func write(_ value: BrowserSettingValue?, for descriptor: BrowserSettingDescriptor) throws {
+        guard descriptor.id != .theme else { throw SettingsAssistantError.persistenceUnavailable }
         if let value { defaults.set(value.defaultsValue, forKey: descriptor.key) }
         else { defaults.removeObject(forKey: descriptor.key) }
     }
 
-    func commit(operationID: UUID, value: BrowserSettingValue?, expected: BrowserSettingValue?, for descriptor: BrowserSettingDescriptor) throws {
+    func commit(operationID: UUID, value: BrowserSettingValue?, expected: BrowserSettingValue?, expectedRevision: UInt64?, for descriptor: BrowserSettingDescriptor) throws -> SettingsStoreSnapshot {
         throw SettingsAssistantError.persistenceUnavailable
     }
 }
@@ -192,9 +205,11 @@ nonisolated struct SettingsChangeReceipt: Identifiable, Equatable, Sendable {
 /// admission checks and the single write happen in one synchronous MainActor
 /// turn. No approval object or write operation is exported as an agent tool.
 @MainActor @Observable final class SettingsTransactionCoordinator {
-    static let shared = SettingsTransactionCoordinator(store: SettingsDefaultsStore())
+    static let shared = SettingsTransactionCoordinator(store: SettingsNativeStore(), eligibilityCheck: { SettingsAssistantAvailability.isVisible() })
     private let store: any SettingsPreferenceStore
+    private let eligibilityCheck: () -> Bool
     private var snapshots: [BrowserSettingID: SettingsValueSnapshot] = [:]
+    private var snapshotFailures: [BrowserSettingID: SettingsAssistantError] = [:]
     private var staged: [UUID: SettingsValidatedProposal] = [:]
     private var completed: [UUID: SettingsChangeReceipt] = [:]
     private var receipts: [UUID: SettingsChangeReceipt] = [:]
@@ -206,12 +221,28 @@ nonisolated struct SettingsChangeReceipt: Identifiable, Equatable, Sendable {
     private(set) var recoveryRequired = false
     private(set) var changeGeneration: UInt64 = 0
 
-    init(store: any SettingsPreferenceStore) { self.store = store }
+    init(store: any SettingsPreferenceStore, eligibilityCheck: @escaping () -> Bool = { true }) { self.store = store; self.eligibilityCheck = eligibilityCheck }
     var canApply: Bool { store.supportsRecoverableCommit && !recoveryRequired }
+    func canApply(_ id: BrowserSettingID) -> Bool { store.supportsRecoverableCommit(for: id) && !recoveryRequired }
+    func snapshotIssue(_ id: BrowserSettingID) -> SettingsAssistantError? { snapshotFailures[id] }
 
     func snapshot(_ id: BrowserSettingID) -> SettingsValueSnapshot {
         let descriptor = SettingsRegistry.descriptor(id)
-        let stored = store.read(descriptor)
+        let record: SettingsStoreSnapshot
+        do { record = try store.readVersioned(descriptor) }
+        catch {
+            if error as? SettingsDurableError == .recoveryPending { snapshotFailures[id] = .recoveryRequired }
+            else if let issue = error as? SettingsDurableError, issue == .busy || issue == .stale { snapshotFailures[id] = .stalePreview }
+            else { snapshotFailures[id] = .recoveryRequired; recoveryRequired = true; revoke() }
+            return snapshots[id] ?? .init(settingID: id, stored: nil, effective: descriptor.defaultValue, revision: 0)
+        }
+        snapshotFailures.removeValue(forKey: id)
+        let stored = record.stored
+        if let revision = record.revision {
+            let snapshot = SettingsValueSnapshot(settingID: id, stored: stored, effective: stored ?? descriptor.defaultValue, revision: revision)
+            snapshots[id] = snapshot
+            return snapshot
+        }
         if let existing = snapshots[id], existing.stored == stored { return existing }
         let next = SettingsValueSnapshot(settingID: id, stored: stored, effective: stored ?? descriptor.defaultValue, revision: (snapshots[id]?.revision ?? 0) + 1)
         snapshots[id] = next
@@ -222,14 +253,29 @@ nonisolated struct SettingsChangeReceipt: Identifiable, Equatable, Sendable {
     /// same-value edit still changes the revision and invalidates old consent.
     func noteManualWrite(_ id: BrowserSettingID) {
         let descriptor = SettingsRegistry.descriptor(id)
-        let stored = store.read(descriptor)
+        let record: SettingsStoreSnapshot
+        do { record = try store.readVersioned(descriptor) }
+        catch {
+            if error as? SettingsDurableError == .recoveryPending { snapshotFailures[id] = .recoveryRequired; changeGeneration &+= 1 }
+            else if let issue = error as? SettingsDurableError, issue == .busy || issue == .stale { snapshotFailures[id] = .stalePreview; changeGeneration &+= 1 }
+            else { snapshotFailures[id] = .recoveryRequired; recoveryRequired = true; revoke() }
+            return
+        }
+        snapshotFailures.removeValue(forKey: id)
+        let stored = record.stored
+        if let revision = record.revision {
+            snapshots[id] = .init(settingID: id, stored: stored, effective: stored ?? descriptor.defaultValue, revision: revision)
+            changeGeneration &+= 1
+            return
+        }
         snapshots[id] = .init(settingID: id, stored: stored, effective: stored ?? descriptor.defaultValue, revision: (snapshots[id]?.revision ?? 0) + 1)
         changeGeneration &+= 1
     }
 
     func setManually(id: BrowserSettingID, value: BrowserSettingValue) {
         guard SettingsRegistry.descriptor(id).accepts(value) else { return }
-        try? store.write(value, for: SettingsRegistry.descriptor(id))
+        do { try store.write(value, for: SettingsRegistry.descriptor(id)) }
+        catch { recoveryRequired = true; revoke(); return }
         noteManualWrite(id)
     }
 
@@ -255,6 +301,8 @@ nonisolated struct SettingsChangeReceipt: Identifiable, Equatable, Sendable {
         guard SettingsRegistry.descriptor(id).accepts(value) else { throw SettingsAssistantError.invalidProposal }
         guard drafts[id, default: []].isEmpty else { throw SettingsAssistantError.draftConflict }
         let before = snapshot(id)
+        if let issue = snapshotFailures[id] { throw issue }
+        guard !recoveryRequired else { throw SettingsAssistantError.recoveryRequired }
         guard before.effective != value else { throw SettingsAssistantError.alreadySet }
         let proposal = SettingsValidatedProposal(settingID: id, before: before, after: value, sessionID: sessionID, requestGeneration: generation, authorizationGeneration: authorizationGeneration, expiresAt: now.addingTimeInterval(5 * 60))
         staged[proposal.id] = proposal
@@ -267,7 +315,10 @@ nonisolated struct SettingsChangeReceipt: Identifiable, Equatable, Sendable {
         guard proposal.sessionID == sessionID, proposal.requestGeneration == generation, staged[proposal.id] == proposal, proposal.registryRevision == SettingsRegistry.revision else { throw SettingsAssistantError.stalePreview }
         guard now < proposal.expiresAt else { throw SettingsAssistantError.expired }
         guard drafts[proposal.settingID, default: []].isEmpty else { throw SettingsAssistantError.draftConflict }
-        guard snapshot(proposal.settingID) == proposal.before else { throw SettingsAssistantError.stalePreview }
+        let current = snapshot(proposal.settingID)
+        if let issue = snapshotFailures[proposal.settingID] { throw issue }
+        guard current == proposal.before else { throw SettingsAssistantError.stalePreview }
+        guard !recoveryRequired else { throw SettingsAssistantError.recoveryRequired }
         guard SettingsRegistry.descriptor(proposal.settingID).accepts(proposal.after) else { throw SettingsAssistantError.invalidProposal }
     }
 
@@ -280,12 +331,16 @@ nonisolated struct SettingsChangeReceipt: Identifiable, Equatable, Sendable {
         if let receipt = completed[proposal.id] { return receipt }
         try check(proposal, sessionID: sessionID, generation: generation, questionOnly: questionOnly, available: available, now: now)
         guard !recoveryRequired else { throw SettingsAssistantError.recoveryRequired }
-        guard store.supportsRecoverableCommit else { throw SettingsAssistantError.persistenceUnavailable }
+        guard store.supportsRecoverableCommit(for: proposal.settingID) else { throw SettingsAssistantError.persistenceUnavailable }
         let descriptor = SettingsRegistry.descriptor(proposal.settingID)
+        let committed: SettingsStoreSnapshot
+        guard eligibilityCheck() else { revoke(); throw SettingsAssistantError.permissionDenied }
         do {
-            try store.commit(operationID: proposal.id, value: proposal.after, expected: proposal.before.stored, for: descriptor)
-            guard store.read(descriptor) == proposal.after else { throw SettingsAssistantError.applyFailed }
+            committed = try store.commit(operationID: proposal.id, value: proposal.after, expected: proposal.before.stored, expectedRevision: proposal.before.revision, for: descriptor)
+            guard committed.stored == proposal.after else { throw SettingsAssistantError.applyFailed }
         } catch {
+            if error as? SettingsAssistantError == .permissionDenied { revoke(); throw SettingsAssistantError.permissionDenied }
+            if let issue = error as? SettingsDurableError, [.stale, .busy, .notApplied].contains(issue) { throw SettingsAssistantError.stalePreview }
             // A backend must reconcile operation identity before declaring its
             // support. Never blindly retry a write whose outcome is uncertain.
             recoveryRequired = true
@@ -293,7 +348,7 @@ nonisolated struct SettingsChangeReceipt: Identifiable, Equatable, Sendable {
             throw SettingsAssistantError.recoveryRequired
         }
         noteManualWrite(proposal.settingID)
-        let receipt = SettingsChangeReceipt(id: proposal.id, settingID: proposal.settingID, before: proposal.before.stored, after: proposal.after, postRevision: snapshot(proposal.settingID).revision)
+        let receipt = SettingsChangeReceipt(id: proposal.id, settingID: proposal.settingID, before: proposal.before.stored, after: proposal.after, postRevision: committed.revision ?? snapshot(proposal.settingID).revision)
         completed[proposal.id] = receipt
         receipts[receipt.id] = receipt
         receiptOrder.append(receipt.id)
@@ -307,15 +362,20 @@ nonisolated struct SettingsChangeReceipt: Identifiable, Equatable, Sendable {
     func undoFromNativeUI(_ receipt: SettingsChangeReceipt, available: Bool, questionOnly: Bool) throws {
         guard available else { throw SettingsAssistantError.permissionDenied }
         guard !questionOnly else { throw SettingsAssistantError.questionOnly }
-        guard canApply else { throw SettingsAssistantError.persistenceUnavailable }
+        guard canApply(receipt.settingID) else { throw SettingsAssistantError.persistenceUnavailable }
         guard receipts[receipt.id] == receipt, !undone.contains(receipt.id) else { throw SettingsAssistantError.undoConflict }
         guard drafts[receipt.settingID, default: []].isEmpty else { throw SettingsAssistantError.draftConflict }
         let current = snapshot(receipt.settingID)
+        if let issue = snapshotFailures[receipt.settingID] { throw issue == .stalePreview ? SettingsAssistantError.undoConflict : issue }
+        guard !recoveryRequired, store.supportsRecoverableCommit(for: receipt.settingID) else { throw SettingsAssistantError.recoveryRequired }
         guard current.revision == receipt.postRevision, current.stored == receipt.after else { throw SettingsAssistantError.undoConflict }
+        guard eligibilityCheck() else { revoke(); throw SettingsAssistantError.permissionDenied }
         do {
-            try store.commit(operationID: UUID(), value: receipt.before, expected: receipt.after, for: SettingsRegistry.descriptor(receipt.settingID))
-            guard store.read(SettingsRegistry.descriptor(receipt.settingID)) == receipt.before else { throw SettingsAssistantError.applyFailed }
+            let committed = try store.commit(operationID: UUID(), value: receipt.before, expected: receipt.after, expectedRevision: receipt.postRevision, for: SettingsRegistry.descriptor(receipt.settingID))
+            guard committed.stored == receipt.before else { throw SettingsAssistantError.applyFailed }
         } catch {
+            if error as? SettingsAssistantError == .permissionDenied { revoke(); throw SettingsAssistantError.permissionDenied }
+            if let issue = error as? SettingsDurableError, [.stale, .busy, .notApplied].contains(issue) { throw SettingsAssistantError.undoConflict }
             recoveryRequired = true
             revoke()
             throw SettingsAssistantError.recoveryRequired
@@ -367,7 +427,7 @@ nonisolated struct SettingsAssistantSuggestion: Decodable, Sendable {
 /// JSONDecoder accepts duplicate keys. Reject those and excessive nesting before
 /// decoding provider output. The standard parser still validates Unicode,
 /// number syntax, escape sequences, and finite values afterwards.
-private nonisolated struct SettingsStrictJSON {
+nonisolated struct SettingsStrictJSON {
     let bytes: [UInt8]
     var index = 0
     init(data: Data) { bytes = Array(data) }
@@ -439,7 +499,7 @@ private nonisolated struct SettingsStrictJSON {
 
     init(transactions: SettingsTransactionCoordinator = .shared) { self.transactions = transactions }
     var questionOnly: Bool { mode == .ask }
-    var applyIsAvailable: Bool { transactions.canApply }
+    var applyIsAvailable: Bool { proposal.map { transactions.canApply($0.settingID) } ?? false }
 
     func invalidate() {
         generation &+= 1
@@ -473,6 +533,8 @@ private nonisolated struct SettingsStrictJSON {
         references = [id]
         let descriptor = SettingsRegistry.descriptor(id)
         let current = transactions.snapshot(id)
+        if let issue = transactions.snapshotIssue(id) { answer = issue.localizedDescription; return }
+        guard !transactions.recoveryRequired else { answer = SettingsAssistantError.recoveryRequired.localizedDescription; return }
         answer = "\(descriptor.detail) Current value: \(current.effective.display) (\(current.source.lowercased())). \(descriptor.effect)"
         guard !isQuestion else { return }
         // The first catalog is app-only. A narrower request must never be

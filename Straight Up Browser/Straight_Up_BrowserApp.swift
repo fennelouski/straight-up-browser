@@ -286,9 +286,8 @@ struct Straight_Up_BrowserApp: App {
     @ObservedObject private var translationLanguages = TranslationLanguages.shared
     @State private var showStartupRecoveryNotice = true
     @Environment(\.openWindow) private var openWindow
-    // @AppStorage (not SettingsManager.shared.colorScheme) so the scene re-renders
-    // when Theme changes instead of waiting for an unrelated update.
-    @AppStorage("theme") private var themePreference = "System"
+    // Observe the shared durable theme owner so scenes redraw after verified changes.
+    @BrowserThemeStorage private var themePreference
     private var colorScheme: ColorScheme? {
         switch themePreference {
         case "Light": return .light

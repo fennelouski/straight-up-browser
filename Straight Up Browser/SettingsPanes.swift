@@ -1338,8 +1338,8 @@ struct AppearanceSettingsView: View {
     @AppStorage(OmnibarMotionPreferences.durationKey)
     private var omnibarAnimationDuration = OmnibarMotionPreferences.defaultDuration
     @AppStorage(OmnibarMotionPreferences.springKey) private var omnibarAnimationSpring = true
-    // Same "theme" defaults key SettingsManager reads — one store, no desync.
-    @AppStorage("theme") private var theme = "System"
+    // One durable observable authority, shared by every theme surface.
+    @BrowserThemeStorage private var theme
     // Matches the app logo's blue by default. Stored as hex because Color itself
     // is not a stable UserDefaults value across all supported OS releases.
     @AppStorage("aiSearchEffectColorHex") private var aiSearchEffectColorHex = "#007AFF"
@@ -1516,6 +1516,10 @@ struct AppearanceSettingsView: View {
                     ForEach(themes, id: \.self) { Text($0) }
                 }
                 .pickerStyle(.radioGroup)
+                if let message = BrowserThemeStore.shared.statusMessage {
+                    Text(message).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                    if BrowserThemeStore.shared.canRetryLoading { Button("Retry loading theme") { BrowserThemeStore.shared.retryLoading() } }
+                }
                 SettingCaptionRow(
                     caption: "Light, Dark, or follow your Mac.",
                     title: "Theme",

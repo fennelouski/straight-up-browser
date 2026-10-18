@@ -2695,9 +2695,8 @@ struct ContentView: View {
         .browserSlideMotion(showShortcutCheatSheet)
     }
 
-    // Same "theme" key SettingsManager reads — @AppStorage (not SettingsManager.shared.colorScheme)
-    // so this view actually re-renders when Theme changes, instead of waiting for an unrelated update.
-    @AppStorage("theme") private var themePreference = "System"
+    // The shared durable theme owner invalidates every open window after a verified change.
+    @BrowserThemeStorage private var themePreference
 
     private var colorScheme: ColorScheme? {
         switch themePreference {

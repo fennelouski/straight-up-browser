@@ -2,7 +2,7 @@
 
 Development implementation on Nathan's authorized Mac Studio, 18 October 2026.
 This record separates implemented source, executed tests, and native acceptance.
-It is not installation or release approval.
+It is not evidence of a successful installation or release.
 
 ## Source reconciliation
 
@@ -25,7 +25,9 @@ WebViewManager were retained. A reconciliation discrepancy remains: the historic
 Command+N directly to New Window and contains no newCommandDestination or
 newCommandPresentation preferences. This task did not duplicate or silently
 restore that historical implementation. Reconcile that separate revision before
-any release claiming its configurable behavior. The historical 893-test result for 2.9.28 is not a test result for
+any release claiming its configurable behavior. The locally available published
+`v2.9.28` tag (`56060d367662c121f67df361c0e0b17792b8b3a2`, build 135) likewise
+contains neither of those preference keys. The historical 893-test result for 2.9.28 is not a test result for
 this branch.
 
 ## Implemented scope
@@ -39,17 +41,20 @@ this branch.
 | Saved layouts | Separate local versioned recipes; field-level saved/proposed Update diffs, prior revisions, stale-write checks, fresh cold starter tabs and manual meeting slots; runtime bindings stay in memory. Newly created safe starters use visible-only, two-at-a-time admission and exact navigation completion tokens. No URL-only live session merging or new CloudKit schema. |
 | Settings | Original categories/order/selection/search and numbered navigation retained; measured complete labels and compact category fallback; window-scoped Escape/edit/IME/recorder/transient/dirty-close handling; tracked pilot-setting drafts. |
 | Power Up | Searchable live-binding catalog, known/snoozed/suppressed state, safe sample practice, explicit opt-in bounded local aggregates and tested day/week/lifetime/privacy gates. Confirmed global omnibar presentation outside Browser, and validated nonprivate pane Apply/Save outcomes, donate success. |
-| Conversational Settings | Optional local-rule guidance with a four-setting typed catalog, strict structured suggestion validation, question-only mode, app-owned diffs, stale/draft/ABA/revocation checks and a testable Apply/Undo transaction engine. Native production cards link to manual controls while the durable writer is unverified. |
+| Conversational Settings | Optional local-rule guidance with a four-setting typed catalog, strict structured suggestion validation, question-only mode, app-owned diffs and stale/draft/ABA/revocation checks. Theme has a native durable Apply/Undo pilot; the other three settings retain manual controls. All macOS/iOS theme readers and manual writers use the same observable file authority. |
 
 ## Deliberate unavailable paths
 
-- **Production assistant Apply/Undo: pending.** The existing UserDefaults adapter
-  cannot attest durable operation outcome reconciliation or reliable tracking
-  of every external writer. `supportsRecoverableCommit` is false. The reviewed
-  plan (`assistant/review.md`, finding 3) explicitly requires: “Adapters without
-  a proven path must withhold Apply.” Previews do not write. Completing a durable
-  native writer and its crash/outcome tests is a technical dependency, not an
-  unanswered user authorization request.
+- **Assistant mutation is theme-only.** The generic durable store supports the
+  four typed fixture IDs; production grants capability only to theme after all
+  eight native theme surfaces and SettingsManager migrate to its owner. The
+  other three settings' UserDefaults writers cannot attest full ownership and
+  remain manual-only. The reviewed plan (`assistant/review.md`, finding 3)
+  requires: “Adapters without a proven path must withhold Apply.” Questions,
+  previews and status reads perform no preference or recovery writes, including
+  deferred work. See [the durable ownership protocol](../../browser-v2-settings-durability.md).
+  Fault injection at nine real filesystem boundaries is not physical power-loss
+  or actual abrupt Browser-process-death certification.
 - **Remote model and external Settings agent: pending.** No new provider request,
   credential, authenticated pairing, private-value transport, or Apply endpoint
   was introduced. Narrow Settings descriptors are denied before broad legacy
@@ -78,9 +83,9 @@ this branch.
 ## Executed source tests
 
 The standalone source checks, including reruns after policy changes, passed
-**124 Swift tests**: motion/placement 30, Settings/actual policy/CLI 28, Power Up
+**144 Swift tests**: motion/placement 30, Settings/actual policy/CLI 48, Power Up
 14, pane/restore model 42 (22 pane and 20 scheduler), shortcut/registration 10.
-Parameterized Settings inputs execute additional cases within that test count.
+Parameterized Settings inputs execute 75 cases within that suite's test count.
 These harnesses compile production source and the corresponding repository tests;
 the scripts state any omitted app-dependent integration or declared settings
 fixture. They do not launch Browser or register a real global hotkey.
@@ -103,8 +108,10 @@ claimed. See `test-results.json`, the five test logs and `static-checks.log`.
 
 All four final compile-only commands exited zero with warnings treated as errors:
 macOS unit-test bundle, macOS UI-test bundle, Apple Silicon macOS Release and iOS
-Simulator Release. Every check compared the same 339-file source manifest before
-and after compilation; no source changed. The app and CLI helper also passed the
+Simulator Release. Every check compared the same 347-file source manifest before
+and after compilation; no source changed. Xcode used `-jobs 2`. The requested Swift
+`-j2` is followed by generated `-j20` in some Debug driver commands, so a
+separate hard two-frontend cap is not claimed; see `build-concurrency.json`. The app and CLI helper also passed the
 Apple Silicon architecture gate. The repository helper phase uses an ad-hoc
 signature; inspected metadata has no certificate/team identity. No distribution
 signing or app launch occurred.
@@ -125,8 +132,13 @@ in the task output directory; repository log copies trim trailing whitespace.
 ## Native evidence boundary
 
 The baseline XCTest invocation compiled but Xcode's LaunchServices test-host
-launcher aborted with `Assertion failed: childPID > 0` (exit 134). No full hosted
-suite pass is claimed. The task also identified native screen control as failing.
+launcher aborted with `Assertion failed: childPID > 0` (exit 134). A minimal
+independent background AppKit/XCTest host with a unique identity and no Browser
+code reproduced the same assertion, including when its scheme requested the
+PosixSpawn launcher. The precise underlying OS/Xcode cause remains unproven.
+No test completed in either invocation and no full hosted suite pass is claimed.
+Both task-owned leftover test hosts were identified and gracefully terminated;
+the installed Browser stayed running. The task also identified native screen control as failing.
 The original visual defects were therefore not reproduced on the running app.
 The repository's complete `verify.sh`, hosted coverage gate, UI execution and
 Thread Sanitizer were not completed. The implementation is not release-qualified.
@@ -148,9 +160,28 @@ An independent source reviewer checked the implementation against the package,
 including transaction/policy boundaries, meeting URL persistence, native view
 ownership, compact projection, fade eligibility, memory eviction, shortcut
 rollback, input-layout assumptions and Settings lifecycle. Findings were sent
-to owners and corrected in batches. The final review is in `review.md`, with its source fingerprint in
+to owners and corrected in batches. The original review is in `review.md` and the
+durable follow-up is in `durable-settings-review.md`. Both have no remaining
+high-priority source findings after corrections. Source fingerprints are in
 `reviewed-source.json`; exact executed tests and compiles are recorded alongside it.
 
+## Authorized deployment remains blocked
+
+Nathan subsequently authorized source synchronization and deployment/install if
+validation permits. Repository instructions require hosted tests, coverage, native
+UI execution and the signed release process; those gates were not waived. Current
+codesigning preflight finds only an Apple Development identity, with no valid
+Developer ID Application identity required by `release.sh`. No credentials were
+created, requested, unlocked or extracted to repair that prerequisite.
+
+Scoped read-only checks confirm the installed `/Applications/Browser.app` is
+2.9.26 (133), has a valid Developer ID signature and stapled ticket, and remains
+running. No backup/replacement, release tag, distribution archive, notarization
+submission, appcast update or website push was attempted. See
+`deployment-preflight.json` and the independent host-probe sources/log. Source
+synchronization has no observed repository workflow/webhook/Pages deployment
+trigger; the website publication step is a separate repository operation.
+
 No production Browser installation, app restart, distribution signing, external deployment,
-paid external services, credentials, system permission changes, or persistent access
+paid external services, new credentials, system permission changes, or persistent access
 grants were performed.

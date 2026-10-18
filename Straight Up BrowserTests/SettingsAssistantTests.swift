@@ -7,17 +7,23 @@ import Testing
     var values: [BrowserSettingID: BrowserSettingValue] = [:]
     var writeCount = 0
     var failCommit = false
+    var failReadOnce = false
     var operationIDs: Set<UUID> = []
     func read(_ descriptor: BrowserSettingDescriptor) -> BrowserSettingValue? { values[descriptor.id] }
+    func readVersioned(_ descriptor: BrowserSettingDescriptor) throws -> SettingsStoreSnapshot {
+        if failReadOnce { failReadOnce = false; throw SettingsAssistantError.applyFailed }
+        return .init(stored: read(descriptor), revision: nil)
+    }
     func write(_ value: BrowserSettingValue?, for descriptor: BrowserSettingDescriptor) throws {
         values[descriptor.id] = value
         writeCount += 1
     }
-    func commit(operationID: UUID, value: BrowserSettingValue?, expected: BrowserSettingValue?, for descriptor: BrowserSettingDescriptor) throws {
-        if operationIDs.contains(operationID) { return }
+    func commit(operationID: UUID, value: BrowserSettingValue?, expected: BrowserSettingValue?, expectedRevision: UInt64?, for descriptor: BrowserSettingDescriptor) throws -> SettingsStoreSnapshot {
+        if operationIDs.contains(operationID) { return .init(stored: value, revision: nil) }
         guard !failCommit, read(descriptor) == expected else { throw SettingsAssistantError.applyFailed }
         try write(value, for: descriptor)
         operationIDs.insert(operationID)
+        return .init(stored: value, revision: nil)
     }
 }
 
@@ -131,6 +137,17 @@ import Testing
         #expect(store.values[.fadeInPages] == .bool(false))
     }
 
+    @Test func undoNeverMutatesAfterEnteringRecoveryDuringItsSnapshot() throws {
+        let store = SettingsTestStore()
+        let coordinator = SettingsTransactionCoordinator(store: store)
+        let receipt = try apply(preview(coordinator), with: coordinator)
+        store.failReadOnce = true
+        #expect(throws: SettingsAssistantError.recoveryRequired) { try coordinator.undoFromNativeUI(receipt, available: true, questionOnly: false) }
+        #expect(store.writeCount == 1)
+        #expect(store.values[.fadeInPages] == .bool(false))
+        #expect(coordinator.recoveryRequired)
+    }
+
     @Test func externalValueChangeIsRecheckedBeforeCommit() throws {
         let store = SettingsTestStore()
         let coordinator = SettingsTransactionCoordinator(store: store)
@@ -176,6 +193,22 @@ import Testing
         _ = try apply(proposal, with: coordinator)
         coordinator.revoke()
         #expect(throws: SettingsAssistantError.permissionDenied) { try apply(proposal, with: coordinator) }
+        #expect(store.writeCount == 1)
+    }
+
+    @Test func finalLiveEligibilityWinsOverStaleViewAvailability() throws {
+        let store = SettingsTestStore()
+        var liveEligibility = true
+        let coordinator = SettingsTransactionCoordinator(store: store, eligibilityCheck: { liveEligibility })
+        let proposal = try preview(coordinator)
+        liveEligibility = false
+        #expect(throws: SettingsAssistantError.permissionDenied) { try apply(proposal, with: coordinator) }
+        #expect(store.writeCount == 0)
+        let second = SettingsTransactionCoordinator(store: store, eligibilityCheck: { liveEligibility })
+        liveEligibility = true
+        let receipt = try apply(preview(second), with: second)
+        liveEligibility = false
+        #expect(throws: SettingsAssistantError.permissionDenied) { try second.undoFromNativeUI(receipt, available: true, questionOnly: false) }
         #expect(store.writeCount == 1)
     }
 

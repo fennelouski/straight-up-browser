@@ -51,6 +51,7 @@ PY
 
 print "Motion policy harness: $task_harness_root"
 xcrun swift test --package-path "$task_harness_root" \
+    --jobs 2 \
     --scratch-path "$task_harness_root/build" --cache-path "$task_harness_root/cache" \
     --config-path "$task_harness_root/config" --security-path "$task_harness_root/security" \
     --disable-sandbox 2>&1 | tee "$task_harness_root/test-results.log"

@@ -1,8 +1,13 @@
+python3 scripts/check-agent-model-review.py
 Agent model review passed.
+python3 scripts/test-agent-model-review.py
 ......
 ----------------------------------------------------------------------
-Ran 6 tests in 0.017s
+Ran 6 tests in 0.015s
 
 OK
+./scripts/validate-release-policy.sh
 Release policy passed.
+./scripts/validate-security-policy.sh
 Security policy passed.
+git diff --check

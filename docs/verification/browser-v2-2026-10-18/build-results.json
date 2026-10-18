@@ -21,16 +21,16 @@
       "CODE_SIGNING_ALLOWED=NO",
       "ENABLE_DEBUG_DYLIB=NO",
       "GCC_TREAT_WARNINGS_AS_ERRORS=YES",
-      "SWIFT_TREAT_WARNINGS_AS_ERRORS=YES"
+      "SWIFT_TREAT_WARNINGS_AS_ERRORS=YES",
+      "OTHER_SWIFT_FLAGS=$(inherited) -j2"
     ],
     "exitCode": 0,
-    "startedAt": "2026-10-18T08:24:31.563797+00:00",
-    "finishedAt": "2026-10-18T08:25:22.770844+00:00",
+    "startedAt": "2026-10-18T08:57:49.908764+00:00",
+    "finishedAt": "2026-10-18T09:00:14.323045+00:00",
     "sourceUnchangedDuringBuild": true,
-    "sourceManifestSHA256": "8e3c9812adf5cba44650623597708daaf0ed74047e3259d1c91a15ff3485f2e9",
+    "sourceManifestSHA256": "8149d6943dd1d2d28ff4133a47ed27e0c3d850abd1439c41c5ce37ca888a81fb",
     "log": "verified-macos-test-bundle-build.log",
-    "execution": "Compilation only; no launch or installation",
-    "workingDirectory": "/Users/nathanfennel/Documents/Codex/2026-10-18/task-4/browser-v2"
+    "execution": "Compilation only; no launch or installation"
   },
   {
     "name": "macos-ui-test-bundle",
@@ -54,16 +54,16 @@
       "CODE_SIGNING_ALLOWED=NO",
       "ENABLE_DEBUG_DYLIB=NO",
       "GCC_TREAT_WARNINGS_AS_ERRORS=YES",
-      "SWIFT_TREAT_WARNINGS_AS_ERRORS=YES"
+      "SWIFT_TREAT_WARNINGS_AS_ERRORS=YES",
+      "OTHER_SWIFT_FLAGS=$(inherited) -j2"
     ],
     "exitCode": 0,
-    "startedAt": "2026-10-18T08:25:22.809490+00:00",
-    "finishedAt": "2026-10-18T08:25:27.849095+00:00",
+    "startedAt": "2026-10-18T09:00:14.363235+00:00",
+    "finishedAt": "2026-10-18T09:00:17.930548+00:00",
     "sourceUnchangedDuringBuild": true,
-    "sourceManifestSHA256": "8e3c9812adf5cba44650623597708daaf0ed74047e3259d1c91a15ff3485f2e9",
+    "sourceManifestSHA256": "8149d6943dd1d2d28ff4133a47ed27e0c3d850abd1439c41c5ce37ca888a81fb",
     "log": "verified-macos-ui-test-bundle-build.log",
-    "execution": "Compilation only; no launch or installation",
-    "workingDirectory": "/Users/nathanfennel/Documents/Codex/2026-10-18/task-4/browser-v2"
+    "execution": "Compilation only; no launch or installation"
   },
   {
     "name": "macos-release",
@@ -91,16 +91,16 @@
       "CODE_SIGNING_ALLOWED=NO",
       "ENABLE_DEBUG_DYLIB=NO",
       "GCC_TREAT_WARNINGS_AS_ERRORS=YES",
-      "SWIFT_TREAT_WARNINGS_AS_ERRORS=YES"
+      "SWIFT_TREAT_WARNINGS_AS_ERRORS=YES",
+      "OTHER_SWIFT_FLAGS=$(inherited) -j2"
     ],
     "exitCode": 0,
-    "startedAt": "2026-10-18T08:25:27.887534+00:00",
-    "finishedAt": "2026-10-18T08:28:59.504847+00:00",
+    "startedAt": "2026-10-18T09:00:17.969121+00:00",
+    "finishedAt": "2026-10-18T09:04:03.746982+00:00",
     "sourceUnchangedDuringBuild": true,
-    "sourceManifestSHA256": "8e3c9812adf5cba44650623597708daaf0ed74047e3259d1c91a15ff3485f2e9",
+    "sourceManifestSHA256": "8149d6943dd1d2d28ff4133a47ed27e0c3d850abd1439c41c5ce37ca888a81fb",
     "log": "verified-macos-release-build.log",
-    "execution": "Compilation only; no launch or installation",
-    "workingDirectory": "/Users/nathanfennel/Documents/Codex/2026-10-18/task-4/browser-v2"
+    "execution": "Compilation only; no launch or installation"
   },
   {
     "name": "ios-release",
@@ -126,15 +126,15 @@
       "CODE_SIGNING_ALLOWED=NO",
       "ENABLE_DEBUG_DYLIB=NO",
       "GCC_TREAT_WARNINGS_AS_ERRORS=YES",
-      "SWIFT_TREAT_WARNINGS_AS_ERRORS=YES"
+      "SWIFT_TREAT_WARNINGS_AS_ERRORS=YES",
+      "OTHER_SWIFT_FLAGS=$(inherited) -j2"
     ],
     "exitCode": 0,
-    "startedAt": "2026-10-18T08:28:59.544464+00:00",
-    "finishedAt": "2026-10-18T08:30:36.276541+00:00",
+    "startedAt": "2026-10-18T09:04:03.792870+00:00",
+    "finishedAt": "2026-10-18T09:05:44.905084+00:00",
     "sourceUnchangedDuringBuild": true,
-    "sourceManifestSHA256": "8e3c9812adf5cba44650623597708daaf0ed74047e3259d1c91a15ff3485f2e9",
+    "sourceManifestSHA256": "8149d6943dd1d2d28ff4133a47ed27e0c3d850abd1439c41c5ce37ca888a81fb",
     "log": "verified-ios-release-build.log",
-    "execution": "Compilation only; no launch or installation",
-    "workingDirectory": "/Users/nathanfennel/Documents/Codex/2026-10-18/task-4/browser-v2"
+    "execution": "Compilation only; no launch or installation"
   }
 ]

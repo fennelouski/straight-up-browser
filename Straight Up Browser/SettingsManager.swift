@@ -19,14 +19,12 @@ class SettingsManager {
     // Keys for UserDefaults
     private enum Keys {
         static let maxHistorySize = "maxHistorySize"
-        static let theme = "theme"
         static let showWebpageTitlesInTabs = "showWebpageTitlesInTabs"
     }
 
     // Default values
     private enum Defaults {
         static let maxHistorySize = 100
-        static let theme = "System"
         static let showWebpageTitlesInTabs = false
     }
 
@@ -34,9 +32,6 @@ class SettingsManager {
         // Initialize defaults if not set
         if userDefaults.object(forKey: Keys.maxHistorySize) == nil {
             userDefaults.set(Defaults.maxHistorySize, forKey: Keys.maxHistorySize)
-        }
-        if userDefaults.object(forKey: Keys.theme) == nil {
-            userDefaults.set(Defaults.theme, forKey: Keys.theme)
         }
         if userDefaults.object(forKey: Keys.showWebpageTitlesInTabs) == nil {
             userDefaults.set(Defaults.showWebpageTitlesInTabs, forKey: Keys.showWebpageTitlesInTabs)
@@ -61,11 +56,10 @@ class SettingsManager {
     /// Current theme preference
     var theme: String {
         get {
-            return userDefaults.string(forKey: Keys.theme) ?? Defaults.theme
+            return BrowserThemeStore.shared.value
         }
         set {
-            userDefaults.set(newValue, forKey: Keys.theme)
-            userDefaults.synchronize()
+            BrowserThemeStore.shared.setManually(newValue)
         }
     }
 

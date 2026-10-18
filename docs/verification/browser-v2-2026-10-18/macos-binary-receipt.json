@@ -1,16 +1,15 @@
 {
-  "purpose": "Compile-only unsigned products; hashes captured before required temporary-bundle cleanup",
-  "architectureCheckExitCode": 0,
-  "artifacts": [
-    {
-      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Release/Browser.app/Contents/MacOS/Browser",
-      "bytes": 48693640,
-      "sha256": "85b79e4bddc884931eba73229922a0bcb5a753d98dc4f708c609ff50b2eb093f"
+  "recordedAt": "2026-10-18T09:04:43.971563+00:00",
+  "sourceManifestSHA256": "8149d6943dd1d2d28ff4133a47ed27e0c3d850abd1439c41c5ce37ca888a81fb",
+  "verification": "Unsigned compile-only Mac Release; no distribution signing, launch or installation",
+  "executables": {
+    "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Release/Browser.app/Contents/MacOS/Browser": {
+      "sha256": "f6f59f20a57e271a057944d18f0b46f2cbe7181f61eadb5204961a7bb964e147",
+      "size": 49072296
     },
-    {
-      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Release/Browser.app/Contents/Helpers/browser-cli",
-      "bytes": 485568,
-      "sha256": "015486c0f6016e80d51eba166a1f5c467a503477cacd6376db6965d77e57f6af"
+    "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Release/Browser.app/Contents/Helpers/browser-cli": {
+      "sha256": "015486c0f6016e80d51eba166a1f5c467a503477cacd6376db6965d77e57f6af",
+      "size": 485568
     }
-  ]
+  }
 }
