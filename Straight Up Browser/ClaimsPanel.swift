@@ -25,7 +25,7 @@ struct ClaimsPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            headerYeah.
+            header
             Divider()
             content
             if let note {
