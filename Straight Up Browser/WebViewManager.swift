@@ -1693,19 +1693,30 @@ class WebViewManager: NSObject, ObservableObject {
                               name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
     }
 
-    @objc private func pageFadeVisibilityChanged() { refreshPageFadeResidence() }
-    @objc private func pageFadeWillSuspend(_ notification: Notification) {
+    // Selector observers run synchronously on the posting thread. Defaults
+    // changes can originate in a background sync actor, so cross explicitly
+    // before touching WebKit, window visibility or the fade policy.
+    @objc nonisolated private func pageFadeVisibilityChanged() {
+        Task { @MainActor [weak self] in self?.refreshPageFadeResidence() }
+    }
+    @objc nonisolated private func pageFadeWillSuspend(_ notification: Notification) {
         let reason = notification.name == NSWorkspace.willSleepNotification ? "system"
             : notification.name == NSWorkspace.screensDidSleepNotification ? "display" : "session"
-        pageFadeSuspensions.insert(reason)
-        pageFadePolicy.interrupt(clearRecentAttempts: true)
-        refreshPageFadeResidence()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.pageFadeSuspensions.insert(reason)
+            self.pageFadePolicy.interrupt(clearRecentAttempts: true)
+            self.refreshPageFadeResidence()
+        }
     }
-    @objc private func pageFadeDidResume(_ notification: Notification) {
+    @objc nonisolated private func pageFadeDidResume(_ notification: Notification) {
         let reason = notification.name == NSWorkspace.didWakeNotification ? "system"
             : notification.name == NSWorkspace.screensDidWakeNotification ? "display" : "session"
-        pageFadeSuspensions.remove(reason)
-        refreshPageFadeResidence()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.pageFadeSuspensions.remove(reason)
+            self.refreshPageFadeResidence()
+        }
     }
     #endif
 
