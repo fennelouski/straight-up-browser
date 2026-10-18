@@ -1,0 +1,14 @@
+{
+  "archive": "Browser-Planning-2026-10-16-v2.zip",
+  "libraryFileID": "libfile_eec3521b29dc8191be96a38c1ab720f1",
+  "bytes": 873029,
+  "sha256": "fca35484f0902aeadec2a04f358507fcf3556402818d4a5a708f1d3473ccfda5",
+  "sourceBaseline": "666bb5729a3a1e3797cceac6ad5e101f0d03f731",
+  "branch": "codex/browser-v2-20261018",
+  "host": "Nathans-Mac-Studio.local",
+  "os": "macOS 26.6.2 (25G83)",
+  "xcode": "27.0 (27A266a)",
+  "architecture": "arm64",
+  "productionInstallation": false,
+  "externalDeployment": false
+}

@@ -286,9 +286,8 @@ struct Straight_Up_BrowserApp: App {
     @ObservedObject private var translationLanguages = TranslationLanguages.shared
     @State private var showStartupRecoveryNotice = true
     @Environment(\.openWindow) private var openWindow
-    // @AppStorage (not SettingsManager.shared.colorScheme) so the scene re-renders
-    // when Theme changes instead of waiting for an unrelated update.
-    @AppStorage("theme") private var themePreference = "System"
+    // Observe the shared durable theme owner so scenes redraw after verified changes.
+    @BrowserThemeStorage private var themePreference
     private var colorScheme: ColorScheme? {
         switch themePreference {
         case "Light": return .light
@@ -658,14 +657,14 @@ struct Straight_Up_BrowserApp: App {
                 }
                 .keyboardShortcut(sc(.windowSnapRight))
 
-                Button("Snap Window Top") {
+                Button("Cycle Top and Center Placements") {
                     if let window = NSApp.keyWindow ?? NSApp.mainWindow {
                         WindowLayout.snap(window, direction: .top)
                     }
                 }
                 .keyboardShortcut(sc(.windowSnapTop))
 
-                Button("Snap Window Bottom") {
+                Button("Cycle Bottom and Center Placements") {
                     if let window = NSApp.keyWindow ?? NSApp.mainWindow {
                         WindowLayout.snap(window, direction: .bottom)
                     }
@@ -848,6 +847,10 @@ struct Straight_Up_BrowserApp: App {
 
             // Window menu commands
             CommandGroup(after: .windowArrangement) {
+                Button("Arrange Panes…") {
+                    NotificationCenter.default.post(name: .browserArrangePanes, object: NSApp.keyWindow)
+                }
+                .keyboardShortcut(sc(.arrangePanes))
                 Button("Show Next Tab") {
                     NotificationCenter.default.post(name: .browserNextTab, object: nil)
                 }
@@ -889,6 +892,10 @@ struct Straight_Up_BrowserApp: App {
             }
 
             CommandGroup(replacing: .help) {
+                Button("Power Up") {
+                    UserDefaults.standard.set(SettingsPane.powerUp.rawValue, forKey: "settingsPane")
+                    openWindow(id: "settings")
+                }
                 #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("-uiTesting"),
                    ProcessInfo.processInfo.arguments.contains("-globalOmnibarUITesting") {
@@ -900,6 +907,12 @@ struct Straight_Up_BrowserApp: App {
                     let id = windows.activeID ?? windows.primaryID
                     if !windows.hasWindows { openWindow(id: "browser", value: id) }
                     BrowserOnboarding.shared.show(in: id)
+                }
+                Button("Restart Getting Started Guide") {
+                    let windows = BrowserWindows.shared
+                    let id = windows.activeID ?? windows.primaryID
+                    if !windows.hasWindows { openWindow(id: "browser", value: id) }
+                    BrowserOnboarding.shared.restart(in: id)
                 }
                 Button("Browser Help") {
                     openWindow(id: "help")

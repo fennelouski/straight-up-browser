@@ -38,8 +38,15 @@ final class SettingsSearchNavigation {
 }
 
 enum SettingsSearchIndex {
-    static let entries: [SettingsSearchEntry] = {
+    static var entries: [SettingsSearchEntry] {
         var entries: [SettingsSearchEntry] = [
+            // Power Up is always available, including with adaptive learning disabled.
+            .init(id: "power-up.library", pane: .powerUp, title: "Power Up Skills",
+                  keywords: "learn practice global omnibar open from anywhere split five panes swap restore workspace centered window keyboard commands"),
+            .init(id: "power-up.learning", pane: .powerUp, title: "Power Up Learning on This Mac",
+                  keywords: "adaptive tips local action counts privacy pause delete learning history known suppression reset"),
+            .init(id: "general.onboarding", pane: .general, title: "Getting Started Guide",
+                  keywords: "onboarding quick start customization deep dive restart tour"),
             // General
             .init(id: "general.sync", pane: .general, title: "Sync",
                   keywords: "sync browser data across your devices icloud tab closing live page state cookies local storage session storage saved logins"),
@@ -204,7 +211,7 @@ enum SettingsSearchIndex {
         entries += ShortcutSection.allCases.map { section in
             let commandTitles = ShortcutCommand.availableOnCurrentPlatform
                 .filter { $0.section == section }
-                .map { String(localized: $0.title) }
+                .map { "\(String(localized: $0.title)) \(ShortcutStore.shared.shortcut(for: $0).displayString)" }
                 .joined(separator: " ")
             return SettingsSearchEntry(
                 id: "shortcuts.section.\(section.rawValue)",
@@ -215,6 +222,6 @@ enum SettingsSearchIndex {
         }
 
         return entries
-    }()
+    }
 }
 #endif

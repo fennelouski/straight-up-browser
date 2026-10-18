@@ -1,7 +1,7 @@
 {
-  "releaseVersion": "2.9.28",
-  "reviewedOn": "2026-10-13",
-  "notes": "Reviewed official catalogs, pricing and API compatibility for the omnibar Weather release. OpenAI Luna 6 / Sol 6.1 / Astra 6 retain fast/balanced/flagship roles; Claude Sonnet 5.5 remains the balanced Anthropic default and its Messages parameters remain compatible. Gemini 3.8 Flash retains its stable streaming/function-calling API and opaque thought-signature continuation. Reviewed OpenRouter IDs remain available. No model, adapter or pricing implementation changes are required. The changed Google pricing page removed context-caching rows for Gemini 3.8 Flash TTS and Flash-Lite TTS across Standard, Batch, Flex and Priority; Browser does not select those speech models. Text Gemini 3.8 Flash Standard input/output/cache remain $0.75/$3.75/$0.075 per million through 2026, rising to $1.50/$7.50/$0.15 on January 1, 2027. Gemini pricing remains explicit per-selected-model configuration or unknown. Custom endpoints, installed local models, pinned dated snapshots, model roles and provider boundaries remain intact. Future runs price and record their actual selected model; historical runs are unchanged. Weather uses native Apple WeatherKit with explicit city or previously authorized location and adds no AI-provider calls. No credentials or billable inference used. Local Air update review: BrowserAgent.swift only changes agent status text from lineLimit(1) to vertical fixedSize; no model or transport behavior changed. Rechecked all official source digests; OpenAI, Claude, OpenRouter and the Gemini 3.8 Flash model page are unchanged. Reviewed changed Gemini catalog and pricing: selected stable Gemini 3.8 Flash and Standard text pricing remain as previously recorded; added or changed audio/media offerings do not affect this app model selection. No provider code/default/rate change required. Review metadata refreshed in isolated local build snapshot only. Login autofill fix release: live official provider source verification passed on 2026-10-13; no model, pricing, adapter or default changes. Configurable New command release: rechecked official catalog and pricing sources on 2026-10-13. Reviewed current Google catalog including Gemini 4 Argon, Gemini 3.8 Flash, Live/TTS and image/audio offerings; Gemini 3.8 Flash remains the stable fast text model with supported function calling, thinking and streaming. Its Standard text input/output/cache pricing remains $0.75/$3.75/$0.075 per million through 2026, with the recorded 2027 rates unchanged. No provider, default model, alias mapping or pricing implementation changes are required. Other reviewed provider sources are unchanged. Command preferences add no model calls.",
+  "releaseVersion": "2.9.32",
+  "reviewedOn": "2026-10-14",
+  "notes": "Rechecked the official catalogs, pricing, availability, and API compatibility for Browser 2.9.32 on October 14, 2026. OpenAI GPT-6 Luna, GPT-6.1 Sol, and GPT-6 Astra retain their fast, balanced, and flagship roles at $0.10/$0.50, $2/$10, and $10/$50 input/output per million tokens. The Responses API IDs, supported reasoning controls, streaming, and tool contracts remain compatible. Claude Sonnet 5.5 remains the active balanced Anthropic default at $2/$10 with adaptive thinking and the current Messages API contract. Gemini 3.8 Flash remains the selected stable Gemini model with 1,048,576/65,536 input/output limits and function calling, caching, structured outputs, streaming GenerateContent, and low/medium/high thinking; minimal remains unsupported and opaque thought signatures must be preserved. Reviewed the newly changed Google pricing page before refreshing its digest: selected Gemini 3.8 Flash Standard input/output/cache rates remain $0.75/$3.75/$0.075 through December 31, 2026, then $1.50/$7.50/$0.15 from January 1, 2027. Separate Gemini 4 Argon, lightweight, Live, speech, image, video, and robotics offerings do not justify changing this balanced default. Reviewed OpenRouter IDs remain available. No default, fallback, migration, adapter, or pricing implementation change is warranted. Custom endpoints, installed local models, dated snapshots, model roles, and provider boundaries remain intact. Future runs retain actual-selected-model pricing and metadata; historical runs are unchanged. The temporary OpenAI documentation checkpoint cleared before live checks. No API credentials or billable inference were used.",
   "sourceFiles": {
     "Straight Up Browser/AgentModelCatalog.swift": "ba4459c9f003ac6cac1dab8ad802ae024190b9679f437ff5dbc32b1405d2af02",
     "Straight Up Browser/AgentModelMigration.swift": "5e02a270b6598c1b551e8cd7cbff3a1d747612a10c7f234d3c2b65b9947bcbbb",
@@ -39,7 +39,7 @@
     {
       "url": "https://ai.google.dev/gemini-api/docs/models",
       "format": "html-main",
-      "sha256": "8dc16565ae5e23327165714504fbf34d37c64ed648f7efbd37e4bf364935b187"
+      "sha256": "71f9408b7db7c6277f3f7a8580cfc68bd510c23b88b8b75c4e21a770914a491a"
     },
     {
       "url": "https://openrouter.ai/api/v1/models",
@@ -60,7 +60,7 @@
     {
       "url": "https://ai.google.dev/gemini-api/docs/pricing",
       "format": "html-main",
-      "sha256": "770f22a730316750c468c080028a14cf5ebf4aeef0f924862a72f4701a76b69f"
+      "sha256": "1bc1f3e2bb64d5cacbdcd9118efe49829fa00d2d1fb317d187c08b74f6357583"
     }
   ]
 }

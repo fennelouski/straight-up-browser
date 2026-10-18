@@ -5,18 +5,28 @@ import MapKit
 import Security
 
 nonisolated enum BrowserWeatherError: Error, LocalizedError, Sendable {
-    case message(String), offline, credentials, quota(Date), unavailable, ambiguous([BrowserWeatherPlace])
+    case message(String), offline, credentials, locationRequired, quota(Date), unavailable, ambiguous([BrowserWeatherPlace])
     var message: String {
         switch self {
         case .message(let text): text
         case .offline: "Offline. Your previous forecast stays visible; reconnect and retry."
         case .credentials: "The provider key is missing or invalid. Check Weather providers in Saved places."
+        case .locationRequired: "Choose a location."
         case .quota: "Provider usage limit reached. Cached forecasts remain available; retry after the displayed time."
         case .unavailable: "Weather is unavailable. Retry or choose another location."
         case .ambiguous: "Several places match. Choose the town and country you meant."
         }
     }
     var errorDescription: String? { message }
+    static func classify(_ error: Error) -> Self {
+        if let weather = error as? Self { return weather }
+        let underlying = error as NSError
+        if underlying.domain == NSURLErrorDomain,
+           [URLError.notConnectedToInternet.rawValue, URLError.networkConnectionLost.rawValue,
+            URLError.dataNotAllowed.rawValue].contains(underlying.code) { return .offline }
+        if let cause = underlying.userInfo[NSUnderlyingErrorKey] as? Error { return classify(cause) }
+        return .unavailable
+    }
 }
 
 nonisolated enum BrowserWeatherProvider: String, CaseIterable, Sendable {
@@ -237,8 +247,7 @@ nonisolated enum BrowserWeatherKeychain {
             if case .quota(let until) = error { blockedUntil[identity] = until }
             throw error
         } catch is CancellationError { throw CancellationError() }
-        catch let error as URLError where error.code == .notConnectedToInternet || error.code == .networkConnectionLost { throw BrowserWeatherError.offline }
-        catch { throw BrowserWeatherError.unavailable }
+        catch { throw BrowserWeatherError.classify(error) }
     }
 
     private static var mapSearches: [UUID: MKLocalSearch] = [:]
@@ -308,6 +317,8 @@ nonisolated enum BrowserWeatherKeychain {
     @Published private(set) var status = ""
     @Published private(set) var candidates: [BrowserWeatherPlace] = []
     @Published private(set) var retryAt: Date?
+    @Published private(set) var failure: BrowserWeatherError?
+    @Published private(set) var loadingStartedAt: Date?
     private var generation = UUID()
     private var task: Task<Void, Never>?
     private let service: BrowserWeatherService
@@ -315,7 +326,8 @@ nonisolated enum BrowserWeatherKeychain {
     init(service: BrowserWeatherService = .shared, places: WeatherPlacesStore = .shared) { self.service = service; self.places = places }
     func load(_ query: String, resolved: BrowserWeatherPlace? = nil, debounce: Bool = true) {
         cancel(); let id = generation
-        loading = true; status = "Loading \(query)…"; candidates = []; retryAt = nil
+        loading = true; loadingStartedAt = Date(); failure = nil
+        status = "Loading \(query)…"; candidates = []; retryAt = nil
         task = Task { [self] in
             do {
                 if debounce { try await Task.sleep(for: .milliseconds(350)) }
@@ -329,22 +341,24 @@ nonisolated enum BrowserWeatherKeychain {
                 }
                 let value = try await service.forecast(for: point)
                 guard !Task.isCancelled, generation == id else { return }
-                result = value; status = ""; loading = false
+                result = value; status = ""; loading = false; loadingStartedAt = nil
             } catch {
                 guard !Task.isCancelled, generation == id else { return }
-                let failure = error as? BrowserWeatherError ?? .unavailable
-                status = failure.message; loading = false
+                let failure = BrowserWeatherError.classify(error)
+                self.failure = failure
+                status = failure.message; loading = false; loadingStartedAt = nil
                 if case .ambiguous(let values) = failure { candidates = values }
                 if case .quota(let time) = failure { retryAt = time }
             }
         }
     }
-    func cancel() { generation = UUID(); task?.cancel(); task = nil; loading = false }
+    func cancel() { generation = UUID(); task?.cancel(); task = nil; loading = false; loadingStartedAt = nil; failure = nil }
     func expireIfNeeded(now: Date) {
         guard let result, now.timeIntervalSince(result.source.issuedAt) >= 7200 else { return }
         self.result = nil; status = "Forecast expired. Retry for current weather."
     }
-    func fail(_ message: String) { cancel(); status = message; candidates = [] }
-    func preview(_ value: BrowserWeatherForecast) { cancel(); result = value; status = "" }
+    func fail(_ error: BrowserWeatherError) { cancel(); failure = error; status = error.message; candidates = []; retryAt = nil }
+    func fail(_ message: String) { fail(.message(message)) }
+    func preview(_ value: BrowserWeatherForecast) { cancel(); result = value; failure = nil; status = ""; candidates = []; retryAt = nil }
     func waitForRequest() async { await task?.value }
 }

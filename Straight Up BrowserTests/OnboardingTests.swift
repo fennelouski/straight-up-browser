@@ -70,6 +70,17 @@ struct OnboardingTests {
         #expect(steps.firstIndex(of: .documents)! < steps.firstIndex(of: .ai)!)
         #expect(steps.contains(.downloads) && steps.contains(.translation) && steps.contains(.newspaper))
     }
+    @Test func longerGuidesTeachLiveTabPreviewsAfterTabAppearance() {
+        var progress = OnboardingProgress(track: .customization)
+        let customization = progress.steps(context: context)
+        #expect(customization.firstIndex(of: .appearance)! < customization.firstIndex(of: .livePreviews)!)
+        #expect(customization.firstIndex(of: .livePreviews)! < customization.firstIndex(of: .navigation)!)
+
+        progress.track = .deepDive
+        let deepDive = progress.steps(context: context)
+        #expect(deepDive.firstIndex(of: .appearance)! < deepDive.firstIndex(of: .livePreviews)!)
+        #expect(deepDive.contains(.livePreviews))
+    }
     @Test func contextAndInterestsSelectRelevantLessons() {
         let night = OnboardingContext.make(screenSize: .init(width: 1920, height: 1080), hour: 22, dark: true)
         #expect(night.largeScreen && night.nightInDarkMode)
@@ -92,6 +103,31 @@ struct OnboardingTests {
             #expect(guide.progress.decision == .learning)
             guide.finish()
             #expect(!BrowserOnboarding(defaults: defaults).progress.shouldOffer(at: .distantFuture))
+        }
+    }
+    @Test func restartingClearsOnlyGuideProgressAndShowsTheWelcomeAgain() throws {
+        try withGuide { guide, defaults in
+            let id = UUID()
+            defaults.set(true, forKey: "memorySaverEnabled")
+            guide.animations = false
+            guide.spring = false
+            guide.saveMotion()
+            guide.show(in: id, context: context)
+            guide.choose(.deepDive)
+            guide.toggleRole(.design)
+            guide.move(3)
+
+            guide.restart(in: id, context: context)
+
+            #expect(guide.active)
+            #expect(guide.windowID == id)
+            #expect(guide.invitation)
+            #expect(guide.progress == OnboardingProgress())
+            #expect(defaults.bool(forKey: "memorySaverEnabled"))
+            #expect(!guide.animations && !guide.spring)
+            let restored = BrowserOnboarding(defaults: defaults)
+            #expect(restored.progress == OnboardingProgress())
+            #expect(!restored.animations && !restored.spring)
         }
     }
 }

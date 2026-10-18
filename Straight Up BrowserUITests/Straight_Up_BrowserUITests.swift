@@ -25,20 +25,25 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         field.click(); field.typeText("weather 80516")
         let current = app.descendants(matching: .any)["omnibar-weather-current"]
         XCTAssertTrue(current.waitForExistence(timeout: 10))
-        XCTAssertTrue(current.label.contains("Erie") && current.label.contains("United States"))
+        let erie = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value CONTAINS %@ AND value CONTAINS %@", "Erie", "United States"),
+            object: current
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [erie], timeout: 5), .completed)
         XCTAssertTrue(app.staticTexts["Preview weather · No live service requested"].exists)
-        let erie = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
-        erie.name = "Weather-Erie-Postal-Fixture"; erie.lifetime = .keepAlways; add(erie)
+        let erieAttachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        erieAttachment.name = "Weather-Erie-Postal-Fixture"; erieAttachment.lifetime = .keepAlways; add(erieAttachment)
         field.typeKey("a", modifierFlags: .command); field.typeText("2725 DM Weather")
-        let resolved = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "Zoetermeer"), object: current)
+        let resolved = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "Zoetermeer"), object: current)
         XCTAssertEqual(XCTWaiter.wait(for: [resolved], timeout: 10), .completed)
-        XCTAssertTrue(current.label.contains("Zoetermeer") && current.label.contains("Netherlands"))
+        let resolvedValue = current.value as? String ?? ""
+        XCTAssertTrue(resolvedValue.contains("Zoetermeer") && resolvedValue.contains("Netherlands"))
         XCTAssertTrue(app.descendants(matching: .any)["weather-nowcast-unavailable"].exists)
         let dutch = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
         dutch.name = "Weather-Zoetermeer-Postal-Fixture"; dutch.lifetime = .keepAlways; add(dutch)
         field.typeKey("a", modifierFlags: .command); field.typeText("weather home")
-        XCTAssertTrue(app.staticTexts["omnibar-weather-status"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["omnibar-weather-status"].label.contains("Set up Home"))
+        XCTAssertTrue(app.buttons["omnibar-weather-location"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather-current"].waitForNonExistence(timeout: 5))
         field.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(app.descendants(matching: .any)["omnibar-weather"].waitForNonExistence(timeout: 5))
         app.terminate()
@@ -216,31 +221,45 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         let settings = app.windows["settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         XCTAssertTrue(settings.buttons["Publication Style & Paper"].waitForExistence(timeout: 5))
+        let settingsContent = settings.scrollViews.element(boundBy: 1)
         for _ in 0..<32 {
             if settings.buttons["Publication Style & Paper"].isHittable { break }
-            settings.scrollViews.element(boundBy: 1).scroll(byDeltaX: 0, deltaY: 200)
+            settingsContent.scroll(byDeltaX: 0, deltaY: 200)
         }
         XCTAssertFalse(settings.buttons["Bold Weekly"].exists)
         settings.buttons["Publication Style & Paper"].click()
         for _ in 0..<32 {
             if settings.buttons["Bold Weekly"].isHittable { break }
-            settings.scrollViews.element(boundBy: 1).scroll(byDeltaX: 0, deltaY: -200)
+            settingsContent.scroll(byDeltaX: 0, deltaY: -200)
         }
         XCTAssertTrue(settings.buttons["Bold Weekly"].waitForExistence(timeout: 5))
         settings.buttons["Bold Weekly"].click()
         for _ in 0..<32 {
             if settings.buttons["Use this style's recommended format and paper"].isHittable { break }
-            settings.scrollViews.element(boundBy: 1).scroll(byDeltaX: 0, deltaY: -200)
+            settingsContent.scroll(byDeltaX: 0, deltaY: -200)
         }
         settings.buttons["Use this style's recommended format and paper"].click()
         XCTAssertTrue(paper.descendants(matching: .any)["newspaper-cover-issue"].waitForExistence(timeout: 5))
         XCTAssertTrue(paper.descendants(matching: .any)["newspaper-table-of-contents"].exists)
         let cover = XCTAttachment(screenshot: paper.screenshot()); cover.name = "Newspaper-Cover-Contents"; cover.lifetime = .keepAlways; add(cover)
-        for _ in 0..<32 {
-            if settings.buttons["Eclectic"].isHittable { break }
-            settings.scrollViews.element(boundBy: 1).scroll(byDeltaX: 0, deltaY: -200)
+        let eclecticFormat = settings.buttons["Eclectic"]
+        for _ in 0..<64 {
+            if eclecticFormat.exists {
+                let formatFrame = eclecticFormat.frame
+                let viewport = settingsContent.frame
+                if eclecticFormat.isHittable,
+                   formatFrame.midY > viewport.minY + 24,
+                   formatFrame.midY < viewport.maxY - 24 {
+                    break
+                }
+            }
+            settingsContent.scroll(byDeltaX: 0, deltaY: -100)
         }
-        settings.buttons["Eclectic"].click()
+        XCTAssertTrue(eclecticFormat.exists)
+        XCTAssertTrue(eclecticFormat.isHittable)
+        XCTAssertGreaterThan(eclecticFormat.frame.midY, settingsContent.frame.minY + 24)
+        XCTAssertLessThan(eclecticFormat.frame.midY, settingsContent.frame.maxY - 24)
+        eclecticFormat.click()
         XCTAssertTrue(paper.descendants(matching: .any)["newspaper-newsstand"].waitForExistence(timeout: 5))
         let eclectic = XCTAttachment(screenshot: paper.screenshot()); eclectic.name = "Newspaper-Eclectic"; eclectic.lifetime = .keepAlways; add(eclectic)
         settings.buttons["Story Feed"].click()
@@ -425,7 +444,11 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         app.sheets.buttons["Save"].click()
         let research = app.windows["Research"]
         XCTAssertTrue(research.waitForExistence(timeout: 5))
-        app.typeKey(.escape, modifierFlags: [])
+        let researchOmnibar = research.textFields["Search or enter address"]
+        XCTAssertTrue(researchOmnibar.waitForExistence(timeout: 5))
+        researchOmnibar.click()
+        researchOmnibar.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(researchOmnibar.waitForNonExistence(timeout: 5))
         let sidebar = research.buttons["Visual Tabs"]
         XCTAssertTrue(sidebar.waitForExistence(timeout: 5))
         XCTAssertTrue(research.buttons["New Document"].exists)
@@ -710,8 +733,12 @@ final class Straight_Up_BrowserUITests: XCTestCase {
     func testCompactSidebarKeepsActionsAccessibleWithoutOverlapping() {
         let app = browserForUITesting(tabBarWidth: 80)
         launchBrowserForUITesting(app)
-        app.typeKey(.escape, modifierFlags: [])
-        let more = app.menuButtons["More Tab Actions"]
+        let startupOmnibar = app.textFields["Search or enter address"]
+        XCTAssertTrue(startupOmnibar.waitForExistence(timeout: 5))
+        startupOmnibar.click()
+        startupOmnibar.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(startupOmnibar.waitForNonExistence(timeout: 5))
+        let more = app.menuButtons["more-tab-actions"]
         XCTAssertTrue(more.waitForExistence(timeout: 5))
         let newTab = app.buttons["New Tab"]
         XCTAssertLessThanOrEqual(newTab.frame.maxX, more.frame.minX)

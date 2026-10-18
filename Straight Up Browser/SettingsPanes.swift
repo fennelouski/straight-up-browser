@@ -17,6 +17,7 @@ import WebKit
 
 struct GeneralSettingsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.openWindow) private var openWindow
     @Query private var tabs: [Tab]
 
     @AppStorage(NewCommandDestination.key) private var newCommandDestination = NewCommandDestination.window.rawValue
@@ -112,7 +113,7 @@ struct GeneralSettingsView: View {
 
             CollapsibleSection(searchID: "general.new-tab-links") {
                 Toggle("Show a mitosis animation in the sidebar", isOn: $automaticLinkMitosis)
-                Toggle("Open the new tab beside its source", isOn: $automaticLinkSplit)
+                Toggle("Open the new tab beside its source", isOn: SettingsTrackedBinding.binding($automaticLinkSplit, id: .automaticLinkSplit))
             } header: {
                 SettingsLabel("Links That Open New Tabs", systemImage: "arrow.up.right.square", tint: SettingsTint.general)
             } footer: {
@@ -257,11 +258,12 @@ struct GeneralSettingsView: View {
                     value: $defaultBrowserPrompt
                 ) { DefaultBrowserPromptDemo(enabled: $0) }
 
-                Picker("Global omnibar hotkey", selection: $globalOmnibarHotkey) {
+                Picker("Global omnibar hotkey", selection: Binding(get: { globalOmnibarHotkey }, set: { _ = GlobalOmnibarHotkey.select($0) })) {
                     Text("⌥ Space").tag("optSpace")
                     Text("⌃⌥ Space").tag("ctrlOptSpace")
                     Text("Off").tag("off")
                 }
+                GlobalOmnibarStatusView()
                 SettingCaptionRow(
                     caption: "Opens the omnibar from any app, even when Browser isn't focused.",
                     title: "Global Omnibar Hotkey",
@@ -293,9 +295,24 @@ struct GeneralSettingsView: View {
             } header: {
                 SettingsLabel("Quit Safety", systemImage: "power", tint: SettingsTint.general)
             }
+
+            CollapsibleSection(searchID: "general.onboarding") {
+                Button("Restart Onboarding") { restartOnboarding() }
+                Text("Start the Getting Started Guide from the beginning. This only resets guide progress; your browser and accessibility preferences stay as they are.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                SettingsLabel("Getting Started", systemImage: "sparkles", tint: SettingsTint.general)
+            }
         }
         .formStyle(.grouped)
         .task { iCloudAvailable = await TabSync.iCloudAvailable() }
+    }
+
+    private func restartOnboarding() {
+        let windows = BrowserWindows.shared
+        let id = windows.activeID ?? windows.primaryID
+        if !windows.hasWindows { openWindow(id: "browser", value: id) }
+        BrowserOnboarding.shared.restart(in: id)
     }
 }
 
@@ -430,15 +447,7 @@ struct ShortcutsSettingsView: View {
                 .delayedHelp(String(localized: "Reset to default"))
             }
             Spacer(minLength: 12)
-            if conflicting {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                    .delayedHelp(String(localized: "This shortcut is used by more than one command"))
-            } else if let systemName = store.systemConflict(store.shortcut(for: command)) {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundStyle(.yellow)
-                    .delayedHelp(String(localized: "May conflict with the macOS \(systemName) shortcut"))
-            }
+            ShortcutIssueButton(command: command)
             ShortcutRecorder(command: command)
         }
     }
@@ -1341,8 +1350,8 @@ struct AppearanceSettingsView: View {
     @AppStorage(OmnibarMotionPreferences.durationKey)
     private var omnibarAnimationDuration = OmnibarMotionPreferences.defaultDuration
     @AppStorage(OmnibarMotionPreferences.springKey) private var omnibarAnimationSpring = true
-    // Same "theme" defaults key SettingsManager reads — one store, no desync.
-    @AppStorage("theme") private var theme = "System"
+    // One durable observable authority, shared by every theme surface.
+    @BrowserThemeStorage private var theme
     // Matches the app logo's blue by default. Stored as hex because Color itself
     // is not a stable UserDefaults value across all supported OS releases.
     @AppStorage("aiSearchEffectColorHex") private var aiSearchEffectColorHex = "#007AFF"
@@ -1455,14 +1464,14 @@ struct AppearanceSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Show tab thumbnails while switching with ⌃Tab", isOn: $visualTabSwitcher)
                 #if os(macOS)
-                Toggle("Peek at a tab by holding Control and hovering it", isOn: $tabPeekEnabled)
+                Toggle("Live-preview a tab by holding Control and hovering it", isOn: $tabPeekEnabled)
                 Picker("Show the peek", selection: $tabPeekPlacementRaw) {
                     ForEach(TabPeekPlacement.allCases) { placement in
                         Text(placement.label).tag(placement.rawValue)
                     }
                 }
                 .disabled(!tabPeekEnabled)
-                Text("Checks in on a background tab without switching to it. Top middle of the screen puts the page right under the webcam, so glancing at it still looks like eye contact on a call.")
+                Text("Checks in on a background tab without switching to it. Each fresh image updates the peek first, then its sidebar preview. Top middle of the screen puts the page right under the webcam, so glancing at it still looks like eye contact on a call.")
                     .font(.caption).foregroundStyle(.secondary)
                 #endif
                 Toggle("Show the new tab button above the sidebar", isOn: $showNewTabButton)
@@ -1515,15 +1524,20 @@ struct AppearanceSettingsView: View {
             }
 
             CollapsibleSection(searchID: "appearance.theme") {
-                Picker("Theme", selection: $theme) {
+                Picker("Theme", selection: SettingsTrackedBinding.binding($theme, id: .theme)) {
                     ForEach(themes, id: \.self) { Text($0) }
                 }
                 .pickerStyle(.radioGroup)
+                if let message = BrowserThemeStore.shared.statusMessage {
+                    Text(message).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                    if BrowserThemeStore.shared.canRetryLoading { Button("Retry loading theme") { BrowserThemeStore.shared.retryLoading() } }
+                }
                 SettingCaptionRow(
                     caption: "Light, Dark, or follow your Mac.",
                     title: "Theme",
                     explanation: "Sets the browser's own chrome — toolbar, tabs, menus. System follows your Mac's appearance and switches with it at sunset if you have that on. (Pages render in whatever appearance the site itself chooses.)",
-                    value: $theme
+                    value: SettingsTrackedBinding.binding($theme, id: .theme),
+                    settingID: .theme
                 ) { ThemeDemo(theme: $0) }
             } header: {
                 SettingsLabel("Theme", systemImage: "paintbrush", tint: SettingsTint.appearance)
@@ -1564,11 +1578,11 @@ struct AppearanceSettingsView: View {
             }
 
             CollapsibleSection(searchID: "appearance.page-fade") {
-                Toggle("Fade pages in once they've drawn", isOn: $fadeInPages)
+                Toggle("Fade pages in once they've drawn", isOn: SettingsTrackedBinding.binding($fadeInPages, id: .fadeInPages))
                 if fadeInPages {
                     LabeledContent("Fade length") {
                         HStack {
-                            Slider(value: $fadeInDuration, in: 100...1000, step: 50).frame(width: 180)
+                            Slider(value: SettingsTrackedBinding.binding($fadeInDuration, id: .fadeDuration), in: 100...1000, step: 50).frame(width: 180)
                             Text("\(Int(fadeInDuration)) ms").monospacedDigit().frame(width: 60, alignment: .trailing)
                         }
                     }
@@ -1577,7 +1591,8 @@ struct AppearanceSettingsView: View {
                     caption: "No white flash between tabs — the page appears only once it has pixels.",
                     title: "Fade Pages In",
                     explanation: "A loading page has nothing to draw yet, so browsers flash their background — usually white — until the first frame arrives. With this on, Browser keeps the page hidden through that gap and fades it in the moment the page actually paints. Pages that can't report a paint (PDFs, downloads, error pages) appear as soon as they finish loading.",
-                    value: $fadeInDuration
+                    value: SettingsTrackedBinding.binding($fadeInDuration, id: .fadeDuration),
+                    settingID: .fadeDuration
                 ) { FadeInDemo(duration: $0) }
             } header: {
                 SettingsLabel("Page Fade", systemImage: "circle.lefthalf.filled", tint: SettingsTint.appearance)

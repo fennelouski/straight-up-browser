@@ -39,7 +39,7 @@ struct WindowEdgeProgress: View {
 }
 
 nonisolated struct WindowEdgeProgressShape: Shape {
-    enum Edge { case top, bottom, left, right }
+    enum Edge: Equatable { case top, bottom, left, right }
 
     var edge: Edge
     var cornerRadius: CGFloat
@@ -47,7 +47,7 @@ nonisolated struct WindowEdgeProgressShape: Shape {
     var startShared: Bool
     var endShared: Bool
 
-    func path(in rect: CGRect) -> Path {
+    nonisolated func path(in rect: CGRect) -> Path {
         let inset = lineWidth / 2
         guard rect.width > lineWidth, rect.height > lineWidth else { return Path() }
         let bounds = rect.insetBy(dx: inset, dy: inset)
@@ -69,7 +69,7 @@ nonisolated struct WindowEdgeProgressShape: Shape {
         return path.applying(transform)
     }
 
-    private func topPath(length: CGFloat, radius: CGFloat) -> Path {
+    nonisolated private func topPath(length: CGFloat, radius: CGFloat) -> Path {
         guard radius > 0 else {
             var path = Path()
             path.move(to: .zero)

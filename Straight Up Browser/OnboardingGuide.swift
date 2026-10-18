@@ -231,6 +231,7 @@ private struct OnboardingLesson: View {
     @AppStorage("showTraditionalTopTabs") private var topTabs = false
     @AppStorage("topTabsAutoHide") private var topAutoHide = true
     @AppStorage("tabBarWidth") private var sidebarWidth = 200.0
+    @AppStorage(TabPeekPlacement.enabledKey) private var tabPeekEnabled = true
     @AppStorage("pageWhitePoint") private var whitePoint = 100.0
     @AppStorage("downloadsFolder") private var downloadFolder = ""
     @AppStorage(SettingsManager.aiFeaturesKey) private var ai = true
@@ -245,6 +246,7 @@ private struct OnboardingLesson: View {
             case .interests: interests
             case .navigation: navigation
             case .appearance: appearance
+            case .livePreviews: livePreviews
             case .windows: windows
             case .memory: memoryChoice
             case .workspaces: workspaceLesson
@@ -276,6 +278,7 @@ private struct OnboardingLesson: View {
             }
             Text("Find commands any time in Help → Keyboard Shortcuts or Settings → Shortcuts. The keys below follow your custom bindings.")
                 .font(.caption).foregroundStyle(.secondary)
+            lesson("Peek without switching", "Hover a tab preview card and hold Control to see its live page without leaving what you’re doing.")
             memoryChoice
             Button("Make Browser my default") { makeDefault() }
             if let defaultResult { Text(defaultResult).foregroundStyle(.secondary) }
@@ -325,6 +328,16 @@ private struct OnboardingLesson: View {
                     .background(Color(white: min(1, max(0.25, whitePoint / 100))), in: RoundedRectangle(cornerRadius: 10))
             }
             settingsButton("Theme, brightness schedule, and appearance", .appearance, "appearance.white-point")
+        }
+    }
+    private var livePreviews: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Need to check a tab without losing your place? Hover its preview card and hold Control. Browser opens a live peek without switching tabs.")
+            Toggle("Enable live tab previews", isOn: $tabPeekEnabled)
+            Text("Keep holding Control to refresh the peek once a second. Every new image updates the peek first, then that tab’s sidebar preview. Release Control or move away to close it.")
+                .font(.caption).foregroundStyle(.secondary)
+            Button("Try it with a tab") { guide.minimized = true }
+            settingsButton("Choose where live previews appear", .appearance, "appearance.tabs")
         }
     }
     private var memoryChoice: some View {

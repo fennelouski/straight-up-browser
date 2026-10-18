@@ -1,0 +1,108 @@
+{
+  "xcodeSchedulerRequestedJobs": 2,
+  "swiftDriverRequestedJobs": 2,
+  "observations": [
+    {
+      "activityLog": "/tmp/browser-v2-20261018-implementation-derived/Logs/Build/C0F0F196-4465-426E-816E-0DF714331B12.xcactivitylog",
+      "swiftcJobFlagsInOrder": [
+        [
+          2
+        ],
+        [
+          2
+        ],
+        [
+          2
+        ]
+      ]
+    },
+    {
+      "activityLog": "/tmp/browser-v2-20261018-implementation-derived/Logs/Build/73738CBD-7488-4AE7-8AE6-83B1F6687F49.xcactivitylog",
+      "swiftcJobFlagsInOrder": [
+        [
+          2,
+          20
+        ],
+        [
+          2,
+          20
+        ],
+        [
+          2,
+          20
+        ]
+      ]
+    },
+    {
+      "activityLog": "/tmp/browser-v2-20261018-implementation-derived/Logs/Build/3443DB1D-AEFC-44C1-B197-49F12CFCE4DF.xcactivitylog",
+      "swiftcJobFlagsInOrder": [
+        [
+          2,
+          20
+        ],
+        [
+          2,
+          20
+        ],
+        [
+          2,
+          20
+        ],
+        [
+          2,
+          20
+        ],
+        [
+          2,
+          20
+        ],
+        [
+          2,
+          20
+        ]
+      ]
+    },
+    {
+      "activityLog": "/tmp/browser-v2-20261018-ios-derived/Logs/Build/4E3EE4EA-AFAA-4324-BB60-2430114D9440.xcactivitylog",
+      "swiftcJobFlagsInOrder": [
+        [
+          2
+        ],
+        [
+          2
+        ],
+        [
+          2
+        ],
+        [
+          2
+        ],
+        [
+          2
+        ],
+        [
+          2
+        ],
+        [
+          2
+        ],
+        [
+          2
+        ],
+        [
+          2
+        ],
+        [
+          2
+        ],
+        [
+          2
+        ],
+        [
+          2
+        ]
+      ]
+    }
+  ],
+  "conclusion": "All four commands used Xcode -jobs 2. Some Debug swiftc commands append -j20 after the requested -j2; no separate hard two-frontend process cap is claimed. Builds have joined. Standalone harnesses use SwiftPM --jobs 2."
+}

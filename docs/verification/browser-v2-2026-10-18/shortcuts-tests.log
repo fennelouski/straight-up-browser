@@ -1,0 +1,74 @@
+warning: /Users/nathanfennel/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/nathanfennel/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/nathanfennel/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'browser-v2-shortcuts.nrwxjd': failed storing manifest for 'browser-v2-shortcuts.nrwxjd' in cache: attempt to write a readonly database
+Building for debugging...
+[Planning deferred tasks]
+[27 / 50]
+[28 / 51] ShortcutPolicies
+[32 / 122]
+[38 / 122]
+[41 / 122]
+[45 / 122]
+[50 / 122]
+[51 / 122]
+[52 / 122]
+[54 / 122]
+[58 / 122]
+[59 / 122]
+[61 / 122]
+[64 / 122]
+[67 / 122]
+[69 / 122]
+[72 / 122]
+[74 / 122]
+[75 / 122]
+[80 / 122]
+[85 / 122]
+[88 / 122]
+[89 / 122]
+[93 / 122]
+[97 / 122] ShortcutPolicies
+[99 / 122] ShortcutPolicies
+[105 / 122] ShortcutPolicies
+[112 / 123] ShortcutPoliciesTests-product
+[113 / 131]
+[116 / 131]
+[119 / 131] ShortcutPoliciesTests-product
+[125 / 131] ShortcutPoliciesTests-product
+[127 / 131] ShortcutPoliciesTests-product
+Build complete! (11.95 sec)
+Test Suite 'All tests' started at 2026-10-18 10:57:22.866.
+Test Suite 'All tests' passed at 2026-10-18 10:57:22.867.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+􀟈  Test run started.
+􀄵  Testing Library Version: 2084
+􀄵  Target Platform: arm64e-apple-macos14.0
+􀟈  Suite ShortcutDiagnosticsTests started.
+􀟈  Suite GlobalHotkeyRegistrationTests started.
+􀟈  Test comparisonIncludesShiftedPunctuationAndModifiers() started.
+􀟈  Test repairedCollisionPreservesPeerAndRejectsUnsafeUndo() started.
+􀟈  Test unshiftedPunctuationDoesNotAcquireAUSShiftModifier() started.
+􀟈  Test previewCannotOverwriteAnAwayAndBackEdit() started.
+􀟈  Test undoRestoresASafeBindingButPreservesLaterEdits() started.
+􀟈  Test undoCannotRestoreAnAliasEnabledAfterTheRepair() started.
+􀟈  Test failedReleaseRollsBackCandidateAndRejectsUnknownPreset() started.
+􀟈  Test failedRollbackRetainsExtraHandleUntilCleanupSucceeds() started.
+􀟈  Test fixedBrowserAliasesAreDiagnosedWithoutAnOSScan() started.
+􀟈  Test failedGlobalReplacementRetainsOldHandleAndRevision() started.
+2026-10-18 10:57:23.011 swiftpm-testing-helper[9532:1390549558] Connection Invalid error for service com.apple.hiservices-xpcservice.
+2026-10-18 10:57:23.011 swiftpm-testing-helper[9532:1390549487] Error received in message reply handler: Connection invalid
+􁁛  Test unshiftedPunctuationDoesNotAcquireAUSShiftModifier() passed after 0.100 seconds.
+􁁛  Test previewCannotOverwriteAnAwayAndBackEdit() passed after 0.100 seconds.
+􁁛  Test repairedCollisionPreservesPeerAndRejectsUnsafeUndo() passed after 0.100 seconds.
+􁁛  Test comparisonIncludesShiftedPunctuationAndModifiers() passed after 0.103 seconds.
+􁁛  Test failedRollbackRetainsExtraHandleUntilCleanupSucceeds() passed after 0.102 seconds.
+􁁛  Test fixedBrowserAliasesAreDiagnosedWithoutAnOSScan() passed after 0.112 seconds.
+􁁛  Test failedReleaseRollsBackCandidateAndRejectsUnknownPreset() passed after 0.112 seconds.
+􁁛  Test undoRestoresASafeBindingButPreservesLaterEdits() passed after 0.112 seconds.
+􁁛  Test failedGlobalReplacementRetainsOldHandleAndRevision() passed after 0.112 seconds.
+􁁛  Test undoCannotRestoreAnAliasEnabledAfterTheRepair() passed after 0.112 seconds.
+􁁛  Suite GlobalHotkeyRegistrationTests passed after 0.112 seconds.
+􁁛  Suite ShortcutDiagnosticsTests passed after 0.112 seconds.
+􁁛  Test run with 10 tests in 2 suites passed after 0.112 seconds.
+Shortcut model harness: /var/folders/_7/88k0tj090n96y9fs1rpjnchr0000gn/T//browser-v2-shortcuts.nrwxjd

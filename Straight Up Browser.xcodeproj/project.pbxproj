@@ -938,7 +938,7 @@
 				CODE_SIGN_ENTITLEMENTS = Browser.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 135;
+				CURRENT_PROJECT_VERSION = 139;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				ENABLE_APP_SANDBOX = YES;
@@ -954,7 +954,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.9.28;
+				MARKETING_VERSION = 2.9.32;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser";
 				PRODUCT_NAME = Browser;
 				REGISTER_APP_GROUPS = YES;
@@ -975,7 +975,7 @@
 				CODE_SIGN_ENTITLEMENTS = Browser.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 135;
+				CURRENT_PROJECT_VERSION = 139;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = EJLR2RPSV2;
 				ENABLE_APP_SANDBOX = YES;
@@ -991,7 +991,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.9.28;
+				MARKETING_VERSION = 2.9.32;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nathanfennel.Straight-Up-Browser";
 				PRODUCT_NAME = Browser;
 				REGISTER_APP_GROUPS = YES;

@@ -206,8 +206,15 @@ the macOS UI-test target. GitHub-hosted Actions are intentionally disabled;
 verification runs locally and `scripts/release.sh` repeats the gates before
 archiving. Set
 `RUN_UI_TESTS=1` locally on a Mac with Developer Mode/UI automation enabled to
-run the executable UI gates. Swift and Clang warnings are treated as errors,
+run the executable UI gates. They run serially and are limited to eight minutes
+by default, including runner startup; set `MACOS_UI_TEST_TIMEOUT_SECONDS` to a
+positive number to choose a different deadline. A timeout fails verification —
+it never skips the release gate. Swift and Clang warnings are treated as errors,
 and Browser.app line coverage must remain at or above 25%.
+
+macOS XCTest drives and activates Browser, so it cannot be run headlessly in
+the same desktop session. Run releases from a separate signed macOS account or
+a dedicated release host when the everyday desktop must remain uninterrupted.
 
 The mobile App Store gate is separate and exercises the universal app on both
 form factors:

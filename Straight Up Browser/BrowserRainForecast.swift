@@ -119,20 +119,36 @@ struct WeatherRegionalFeedSettings: View {
     @ObservedObject private var regional = WeatherRegionalFeedStore.shared
     @State private var importing = false
     @State private var status = ""
+    @State private var showingHelp = false
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Regional rain").font(.headline)
-            Text("No authenticated regional feed is configured. A validated imported regional tile can be sampled locally. Otherwise Browser shows a labelled hourly forecast.")
-                .font(.caption).foregroundStyle(.secondary)
-            Button("Import normalized KNMI regional tile…") { importing = true }
-            if regional.grid != nil { Button("Remove imported tile", role: .destructive) { regional.clear() } }
-            if !status.isEmpty { Text(status).font(.caption) }
+            HStack {
+                Label(regional.grid == nil ? "Hourly forecast" : "Local rain tile", systemImage: "cloud.rain")
+                Spacer()
+                Button { showingHelp = true } label: { Image(systemName: "questionmark.circle") }
+                    .accessibilityLabel("Regional rain help")
+                    .popover(isPresented: $showingHelp) {
+                        Text("Weather works automatically with the selected provider's hourly forecast. A live regional rain feed is not connected. If you already have a normalized KNMI tile, you can import it for temporary local sampling; forecast uncertainty applies.")
+                            .font(.callout).padding(16).frame(width: 280)
+                    }
+                Menu {
+                    Button("Import rain tile…", systemImage: "square.and.arrow.down") { importing = true }
+                    if regional.grid != nil {
+                        Button("Remove tile", systemImage: "trash", role: .destructive) { regional.clear() }
+                    }
+                } label: { Image(systemName: "ellipsis.circle") }
+                .accessibilityLabel("Regional rain options")
+            }
+            if !status.isEmpty { Text(status).font(.caption).lineLimit(3) }
         }.fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
             do {
                 let url = try result.get(), access = url.startAccessingSecurityScopedResource()
                 defer { if access { url.stopAccessingSecurityScopedResource() } }
-                try regional.load(Data(contentsOf: url)); status = "Tile loaded into temporary memory. Forecast uncertainty applies."
-            } catch { status = (error as? BrowserWeatherError)?.message ?? "The regional tile could not be read." }
+                try regional.load(Data(contentsOf: url)); status = "Tile loaded"
+            } catch {
+                guard (error as NSError).code != NSUserCancelledError else { return }
+                status = "Couldn't read this rain tile."
+            }
         }
     }
 }

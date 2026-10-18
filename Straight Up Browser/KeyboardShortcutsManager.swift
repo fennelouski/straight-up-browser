@@ -138,6 +138,13 @@ class KeyboardShortcutsManager {
             let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
             let store = ShortcutStore.shared
 
+            // Holding a placement key must not race through several cycle
+            // states. Match the live customized binding used by the menu.
+            if event.isARepeat,
+               [ShortcutCommand.windowSnapLeft, .windowSnapRight, .windowSnapTop, .windowSnapBottom].contains(where: {
+                   store.shortcut(for: $0).matches(event)
+               }) { return nil }
+
             // Swallow Cmd+Q and its repeats so the Quit menu item never fires.
             // Only a fresh press can start a hold, including after Escape.
             // The hold gate isn't a normal binding, so it stays a literal.

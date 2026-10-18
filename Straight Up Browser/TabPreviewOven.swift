@@ -28,7 +28,7 @@ extension WebViewManager {
     /// Already-displayed tabs are snapshotted where they are instead.
     func warmThumbnails(for targets: [(id: UUID, url: URL?)]) {
         let fresh = targets.filter { target in
-            target.id != ovenBaking && !ovenQueue.contains { $0.id == target.id }
+            shouldDeferColdLayoutStarter?(target.id) != true && target.id != ovenBaking && !ovenQueue.contains { $0.id == target.id }
         }
         guard !fresh.isEmpty else { return }
         ovenQueue.append(contentsOf: fresh)
@@ -51,15 +51,24 @@ extension WebViewManager {
     }
 
     private func bake(_ tabId: UUID, url: URL?) async {
+        guard shouldDeferColdLayoutStarter?(tabId) != true else {
+            completeLiveThumbnail(for: tabId, image: nil)
+            return
+        }
         let existing = existingWebView(for: tabId)
 
         // On screen already: nothing to borrow, just take the picture.
         if let existing, existing.window != nil, !existing.isHidden {
-            captureThumbnail(for: tabId)
+            captureThumbnail(for: tabId) { [weak self] image in
+                self?.completeLiveThumbnail(for: tabId, image: image)
+            }
             return
         }
         // Nothing to show and nowhere to get it.
-        guard existing != nil || url != nil else { return }
+        guard existing != nil || url != nil else {
+            completeLiveThumbnail(for: tabId, image: nil)
+            return
+        }
 
         let webView = existing ?? getWebView(for: tabId)
         // A web view the container is holding (a tab you visited earlier this
@@ -88,8 +97,13 @@ extension WebViewManager {
 
         // The user may have selected this tab mid-bake, which moves the web view
         // back into the container. Leave it there if so.
-        guard webView.superview === host else { return }
-        captureThumbnail(for: tabId, afterScreenUpdates: false)
+        guard webView.superview === host else {
+            completeLiveThumbnail(for: tabId, image: thumbnail(for: tabId))
+            return
+        }
+        captureThumbnail(for: tabId, afterScreenUpdates: false) { [weak self] image in
+            self?.completeLiveThumbnail(for: tabId, image: image)
+        }
         try? await Task.sleep(for: .milliseconds(300))   // let the snapshot land
         guard webView.superview === host else { return }
         webView.isHidden = true

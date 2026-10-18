@@ -440,11 +440,9 @@ enum WindowLayout {
                 dx: (target.width - min(target.width, 1200)) / 2,
                 dy: target.height * 0.1
             )
-            snapState.removeValue(forKey: id)
             window.setFrame(previous, display: true, animate: true)
         } else {
             if restoreFrames[id] == nil { restoreFrames[id] = window.frame }
-            snapState.removeValue(forKey: id)
             window.setFrame(target, display: true, animate: true)
         }
     }
@@ -474,22 +472,63 @@ enum WindowLayout {
         }
     }
 
-    private static var snapState: [ObjectIdentifier: (direction: SnapDirection, step: Int)] = [:]
-
-    static func snap(_ window: NSWindow, direction: SnapDirection) {
-        guard let visible = (window.screen ?? NSScreen.main)?.visibleFrame else { return }
-        let id = ObjectIdentifier(window)
-        // Advance to the next ratio only if the window is still exactly where
-        // the last press of this same arrow put it — moved or resized by hand
-        // since, or a different edge, restarts the cycle at half.
-        var step = 0
-        if let state = snapState[id], state.direction == direction,
-           window.frame.equalTo(snapFrame(in: visible, direction: direction, ratio: snapRatios[state.step]), tolerance: 2) {
-            step = (state.step + 1) % snapRatios.count
+    /// A truthful disabled reason is shared by menu validation and invocation.
+    static func placementUnavailableReason(for window: NSWindow) -> String? {
+        guard let id = BrowserWindows.shared.activeID, BrowserWindows.shared.window(id) === window else {
+            return String(localized: "Select a browser window before choosing a placement.")
         }
-        if restoreFrames[id] == nil { restoreFrames[id] = window.frame }
-        snapState[id] = (direction, step)
-        window.setFrame(snapFrame(in: visible, direction: direction, ratio: snapRatios[step]), display: true, animate: true)
+        if window.styleMask.contains(.fullScreen) { return String(localized: "Placements are unavailable in full screen or Split View.") }
+        if !window.styleMask.contains(.resizable) { return String(localized: "This window cannot be resized.") }
+        if window.inLiveResize { return String(localized: "Finish resizing before choosing a placement.") }
+        if window.attachedSheet != nil || NSApp.modalWindow != nil { return String(localized: "Close the dialog before choosing a placement.") }
+        if window.isMiniaturized { return String(localized: "Restore the window before choosing a placement.") }
+        return nil
+    }
+
+    @discardableResult
+    static func snap(_ window: NSWindow, direction: SnapDirection) -> Bool {
+        if let reason = placementUnavailableReason(for: window) {
+            announcePlacement(reason, in: window)
+            return false
+        }
+        let screens = NSScreen.screens
+        let fallback = WindowPlacementPolicy.fallbackScreenIndex(window: window.frame,
+                    screens: screens.map(\.frame), visibleScreens: screens.map(\.visibleFrame))
+        guard let screen = window.screen ?? fallback.map({ screens[$0] }) else {
+            announcePlacement(String(localized: "No display is available for this placement."), in: window)
+            return false
+        }
+        let contentMinimum = window.frameRect(forContentRect: CGRect(origin: .zero, size: window.contentMinSize)).size
+        let contentMaximum = window.frameRect(forContentRect: CGRect(origin: .zero, size: window.contentMaxSize)).size
+        let inset = window.frameRect(forContentRect: .zero).size
+        let constraints = WindowPlacementPolicy.Constraints(
+            minimum: CGSize(width: max(window.minSize.width, contentMinimum.width), height: max(window.minSize.height, contentMinimum.height)),
+            maximum: CGSize(width: min(window.maxSize.width, contentMaximum.width), height: min(window.maxSize.height, contentMaximum.height)),
+            aspectRatio: window.contentAspectRatio,
+            resizeIncrements: window.contentResizeIncrements,
+            contentInset: inset)
+        guard let target = WindowPlacementPolicy.nextFrame(from: window.frame, direction: direction,
+                    in: screen.visibleFrame, scale: screen.backingScaleFactor, constraints: constraints) else {
+            announcePlacement(String(localized: "These placements don't fit this window's size constraints."), in: window)
+            return false
+        }
+        if WindowPlacementPolicy.matches(window.frame, target, scale: screen.backingScaleFactor) { return true }
+        let id = ObjectIdentifier(window)
+        let previous = window.frame
+        // Immediate placement gives each discrete press one logical advance and
+        // never stacks frame animations or changes any live WebKit ownership.
+        window.setFrame(target, display: true, animate: false)
+        guard WindowPlacementPolicy.matches(window.frame, target, scale: screen.backingScaleFactor) else {
+            announcePlacement(String(localized: "The window could not reach that placement."), in: window)
+            return false
+        }
+        if restoreFrames[id] == nil { restoreFrames[id] = previous }
+        return true
+    }
+
+    private static func announcePlacement(_ message: String, in window: NSWindow) {
+        NSAccessibility.post(element: window, notification: .announcementRequested,
+            userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
 
     /// Plain windows need an explicit corner mask and a transparent background

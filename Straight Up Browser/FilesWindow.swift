@@ -144,7 +144,7 @@ struct FilesWindow: View {
     @State private var showClearConfirm = false
     // @AppStorage (not SettingsManager.shared.colorScheme) so this window re-renders
     // when Theme changes instead of waiting for an unrelated update.
-    @AppStorage("theme") private var themePreference = "System"
+    @BrowserThemeStorage private var themePreference
 
     private var colorScheme: ColorScheme? {
         switch themePreference {

@@ -111,6 +111,14 @@ struct Shortcut: Codable, Equatable, Hashable {
 
     var displayString: String { displayTokens.joined() }
 
+    /// Compare semantic modifiers and case without assuming a US input source.
+    /// Shifted punctuation is interpreted by AppKit when dispatching an event.
+    var normalizedChord: Shortcut {
+        var result = self
+        result.key = key.lowercased()
+        return result
+    }
+
     #if canImport(AppKit)
     var nsModifiers: NSEvent.ModifierFlags {
         var m: NSEvent.ModifierFlags = []
@@ -128,7 +136,9 @@ struct Shortcut: Codable, Equatable, Hashable {
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
         guard mods == nsModifiers else { return false }
         if key == "\t" { return event.keyCode == 48 }
-        return event.charactersIgnoringModifiers?.lowercased() == key.lowercased()
+        let typed = event.charactersIgnoringModifiers?.lowercased()
+        let base = event.characters(byApplyingModifiers: [])?.lowercased()
+        return typed == key.lowercased() || base == key.lowercased()
     }
 
     // Build from a captured NSEvent (press-to-record). Returns nil for a bare
@@ -296,8 +306,9 @@ extension ShortcutCommand {
     // four-modifier chord; custom bindings remain available in Settings.
     static let windowSnapLeft   = Self("windowSnapLeft", "Snap Window Left", .app, Shortcut(key: "\u{F702}", command: true, shift: true, option: true, control: true))
     static let windowSnapRight  = Self("windowSnapRight", "Snap Window Right", .app, Shortcut(key: "\u{F703}", command: true, shift: true, option: true, control: true))
-    static let windowSnapTop    = Self("windowSnapTop", "Snap Window Top", .app, Shortcut(key: "\u{F700}", command: true, option: true, control: true))
-    static let windowSnapBottom = Self("windowSnapBottom", "Snap Window Bottom", .app, Shortcut(key: "\u{F701}", command: true, option: true, control: true))
+    static let windowSnapTop    = Self("windowSnapTop", "Cycle Top and Center Placements", .app, Shortcut(key: "\u{F700}", command: true, option: true, control: true))
+    static let windowSnapBottom = Self("windowSnapBottom", "Cycle Bottom and Center Placements", .app, Shortcut(key: "\u{F701}", command: true, option: true, control: true))
+    static let arrangePanes = Self("arrangePanes", "Arrange Panes", .tabs, Shortcut(key: "l", command: true, control: true))
     #endif
     static let showDownloads = Self("showDownloads", "Show Downloads", .app, Shortcut(key: "j", command: true, shift: true))
 
@@ -315,7 +326,7 @@ extension ShortcutCommand {
 
     #if os(macOS)
     private static let platformCommands: [ShortcutCommand] =
-        [newCommand, movePaneLeft, movePaneRight, showDownloads, windowLayout, windowSnapLeft, windowSnapRight, windowSnapTop, windowSnapBottom]
+        [newCommand, movePaneLeft, movePaneRight, showDownloads, windowLayout, windowSnapLeft, windowSnapRight, windowSnapTop, windowSnapBottom, arrangePanes]
     #else
     private static let platformCommands: [ShortcutCommand] = [showDownloads]
     #endif
@@ -583,6 +594,7 @@ final class ShortcutStore {
     static let shared = ShortcutStore()
 
     private static let storeKey = "customShortcuts"
+    private let defaults: UserDefaults
     // Bumped on every mutation; the App reads it via @AppStorage to force the
     // menu .commands to rebuild (same trigger the cmdPExportsPDF toggle uses).
     static let revisionKey = "shortcutsRevision"
@@ -591,7 +603,14 @@ final class ShortcutStore {
     // Every chord currently in use, so a ⌃ twin never steals a real binding.
     private var boundShortcuts: Set<Shortcut> = []
 
-    private init() { load(); rebuildBound() }
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        load(); rebuildBound()
+    }
+
+    var revision: Int { defaults.integer(forKey: Self.revisionKey) }
+    private var commandRevisions: [String: Int] = [:]
+    func revision(for command: ShortcutCommand) -> Int { commandRevisions[command.id, default: 0] }
 
     func shortcut(for command: ShortcutCommand) -> Shortcut {
         custom[command.id] ?? command.defaultShortcut
@@ -615,12 +634,13 @@ final class ShortcutStore {
     }
 
     private func rebuildBound() {
-        boundShortcuts = Set(ShortcutCommand.availableOnCurrentPlatform.map { shortcut(for: $0) })
+        boundShortcuts = Set(ShortcutCommand.availableOnCurrentPlatform.map { shortcut(for: $0).normalizedChord })
     }
 
     func isCustomized(_ command: ShortcutCommand) -> Bool { custom[command.id] != nil }
 
     func rebind(_ command: ShortcutCommand, to shortcut: Shortcut) {
+        commandRevisions[command.id, default: 0] += 1
         if shortcut == command.defaultShortcut {
             custom.removeValue(forKey: command.id)
         } else {
@@ -631,12 +651,14 @@ final class ShortcutStore {
 
     func reset(_ command: ShortcutCommand) {
         guard custom[command.id] != nil else { return }
+        commandRevisions[command.id, default: 0] += 1
         custom.removeValue(forKey: command.id)
         persist()
     }
 
     func resetAll() {
         guard !custom.isEmpty else { return }
+        for id in custom.keys { commandRevisions[id, default: 0] += 1 }
         custom.removeAll()
         persist()
     }
@@ -645,14 +667,14 @@ final class ShortcutStore {
     func conflicts() -> [ShortcutCommand] {
         var seen: [Shortcut: [ShortcutCommand]] = [:]
         for command in ShortcutCommand.availableOnCurrentPlatform {
-            seen[shortcut(for: command), default: []].append(command)
+            seen[shortcut(for: command).normalizedChord, default: []].append(command)
         }
         return seen.values.filter { $0.count > 1 }.flatMap { $0 }
     }
 
     func commandsSharing(_ shortcut: Shortcut, excluding command: ShortcutCommand) -> [ShortcutCommand] {
         ShortcutCommand.availableOnCurrentPlatform.filter {
-            $0.id != command.id && self.shortcut(for: $0) == shortcut
+            $0.id != command.id && self.shortcut(for: $0).normalizedChord == shortcut.normalizedChord
         }
     }
 
@@ -665,17 +687,17 @@ final class ShortcutStore {
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: Self.storeKey),
+        guard let data = defaults.data(forKey: Self.storeKey),
               let decoded = try? JSONDecoder().decode([String: Shortcut].self, from: data) else { return }
         custom = decoded
     }
 
     private func persist() {
         if let data = try? JSONEncoder().encode(custom) {
-            UserDefaults.standard.set(data, forKey: Self.storeKey)
+            defaults.set(data, forKey: Self.storeKey)
         }
-        let rev = UserDefaults.standard.integer(forKey: Self.revisionKey) + 1
-        UserDefaults.standard.set(rev, forKey: Self.revisionKey)
+        let rev = defaults.integer(forKey: Self.revisionKey) + 1
+        defaults.set(rev, forKey: Self.revisionKey)
         rebuildBound()
     }
 }
@@ -980,6 +1002,7 @@ extension ShortcutStore {
         for (id, shortcut) in next where ShortcutCommand.by(id: id)?.defaultShortcut == shortcut {
             next.removeValue(forKey: id)
         }
+        for id in Set(custom.keys).union(next.keys) where custom[id] != next[id] { commandRevisions[id, default: 0] += 1 }
         custom = next
         persist()
     }
@@ -1008,7 +1031,7 @@ extension ShortcutStore {
 
     // The name of the system shortcut this chord collides with, if any.
     func systemConflict(_ shortcut: Shortcut) -> String? {
-        Self.reservedSystemChords[shortcut]
+        Self.reservedSystemChords[shortcut.normalizedChord]
     }
 }
 

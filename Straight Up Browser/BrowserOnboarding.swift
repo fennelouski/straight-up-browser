@@ -23,7 +23,7 @@ enum OnboardingTrack: String, Codable, CaseIterable, Identifiable {
 }
 
 enum OnboardingStep: String, Codable, Identifiable {
-    case essentials, interests, navigation, appearance, windows, memory
+    case essentials, interests, navigation, appearance, livePreviews, windows, memory
     case workspaces, sources, documents, splits, screenshots, downloads
     case translation, newspaper, ai, automation, finished
     var id: Self { self }
@@ -33,6 +33,7 @@ enum OnboardingStep: String, Codable, Identifiable {
         case .interests: "What do you make?"
         case .navigation: "Find your way around"
         case .appearance: "Make yourself comfortable"
+        case .livePreviews: "Keep an eye on a tab"
         case .windows: "Give your windows room"
         case .memory: "A little breathing room"
         case .workspaces: "A home for each project"
@@ -55,7 +56,7 @@ enum OnboardingStep: String, Codable, Identifiable {
         case .newspaper: .newspaper
         case .navigation: .omnibar
         case .splits, .sources, .screenshots, .translation: .page
-        case .appearance: .tabs
+        case .appearance, .livePreviews: .tabs
         default: nil
         }
     }
@@ -94,14 +95,14 @@ struct OnboardingProgress: Codable, Equatable {
         switch track {
         case .quickStart: return [.essentials]
         case .customization:
-            return [.interests, .appearance, .navigation, .splits]
+            return [.interests, .appearance, .livePreviews, .navigation, .splits]
                 + (context.largeScreen ? [.windows] : [])
                 + [.memory, .automation]
                 + (roles.isEmpty ? [] : [.screenshots]) + [.finished]
         case .deepDive:
             return [.interests, .navigation, .workspaces, .sources, .documents, .splits]
                 + (context.largeScreen ? [.windows] : [])
-                + [.appearance, .memory, .downloads, .translation, .newspaper, .ai, .automation]
+                + [.appearance, .livePreviews, .memory, .downloads, .translation, .newspaper, .ai, .automation]
                 + (roles.isEmpty ? [] : [.screenshots]) + [.finished]
         case nil: return []
         }
@@ -155,6 +156,17 @@ final class BrowserOnboarding: ObservableObject {
             progress.track = nil
             progress.step = nil
         }
+    }
+
+    /// Starts the guide over without changing any browser or accessibility preferences.
+    func restart(in id: UUID, context: OnboardingContext? = nil) {
+        if let context { self.context = context }
+        progress = .init()
+        offeredThisLaunch = true
+        windowID = id
+        invitation = true
+        minimized = false
+        save()
     }
 
     func accept() {

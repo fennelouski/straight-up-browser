@@ -227,6 +227,7 @@ struct TabRowView: View {
     // plain title + host used everywhere else.
     var cardLabels: (title: String, detail: String)? = nil
     var onHover: (() -> Void)? = nil
+    var onHoverChanged: ((Bool) -> Void)? = nil
 
     private var isSelected: Bool {
         selectedTabId == tab.id
@@ -485,7 +486,10 @@ struct TabRowView: View {
         )
         .contentShape(Rectangle()) // Make the entire area droppable
         // The tab under the pointer is the one whose preview is about to matter.
-        .onHover { if $0 { onHover?() } }
+        .onHover { hovering in
+            if hovering { onHover?() }
+            onHoverChanged?(hovering)
+        }
         .automaticLinkMitosis(cue: automaticLinkBirthCue, tabId: tab.id)
         // The full action menu lives in ContentView (it needs webViewManager,
         // tabManager, and sibling tabs) — a second .contextMenu here would

@@ -1134,6 +1134,7 @@ enum CLICapability: Equatable {
     case pageRead
     case pageScript
     case screenshot
+    case unavailable
 }
 
 struct CLIAuthorization {
@@ -1158,16 +1159,21 @@ struct CLIAuthorization {
             return .pageScript
         case "screenshot":
             return .screenshot
-        default:
+        case "open", "search", "new", "close", "back", "forward", "reload", "switch", "wait", "notify", "focus":
             return .control
+        default:
+            return .unavailable
         }
     }
 
     static func capability(forAgentTool tool: String) -> CLICapability {
         guard let descriptor = AgentToolCatalog.canonical.descriptor(named: tool) else {
-            return .control
+            return .unavailable
         }
         let capabilities = descriptor.requiredCapabilities
+        if tool.hasPrefix("browser_settings_") || !capabilities.intersection(AgentCapability.settingsCapabilities).isEmpty {
+            return .unavailable
+        }
         if capabilities.contains(.screenshot) { return .screenshot }
         if capabilities.contains(.pageScript) || capabilities.contains(.download) {
             return .pageScript
@@ -1193,6 +1199,8 @@ struct CLIAuthorization {
             return defaults.bool(forKey: Key.pageScript)
         case .screenshot:
             return defaults.bool(forKey: Key.screenshot)
+        case .unavailable:
+            return false
         }
     }
 
@@ -1203,6 +1211,7 @@ struct CLIAuthorization {
         case .pageRead: return defaults.bool(forKey: Key.pageRead)
         case .pageScript: return defaults.bool(forKey: Key.pageScript)
         case .screenshot: return defaults.bool(forKey: Key.screenshot)
+        case .unavailable: return false
         }
     }
 
@@ -1220,6 +1229,8 @@ struct CLIAuthorization {
             return "CLI JavaScript and synthetic interaction are disabled. Enable them in Settings > Security > CLI Automation."
         case .screenshot:
             return "CLI screenshots are disabled. Enable them in Settings > Security > CLI Automation."
+        case .unavailable:
+            return "Unknown command or unavailable capability. Legacy CLI automation cannot access Settings assistance."
         }
     }
 
@@ -1232,6 +1243,7 @@ struct CLIAuthorization {
         case .pageRead: return "Agent page reading is disabled in Settings > Security > Agent Automation."
         case .pageScript: return "Agent JavaScript and synthetic interaction are disabled in Settings > Security > Agent Automation."
         case .screenshot: return "Agent screenshots are disabled in Settings > Security > Agent Automation."
+        case .unavailable: return "Unknown tool or unavailable capability. Settings access requires a separately authenticated Settings connection."
         }
     }
 }

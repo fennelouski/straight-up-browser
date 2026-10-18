@@ -91,6 +91,7 @@ private struct FloatingFaviconItem<ContextMenu: View>: View {
     let dropTargetTabId: UUID?
     let automaticLinkBirthCue: AutomaticLinkBirthCue?
     var onHover: (() -> Void)? = nil
+    var onHoverChanged: ((Bool) -> Void)? = nil
     @ViewBuilder var contextMenu: () -> ContextMenu
 
     private let cell: CGFloat = 26
@@ -128,7 +129,10 @@ private struct FloatingFaviconItem<ContextMenu: View>: View {
             )
         )
         .contentShape(Rectangle())
-        .onHover { if $0 { onHover?() } }
+        .onHover { hovering in
+            if hovering { onHover?() }
+            onHoverChanged?(hovering)
+        }
         .contextMenu { contextMenu() }
         .overlay {
             if isDropTarget {
@@ -222,6 +226,7 @@ struct FloatingFaviconOverlay<ContextMenu: View>: View {
     let onDragBegan: (UUID) -> Void
     let onDropFinished: () -> Void
     var onHover: ((BrowserTab) -> Void)? = nil
+    var onHoverChanged: ((BrowserTab, Bool) -> Void)? = nil
     @ViewBuilder var contextMenu: (BrowserTab) -> ContextMenu
 
     var body: some View {
@@ -246,6 +251,7 @@ struct FloatingFaviconOverlay<ContextMenu: View>: View {
                     dropTargetTabId: dropTargetTabId,
                     automaticLinkBirthCue: tabManager?.automaticLinkBirthCue,
                     onHover: { onHover?(tab) },
+                    onHoverChanged: { onHoverChanged?(tab, $0) },
                     contextMenu: { contextMenu(tab) }
                 )
                 .id(tab.id)
@@ -346,11 +352,13 @@ private enum ContentAccessibilityFocus: Hashable {
 private enum ContentModal: Identifiable, Equatable {
     case library
     case reader(ReaderArticle)
+    case arrangePanes
 
     var id: String {
         switch self {
         case .library: "library"
         case .reader: "reader"
+        case .arrangePanes: "arrangePanes"
         }
     }
 }
@@ -725,6 +733,7 @@ struct ContentView: View {
         // visible too and must not go blank under pressure.
         let displayed = displayedTabIds
         for tab in tabs where !displayed.contains(tab.id)
+            && !tabManager.paneIsProtected(tab.id, tabs: tabs + tabManager.incognitoTabs)
             && BrowserResourcePolicy.shouldUnload(tab.memoryPolicy, url: tab.url, critical: critical) {
             webViewManager?.unloadWebView(for: tab.id)
         }
@@ -782,6 +791,23 @@ struct ContentView: View {
         tabManager.splitTabIds.isEmpty
             ? [tabManager.focusedDocumentId ?? tabManager.selectedTabId].compactMap { $0 }
             : tabManager.splitTabIds
+    }
+
+    private var paneArrangementContent: [PaneArrangementContent] {
+        var items = allTabs.map { tab in
+            let protected = tabManager.paneIsProtected(tab.id, tabs: allTabs)
+            let title = tab.sessionKind == .incognito ? "Private tab"
+                : protected ? "Protected tab"
+                : tab.title.contains("://") ? (tab.url?.host ?? "Tab")
+                : String(tab.title.prefix(80))
+            return PaneArrangementContent(reference: .tab(tab.id), title: title, isProtected: protected)
+        }
+        if let workspaceID = tabManager.activeWorkspaceId, let documentStore {
+            items += documentStore.documents(workspaceId: workspaceID).map {
+                PaneArrangementContent(reference: .document($0.id), title: $0.displayName, isProtected: false)
+            }
+        }
+        return items
     }
 
     // The tint for a tab's isolated session (nil for a normal tab): a container's
@@ -995,13 +1021,14 @@ struct ContentView: View {
                         newTabHeaderButton
                         tabBarHeaderActions
                     } label: {
-                        Image(systemName: "ellipsis")
+                        Label("More Tab Actions", systemImage: "ellipsis")
+                            .labelStyle(.iconOnly)
+                            .accessibilityIdentifier("more-tab-actions")
                             .frame(width: 20, height: 20)
                             .contentShape(Rectangle())
                     }
                     .menuStyle(.borderlessButton)
                     .delayedHelp("More Tab Actions")
-                    .accessibilityLabel("More Tab Actions")
                 }
             }
         }
@@ -1270,7 +1297,10 @@ struct ContentView: View {
                             thumbnail: webViewManager?.thumbnail(for: tab.id),
                             expandedHeight: adaptiveHeight,
                             cardLabels: adaptiveHeight != nil ? cardLabels(for: tab) : nil,
-                            onHover: { hoverPreview(tab) }
+                            onHover: { hoverPreview(tab) },
+                            onHoverChanged: { hovering in
+                                if !hovering { endHoverPreview(tab) }
+                            }
                         )
                         .contextMenu {
                             tabContextMenu(for: tab, groupTabs: groupSection.tabs, currentGroupId: groupSection.group?.id)
@@ -1334,6 +1364,9 @@ struct ContentView: View {
                         onDragBegan: beginSidebarTabDrag,
                         onDropFinished: finishSidebarTabDrag,
                         onHover: hoverPreview,
+                        onHoverChanged: { tab, hovering in
+                            if !hovering { endHoverPreview(tab) }
+                        },
                         contextMenu: { tab in
                             tabContextMenu(
                                 for: tab,
@@ -2565,7 +2598,10 @@ struct ContentView: View {
                     refreshLivePreviews: refreshVisualTabPreviews,
                     labels: cardLabels,
                     onHover: hoverPreview,
-                    keyboardEnabled: !showOmnibar
+                    keyboardEnabled: !showOmnibar,
+                    onHoverChanged: { tab, hovering in
+                        if !hovering { endHoverPreview(tab) }
+                    }
                 )
                 .transition(BrowserMotion.panel)
             }
@@ -2664,9 +2700,8 @@ struct ContentView: View {
         .browserSlideMotion(showShortcutCheatSheet)
     }
 
-    // Same "theme" key SettingsManager reads — @AppStorage (not SettingsManager.shared.colorScheme)
-    // so this view actually re-renders when Theme changes, instead of waiting for an unrelated update.
-    @AppStorage("theme") private var themePreference = "System"
+    // The shared durable theme owner invalidates every open window after a verified change.
+    @BrowserThemeStorage private var themePreference
 
     private var colorScheme: ColorScheme? {
         switch themePreference {
@@ -2894,15 +2929,11 @@ struct ContentView: View {
                 // Scoped to the ACTIVE workspace (ADR 0008: pane ids resolve
                 // against the active workspace's documents) — a document id from
                 // a suspended workspace must not resolve as a pane.
-                tabManager.isDocumentPaneId = { [weak docStore, weak tabManager = tabManager] id in
-                    guard let row = docStore?.document(id: id) else { return false }
-                    return row.workspaceId == tabManager?.activeWorkspaceId
-                }
-                // Leaving a workspace closes its document panes and edit
-                // sessions; nothing else discards them (Phase 2 known debt).
-                tabManager.workspaceSwitched = { [weak documentPaneManager = documentPaneManager] in
-                    documentPaneManager?.discardAll()
-                }
+                configureDocumentPaneHandlers(
+                    tabManager: tabManager,
+                    documentStore: docStore,
+                    documentPaneManager: documentPaneManager
+                )
                 anchorComposer = AnchorComposer(
                     ledgerStore: store, documentStore: docStore, settleCapture: settle)
                 setupPhase2Observers()
@@ -3109,6 +3140,9 @@ struct ContentView: View {
                 addWindowObserver(forName: .browserClearAllData, object: nil, queue: .main) { [self] _ in
                     clearAllData()
                 }
+                addWindowObserver(forName: .browserArrangePanes, object: nil, queue: .main) { [self] _ in
+                    contentModal = .arrangePanes
+                }
 
                 // SwiftData is the session store: tabs are already loaded via @Query.
                 // Register any restored container tabs' sessions before they activate.
@@ -3162,6 +3196,7 @@ struct ContentView: View {
                 switch modal {
                 case .library: accessibilityFocus = .library
                 case .reader: accessibilityFocus = .reader
+                case .arrangePanes: accessibilityFocus = nil
                 case nil: accessibilityFocus = .page
                 }
             }
@@ -3288,6 +3323,8 @@ struct ContentView: View {
                 librarySheet
             case .reader(let article):
                 readerSheet(article)
+            case .arrangePanes:
+                PaneArrangementPanel(tabManager: tabManager, tabs: allTabs, content: paneArrangementContent)
             }
         }
         .alert(item: $persistenceDiagnostics.latestIssue, content: persistenceAlert)
@@ -3681,6 +3718,7 @@ struct ContentView: View {
             Button(tabManager.splitTabIds.isEmpty ? "Open in Split" : "Add to Split",
                    action: { tabManager.toggleSplitMembership(tab, tabs: allTabs) })
         }
+        Button("Arrange Panes / Saved Layouts…") { contentModal = .arrangePanes }
         Divider()
 
         let newspaperSourceKey = tab.url.map {
@@ -3745,6 +3783,22 @@ struct ContentView: View {
     /// Reuses the seen-before banner rather than adding a second transient
     /// surface — ContentView's type-check budget is a real ceiling.
     // MARK: Phase 2 — documents, anchors, transcripts
+
+    private func configureDocumentPaneHandlers(
+        tabManager: TabManager,
+        documentStore: DocumentStore,
+        documentPaneManager: DocumentPaneManager
+    ) {
+        tabManager.isDocumentPaneId = { [weak documentStore, weak tabManager] id in
+            guard let row = documentStore?.document(id: id) else { return false }
+            return row.workspaceId == tabManager?.activeWorkspaceId
+        }
+        // Leaving a workspace closes its document panes and edit sessions;
+        // nothing else discards them (Phase 2 known debt).
+        tabManager.workspaceSwitched = { [weak documentPaneManager] in
+            documentPaneManager?.discardAll()
+        }
+    }
 
     private func setupPhase2Observers() {
         addWindowObserver(forName: .browserAnchorSelection, object: nil, queue: .main) { [self] _ in
@@ -4340,13 +4394,21 @@ struct ContentView: View {
     /// has never opened.
     private func hoverPreview(_ tab: BrowserTab) {
         // Control-hover peeks at the tab without switching to it (see TabPeek).
-        TabPeekController.shared.hovered(tab: tab, webViewManager: webViewManager)
+        // The controller remembers this hover even before Control is pressed and
+        // calls back only after its popup has accepted a newly captured image.
+        TabPeekController.shared.hovered(tab: tab, webViewManager: webViewManager) {
+            self.visualPreviewRefresh = UUID()
+        }
         guard visualTabLivePreviews else { return }
         if displayedTabIds.contains(tab.id) {
             refreshVisualTabPreviews()
         } else {
             webViewManager?.warmThumbnails(for: [(id: tab.id, url: tab.url)])
         }
+    }
+
+    private func endHoverPreview(_ tab: BrowserTab) {
+        TabPeekController.shared.unhovered(tabId: tab.id)
     }
 
     /// Once the tab you're actually looking at has landed, walk the rest of the
@@ -4360,6 +4422,7 @@ struct ContentView: View {
         // tab a real snapshot, the og:image is only what it shows until then.
         let cold = allTabs.filter {
             !displayed.contains($0.id) && $0.url != nil
+                && !tabManager.shouldDeferColdLayoutStarter($0.id)
                 && !warmedTabIds.contains($0.id)
                 && webViewManager?.thumbnails[$0.id] == nil
         }

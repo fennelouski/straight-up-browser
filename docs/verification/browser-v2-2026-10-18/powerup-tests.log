@@ -1,0 +1,64 @@
+warning: /Users/nathanfennel/Library/org.swift.swiftpm/configuration is not accessible or not writable, disabling user-level cache features.
+warning: /Users/nathanfennel/Library/org.swift.swiftpm/security is not accessible or not writable, disabling user-level cache features.
+warning: /Users/nathanfennel/Library/Caches/org.swift.swiftpm is not accessible or not writable, disabling user-level cache features.
+warning: 'browser-v2-powerup.gi5sqe': failed storing manifest for 'browser-v2-powerup.gi5sqe' in cache: attempt to write a readonly database
+Building for debugging...
+[Planning deferred tasks]
+[27 / 50]
+[28 / 51] Browser
+[32 / 87]
+[37 / 87]
+[40 / 87]
+[45 / 87]
+[47 / 87]
+[51 / 87]
+[53 / 87]
+[56 / 87]
+[58 / 87]
+[61 / 87]
+[62 / 87]
+[64 / 87] Browser
+[72 / 87] Browser
+[77 / 88] BrowserTests-product
+[78 / 93]
+[82 / 93] BrowserTests-product
+[87 / 93] BrowserTests-product
+[89 / 93] BrowserTests-product
+Build complete! (8.32 sec)
+Test Suite 'All tests' started at 2026-10-18 10:56:51.300.
+Test Suite 'All tests' passed at 2026-10-18 10:56:51.301.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+􀟈  Test run started.
+􀄵  Testing Library Version: 2084
+􀄵  Target Platform: arm64e-apple-macos14.0
+􀟈  Suite PowerUpTests started.
+􀟈  Test snoozeExpiryDoesNotResetLifetimeExposure() started.
+􀟈  Test samplePracticeNeedsLaterIndependentUseForMastery() started.
+􀟈  Test sampleSwapRequiresPreviewAndPreservesSlotsAndProportions() started.
+􀟈  Test everyUnsafeContextBlocksTeachingAndPauseIsIndefinite() started.
+􀟈  Test staticLibraryDoesNotOptInOrPersistSearch() started.
+􀟈  Test futureSchemaIsPreservedAndDeleteIsNarrow() started.
+􀟈  Test tipBudgetRequiresSuccessfulUsesAcrossSessionsAndNoReplacementsToday() started.
+􀟈  Test sampleSaveRestoreIsExplicitAndWidthCycleUsesFullRatios() started.
+􀟈  Test continuingUseDoesNotExtendAggregateRetention() started.
+􀟈  Test threeShortcutsInOneSessionDoNotClaimMastery() started.
+􀟈  Test persistedLearningHasOnlyFixedIDsAndBoundedCoarseValues() started.
+􀟈  Test optedOutAndPrivateActionsDonateNothing() started.
+􀟈  Test knownCanBeUndoneAndSuppressionSurvivesOptOut() started.
+􀟈  Test oldAggregatesExpireWithoutErasingPermanentPreferences() started.
+􁁛  Test samplePracticeNeedsLaterIndependentUseForMastery() passed after 0.011 seconds.
+􁁛  Test snoozeExpiryDoesNotResetLifetimeExposure() passed after 0.023 seconds.
+􁁛  Test staticLibraryDoesNotOptInOrPersistSearch() passed after 0.027 seconds.
+􁁛  Test tipBudgetRequiresSuccessfulUsesAcrossSessionsAndNoReplacementsToday() passed after 0.218 seconds.
+􁁛  Test persistedLearningHasOnlyFixedIDsAndBoundedCoarseValues() passed after 0.218 seconds.
+􁁛  Test threeShortcutsInOneSessionDoNotClaimMastery() passed after 0.218 seconds.
+􁁛  Test everyUnsafeContextBlocksTeachingAndPauseIsIndefinite() passed after 0.218 seconds.
+􁁛  Test futureSchemaIsPreservedAndDeleteIsNarrow() passed after 0.218 seconds.
+􁁛  Test sampleSaveRestoreIsExplicitAndWidthCycleUsesFullRatios() passed after 0.218 seconds.
+􁁛  Test knownCanBeUndoneAndSuppressionSurvivesOptOut() passed after 0.218 seconds.
+􁁛  Test optedOutAndPrivateActionsDonateNothing() passed after 0.218 seconds.
+􁁛  Test oldAggregatesExpireWithoutErasingPermanentPreferences() passed after 0.218 seconds.
+􁁛  Test continuingUseDoesNotExtendAggregateRetention() passed after 0.218 seconds.
+􁁛  Test sampleSwapRequiresPreviewAndPreservesSlotsAndProportions() passed after 0.218 seconds.
+􁁛  Suite PowerUpTests passed after 0.219 seconds.
+􁁛  Test run with 14 tests in 1 suite passed after 0.219 seconds.

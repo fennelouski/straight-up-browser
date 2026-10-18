@@ -1,0 +1,49 @@
+{
+  "timeUTC": "2026-10-18T09:06:06.520861+00:00",
+  "reason": "Repository verify.sh requires removing unsigned temporary shipping-ID app products to avoid LaunchServices selection conflicts.",
+  "scope": "Only these three task-owned /tmp derived-data Build/Products trees; no production installation touched.",
+  "sourceManifestSHA256": "8149d6943dd1d2d28ff4133a47ed27e0c3d850abd1439c41c5ce37ca888a81fb",
+  "historicalCleanupNote": "An earlier implementation cleanup stopped at a guarded in-tree Sparkle Updater.app symlink, then continued only after checking the partial outcome. This record is a later completed four-build cleanup; no outside target is traversed.",
+  "removed": [
+    {
+      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Release/Browser.app",
+      "unregisterExitCode": 0,
+      "removed": true
+    },
+    {
+      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Release/Sparkle.framework/Updater.app",
+      "kind": "in-tree product symlink",
+      "removed": true
+    },
+    {
+      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Release/Sparkle.framework/Versions/B/Updater.app",
+      "unregisterExitCode": 1,
+      "removed": true
+    },
+    {
+      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Debug/Browser.app",
+      "unregisterExitCode": 0,
+      "removed": true
+    },
+    {
+      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Debug/BrowserUITests-Runner.app",
+      "unregisterExitCode": 1,
+      "removed": true
+    },
+    {
+      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Debug/Sparkle.framework/Updater.app",
+      "kind": "in-tree product symlink",
+      "removed": true
+    },
+    {
+      "path": "/tmp/browser-v2-20261018-implementation-derived/Build/Products/Debug/Sparkle.framework/Versions/B/Updater.app",
+      "unregisterExitCode": 1,
+      "removed": true
+    },
+    {
+      "path": "/tmp/browser-v2-20261018-ios-derived/Build/Products/Release-iphonesimulator/Browser.app",
+      "unregisterExitCode": 1,
+      "removed": true
+    }
+  ]
+}
