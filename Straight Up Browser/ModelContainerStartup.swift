@@ -49,20 +49,21 @@ struct ModelContainerStartup {
         let schema = Schema(TabSync.cloudBackedModelTypes + TabSync.localOnlyModelTypes)
         let cloudSchema = Schema(TabSync.cloudBackedModelTypes)
         let localSchema = Schema(TabSync.localOnlyModelTypes)
-        let isRunningUnderTests = ProcessInfo.processInfo.arguments.contains("-uiTesting")
+        let isRunningUnderTests = BrowserProfile.isIsolated || ProcessInfo.processInfo.arguments.contains("-uiTesting")
             || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
             || ProcessInfo.processInfo.environment["XCInjectBundleInto"] != nil
-        let persistentConfiguration = ModelConfiguration(
+        func persistentConfiguration() -> ModelConfiguration { ModelConfiguration(
             schema: cloudSchema,
             isStoredInMemoryOnly: false,
             cloudKitDatabase: TabSync.cloudKitDatabase
-        )
-        let archiveConfiguration = ModelConfiguration(
+        ) }
+        func archiveConfiguration() -> ModelConfiguration { ModelConfiguration(
             "LocalArchives",
             schema: localSchema,
             isStoredInMemoryOnly: false,
             cloudKitDatabase: .none
         )
+        }
         let ephemeralConfiguration = ModelConfiguration(
             schema: cloudSchema,
             isStoredInMemoryOnly: true,
@@ -79,7 +80,7 @@ struct ModelContainerStartup {
         // on the user's persistent store while XCTest is exercising the shell.
         let launchConfigurations = isRunningUnderTests
             ? [ephemeralConfiguration, ephemeralArchiveConfiguration]
-            : [persistentConfiguration, archiveConfiguration]
+            : [persistentConfiguration(), archiveConfiguration()]
         func makeContainer(configurations: [ModelConfiguration]) throws -> ModelContainer {
             let container = try ModelContainer(
                 for: schema,

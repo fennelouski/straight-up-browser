@@ -1,0 +1,7 @@
+{
+  "status": "passed",
+  "appStorageDeclarations": 286,
+  "keychainCalls": 26,
+  "swiftFiles": 202,
+  "scope": "source guards only; native profile runtime acceptance remains separate"
+}

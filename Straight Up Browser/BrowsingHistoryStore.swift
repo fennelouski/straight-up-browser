@@ -33,8 +33,7 @@ final class BrowsingHistoryStore: ObservableObject {
     private let maxVisits: Int
 
     init(storeURL: URL? = nil, maxVisits: Int = 5_000) {
-        let url = storeURL ?? FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let url = (BrowserProfile.isIsolated ? nil : storeURL) ?? BrowserProfile.applicationSupportURLs[0]
             .appendingPathComponent("Straight Up Browser", isDirectory: true)
             .appendingPathComponent("browsing-history.json")
         file = JSONHistoryFile(url: url)
@@ -199,12 +198,14 @@ actor JSONHistoryFile<Value: Codable & Sendable> {
     init(url: URL) { self.url = url }
 
     func load(transform: @Sendable (Value) -> Value = { $0 }) throws -> Value? {
+        guard BrowserProfile.allowsFileAccess(url) else { throw CocoaError(.fileReadNoPermission) }
         assert(!Thread.isMainThread)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         return transform(try JSONDecoder().decode(Value.self, from: Data(contentsOf: url)))
     }
 
     func write(_ value: Value?) throws {
+        guard BrowserProfile.allowsFileAccess(url) else { throw CocoaError(.fileReadNoPermission) }
         assert(!Thread.isMainThread)
         guard let value else {
             if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }

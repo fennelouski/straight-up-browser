@@ -471,7 +471,7 @@ struct ContentView: View {
     let windowID: UUID
     @ObservedObject private var windows = BrowserWindows.shared
     private var nativeFullScreen: Bool { windows.fullScreenIDs.contains(windowID) }
-    @AppStorage(BrowserWindows.nativeFullScreenKey) private var immersiveFullScreenEnabled = false
+    @AppStorage(BrowserWindows.nativeFullScreenKey, store: BrowserProfile.defaults) private var immersiveFullScreenEnabled = false
     @State private var renameWindowPresented = false
     @State private var windowName = ""
     @State private var windowObservers: [NSObjectProtocol] = []
@@ -521,19 +521,19 @@ struct ContentView: View {
     @State private var passwordPickerSubmits = false
     @State private var showAgentPanel = false
     @State private var showScratchPad = false
-    @AppStorage(AgentSettingsRuntimeKey.adjustsPageLayout) private var agentAdjustsPageLayout = false
-    @AppStorage(AgentSettingsRuntimeKey.loadsMorePageContent) private var agentLoadsMorePageContent = true
-    @AppStorage(AgentSettingsRuntimeKey.panelSide) private var agentPanelSideRaw = BrowserChromeSide.left.rawValue
+    @AppStorage(AgentSettingsRuntimeKey.adjustsPageLayout, store: BrowserProfile.defaults) private var agentAdjustsPageLayout = false
+    @AppStorage(AgentSettingsRuntimeKey.loadsMorePageContent, store: BrowserProfile.defaults) private var agentLoadsMorePageContent = true
+    @AppStorage(AgentSettingsRuntimeKey.panelSide, store: BrowserProfile.defaults) private var agentPanelSideRaw = BrowserChromeSide.left.rawValue
     @State private var agentLassoSelection: AgentLassoSelection?
     @State private var showDeveloperTools = false
     @StateObject private var developerTools = DeveloperToolsModel()
-    @AppStorage(DeveloperToolsPlacement.defaultsKey) private var developerToolsPlacementRaw = DeveloperToolsPlacement.bottom.rawValue
+    @AppStorage(DeveloperToolsPlacement.defaultsKey, store: BrowserProfile.defaults) private var developerToolsPlacementRaw = DeveloperToolsPlacement.bottom.rawValue
     @State private var showFindBar = false
     @State private var findText = ""
     @State private var findMatchIndex = 0 // 1-based position of the current match, 0 before the first hit
     @State private var findMatchCount = 0
-    @AppStorage(FindBar.positionKey) private var findBarPosition = FindBar.defaultPosition
-    @AppStorage(FindBar.intensityKey) private var findFlashIntensity = FindBar.defaultIntensity
+    @AppStorage(FindBar.positionKey, store: BrowserProfile.defaults) private var findBarPosition = FindBar.defaultPosition
+    @AppStorage(FindBar.intensityKey, store: BrowserProfile.defaults) private var findFlashIntensity = FindBar.defaultIntensity
     @State private var canGoBack = false
     @State private var canGoForward = false
     @State private var currentTitle = ""
@@ -569,20 +569,20 @@ struct ContentView: View {
     @State private var seenBeforeNote: String?
     @State private var seenBeforeToken = UUID()
     @State private var workspaceName = ""
-    @AppStorage("tabBarWidth") private var tabBarWidth: Double = 200.0
-    @AppStorage(BrowserChromePlacementSettings.Key.tabSidebarSide) private var tabSidebarSideRaw = BrowserChromeSide.left.rawValue
+    @AppStorage("tabBarWidth", store: BrowserProfile.defaults) private var tabBarWidth: Double = 200.0
+    @AppStorage(BrowserChromePlacementSettings.Key.tabSidebarSide, store: BrowserProfile.defaults) private var tabSidebarSideRaw = BrowserChromeSide.left.rawValue
     @State private var tabBarResizeStartWidth: Double?
-    @AppStorage("showTraditionalTopTabs") private var showTraditionalTopTabs = false
-    @AppStorage("topTabsAutoHide") private var topTabsAutoHide = true
-    @AppStorage("adaptiveLargeSidebarTabs") private var adaptiveLargeSidebarTabs = true
-    @AppStorage(VisualTabPreferences.aspectRatioKey)
+    @AppStorage("showTraditionalTopTabs", store: BrowserProfile.defaults) private var showTraditionalTopTabs = false
+    @AppStorage("topTabsAutoHide", store: BrowserProfile.defaults) private var topTabsAutoHide = true
+    @AppStorage("adaptiveLargeSidebarTabs", store: BrowserProfile.defaults) private var adaptiveLargeSidebarTabs = true
+    @AppStorage(VisualTabPreferences.aspectRatioKey, store: BrowserProfile.defaults)
     private var visualTabAspectRatio = VisualTabPreferences.defaultAspectRatio
-    @AppStorage(VisualTabPreferences.livePreviewsKey)
+    @AppStorage(VisualTabPreferences.livePreviewsKey, store: BrowserProfile.defaults)
     private var visualTabLivePreviews = true
-    @AppStorage(VisualTabPreferences.switcherKey)
+    @AppStorage(VisualTabPreferences.switcherKey, store: BrowserProfile.defaults)
     private var visualTabSwitcher = true
-    @AppStorage(SettingsManager.aiFeaturesKey) private var aiFeaturesEnabled = true
-    @AppStorage(NewTabButtonVisibility.visibleKey) private var showNewTabButton = true
+    @AppStorage(SettingsManager.aiFeaturesKey, store: BrowserProfile.defaults) private var aiFeaturesEnabled = true
+    @AppStorage(NewTabButtonVisibility.visibleKey, store: BrowserProfile.defaults) private var showNewTabButton = true
     @State private var topTabsRevealed = false
     @State private var visualPreviewRefresh = UUID()
     @State private var showTabSwitcher = false
@@ -609,17 +609,17 @@ struct ContentView: View {
     @State private var hasRenderedContent = false
 
     // Which window edges show the load progress bar (any combination)
-    @AppStorage("progressBarTop") private var progressBarTop = true
-    @AppStorage("progressBarBottom") private var progressBarBottom = false
-    @AppStorage("progressBarLeft") private var progressBarLeft = false
-    @AppStorage("progressBarRight") private var progressBarRight = false
+    @AppStorage("progressBarTop", store: BrowserProfile.defaults) private var progressBarTop = true
+    @AppStorage("progressBarBottom", store: BrowserProfile.defaults) private var progressBarBottom = false
+    @AppStorage("progressBarLeft", store: BrowserProfile.defaults) private var progressBarLeft = false
+    @AppStorage("progressBarRight", store: BrowserProfile.defaults) private var progressBarRight = false
     // Show progress as a ring around the favicon in the tab bar
-    @AppStorage("progressFaviconRing") private var progressFaviconRing = false
+    @AppStorage("progressFaviconRing", store: BrowserProfile.defaults) private var progressFaviconRing = false
 
     // Memory saving: release background tabs from RAM under memory pressure
-    @AppStorage("memorySaverEnabled") private var memorySaverEnabled = false
-    @AppStorage("javaScriptEnabled") private var javaScriptEnabled = true
-    @AppStorage("adBlockEnabled") private var adBlockEnabled = false
+    @AppStorage("memorySaverEnabled", store: BrowserProfile.defaults) private var memorySaverEnabled = false
+    @AppStorage("javaScriptEnabled", store: BrowserProfile.defaults) private var javaScriptEnabled = true
+    @AppStorage("adBlockEnabled", store: BrowserProfile.defaults) private var adBlockEnabled = false
 
     // ⇧⌘H / ⇧⌘K shortcut cheat sheet
     @State private var showShortcutCheatSheet = false
@@ -742,9 +742,9 @@ struct ContentView: View {
     // At most once a week, when memory is tight and the feature is off, offer to enable it.
     private func maybeNudgeMemorySaver() {
         let key = "memorySaverPromptLastShown"
-        let last = UserDefaults.standard.object(forKey: key) as? Date ?? .distantPast
+        let last = BrowserProfile.defaults.object(forKey: key) as? Date ?? .distantPast
         guard Date().timeIntervalSince(last) > 7 * 24 * 3600 else { return }
-        UserDefaults.standard.set(Date(), forKey: key)
+        BrowserProfile.defaults.set(Date(), forKey: key)
 
         let alert = NSAlert()
         alert.messageText = String(localized: "Running low on memory?")
@@ -753,7 +753,7 @@ struct ContentView: View {
         alert.addButton(withTitle: String(localized: "Not Now"))
         let handle: (NSApplication.ModalResponse) -> Void = { response in
             if response == .alertFirstButtonReturn {
-                UserDefaults.standard.set(true, forKey: "memorySaverEnabled")
+                BrowserProfile.defaults.set(true, forKey: "memorySaverEnabled")
             }
         }
         if let window = webViewManager?.activeWebView?.window {
@@ -1509,7 +1509,7 @@ struct ContentView: View {
     // Fraction of the window height above the omnibar. Fixed (not centered)
     // so the bar never moves while suggestions appear below it.
     private var omnibarTopFraction: CGFloat {
-        switch UserDefaults.standard.string(forKey: "omnibarPosition") {
+        switch BrowserProfile.defaults.string(forKey: "omnibarPosition") {
         case "Top": return 0.08
         case "Center": return 0.45
         default: return 0.25 // "Upper": about 3/4 of the way up the window
@@ -2745,7 +2745,7 @@ struct ContentView: View {
                 @unknown default:
                     break
                 }
-                UserDefaults.standard.set(tabBarWidth, forKey: "tabBarWidth")
+                BrowserProfile.defaults.set(tabBarWidth, forKey: "tabBarWidth")
             }
             // Global coordinate space, not the grip's own: the grip rides the
             // edge it's resizing, so a local translation is measured against a
@@ -3076,10 +3076,10 @@ struct ContentView: View {
                     queue: .main
                 ) { [self] _ in
                     if tabBarWidth > 0 {
-                        UserDefaults.standard.set(tabBarWidth, forKey: "lastTabBarWidth")
+                        BrowserProfile.defaults.set(tabBarWidth, forKey: "lastTabBarWidth")
                         tabBarWidth = 0
                     } else {
-                        let last = UserDefaults.standard.double(forKey: "lastTabBarWidth")
+                        let last = BrowserProfile.defaults.double(forKey: "lastTabBarWidth")
                         tabBarWidth = last > 0 ? last : 200
                     }
                 }
@@ -3155,7 +3155,7 @@ struct ContentView: View {
                     showOmnibar = true
                 } else {
                     tabManager.selectedTabId =
-                        visiblePersistedTabs.first(where: { $0.id.uuidString == UserDefaults.standard.string(forKey: "selectedTabId." + windowID.uuidString) })?.id
+                        visiblePersistedTabs.first(where: { $0.id.uuidString == BrowserProfile.defaults.string(forKey: "selectedTabId." + windowID.uuidString) })?.id
                         ?? visiblePersistedTabs.first(where: { $0.isActive })?.id
                         ?? visiblePersistedTabs.first?.id
                     // Restore last session's split (drops ids that no longer resolve)
@@ -3506,7 +3506,7 @@ struct ContentView: View {
             forceNewTabAction: { self.forceCreateNewTab() },
             setTabBarWidth: { width in
                 self.tabBarWidth = width
-                UserDefaults.standard.set(width, forKey: "tabBarWidth")
+                BrowserProfile.defaults.set(width, forKey: "tabBarWidth")
             },
             switchToTabAction: { index in self.switchToTab(at: index) },
             switchToNextTabAction: { self.switchToNextTab() },
@@ -3953,7 +3953,7 @@ struct ContentView: View {
 
     private func handleOpenAnchor(_ note: Notification) {
         guard let url = note.userInfo?["url"] as? URL else { return }
-        let behavior = UserDefaults.standard.string(forKey: "anchorLinkOpenBehavior") ?? "peek"
+        let behavior = BrowserProfile.defaults.string(forKey: "anchorLinkOpenBehavior") ?? "peek"
         if behavior == "tab" {
             // Ordinary link behavior; single-view dissolve rules apply.
             _ = tabManager.createNewTab(url: url)
@@ -4241,11 +4241,12 @@ struct ContentView: View {
 
     private func copyURL(of tab: Tab) {
         guard let url = tab.url else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        BrowserProfileSystem.pasteboard.clearContents()
+        BrowserProfileSystem.pasteboard.setString(url.absoluteString, forType: .string)
     }
 
     private func shareTab(_ tab: Tab) {
+        guard !BrowserProfile.isIsolated else { return }
         guard let url = tab.url, let window = NSApp.keyWindow, let contentView = window.contentView else { return }
         let point = contentView.convert(window.mouseLocationOutsideOfEventStream, from: nil)
         NSSharingServicePicker(items: [url]).show(relativeTo: NSRect(origin: point, size: .zero), of: contentView, preferredEdge: .minY)

@@ -524,7 +524,7 @@ final class DeveloperToolsDetachedWindowState: ObservableObject {
 
 struct DeveloperToolsDetachedWindow: View {
     @ObservedObject private var state = DeveloperToolsDetachedWindowState.shared
-    @AppStorage(DeveloperToolsPlacement.defaultsKey) private var placementRaw = DeveloperToolsPlacement.bottom.rawValue
+    @AppStorage(DeveloperToolsPlacement.defaultsKey, store: BrowserProfile.defaults) private var placementRaw = DeveloperToolsPlacement.bottom.rawValue
     @Environment(\.dismiss) private var dismiss
 
     private var placement: DeveloperToolsPlacement {
@@ -604,7 +604,7 @@ struct DeveloperToolsView: View {
     let onClose: () -> Void
     @State private var command = ""
     @FocusState private var consoleSearchFocused: Bool
-    @AppStorage(DeveloperToolsPlacement.defaultsKey) private var placementRaw = DeveloperToolsPlacement.bottom.rawValue
+    @AppStorage(DeveloperToolsPlacement.defaultsKey, store: BrowserProfile.defaults) private var placementRaw = DeveloperToolsPlacement.bottom.rawValue
 
     private var placement: DeveloperToolsPlacement {
         DeveloperToolsPlacement(rawValue: placementRaw) ?? .bottom

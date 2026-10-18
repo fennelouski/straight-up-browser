@@ -18,8 +18,8 @@ enum VisualTabPreferences {
     static let defaultAspectRatio = 1.6
 
     static var livePreviewsEnabled: Bool {
-        UserDefaults.standard.object(forKey: livePreviewsKey) == nil
-            || UserDefaults.standard.bool(forKey: livePreviewsKey)
+        BrowserProfile.defaults.object(forKey: livePreviewsKey) == nil
+            || BrowserProfile.defaults.bool(forKey: livePreviewsKey)
     }
 }
 
@@ -174,9 +174,9 @@ struct TabGridView: View {
     @State private var previewRefresh = 0
     @State private var columns = 1
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage(VisualTabPreferences.aspectRatioKey)
+    @AppStorage(VisualTabPreferences.aspectRatioKey, store: BrowserProfile.defaults)
     private var aspectRatio = VisualTabPreferences.defaultAspectRatio
-    @AppStorage(VisualTabPreferences.livePreviewsKey)
+    @AppStorage(VisualTabPreferences.livePreviewsKey, store: BrowserProfile.defaults)
     private var livePreviews = true
 
     nonisolated private static let cardWidth: CGFloat = 220

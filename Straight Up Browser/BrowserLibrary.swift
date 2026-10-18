@@ -77,6 +77,7 @@ enum BrowserLibrary {
     }
 
     @concurrent static func importBookmarksHTML(from url: URL) async throws -> [ImportedLibraryBookmark] {
+        guard !BrowserProfile.isIsolated else { return [] }
         assert(!Thread.isMainThread)
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
@@ -739,6 +740,7 @@ struct BrowserLibraryView: View {
     }
 
     private func exportBookmarks() {
+        guard !BrowserProfile.isIsolated else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "Browser Bookmarks.html"
         panel.allowedContentTypes = [.html]

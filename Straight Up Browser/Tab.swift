@@ -51,10 +51,10 @@ enum MemoryPinnedSites {
     ]
 
     static var hosts: [String] {
-        get { UserDefaults.standard.array(forKey: defaultsKey) as? [String] ?? starterHosts }
+        get { BrowserProfile.defaults.array(forKey: defaultsKey) as? [String] ?? starterHosts }
         set {
             let cleaned = Array(Set(newValue.map(normalized).filter { !$0.isEmpty })).sorted()
-            UserDefaults.standard.set(cleaned, forKey: defaultsKey)
+            BrowserProfile.defaults.set(cleaned, forKey: defaultsKey)
         }
     }
 

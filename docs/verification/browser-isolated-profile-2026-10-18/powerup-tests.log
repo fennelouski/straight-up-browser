@@ -1,0 +1,60 @@
+Building for debugging...
+[Planning deferred tasks]
+[27 / 50]
+[28 / 51] Browser
+[33 / 91]
+[38 / 91]
+[42 / 91]
+[46 / 91]
+[48 / 91]
+[51 / 91]
+[53 / 91]
+[55 / 91]
+[58 / 91]
+[61 / 91]
+[63 / 91]
+[64 / 91]
+[68 / 91] Browser
+[81 / 92] BrowserTests-product
+[82 / 97]
+[86 / 97] BrowserTests-product
+[91 / 97] BrowserTests-product
+[93 / 97] BrowserTests-product
+Build complete! (8.77 sec)
+Test Suite 'All tests' started at 2026-10-18 18:29:23.978.
+Test Suite 'All tests' passed at 2026-10-18 18:29:23.979.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+􀟈  Test run started.
+􀄵  Testing Library Version: 2084
+􀄵  Target Platform: arm64e-apple-macos14.0
+􀟈  Suite PowerUpTests started.
+􀟈  Test sampleSaveRestoreIsExplicitAndWidthCycleUsesFullRatios() started.
+􀟈  Test optedOutAndPrivateActionsDonateNothing() started.
+􀟈  Test sampleSwapRequiresPreviewAndPreservesSlotsAndProportions() started.
+􀟈  Test samplePracticeNeedsLaterIndependentUseForMastery() started.
+􀟈  Test persistedLearningHasOnlyFixedIDsAndBoundedCoarseValues() started.
+􀟈  Test futureSchemaIsPreservedAndDeleteIsNarrow() started.
+􀟈  Test threeShortcutsInOneSessionDoNotClaimMastery() started.
+􀟈  Test staticLibraryDoesNotOptInOrPersistSearch() started.
+􀟈  Test oldAggregatesExpireWithoutErasingPermanentPreferences() started.
+􀟈  Test continuingUseDoesNotExtendAggregateRetention() started.
+􀟈  Test snoozeExpiryDoesNotResetLifetimeExposure() started.
+􀟈  Test knownCanBeUndoneAndSuppressionSurvivesOptOut() started.
+􀟈  Test tipBudgetRequiresSuccessfulUsesAcrossSessionsAndNoReplacementsToday() started.
+􀟈  Test everyUnsafeContextBlocksTeachingAndPauseIsIndefinite() started.
+􁁛  Test sampleSwapRequiresPreviewAndPreservesSlotsAndProportions() passed after 0.028 seconds.
+􁁛  Test optedOutAndPrivateActionsDonateNothing() passed after 0.028 seconds.
+􁁛  Test persistedLearningHasOnlyFixedIDsAndBoundedCoarseValues() passed after 0.031 seconds.
+􁁛  Test sampleSaveRestoreIsExplicitAndWidthCycleUsesFullRatios() passed after 0.033 seconds.
+􁁛  Test everyUnsafeContextBlocksTeachingAndPauseIsIndefinite() passed after 0.052 seconds.
+􁁛  Test oldAggregatesExpireWithoutErasingPermanentPreferences() passed after 0.052 seconds.
+􁁛  Test knownCanBeUndoneAndSuppressionSurvivesOptOut() passed after 0.052 seconds.
+􁁛  Test snoozeExpiryDoesNotResetLifetimeExposure() passed after 0.052 seconds.
+􁁛  Test threeShortcutsInOneSessionDoNotClaimMastery() passed after 0.052 seconds.
+􁁛  Test samplePracticeNeedsLaterIndependentUseForMastery() passed after 0.052 seconds.
+􁁛  Test continuingUseDoesNotExtendAggregateRetention() passed after 0.052 seconds.
+􁁛  Test futureSchemaIsPreservedAndDeleteIsNarrow() passed after 0.052 seconds.
+􁁛  Test tipBudgetRequiresSuccessfulUsesAcrossSessionsAndNoReplacementsToday() passed after 0.052 seconds.
+􁁛  Test staticLibraryDoesNotOptInOrPersistSearch() passed after 0.052 seconds.
+􁁛  Suite PowerUpTests passed after 0.053 seconds.
+􁁛  Test run with 14 tests in 1 suite passed after 0.053 seconds.

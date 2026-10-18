@@ -67,12 +67,12 @@ final class TabPeekController {
     private static let panelSize = NSSize(width: 420, height: 322)
 
     private var placement: TabPeekPlacement {
-        TabPeekPlacement(rawValue: UserDefaults.standard.string(forKey: TabPeekPlacement.defaultsKey) ?? "")
+        TabPeekPlacement(rawValue: BrowserProfile.defaults.string(forKey: TabPeekPlacement.defaultsKey) ?? "")
             ?? .screenTop
     }
 
     private var isEnabled: Bool {
-        UserDefaults.standard.object(forKey: TabPeekPlacement.enabledKey) as? Bool ?? true
+        BrowserProfile.defaults.object(forKey: TabPeekPlacement.enabledKey) as? Bool ?? true
     }
 
     static func shouldPresent(

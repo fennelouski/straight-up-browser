@@ -36,6 +36,7 @@ enum BrowserAgentMCPKeychain {
     private static let service = "com.nathanfennel.Straight-Up-Browser.agent-mcp"
 
     static func read(_ id: UUID) -> String {
+        guard !BrowserProfile.isIsolated else { return "" }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -50,6 +51,7 @@ enum BrowserAgentMCPKeychain {
     }
 
     static func write(_ value: String, id: UUID) {
+        guard !BrowserProfile.isIsolated else { return }
         let identity: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -189,6 +191,7 @@ actor MCPKeychainSecretVault: MCPSecretVault {
     private func transientAccount(_ id: UUID) -> String { "transient.\(id.uuidString)" }
 
     private func read(account: String) throws -> Data? {
+        guard !BrowserProfile.isIsolated else { throw MCPKeychainSecretVaultError.operationFailed(errSecInteractionNotAllowed) }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -206,6 +209,7 @@ actor MCPKeychainSecretVault: MCPSecretVault {
     }
 
     private func write(_ data: Data, account: String) throws {
+        guard !BrowserProfile.isIsolated else { throw MCPKeychainSecretVaultError.operationFailed(errSecInteractionNotAllowed) }
         let identity: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -229,6 +233,7 @@ actor MCPKeychainSecretVault: MCPSecretVault {
     }
 
     private func delete(account: String) throws {
+        guard !BrowserProfile.isIsolated else { throw MCPKeychainSecretVaultError.operationFailed(errSecInteractionNotAllowed) }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -241,6 +246,7 @@ actor MCPKeychainSecretVault: MCPSecretVault {
     }
 
     private func allItems() throws -> [(account: String, data: Data)] {
+        guard !BrowserProfile.isIsolated else { throw MCPKeychainSecretVaultError.operationFailed(errSecInteractionNotAllowed) }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -366,6 +372,7 @@ final class BrowserAgentMCPSystemAuthorizationPresenter: NSObject,
     private var callbackListener: BrowserAgentMCPLoopbackAuthorizationListener?
 
     func prepareRedirectURI() async throws -> URL {
+        guard !BrowserProfile.isIsolated else { throw MCPConnectionError.authorizationDenied }
         guard session == nil, callbackListener == nil else {
             throw MCPConnectionError.authorizationDenied
         }
@@ -387,6 +394,7 @@ final class BrowserAgentMCPSystemAuthorizationPresenter: NSObject,
     }
 
     func callbackURL(for authorizationURL: URL, redirectURI: URL) async throws -> URL {
+        guard !BrowserProfile.isIsolated else { throw MCPConnectionError.authorizationDenied }
         guard session == nil,
               let callbackListener,
               callbackListener.redirectURI?.absoluteString == redirectURI.absoluteString,

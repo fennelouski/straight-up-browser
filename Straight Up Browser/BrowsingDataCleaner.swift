@@ -18,6 +18,12 @@ enum ContainerStoreRemoval {
         identifier: UUID,
         completion: @escaping @MainActor @Sendable (Result<Void, Error>) -> Void
     ) {
+        if BrowserProfile.isIsolated {
+            BrowsingDataCleaner.clearStore(BrowserProfileWebKit.dataStore(container: identifier)) {
+                completion(.success(()))
+            }
+            return
+        }
         WKWebsiteDataStore.remove(forIdentifier: identifier) { error in
             completion(result(for: error))
         }
@@ -46,9 +52,9 @@ enum BrowsingDataCleaner {
     static func store(for scope: WebsiteDataStoreScope) -> WKWebsiteDataStore {
         switch scope {
         case .defaultStore:
-            return .default()
+            return BrowserProfileWebKit.dataStore()
         case .container(let identifier):
-            return WKWebsiteDataStore(forIdentifier: identifier)
+            return BrowserProfileWebKit.dataStore(container: identifier)
         }
     }
 
@@ -135,7 +141,7 @@ enum BrowsingDataCleaner {
         containerIdentifiers: [UUID] = [],
         then: @escaping @MainActor @Sendable () -> Void = {}
     ) {
-        if cache { URLCache.shared.removeAllCachedResponses() }
+        if cache && !BrowserProfile.isIsolated { URLCache.shared.removeAllCachedResponses() }
         let types = websiteDataTypes(
             cookies: cookies,
             cache: cache,
@@ -176,7 +182,7 @@ enum BrowsingDataCleaner {
         containerIdentifiers: [UUID],
         then: @escaping @MainActor @Sendable () -> Void = {}
     ) {
-        URLCache.shared.removeAllCachedResponses()
+        if !BrowserProfile.isIsolated { URLCache.shared.removeAllCachedResponses() }
         clear(
             dataTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
             from: stores(for: allStoreScopes(containerIdentifiers: containerIdentifiers)),

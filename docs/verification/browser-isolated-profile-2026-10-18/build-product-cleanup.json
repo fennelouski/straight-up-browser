@@ -1,0 +1,24 @@
+{
+  "timeUTC": "2026-10-18T16:56:32.604851+00:00",
+  "scope": "Only task-owned profile-derived-data/Build/Products .app products; no production app, source, process or profile changed",
+  "reason": "Repository verify.sh requires unsigned shipping-ID build product cleanup to avoid LaunchServices selection conflicts",
+  "removed": [
+    {
+      "path": "/Users/nathanfennel/Documents/Codex/2026-10-18/task-4/profile-derived-data/Build/Products/Debug/Browser.app",
+      "unregisterExitCode": 0,
+      "removed": true
+    },
+    {
+      "path": "/Users/nathanfennel/Documents/Codex/2026-10-18/task-4/profile-derived-data/Build/Products/Debug/Sparkle.framework/Updater.app",
+      "kind": "owned product alias only",
+      "removed": true
+    },
+    {
+      "path": "/Users/nathanfennel/Documents/Codex/2026-10-18/task-4/profile-derived-data/Build/Products/Debug/Sparkle.framework/Versions/B/Updater.app",
+      "unregisterExitCode": 0,
+      "removed": true
+    }
+  ],
+  "processesKilled": 0,
+  "appLaunches": 0
+}

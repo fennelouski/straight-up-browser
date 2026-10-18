@@ -39,19 +39,19 @@ nonisolated enum CredentialPreferences {
     static let neverSaveHostsKey = "credentialNeverSaveHosts"
 
     static var promptStyle: PromptStyle {
-        get { UserDefaults.standard.string(forKey: styleKey).flatMap(PromptStyle.init) ?? .card }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: styleKey) }
+        get { BrowserProfile.defaults.string(forKey: styleKey).flatMap(PromptStyle.init) ?? .card }
+        set { BrowserProfile.defaults.set(newValue.rawValue, forKey: styleKey) }
     }
 
     /// Only consulted when `promptStyle == .none`.
     static var savesSilently: Bool {
-        get { UserDefaults.standard.bool(forKey: silentSaveKey) }
-        set { UserDefaults.standard.set(newValue, forKey: silentSaveKey) }
+        get { BrowserProfile.defaults.bool(forKey: silentSaveKey) }
+        set { BrowserProfile.defaults.set(newValue, forKey: silentSaveKey) }
     }
 
     static var neverSaveHosts: [String] {
-        get { (UserDefaults.standard.stringArray(forKey: neverSaveHostsKey) ?? []).sorted() }
-        set { UserDefaults.standard.set(Array(Set(newValue)).sorted(), forKey: neverSaveHostsKey) }
+        get { (BrowserProfile.defaults.stringArray(forKey: neverSaveHostsKey) ?? []).sorted() }
+        set { BrowserProfile.defaults.set(Array(Set(newValue)).sorted(), forKey: neverSaveHostsKey) }
     }
 
     static func setNeverSave(_ host: String, _ never: Bool) {
@@ -86,6 +86,7 @@ nonisolated enum SavedCredentialStore {
 
     @discardableResult
     static func save(domain: String, username: String, password: String, requiresAuthentication: Bool = false) -> OSStatus {
+        guard !BrowserProfile.isIsolated else { return errSecInteractionNotAllowed }
         guard !domain.isEmpty, !username.isEmpty, !password.isEmpty else { return errSecParam }
         let data = Data(password.utf8)
         let attributes: [String: Any] = [
@@ -101,13 +102,15 @@ nonisolated enum SavedCredentialStore {
 
     @discardableResult
     static func setRequiresAuthentication(_ requires: Bool, domain: String, username: String) -> OSStatus {
-        SecItemUpdate(
+        guard !BrowserProfile.isIsolated else { return errSecInteractionNotAllowed }
+        return SecItemUpdate(
             identity(domain: domain, username: username) as CFDictionary,
             [kSecAttrComment as String: requires ? authenticationMarker : ""] as CFDictionary
         )
     }
 
     static func requiresAuthentication(domain: String, username: String) -> Bool {
+        guard !BrowserProfile.isIsolated else { return false }
         var query = identity(domain: domain, username: username)
         query[kSecReturnAttributes as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -118,6 +121,7 @@ nonisolated enum SavedCredentialStore {
     }
 
     static func password(domain: String, username: String) -> String? {
+        guard !BrowserProfile.isIsolated else { return nil }
         var query = identity(domain: domain, username: username)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -130,6 +134,7 @@ nonisolated enum SavedCredentialStore {
     /// Every saved username for a domain — a site can have more than one
     /// account. Never fetches a password; that only happens on pick.
     static func usernames(domain: String) -> [String] {
+        guard !BrowserProfile.isIsolated else { return [] }
         guard !domain.isEmpty else { return [] }
         let query: [String: Any] = [
             kSecClass as String: kSecClassInternetPassword,
@@ -145,12 +150,14 @@ nonisolated enum SavedCredentialStore {
     }
 
     static func delete(domain: String, username: String) {
+        guard !BrowserProfile.isIsolated else { return }
         SecItemDelete(identity(domain: domain, username: username) as CFDictionary)
     }
 
     /// Every saved credential, domain + username only — for the Settings
     /// management list. Never returns a password.
     static func all() -> [SavedCredential] {
+        guard !BrowserProfile.isIsolated else { return [] }
         let query: [String: Any] = [
             kSecClass as String: kSecClassInternetPassword,
             kSecAttrSecurityDomain as String: service,

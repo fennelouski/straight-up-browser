@@ -13,6 +13,7 @@ repo, package = map(Path, sys.argv[1:])
 source = package / 'Sources/ShortcutPolicies'
 tests = package / 'Tests/ShortcutPoliciesTests'
 source.mkdir(parents=True); tests.mkdir(parents=True)
+(source / 'BrowserTestProfile.swift').write_text((repo / 'Straight Up Browser/BrowserTestProfile.swift').read_text())
 (package / 'Package.swift').write_text('''// swift-tools-version: 6.0
 import PackageDescription
 let package = Package(name: "ShortcutPolicies", platforms: [.macOS(.v15)], targets: [

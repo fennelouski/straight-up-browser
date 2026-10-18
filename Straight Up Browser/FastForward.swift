@@ -213,8 +213,7 @@ final class FastForwardMemory {
         if let storeURL {
             self.storeURL = storeURL
         } else {
-            let dir = FileManager.default
-                .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            let dir = BrowserProfile.applicationSupportURLs[0]
                 .appendingPathComponent("Straight Up Browser", isDirectory: true)
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             self.storeURL = dir.appendingPathComponent("fast-forward.json")
@@ -372,7 +371,7 @@ final class FastForward: ObservableObject {
     }
 
     private var isEnabled: Bool {
-        UserDefaults.standard.object(forKey: Key.enabled) as? Bool ?? true
+        BrowserProfile.defaults.object(forKey: Key.enabled) as? Bool ?? true
     }
 
     // MARK: Search URL → query
@@ -419,7 +418,7 @@ final class FastForward: ObservableObject {
         // the regexes don't cover ("where do I get the slack app"). Pure upside:
         // everything above this line works on every supported OS.
         if #available(macOS 26.0, iOS 26.0, *),
-           UserDefaults.standard.object(forKey: Key.useAppleIntelligence) as? Bool ?? true {
+           BrowserProfile.defaults.object(forKey: Key.useAppleIntelligence) as? Bool ?? true {
             Task { [weak self] in
                 guard let match = await Self.modelParse(query) else { return }
                 guard let self, let current = webView.url,
@@ -534,7 +533,7 @@ final class FastForward: ObservableObject {
     private func pulse(_ match: FastForwardMatch, in webView: WKWebView) {
         guard let targets = jsArray(match.rule.targets),
               let preferred = jsArray(match.rule.preferred) else { return }
-        let intensity = UserDefaults.standard.object(forKey: Key.pulseIntensity) as? Double
+        let intensity = BrowserProfile.defaults.object(forKey: Key.pulseIntensity) as? Double
             ?? Key.defaultPulseIntensity
         // Find the best candidate, centre it, and report where it landed. The rect
         // is read *after* scrolling, so the ring draws over the settled position.
@@ -578,7 +577,7 @@ final class FastForward: ObservableObject {
     #if canImport(FoundationModels)
     @available(macOS 26.0, iOS 26.0, *)
     private static func modelParse(_ query: String) async -> FastForwardMatch? {
-        guard SystemLanguageModel.default.availability == .available else { return nil }
+        guard !BrowserProfile.isIsolated && SystemLanguageModel.default.availability == .available else { return nil }
         let session = LanguageModelSession(instructions: """
             You classify web search queries for a browser.
             If the query is someone trying to REACH a specific company or product's \

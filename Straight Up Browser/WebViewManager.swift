@@ -20,6 +20,7 @@ import UIKit
 // "Open With", drag-and-drop) actually render.
 extension WKWebView {
     @discardableResult func loadURL(_ url: URL) -> WKNavigation? {
+        guard BrowserProfile.allowsNavigation(url) else { return nil }
         if url.isFileURL {
             return loadFileURL(url, allowingReadAccessTo: url)
         } else {
@@ -817,7 +818,7 @@ class WebViewManager: NSObject, ObservableObject {
     // never touches the iCloud cache-state column, so the sync privacy toggle
     // stays authoritative for what leaves the device.
     private static var interactionStateFileURL: URL? {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+        BrowserProfile.applicationSupportURLs.first?
             .appendingPathComponent("SessionInteractionState.plist")
     }
 
@@ -959,8 +960,7 @@ class WebViewManager: NSObject, ObservableObject {
     private static let filterListIdentifierKey = "adBlockFilterListIdentifier"
 
     private static var filterListFileURL: URL {
-        let directory = FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let directory = BrowserProfile.applicationSupportURLs[0]
             .appendingPathComponent("Straight Up Browser", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory.appendingPathComponent("easylist.json")
@@ -988,6 +988,7 @@ class WebViewManager: NSObject, ObservableObject {
     private static var adBlockList: WKContentRuleList?
 
     private static func compileAdBlockList(_ completion: @escaping (WKContentRuleList?) -> Void) {
+        guard !BrowserProfile.isIsolated else { completion(nil); return }
         if let list = adBlockList { completion(list); return }
         refreshFilterListIfStale()
         let downloaded = (try? Data(contentsOf: filterListFileURL)).flatMap(validatedFilterList)
@@ -1011,7 +1012,7 @@ class WebViewManager: NSObject, ObservableObject {
                     Logger.log("Ad block rule compile failed: \(error)", type: "WebViewManager")
                 }
                 if list != nil {
-                    let defaults = UserDefaults.standard
+                    let defaults = BrowserProfile.defaults
                     if let previous = defaults.string(forKey: filterListIdentifierKey), previous != identifier {
                         store.removeContentRuleList(forIdentifier: previous) { _ in }
                     }
@@ -1026,11 +1027,12 @@ class WebViewManager: NSObject, ObservableObject {
     // ponytail: the fresh list is used from the next launch — swapping it
     // mid-session would mean recompiling and reloading every open tab.
     private static func refreshFilterListIfStale() {
+        guard !BrowserProfile.isIsolated else { return }
         let destination = filterListFileURL
         let modified = (try? destination.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate ?? .distantPast
         guard Date().timeIntervalSince(modified) > filterListMaxAge else { return }
-        URLSession.shared.dataTask(with: filterListURL) { data, response, error in
+        BrowserProfileNetwork.session.dataTask(with: filterListURL) { data, response, error in
             guard let data, (response as? HTTPURLResponse)?.statusCode == 200,
                   validatedFilterList(data) != nil else {
                 Logger.log("Filter list refresh failed: \(error?.localizedDescription ?? "rejected")",
@@ -1075,7 +1077,7 @@ class WebViewManager: NSObject, ObservableObject {
         controller.addUserScript(
             WKUserScript(source: Self.translateScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         )
-        if UserDefaults.standard.bool(forKey: "adBlockEnabled") {
+        if BrowserProfile.defaults.bool(forKey: "adBlockEnabled") {
             // Must beat page code to JSON.parse, and embeds live in subframes.
             controller.addUserScript(
                 WKUserScript(source: Self.youTubeAdBlockScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
@@ -1091,11 +1093,11 @@ class WebViewManager: NSObject, ObservableObject {
     }
 
     @objc private func adBlockSettingChanged() {
-        if UserDefaults.standard.bool(forKey: "adBlockEnabled") {
+        if BrowserProfile.defaults.bool(forKey: "adBlockEnabled") {
             Self.compileAdBlockList { [weak self] list in
                 DispatchQueue.main.async {
                     guard let self else { return }
-                    guard UserDefaults.standard.bool(forKey: "adBlockEnabled"),
+                    guard BrowserProfile.defaults.bool(forKey: "adBlockEnabled"),
                           let list else {
                         for tabId in self.webViews.keys {
                             Self.reportContentBlocking(false, for: tabId)
@@ -1149,7 +1151,7 @@ class WebViewManager: NSObject, ObservableObject {
         ownedTabIds.insert(tabId)
         applyMediaSuspension(mediaSuspendedTabs.contains(tabId), to: webView)
         #if canImport(AppKit)
-        WebExtensionManager.shared.tabOpened(tabId, in: self)
+        if !BrowserProfile.isIsolated { WebExtensionManager.shared.tabOpened(tabId, in: self) }
         #endif
         // Restore scroll + back/forward if this tab was unloaded under memory pressure
         if #available(macOS 12.0, *), shouldDeferColdLayoutStarter?(tabId) != true,
@@ -1176,11 +1178,9 @@ class WebViewManager: NSObject, ObservableObject {
             Logger.log("WebViewManager: Switching active web view for tab \(tabId)", type: "WebViewManager")
             activeWebView = webView
             #if canImport(AppKit)
-            WebExtensionManager.shared.activeTabChanged(
-                to: tabId,
-                from: previousTabId,
-                in: self
-            )
+            if !BrowserProfile.isIsolated {
+                WebExtensionManager.shared.activeTabChanged(to: tabId, from: previousTabId, in: self)
+            }
             #endif
         } else {
             Logger.log("WebViewManager setActiveTab: activeWebView already correct for tab \(tabId)", type: "WebViewManager")
@@ -1236,7 +1236,7 @@ class WebViewManager: NSObject, ObservableObject {
 
             if notifyClosed {
                 #if canImport(AppKit)
-                WebExtensionManager.shared.tabClosed(tabId, in: self)
+                if !BrowserProfile.isIsolated { WebExtensionManager.shared.tabClosed(tabId, in: self) }
                 #endif
             }
             Logger.log("Removed web view for tab \(tabId)", type: "WebViewManager")
@@ -1297,7 +1297,7 @@ class WebViewManager: NSObject, ObservableObject {
         applyStandardSetup(to: webView)
         webViews[tabId] = webView
         ownedTabIds.insert(tabId)
-        let blockingActive = UserDefaults.standard.bool(forKey: "adBlockEnabled")
+        let blockingActive = BrowserProfile.defaults.bool(forKey: "adBlockEnabled")
             && Self.adBlockList != nil
         if blockingActive, let list = Self.adBlockList {
             let controller = webView.configuration.userContentController
@@ -1306,7 +1306,7 @@ class WebViewManager: NSObject, ObservableObject {
         }
         Self.reportContentBlocking(blockingActive, for: tabId)
         #if canImport(AppKit)
-        WebExtensionManager.shared.tabOpened(tabId, in: self)
+        if !BrowserProfile.isIsolated { WebExtensionManager.shared.tabOpened(tabId, in: self) }
         #endif
         Logger.log("WebViewManager: adopted external WebView for tab \(tabId)", type: "WebViewManager")
     }
@@ -1329,6 +1329,7 @@ class WebViewManager: NSObject, ObservableObject {
 
     // The WKWebsiteDataStore (cookie/cache/storage jar) a tab browses in. See SessionKind.
     private func dataStore(for tabId: UUID) -> WKWebsiteDataStore {
+        if BrowserProfile.isIsolated { return BrowserProfileWebKit.dataStore(container: tabSessions[tabId]?.sessionId) }
         guard let session = tabSessions[tabId] else { return .default() }
         switch session.kind {
         case .normal:
@@ -1386,7 +1387,7 @@ class WebViewManager: NSObject, ObservableObject {
 
     // Create a new WKWebView with proper configuration
     private func createWebView(for tabId: UUID) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
+        let configuration = BrowserProfileWebKit.configuration()
         // The tab's session decides its cookie/cache/storage jar. Normal tabs get the
         // shared default store (unchanged); containers/incognito get isolated stores.
         // Popups adopted via adoptWebView inherit the opener's store from its config.
@@ -1399,7 +1400,7 @@ class WebViewManager: NSObject, ObservableObject {
         configuration.preferences.isElementFullscreenEnabled = true
         // JS on/off is decided per navigation in the policy delegate - the
         // settings toggle read here wouldn't reliably stick
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = !BrowserProfile.isIsolated
         configuration.mediaTypesRequiringUserActionForPlayback = .video
 
         // WKUserContentController retains handlers. The weak proxy prevents the
@@ -1426,12 +1427,12 @@ class WebViewManager: NSObject, ObservableObject {
             contentWorld: .defaultClient,
             name: SemanticPageJavaScript.messageHandlerName
         )
-        if UserDefaults.standard.bool(forKey: "adBlockEnabled") {
+        if BrowserProfile.defaults.bool(forKey: "adBlockEnabled") {
             Self.reportContentBlocking(false, for: tabId)
             Self.compileAdBlockList { [weak self] list in
                 DispatchQueue.main.async {
                     guard let self,
-                          UserDefaults.standard.bool(forKey: "adBlockEnabled"),
+                          BrowserProfile.defaults.bool(forKey: "adBlockEnabled"),
                           let webView = self.webViews[tabId],
                           let list else {
                         Self.reportContentBlocking(false, for: tabId)
@@ -1453,8 +1454,10 @@ class WebViewManager: NSObject, ObservableObject {
         // ponytail: web extensions are macOS-only in v1; the controller wiring is
         // compiled out on iPad. Port WebExtension.swift when iPad needs extensions.
         #if canImport(AppKit)
-        configuration.webExtensionController = WebExtensionManager.shared.controller
-        WebExtensionManager.shared.register(self)
+        if !BrowserProfile.isIsolated {
+            configuration.webExtensionController = WebExtensionManager.shared.controller
+            WebExtensionManager.shared.register(self)
+        }
         #endif
 
         let webView = BrowserWKWebView(frame: .zero, configuration: configuration)
@@ -1616,7 +1619,7 @@ class WebViewManager: NSObject, ObservableObject {
     private func beginPageFadeIfEligible(_ webView: WKWebView) {
         let key = ObjectIdentifier(webView)
         guard var episode = pageFadeEpisodes[key], !episode.attempted, !episode.completed else { return }
-        let defaults = UserDefaults.standard
+        let defaults = BrowserProfile.defaults
         guard defaults.object(forKey: "fadeInPages") == nil || defaults.bool(forKey: "fadeInPages"),
               PageFadeCircuitBreaker.identity(for: episode.targetURL) != nil,
               pageFadeVisible(webView, context: episode.context) else {
@@ -1643,7 +1646,7 @@ class WebViewManager: NSObject, ObservableObject {
         guard let episode = pageFadeEpisodes[key], episode.id == episodeID else { return }
         let wasPending = episode.pending
         pageFadeEpisodes[key]?.pending = false
-        let defaults = UserDefaults.standard
+        let defaults = BrowserProfile.defaults
         let enabled = defaults.object(forKey: "fadeInPages") == nil || defaults.bool(forKey: "fadeInPages")
         let animate = animated && wasPending && enabled && !pageFadeReducedMotion
             && pageFadeVisible(webView, context: episode.context)
@@ -1662,7 +1665,7 @@ class WebViewManager: NSObject, ObservableObject {
     }
 
     private func refreshPageFadeResidence() {
-        let defaults = UserDefaults.standard
+        let defaults = BrowserProfile.defaults
         let fadeEnabled = defaults.object(forKey: "fadeInPages") == nil || defaults.bool(forKey: "fadeInPages")
         for (id, webView) in webViews {
             pageFadePolicy.setResidence(context: id, committedURL: pageFadeCommittedURLs[id],
@@ -2173,7 +2176,17 @@ final class BrowserWKWebView: WKWebView {
     /// AppKit's context-menu hook. `webView(_:willOpenMenu:with:)` is not a
     /// WKUIDelegate method, so without this forward the coordinator's menu
     /// customisation never runs.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        BrowserProfile.isIsolated ? nil : super.menu(for: event)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard !BrowserProfile.isIsolated else { return }
+        super.rightMouseDown(with: event)
+    }
+
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        guard !BrowserProfile.isIsolated else { menu.removeAllItems(); menu.cancelTracking(); return }
         super.willOpenMenu(menu, with: event)
         (uiDelegate as? WebView.Coordinator)?.webView(self, willOpenMenu: menu, with: event)
     }

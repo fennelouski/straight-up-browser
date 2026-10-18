@@ -92,7 +92,7 @@ nonisolated struct SettingsValueSnapshot: Equatable, Sendable {
 
 nonisolated enum SettingsAssistantAvailability {
     static let enabledKey = "settingsAssistantEnabled"
-    static func isVisible(defaults: UserDefaults = .standard) -> Bool {
+    static func isVisible(defaults: UserDefaults = BrowserProfile.defaults) -> Bool {
         let master = defaults.object(forKey: "aiFeaturesEnabled") == nil || defaults.bool(forKey: "aiFeaturesEnabled")
         return master && defaults.bool(forKey: enabledKey)
     }
@@ -148,7 +148,7 @@ extension SettingsPreferenceStore {
 @MainActor final class SettingsDefaultsStore: SettingsPreferenceStore {
     let supportsRecoverableCommit = false
     let defaults: UserDefaults
-    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    init(defaults: UserDefaults = BrowserProfile.defaults) { self.defaults = defaults }
 
     func read(_ descriptor: BrowserSettingDescriptor) -> BrowserSettingValue? {
         guard defaults.object(forKey: descriptor.key) != nil else { return nil }

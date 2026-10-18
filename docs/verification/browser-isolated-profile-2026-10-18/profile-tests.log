@@ -1,0 +1,102 @@
+Building for debugging...
+[Planning deferred tasks]
+[34 / 62]
+[36 / 64] ProfileProbe-product
+[41 / 142]
+[46 / 142]
+[49 / 142]
+[55 / 142]
+[57 / 142]
+[60 / 142]
+[63 / 142]
+[66 / 142]
+[68 / 142]
+[71 / 142]
+[74 / 142]
+[75 / 142]
+[79 / 142]
+[80 / 142]
+[82 / 142]
+[83 / 142]
+[87 / 142]
+[91 / 142]
+[94 / 142]
+[97 / 142]
+[98 / 142]
+[101 / 142]
+[102 / 142]
+[103 / 142]
+[105 / 142] ProfileProbe-product
+[107 / 142] ProfileProbe-product
+[117 / 142] ProfileProbe-product
+[118 / 142] Browser
+[119 / 142] Browser
+[120 / 142] Browser
+[122 / 142] Browser
+[130 / 143]
+[132 / 143] BrowserTests-product
+[133 / 149]
+[136 / 149] BrowserTests-product
+[138 / 149] BrowserTests-product
+[143 / 149] BrowserTests-product
+[145 / 149] BrowserTests-product
+Build complete! (12.55 sec)
+Test Suite 'All tests' started at 2026-10-18 18:50:51.981.
+Test Suite 'All tests' passed at 2026-10-18 18:50:51.982.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+􀟈  Test run started.
+􀄵  Testing Library Version: 2084
+􀄵  Target Platform: arm64e-apple-macos14.0
+􀟈  Suite BrowserTestProfileTests started.
+􀟈  Suite BrowserTestProfileWebKitTests started.
+􀟈  Test manifestBindsExecutableAndAllOwnedRoots() started.
+􀟈  Test unsafeIdentifiersFailClosed(_:) started.
+􀟈  Test ambiguousFlagsFailClosed(_:) started.
+􀟈  Test navigationPolicyAllowsOnlyOwnedOrLoopbackFixtures() started.
+􀟈  Test isolatedNativeSessionHasNoPersistentCredentialCookieOrCacheStore() started.
+􀟈  Test isolatedNativeSessionRejectsRequestsWithoutServerOrCredentials() started.
+􀟈  Test separateProfileOwnersCannotShareAnEphemeralJar() started.
+􀟈  Test noFlagAndOrdinaryUnitEnvironmentKeepProductionSelection() started.
+􀟈  Test concurrentProfileOwnerIsRejected() started.
+􀟈  Test unavailablePrivateDefaultsNeverFallsBack() started.
+􀟈  Test privateContextLeavesOtherDefaultsSuiteUntouched() started.
+􀟈  Test profileNormalAndContainerJarsAreNonpersistentAndSeparate() started.
+􀟈  Test case passing 1 argument identifier → "a/b" to unsafeIdentifiersFailClosed(_:) started.
+􀟈  Test case passing 1 argument identifier → ".." to unsafeIdentifiersFailClosed(_:) started.
+􀟈  Test validIdentifiers(_:) started.
+􀟈  Test case passing 1 argument identifier → "" to unsafeIdentifiersFailClosed(_:) started.
+􀟈  Test symlinkRootIsRejectedBeforeDefaultsFactory() started.
+􀟈  Test case passing 1 argument identifier → "a\b" to unsafeIdentifiersFailClosed(_:) started.
+􀟈  Test case passing 1 argument identifier → "a b" to unsafeIdentifiersFailClosed(_:) started.
+􀟈  Test privatePathsCannotEscapeOrAliasProductionFixture() started.
+􀟈  Test case passing 1 argument identifier → "-flag" to unsafeIdentifiersFailClosed(_:) started.
+􀟈  Test case passing 1 argument identifier → "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" to unsafeIdentifiersFailClosed(_:) started.
+􀟈  Test case passing 1 argument identifier → "é" to unsafeIdentifiersFailClosed(_:) started.
+􀟈  Test case passing 1 argument arguments → ["Browser", "-isolatedTestProfile"] to ambiguousFlagsFailClosed(_:) started.
+􀟈  Test case passing 1 argument arguments → ["Browser", "-isolatedTestProfile", "a", "-isolatedTestProfile", "b"] to ambiguousFlagsFailClosed(_:) started.
+􀟈  Test case passing 1 argument arguments → ["Browser", "-isolatedTestProfile=one"] to ambiguousFlagsFailClosed(_:) started.
+􀟈  Test case passing 1 argument identifier → "a" to validIdentifiers(_:) started.
+􀟈  Test case passing 1 argument identifier → "acceptance-20261018_01" to validIdentifiers(_:) started.
+􀟈  Test case passing 1 argument identifier → "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" to validIdentifiers(_:) started.
+􁁛  Test validIdentifiers(_:) with 3 test cases passed after 0.001 seconds.
+􁁛  Test ambiguousFlagsFailClosed(_:) with 3 test cases passed after 0.001 seconds.
+􁁛  Test unsafeIdentifiersFailClosed(_:) with 8 test cases passed after 0.001 seconds.
+􁁛  Test navigationPolicyAllowsOnlyOwnedOrLoopbackFixtures() passed after 0.003 seconds.
+􁁛  Test symlinkRootIsRejectedBeforeDefaultsFactory() passed after 0.003 seconds.
+􁁛  Test isolatedNativeSessionHasNoPersistentCredentialCookieOrCacheStore() passed after 0.006 seconds.
+􁁛  Test concurrentProfileOwnerIsRejected() passed after 0.007 seconds.
+􁁛  Test unavailablePrivateDefaultsNeverFallsBack() passed after 0.007 seconds.
+􁁛  Test noFlagAndOrdinaryUnitEnvironmentKeepProductionSelection() passed after 0.007 seconds.
+􁁛  Test profileNormalAndContainerJarsAreNonpersistentAndSeparate() passed after 0.007 seconds.
+􁁛  Test separateProfileOwnersCannotShareAnEphemeralJar() passed after 0.007 seconds.
+􁁛  Suite BrowserTestProfileWebKitTests passed after 0.007 seconds.
+􁁛  Test isolatedNativeSessionRejectsRequestsWithoutServerOrCredentials() passed after 0.010 seconds.
+􁁛  Test privatePathsCannotEscapeOrAliasProductionFixture() passed after 0.011 seconds.
+􁁛  Test manifestBindsExecutableAndAllOwnedRoots() passed after 0.011 seconds.
+􁁛  Test privateContextLeavesOtherDefaultsSuiteUntouched() passed after 0.012 seconds.
+􁁛  Suite BrowserTestProfileTests passed after 0.012 seconds.
+􁁛  Test run with 15 tests in 2 suites passed after 0.012 seconds.
+production-selection-only; integrations not invoked
+Process probes passed: production selection, 4 invalid startups, isolated credential/store/IPC boundaries, real WebKit rule preparation and readiness invalidation.
+Profile test evidence: /var/folders/_7/88k0tj090n96y9fs1rpjnchr0000gn/T//browser-profile-verification.yqYCcm
+Bounded wrapper verified separately on same compiled helper: exit 0.

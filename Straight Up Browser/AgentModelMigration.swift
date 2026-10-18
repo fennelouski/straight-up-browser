@@ -35,7 +35,7 @@ enum AgentModelMigration {
     }
 
     @discardableResult
-    static func migrateSavedSelection(defaults: UserDefaults = .standard) -> Bool {
+    static func migrateSavedSelection(defaults: UserDefaults = BrowserProfile.defaults) -> Bool {
         guard let rawProvider = defaults.string(forKey: "browserAgentProvider"),
               let provider = BrowserAgentProvider(rawValue: rawProvider),
               let saved = defaults.string(forKey: "browserAgentModel") else { return false }

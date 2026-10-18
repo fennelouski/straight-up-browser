@@ -29,10 +29,10 @@ enum NewCommandPresentation: String, CaseIterable {
 @MainActor
 enum NewCommandPreferences {
     static var pendingWindows: [UUID: NewCommandPresentation] = [:]
-    static func destination(defaults: UserDefaults = .standard) -> NewCommandDestination {
+    static func destination(defaults: UserDefaults = BrowserProfile.defaults) -> NewCommandDestination {
         NewCommandDestination(rawValue: defaults.string(forKey: NewCommandDestination.key) ?? "") ?? .window
     }
-    static func presentation(defaults: UserDefaults = .standard) -> NewCommandPresentation {
+    static func presentation(defaults: UserDefaults = BrowserProfile.defaults) -> NewCommandPresentation {
         NewCommandPresentation(rawValue: defaults.string(forKey: NewCommandPresentation.key) ?? "") ?? .omnibar
     }
 }

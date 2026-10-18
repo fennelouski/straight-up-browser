@@ -9,6 +9,7 @@ trap 'rm -rf "$verification_dir"' EXIT HUP INT TERM
 export CLANG_MODULE_CACHE_PATH="$verification_dir/module-cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$verification_dir/module-cache"
 mkdir -p "$verification_dir/Sources/Browser" "$verification_dir/Tests/BrowserTests"
+cp "$repo/Straight Up Browser/BrowserTestProfile.swift" "$verification_dir/Sources/Browser/BrowserTestProfile.swift"
 cp "$repo/Straight Up Browser/PowerUp.swift" "$verification_dir/Sources/Browser/PowerUp.swift"
 cp "$repo/Straight Up BrowserTests/PowerUpTests.swift" "$verification_dir/Tests/BrowserTests/PowerUpTests.swift"
 cat > "$verification_dir/Package.swift" <<'PACKAGE'

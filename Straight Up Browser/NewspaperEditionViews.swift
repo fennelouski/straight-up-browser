@@ -4,11 +4,11 @@ struct NewspaperEditionCover: View {
     let article: NewspaperArticle
     let style: NewspaperEditionStyle
     var compact = false
-    @AppStorage(NewspaperPreferences.Key.photoLimit) private var photoLimit = NewspaperPreferences.defaultPhotoLimit
-    @AppStorage(NewspaperEditionPreferences.cutout, store: NewspaperPreferences.presentationStore) private var cutout = false
-    @AppStorage(NewspaperEditionPreferences.texture, store: NewspaperPreferences.presentationStore) private var paperRaw = NewspaperPaperTexture.recommended.rawValue
-    @AppStorage(NewspaperEditionPreferences.textureStrength, store: NewspaperPreferences.presentationStore) private var paperStrength = 0.55
-    @AppStorage(NewspaperNaming.titleKey, store: NewspaperPreferences.presentationStore) private var personalTitle = ""
+    @AppStorage(NewspaperPreferences.Key.photoLimit, store: BrowserProfile.defaults) private var photoLimit = NewspaperPreferences.defaultPhotoLimit
+    @AppStorage(NewspaperEditionPreferences.cutout, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var cutout = false
+    @AppStorage(NewspaperEditionPreferences.texture, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var paperRaw = NewspaperPaperTexture.recommended.rawValue
+    @AppStorage(NewspaperEditionPreferences.textureStrength, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var paperStrength = 0.55
+    @AppStorage(NewspaperNaming.titleKey, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var personalTitle = ""
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -306,16 +306,16 @@ struct NewspaperEditionStylePreview: View {
 }
 
 struct NewspaperEditionSettings: View {
-    @AppStorage(NewspaperEditionPreferences.style, store: NewspaperPreferences.presentationStore) private var selected = NewspaperEditionStyle.metropolitan.rawValue
-    @AppStorage(NewspaperEditionPreferences.texture, store: NewspaperPreferences.presentationStore) private var texture = NewspaperPaperTexture.recommended.rawValue
-    @AppStorage(NewspaperEditionPreferences.textureStrength, store: NewspaperPreferences.presentationStore) private var strength = 0.55
-    @AppStorage(NewspaperEditionPreferences.regionalStyle, store: NewspaperPreferences.presentationStore) private var regional = true
-    @AppStorage(NewspaperEditionPreferences.cutout, store: NewspaperPreferences.presentationStore) private var cutout = false
-    @AppStorage(NewspaperEditionPreferences.welcomeEnabled, store: NewspaperPreferences.presentationStore) private var welcome = true
-    @AppStorage(NewspaperEditionPreferences.motionDuration, store: NewspaperPreferences.presentationStore) private var duration = 0.28
-    @AppStorage(NewspaperEditionPreferences.motionSpring, store: NewspaperPreferences.presentationStore) private var spring = true
-    @AppStorage(NewspaperPreferences.Key.layout, store: NewspaperPreferences.presentationStore) private var layout = NewspaperPreferences.defaultLayout
-    @AppStorage(NewspaperPreferences.Key.appearance, store: NewspaperPreferences.presentationStore) private var appearance = NewspaperPreferences.defaultAppearance
+    @AppStorage(NewspaperEditionPreferences.style, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var selected = NewspaperEditionStyle.metropolitan.rawValue
+    @AppStorage(NewspaperEditionPreferences.texture, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var texture = NewspaperPaperTexture.recommended.rawValue
+    @AppStorage(NewspaperEditionPreferences.textureStrength, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var strength = 0.55
+    @AppStorage(NewspaperEditionPreferences.regionalStyle, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var regional = true
+    @AppStorage(NewspaperEditionPreferences.cutout, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var cutout = false
+    @AppStorage(NewspaperEditionPreferences.welcomeEnabled, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var welcome = true
+    @AppStorage(NewspaperEditionPreferences.motionDuration, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var duration = 0.28
+    @AppStorage(NewspaperEditionPreferences.motionSpring, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var spring = true
+    @AppStorage(NewspaperPreferences.Key.layout, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var layout = NewspaperPreferences.defaultLayout
+    @AppStorage(NewspaperPreferences.Key.appearance, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var appearance = NewspaperPreferences.defaultAppearance
     @Environment(\.colorScheme) private var systemScheme
     private var style: NewspaperEditionStyle { NewspaperEditionStyle(rawValue: selected) ?? .metropolitan }
     var body: some View {

@@ -55,9 +55,10 @@ struct ImportReportSheet: View {
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         #endif
-        .fileImporter(isPresented: $showFilePicker,
+        .fileImporter(isPresented: Binding(get: { !BrowserProfile.isIsolated && showFilePicker }, set: { showFilePicker = $0 }),
                       allowedContentTypes: [.plainText, UTType(filenameExtension: "md") ?? .plainText]) { result in
             if case .success(let url) = result {
+                guard !BrowserProfile.isIsolated else { return }
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 if let contents = try? String(contentsOf: url, encoding: .utf8) {

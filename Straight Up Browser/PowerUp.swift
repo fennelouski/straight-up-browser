@@ -63,7 +63,7 @@ final class PowerUpLearning {
     private let defaults: UserDefaults
     private var writable = true
 
-    init(defaults: UserDefaults = .standard, now: Date = .now) {
+    init(defaults: UserDefaults = BrowserProfile.defaults, now: Date = .now) {
         self.defaults = defaults
         let decoded = defaults.data(forKey: Self.storageKey)
             .flatMap { try? JSONDecoder().decode(PowerUpLearningState.self, from: $0) }

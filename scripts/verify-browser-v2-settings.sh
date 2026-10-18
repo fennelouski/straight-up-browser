@@ -13,6 +13,7 @@ export CLANG_MODULE_CACHE_PATH="$harness_dir/ModuleCache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$harness_dir/ModuleCache"
 
 mkdir -p "$harness_dir/Sources/Browser" "$harness_dir/Tests/BrowserTests"
+cp "$repo_dir/Straight Up Browser/BrowserTestProfile.swift" "$harness_dir/Sources/Browser/BrowserTestProfile.swift"
 cp "$repo_dir/Straight Up Browser/SettingsAssistant.swift" "$harness_dir/Sources/Browser/SettingsAssistant.swift"
 cp "$repo_dir/Straight Up Browser/SettingsDurableStore.swift" "$harness_dir/Sources/Browser/SettingsDurableStore.swift"
 cp "$repo_dir/Straight Up Browser/BrowserThemeStore.swift" "$harness_dir/Sources/Browser/BrowserThemeStore.swift"

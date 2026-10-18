@@ -603,7 +603,7 @@ final class ShortcutStore {
     // Every chord currently in use, so a ⌃ twin never steals a real binding.
     private var boundShortcuts: Set<Shortcut> = []
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = BrowserProfile.defaults) {
         self.defaults = defaults
         load(); rebuildBound()
     }
@@ -758,7 +758,7 @@ final class ShortcutPriorityStore {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = BrowserProfile.defaults) {
         self.defaults = defaults
         global = (defaults.dictionary(forKey: Self.globalKey) as? [String: Bool]) ?? [:]
         byHost = (defaults.dictionary(forKey: Self.hostKey) as? [String: [String: Bool]]) ?? [:]

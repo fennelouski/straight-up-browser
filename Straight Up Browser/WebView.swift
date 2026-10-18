@@ -38,14 +38,14 @@ struct WebView: NSViewRepresentable {
 
     // Trackpad pinch + two-finger double-tap smart zoom. @AppStorage here so
     // flipping the setting re-runs updateNSView and applies it live.
-    @AppStorage("pinchToZoomEnabled") private var pinchToZoomEnabled = true
+    @AppStorage("pinchToZoomEnabled", store: BrowserProfile.defaults) private var pinchToZoomEnabled = true
 
     // Max page brightness, 100 = untouched. Same deal: @AppStorage so dragging
     // the slider re-runs updateNSView and you see it change under you.
-    @AppStorage("pageWhitePoint") private var pageWhitePoint = 100.0
+    @AppStorage("pageWhitePoint", store: BrowserProfile.defaults) private var pageWhitePoint = 100.0
     // Black point, 0 = untouched. Positive lifts blacks toward grey, negative
     // crushes greys down to black.
-    @AppStorage("pageBlackPoint") private var pageBlackPoint = 0.0
+    @AppStorage("pageBlackPoint", store: BrowserProfile.defaults) private var pageBlackPoint = 0.0
     // Off outside its scheduled hours: pages go back to untouched.
     @ObservedObject private var toneSchedule = ToneSchedule.shared
 
@@ -510,7 +510,7 @@ struct WebView: NSViewRepresentable {
 
         private func publishAgentNavigationFailure(_ error: Error, from webView: WKWebView) {
             let nsError = error as NSError
-            let includeText = UserDefaults.standard.bool(forKey: "agentWebKitDiagnosticContentEnabled")
+            let includeText = BrowserProfile.defaults.bool(forKey: "agentWebKitDiagnosticContentEnabled")
             publishAgentSignal(
                 .navigation(.init(
                     observationID: agentObservationID(for: webView),
@@ -632,7 +632,7 @@ struct WebView: NSViewRepresentable {
             parent.webViewManager?.pageFadeDidCommit(webView, navigation: navigation)
             // Push the current spacebar-scroll percentage into the new page;
             // the injected user script reads it on each keypress
-            let pct = UserDefaults.standard.object(forKey: "spaceScrollPercent") as? Double ?? 90
+            let pct = BrowserProfile.defaults.object(forKey: "spaceScrollPercent") as? Double ?? 90
             webView.evaluateJavaScript("window.__subSpacePct = \(pct)")
             if let tab = tab(for: webView) {
                 // The search URL is known here, so a recipe/memory hit can open the
@@ -913,11 +913,15 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping @MainActor @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+            guard !BrowserProfile.isIsolated else { completionHandler(.cancelAuthenticationChallenge, nil); return }
             // Handle SSL certificate validation
             handleAuthenticationChallenge(challenge, for: webView, completionHandler: completionHandler)
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, preferences: WKWebpagePreferences, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
+            if BrowserProfile.isIsolated, navigationAction.request.url.map(BrowserProfile.allowsNavigation) != true {
+                decisionHandler(.cancel, preferences); return
+            }
             if navigationAction.targetFrame?.isMainFrame == true, navigationAction.navigationType != .other,
                let id = parent.webViewManager?.tabId(for: webView) {
                 coldRetryableEngines.removeValue(forKey: id)
@@ -987,8 +991,8 @@ struct WebView: NSViewRepresentable {
             // WebKit actually honors - defaultWebpagePreferences on the
             // configuration doesn't reliably stick.
             preferences.allowsContentJavaScript =
-                UserDefaults.standard.object(forKey: "javaScriptEnabled") == nil
-                || UserDefaults.standard.bool(forKey: "javaScriptEnabled")
+                !BrowserProfile.isIsolated && (BrowserProfile.defaults.object(forKey: "javaScriptEnabled") == nil
+                || BrowserProfile.defaults.bool(forKey: "javaScriptEnabled"))
 
             if navigationAction.navigationType != .other {
                 resetRedirectLoopGuard(for: webView)
@@ -1153,17 +1157,15 @@ struct WebView: NSViewRepresentable {
         }
 
         func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping @MainActor @Sendable (URL?) -> Void) {
-            let configuredPath = UserDefaults.standard.string(forKey: "downloadsFolder") ?? ""
-            let defaultFolder = FileManager.default.urls(
-                for: .downloadsDirectory,
-                in: .userDomainMask
-            )[0]
+            let configuredPath = BrowserProfile.defaults.string(forKey: "downloadsFolder") ?? ""
+            let defaultFolder = BrowserProfile.downloadURLs[0]
             let folder = configuredPath.isEmpty
                 ? defaultFolder
                 : DownloadFolderAccess.shared.configuredFolder() ?? defaultFolder
 
             // Dedupe "name.ext" -> "name-2.ext" so WKDownload doesn't fail on collision
-            var destination = folder.appendingPathComponent(suggestedFilename)
+            let safeFilename = BrowserProfile.isIsolated ? URL(fileURLWithPath: suggestedFilename).lastPathComponent : suggestedFilename
+            var destination = folder.appendingPathComponent(safeFilename.isEmpty ? "download" : safeFilename)
             let base = destination.deletingPathExtension().lastPathComponent
             let ext = destination.pathExtension
             var counter = 2
@@ -1173,6 +1175,7 @@ struct WebView: NSViewRepresentable {
                 counter += 1
             }
 
+            guard BrowserProfile.allowsFileAccess(destination) else { completionHandler(nil); return }
             downloadDestinations[download] = destination
             if let transferId = downloadTransferIds[download] {
                 DownloadManager.shared.setDestination(transferId, url: destination, suggestedFilename: suggestedFilename)
@@ -1182,7 +1185,7 @@ struct WebView: NSViewRepresentable {
                             downloadID: transferId,
                             phase: .destinationSelected,
                             sourceURL: download.originalRequest?.url,
-                            suggestedFilename: UserDefaults.standard.bool(
+                            suggestedFilename: BrowserProfile.defaults.bool(
                                 forKey: "agentWebKitDiagnosticContentEnabled"
                             ) ? suggestedFilename : nil
                         )),
@@ -1214,7 +1217,7 @@ struct WebView: NSViewRepresentable {
                 }
                 // Reveal in Finder is the immediate "it's done" feedback; the
                 // browsable history lives in the Downloads window (File ▸ Show Downloads).
-                NSWorkspace.shared.activateFileViewerSelecting([url])
+                BrowserProfileSystem.reveal([url])
             }
             cleanup(download)
         }
@@ -1249,7 +1252,7 @@ struct WebView: NSViewRepresentable {
                         sourceURL: request?.url,
                         errorDomain: nsError.domain,
                         errorCode: nsError.code,
-                        errorDescription: UserDefaults.standard.bool(
+                        errorDescription: BrowserProfile.defaults.bool(
                             forKey: "agentWebKitDiagnosticContentEnabled"
                         ) ? nsError.localizedDescription : nil
                     )),
@@ -1301,8 +1304,8 @@ struct WebView: NSViewRepresentable {
                     default:
                         tab(for: webView)?.securityLevel = .insecure
                         // Strict SSL (settings toggle, default on): refuse invalid certs outright
-                        let strict = UserDefaults.standard.object(forKey: "sslStrictMode") == nil
-                            || UserDefaults.standard.bool(forKey: "sslStrictMode")
+                        let strict = BrowserProfile.defaults.object(forKey: "sslStrictMode") == nil
+                            || BrowserProfile.defaults.bool(forKey: "sslStrictMode")
                         if strict {
                             completionHandler(.cancelAuthenticationChallenge, nil)
                             return
@@ -1381,6 +1384,12 @@ struct WebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
             // A target="_blank" handoff link (zoommtg:, msteams:…) would otherwise
             // leave a dead blank tab behind.
+            if BrowserProfile.isIsolated {
+                guard let url = navigationAction.request.url, BrowserProfile.allowsNavigation(url),
+                      !configuration.websiteDataStore.isPersistent else { return nil }
+                configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+                BrowserProfileWebKit.restoreContainment(on: configuration.userContentController)
+            }
             if let url = navigationAction.request.url, handleExternalScheme(url, from: webView) { return nil }
             guard let tabManager = tabManager, let webViewManager = parent.webViewManager else { return nil }
 
@@ -1389,7 +1398,9 @@ struct WebView: NSViewRepresentable {
             // WebKit built the popup from the opener's configuration, so it already
             // shares the opener's data store — keep the tab in the same session too, so
             // an incognito/container popup doesn't leak out into a normal persisted tab.
-            let popupWebView = WKWebView(frame: .zero, configuration: configuration)
+            let popupWebView = BrowserProfile.isIsolated
+                ? BrowserWKWebView(frame: .zero, configuration: configuration)
+                : WKWebView(frame: .zero, configuration: configuration)
             let sourceTabId = webViewManager.tabId(for: webView)
             let openerContext = sourceTabId
                 .flatMap { id in tabs?.first(where: { $0.id == id })?.browsingContext }
@@ -1593,6 +1604,7 @@ struct WebView: NSViewRepresentable {
         }
 
         @objc private func showSystemPasswords(_ sender: NSMenuItem) {
+            guard !BrowserProfile.isIsolated else { return }
             guard let item = systemPasswordsItem, let action = item.action else { return }
             NSApp.sendAction(action, to: item.target, from: item)
         }
@@ -1656,8 +1668,8 @@ struct WebView: NSViewRepresentable {
 
             let name = FileManager.default.displayName(atPath: app.path)
             let suppressionKey = "externalSchemeAlwaysAllow.\(scheme)"
-            if UserDefaults.standard.bool(forKey: suppressionKey) {
-                NSWorkspace.shared.open(url)
+            if BrowserProfile.defaults.bool(forKey: suppressionKey) {
+                BrowserProfileSystem.open(url)
                 return true
             }
 
@@ -1673,9 +1685,9 @@ struct WebView: NSViewRepresentable {
             presentSheet(alert, over: webView) { response in
                 guard response == .alertFirstButtonReturn else { return }
                 if alert.suppressionButton?.state == .on {
-                    UserDefaults.standard.set(true, forKey: suppressionKey)
+                    BrowserProfile.defaults.set(true, forKey: suppressionKey)
                 }
-                NSWorkspace.shared.open(url)
+                BrowserProfileSystem.open(url)
             }
             return true
         }
@@ -1699,7 +1711,7 @@ struct WebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable () -> Void) {
             let dialogID = UUID()
-            let includeText = UserDefaults.standard.bool(forKey: "agentWebKitDiagnosticContentEnabled")
+            let includeText = BrowserProfile.defaults.bool(forKey: "agentWebKitDiagnosticContentEnabled")
             publishAgentSignal(
                 .dialog(.init(
                     dialogID: dialogID,
@@ -1724,7 +1736,7 @@ struct WebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable (Bool) -> Void) {
             let dialogID = UUID()
-            let includeText = UserDefaults.standard.bool(forKey: "agentWebKitDiagnosticContentEnabled")
+            let includeText = BrowserProfile.defaults.bool(forKey: "agentWebKitDiagnosticContentEnabled")
             publishAgentSignal(
                 .dialog(.init(
                     dialogID: dialogID,
@@ -1750,7 +1762,7 @@ struct WebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable (String?) -> Void) {
             let dialogID = UUID()
-            let includeText = UserDefaults.standard.bool(forKey: "agentWebKitDiagnosticContentEnabled")
+            let includeText = BrowserProfile.defaults.bool(forKey: "agentWebKitDiagnosticContentEnabled")
             publishAgentSignal(
                 .dialog(.init(
                     dialogID: dialogID,
@@ -1780,6 +1792,7 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping @MainActor @Sendable (WKPermissionDecision) -> Void) {
+            guard !BrowserProfile.isIsolated else { decisionHandler(.deny); return }
             let originKey = SitePermissionOrigin.canonical(origin)
             let kinds = type.sitePermissionKinds
             if let stored = SitePermissionStore.shared.decision(
@@ -1824,6 +1837,7 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void) {
+            guard !BrowserProfile.isIsolated else { completionHandler(nil); return }
             let panel = NSOpenPanel()
             panel.canChooseFiles = true
             panel.canChooseDirectories = parameters.allowsDirectories

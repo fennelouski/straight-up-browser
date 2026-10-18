@@ -1,0 +1,11 @@
+# Isolated native profile source verification
+
+Source-only successor to reviewed main 342632c. No release metadata, release.sh, hosting or production installation changes.
+
+The source harnesses execute 194 actual tests: profile 15 (including two real nonpersistent WebKit jar tests), motion 33, settings 48, Power Up 14, pane models 42, shortcuts 10 and weather 32. Profile subprocess probes additionally verify no-flag selection, four exit-78 startup failures and guarded private credential/IPC/defaults behavior. The headless process also compiles the actual private WebKit rules, checks nonpersistent/JavaScript-disabled configuration and verifies the ready=false → ready=true → ready=false lifecycle without creating a web view or window. This caught and fixed WebKit’s rejection of regex disjunction: the allowlist now uses separate rules. These counts describe Swift Testing source harnesses, not XCTest app UI execution. The source inventory covers 286 AppStorage declarations and 26 low-level Keychain calls.
+
+The actual macOS app and native unit/UI test bundles compile at two Xcode jobs with warnings as errors, signing disabled and no app launch. `checks.json` and `source-inputs.json` bind the exact source snapshot. Full hosted native execution/coverage, iOS/Release compiles and actual signed-build runtime acceptance remain Air-owned gates.
+
+One harness repair was necessary: the existing weather harness did not include WeatherPresentation.swift referenced by its existing tests. It now compiles that real source and the profile dependencies, with unique two-job outputs. The first native test compile also found one unused-result warning in a new test, corrected before final successful compilation. A narrow standalone typecheck retry used a canonical absolute module-cache path after Swift crashed on duplicate relative/absolute cache identities. None of these failures were presented as passing checks.
+
+The profile's exact schema, lifecycle, launch arguments, isolation scope, native-controls limits and remaining runtime gates are documented in ../../isolated-native-test-profile.md. `ready=true` means preparation succeeded, never test acceptance. The retained manifest after a crash still requires live PID/executable/profile verification.

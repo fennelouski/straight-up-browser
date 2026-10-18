@@ -277,10 +277,10 @@ struct FilesWindow: View {
             Button("Other…") { chooseApplication(for: row) }
         }
         .disabled(!row.exists)
-        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([row.record.url]) }.disabled(!row.exists)
+        Button("Show in Finder") { BrowserProfileSystem.reveal([row.record.url]) }.disabled(!row.exists)
         Button("Copy Path") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(row.record.path, forType: .string)
+            BrowserProfileSystem.pasteboard.clearContents()
+            BrowserProfileSystem.pasteboard.setString(row.record.path, forType: .string)
         }
         Divider()
         Button("Move to Trash", role: .destructive) { moveToTrash(row) }.disabled(!row.exists)
@@ -289,12 +289,12 @@ struct FilesWindow: View {
 
     private func open(_ row: FileRow) {
         guard row.exists else { return }
-        NSWorkspace.shared.open(row.record.url)
+        BrowserProfileSystem.open(row.record.url)
     }
 
     private func open(_ row: FileRow, with app: URL) {
         guard row.exists else { return }
-        NSWorkspace.shared.open([row.record.url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+        BrowserProfileSystem.open([row.record.url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
     }
 
     private func openWithApps(for url: URL) -> [URL] {
@@ -303,6 +303,7 @@ struct FilesWindow: View {
     }
 
     private func chooseApplication(for row: FileRow) {
+        guard !BrowserProfile.isIsolated else { return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.application]
         panel.directoryURL = URL(fileURLWithPath: "/Applications")

@@ -71,7 +71,7 @@ nonisolated enum BrowserWeatherKeychain {
         (8...256).contains(key.utf8.count) && key.unicodeScalars.allSatisfy { (33...126).contains($0.value) }
     }
     static func read() -> String? {
-        guard !ProcessInfo.processInfo.arguments.contains("-uiTesting") else { return nil }
+        guard !BrowserProfile.isIsolated, !ProcessInfo.processInfo.arguments.contains("-uiTesting") else { return nil }
         var query = identity(provider: "tomorrow")
         query[kSecReturnData as String] = true; query[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
@@ -80,11 +80,11 @@ nonisolated enum BrowserWeatherKeychain {
         return String(data: data, encoding: .utf8)
     }
     static func hasKey() -> Bool {
-        guard !ProcessInfo.processInfo.arguments.contains("-uiTesting") else { return false }
+        guard !BrowserProfile.isIsolated, !ProcessInfo.processInfo.arguments.contains("-uiTesting") else { return false }
         return SecItemCopyMatching(identity(provider: "tomorrow") as CFDictionary, nil) == errSecSuccess
     }
     static func write(_ key: String) throws {
-        guard !ProcessInfo.processInfo.arguments.contains("-uiTesting") else { throw BrowserWeatherError.credentials }
+        guard !BrowserProfile.isIsolated, !ProcessInfo.processInfo.arguments.contains("-uiTesting") else { throw BrowserWeatherError.credentials }
         let identity = identity(provider: "tomorrow")
         if key.isEmpty {
             let status = SecItemDelete(identity as CFDictionary)
@@ -125,13 +125,14 @@ nonisolated enum BrowserWeatherKeychain {
     var cacheCount: Int { cache.count }
     var requestCount: Int { usage.values.reduce(0, +) }
 
-    init(preferences: UserDefaults = .standard, clock: @escaping () -> Date = Date.init,
+    init(preferences: UserDefaults = BrowserProfile.defaults, clock: @escaping () -> Date = Date.init,
          geocode: @escaping Geocode = BrowserWeatherService.geocode,
          provider: @escaping Provider = BrowserWeatherAdapters.fetch) {
         self.preferences = preferences; self.clock = clock; self.geocode = geocode; self.provider = provider
         usage = preferences.dictionary(forKey: "browserWeatherRequestAttempts") as? [String: Int] ?? [:]
     }
     func resolve(_ query: String) async throws -> [BrowserWeatherPlace] {
+        guard !BrowserProfile.isIsolated else { throw BrowserWeatherError.message("External weather is disabled in the isolated profile.") }
         let text = WeatherMapLink.query(query) ?? query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text.count <= 200, !text.contains("://") else { throw BrowserWeatherError.message("Enter an address, postcode, or full supported Maps place link.") }
         let key = text.lowercased()
@@ -166,6 +167,7 @@ nonisolated enum BrowserWeatherKeychain {
     }
 
     func forecast(for place: BrowserWeatherPlace, provider selected: BrowserWeatherProvider? = nil, refresh: Bool = false) async throws -> BrowserWeatherForecast {
+        guard !BrowserProfile.isIsolated else { throw BrowserWeatherError.message("External weather is disabled in the isolated profile.") }
         guard place.isValid else { throw BrowserWeatherError.message("The resolved location is invalid.") }
         let selection = selected ?? BrowserWeatherProvider(rawValue: preferences.string(forKey: "browserWeatherProvider") ?? "apple") ?? .apple
         let scope = preferences.string(forKey: "browserWeatherCredentialRevision") ?? "native"

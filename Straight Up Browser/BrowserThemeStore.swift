@@ -25,6 +25,9 @@ nonisolated enum BrowserThemeEnvironment {
 @MainActor @Observable final class BrowserThemeStore {
     static let shared: BrowserThemeStore = {
         let manager = FileManager.default
+        if let paths = BrowserProfile.paths {
+            return BrowserThemeStore(directory: paths.support.appendingPathComponent("Theme Authority", isDirectory: true), defaults: BrowserProfile.defaults)
+        }
         if BrowserThemeEnvironment.isTest(environment: ProcessInfo.processInfo.environment, arguments: ProcessInfo.processInfo.arguments) {
             let fixture = BrowserThemeEnvironment.testLocation(temporaryDirectory: manager.temporaryDirectory, identity: UUID())
             guard let defaults = UserDefaults(suiteName: fixture.suite) else { return BrowserThemeStore(unavailable: SettingsDurableError.unavailable) }
@@ -208,7 +211,7 @@ nonisolated enum BrowserThemeEnvironment {
 @MainActor final class SettingsNativeStore: SettingsPreferenceStore {
     private let defaults: SettingsDefaultsStore
     private let theme: () -> BrowserThemeStore
-    init(defaults: UserDefaults = .standard, theme: @escaping () -> BrowserThemeStore = { .shared }) {
+    init(defaults: UserDefaults = BrowserProfile.defaults, theme: @escaping () -> BrowserThemeStore = { .shared }) {
         self.defaults = SettingsDefaultsStore(defaults: defaults)
         self.theme = theme
     }

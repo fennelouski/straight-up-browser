@@ -20,30 +20,30 @@ struct GeneralSettingsView: View {
     @Environment(\.openWindow) private var openWindow
     @Query private var tabs: [Tab]
 
-    @AppStorage(NewCommandDestination.key) private var newCommandDestination = NewCommandDestination.window.rawValue
-    @AppStorage(NewCommandPresentation.key) private var newCommandPresentation = NewCommandPresentation.omnibar.rawValue
-    @AppStorage("searchEngine") private var searchEngine = "Google"
-    @AppStorage("omnibarPosition") private var omnibarPosition = "Upper"
-    @AppStorage(FindBar.positionKey) private var findBarPosition = FindBar.defaultPosition
-    @AppStorage(FindBar.intensityKey) private var findFlashIntensity = FindBar.defaultIntensity
-    @AppStorage("spaceScrollPercent") private var spaceScrollPercent = 90.0
-    @AppStorage("cmdPExportsPDF") private var cmdPExportsPDF = true
-    @AppStorage("expandBackForwardShortcuts") private var expandBackForwardShortcuts = true
-    @AppStorage(KeyboardShortcutsManager.overrideWebsiteQuickOpenKey) private var overrideWebsiteQuickOpen = false
-    @AppStorage(GlobalOmnibarHotkey.defaultsKey) private var globalOmnibarHotkey = GlobalOmnibarHotkey.defaultChord
-    @AppStorage(DefaultBrowser.promptEnabledKey) private var defaultBrowserPrompt = true
-    @AppStorage(KeyboardShortcutsManager.quitHoldPercentKey) private var quitHoldPercent = KeyboardShortcutsManager.quitHoldDefaultPercent
+    @AppStorage(NewCommandDestination.key, store: BrowserProfile.defaults) private var newCommandDestination = NewCommandDestination.window.rawValue
+    @AppStorage(NewCommandPresentation.key, store: BrowserProfile.defaults) private var newCommandPresentation = NewCommandPresentation.omnibar.rawValue
+    @AppStorage("searchEngine", store: BrowserProfile.defaults) private var searchEngine = "Google"
+    @AppStorage("omnibarPosition", store: BrowserProfile.defaults) private var omnibarPosition = "Upper"
+    @AppStorage(FindBar.positionKey, store: BrowserProfile.defaults) private var findBarPosition = FindBar.defaultPosition
+    @AppStorage(FindBar.intensityKey, store: BrowserProfile.defaults) private var findFlashIntensity = FindBar.defaultIntensity
+    @AppStorage("spaceScrollPercent", store: BrowserProfile.defaults) private var spaceScrollPercent = 90.0
+    @AppStorage("cmdPExportsPDF", store: BrowserProfile.defaults) private var cmdPExportsPDF = true
+    @AppStorage("expandBackForwardShortcuts", store: BrowserProfile.defaults) private var expandBackForwardShortcuts = true
+    @AppStorage(KeyboardShortcutsManager.overrideWebsiteQuickOpenKey, store: BrowserProfile.defaults) private var overrideWebsiteQuickOpen = false
+    @AppStorage(GlobalOmnibarHotkey.defaultsKey, store: BrowserProfile.defaults) private var globalOmnibarHotkey = GlobalOmnibarHotkey.defaultChord
+    @AppStorage(DefaultBrowser.promptEnabledKey, store: BrowserProfile.defaults) private var defaultBrowserPrompt = true
+    @AppStorage(KeyboardShortcutsManager.quitHoldPercentKey, store: BrowserProfile.defaults) private var quitHoldPercent = KeyboardShortcutsManager.quitHoldDefaultPercent
 
-    @AppStorage(TabSync.Key.enabled) private var tabSyncEnabled = false
-    @AppStorage(TabSync.Key.mode) private var tabSyncMode = TabSyncMode.openOnly.rawValue
-    @AppStorage(TabSync.Key.cacheState) private var tabSyncCacheState = false
-    @AppStorage(FastForward.Key.enabled) private var fastForwardEnabled = true
-    @AppStorage(SiteHistory.useAppleIntelligenceKey) private var siteNicknamesUseAI = true
-    @AppStorage(Prefetcher.enabledKey) private var prefetchEnabled = true
-    @AppStorage(SettingsManager.automaticLinkMitosisKey) private var automaticLinkMitosis = true
-    @AppStorage(SettingsManager.automaticLinkSplitKey) private var automaticLinkSplit = false
+    @AppStorage(TabSync.Key.enabled, store: BrowserProfile.defaults) private var tabSyncEnabled = false
+    @AppStorage(TabSync.Key.mode, store: BrowserProfile.defaults) private var tabSyncMode = TabSyncMode.openOnly.rawValue
+    @AppStorage(TabSync.Key.cacheState, store: BrowserProfile.defaults) private var tabSyncCacheState = false
+    @AppStorage(FastForward.Key.enabled, store: BrowserProfile.defaults) private var fastForwardEnabled = true
+    @AppStorage(SiteHistory.useAppleIntelligenceKey, store: BrowserProfile.defaults) private var siteNicknamesUseAI = true
+    @AppStorage(Prefetcher.enabledKey, store: BrowserProfile.defaults) private var prefetchEnabled = true
+    @AppStorage(SettingsManager.automaticLinkMitosisKey, store: BrowserProfile.defaults) private var automaticLinkMitosis = true
+    @AppStorage(SettingsManager.automaticLinkSplitKey, store: BrowserProfile.defaults) private var automaticLinkSplit = false
     // Phase 2 (design §6.4): what clicking an anchor pill in a document does.
-    @AppStorage("anchorLinkOpenBehavior") private var anchorLinkOpenBehavior = "peek"
+    @AppStorage("anchorLinkOpenBehavior", store: BrowserProfile.defaults) private var anchorLinkOpenBehavior = "peek"
     @State private var iCloudAvailable: Bool?
 
     private let searchEngines = ["Google", "DuckDuckGo", "Bing", "Yahoo"]
@@ -375,7 +375,7 @@ struct BackGuardSection: View {
 
 struct ShortcutsSettingsView: View {
     private var store: ShortcutStore { .shared }
-    @AppStorage(SettingsManager.recentTabCyclingKey) private var recentTabCycling = false
+    @AppStorage(SettingsManager.recentTabCyclingKey, store: BrowserProfile.defaults) private var recentTabCycling = false
     @State private var searchText = ""
 
     private func matches(_ command: ShortcutCommand) -> Bool {
@@ -619,10 +619,10 @@ final class KeyRecorder {
 // MARK: - Content
 
 struct ContentSettingsView: View {
-    @AppStorage("javaScriptEnabled") private var javaScriptEnabled = true
-    @AppStorage("pinchToZoomEnabled") private var pinchToZoomEnabled = true
-    @AppStorage("autoTranslateEnabled") private var autoTranslateEnabled = true
-    @AppStorage("translationPreferredLanguages") private var translationPreferredLanguages = ""
+    @AppStorage("javaScriptEnabled", store: BrowserProfile.defaults) private var javaScriptEnabled = true
+    @AppStorage("pinchToZoomEnabled", store: BrowserProfile.defaults) private var pinchToZoomEnabled = true
+    @AppStorage("autoTranslateEnabled", store: BrowserProfile.defaults) private var autoTranslateEnabled = true
+    @AppStorage("translationPreferredLanguages", store: BrowserProfile.defaults) private var translationPreferredLanguages = ""
 
     // Owns only prefetch downloads triggered from this window — separate from
     // the per-browser-window PageTranslator that actually translates pages.
@@ -765,7 +765,7 @@ struct LanguageManagerDialog: View {
 
     private func openSystemLanguageSettings() {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension") else { return }
-        NSWorkspace.shared.open(url)
+        BrowserProfileSystem.open(url)
     }
 }
 
@@ -833,12 +833,12 @@ struct TranslationHistoryDialog: View {
 // MARK: - Downloads
 
 struct DownloadsSettingsView: View {
-    @AppStorage("downloadsFolder") private var downloadsFolder = ""
-    @AppStorage("optionClickDownloadEnabled") private var optionClickDownloadEnabled = true
-    @AppStorage("optionClickDownloadImages") private var optionClickDownloadImages = true
-    @AppStorage("optionClickFileTypes") private var optionClickFileTypes = ""
-    @AppStorage("optionClickAlwaysDomains") private var optionClickAlwaysDomains = ""
-    @AppStorage("optionClickNeverDomains") private var optionClickNeverDomains = ""
+    @AppStorage("downloadsFolder", store: BrowserProfile.defaults) private var downloadsFolder = ""
+    @AppStorage("optionClickDownloadEnabled", store: BrowserProfile.defaults) private var optionClickDownloadEnabled = true
+    @AppStorage("optionClickDownloadImages", store: BrowserProfile.defaults) private var optionClickDownloadImages = true
+    @AppStorage("optionClickFileTypes", store: BrowserProfile.defaults) private var optionClickFileTypes = ""
+    @AppStorage("optionClickAlwaysDomains", store: BrowserProfile.defaults) private var optionClickAlwaysDomains = ""
+    @AppStorage("optionClickNeverDomains", store: BrowserProfile.defaults) private var optionClickNeverDomains = ""
     @State private var folderAccessError: String?
 
     var body: some View {
@@ -915,6 +915,7 @@ struct DownloadsSettingsView: View {
     }
 
     private func chooseFolder() {
+        guard !BrowserProfile.isIsolated else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -1104,9 +1105,9 @@ struct WindowCapturePanel: View {
 // stays readable because each shortcut is folded into its own DisclosureGroup
 // and every control is one ScreenshotSettings.binding call.
 struct ScreenshotsSettingsView: View {
-    @AppStorage(ScreenshotSettings.Key.sharedFolder) private var sharedFolder = ""
-    @AppStorage(ScreenshotSettings.Key.visibleWholeContentArea) private var visibleWholeContentArea = false
-    @AppStorage(ScreenshotSettings.Key.windowCaptureMode) private var windowCaptureMode = WindowCaptureMode.ask.rawValue
+    @AppStorage(ScreenshotSettings.Key.sharedFolder, store: BrowserProfile.defaults) private var sharedFolder = ""
+    @AppStorage(ScreenshotSettings.Key.visibleWholeContentArea, store: BrowserProfile.defaults) private var visibleWholeContentArea = false
+    @AppStorage(ScreenshotSettings.Key.windowCaptureMode, store: BrowserProfile.defaults) private var windowCaptureMode = WindowCaptureMode.ask.rawValue
     // Applied to every destination of every shortcut in one go — the fast path
     // out of touching twelve pickers by hand.
     @State private var bulkFormat = ScreenshotFormat.png
@@ -1324,6 +1325,7 @@ struct ScreenshotsSettingsView: View {
 
     // Same NSOpenPanel shape DownloadsSettingsView uses.
     private func chooseFolder(into path: Binding<String>) {
+        guard !BrowserProfile.isIsolated else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -1347,66 +1349,66 @@ struct ScreenshotsSettingsView: View {
 // MARK: - Appearance
 
 struct AppearanceSettingsView: View {
-    @AppStorage(OmnibarMotionPreferences.durationKey)
+    @AppStorage(OmnibarMotionPreferences.durationKey, store: BrowserProfile.defaults)
     private var omnibarAnimationDuration = OmnibarMotionPreferences.defaultDuration
-    @AppStorage(OmnibarMotionPreferences.springKey) private var omnibarAnimationSpring = true
+    @AppStorage(OmnibarMotionPreferences.springKey, store: BrowserProfile.defaults) private var omnibarAnimationSpring = true
     // One durable observable authority, shared by every theme surface.
     @BrowserThemeStorage private var theme
     // Matches the app logo's blue by default. Stored as hex because Color itself
     // is not a stable UserDefaults value across all supported OS releases.
-    @AppStorage("aiSearchEffectColorHex") private var aiSearchEffectColorHex = "#007AFF"
+    @AppStorage("aiSearchEffectColorHex", store: BrowserProfile.defaults) private var aiSearchEffectColorHex = "#007AFF"
 
     // Load progress indicators (any combination).
-    @AppStorage("progressBarTop") private var progressBarTop = true
-    @AppStorage("progressBarBottom") private var progressBarBottom = false
-    @AppStorage("progressBarLeft") private var progressBarLeft = false
-    @AppStorage("progressBarRight") private var progressBarRight = false
-    @AppStorage("progressFaviconRing") private var progressFaviconRing = false
-    @AppStorage("showTraditionalTopTabs") private var showTraditionalTopTabs = false
-    @AppStorage("topTabsAutoHide") private var topTabsAutoHide = true
-    @AppStorage("adaptiveLargeSidebarTabs") private var adaptiveLargeSidebarTabs = true
-    @AppStorage(VisualTabPreferences.aspectRatioKey)
+    @AppStorage("progressBarTop", store: BrowserProfile.defaults) private var progressBarTop = true
+    @AppStorage("progressBarBottom", store: BrowserProfile.defaults) private var progressBarBottom = false
+    @AppStorage("progressBarLeft", store: BrowserProfile.defaults) private var progressBarLeft = false
+    @AppStorage("progressBarRight", store: BrowserProfile.defaults) private var progressBarRight = false
+    @AppStorage("progressFaviconRing", store: BrowserProfile.defaults) private var progressFaviconRing = false
+    @AppStorage("showTraditionalTopTabs", store: BrowserProfile.defaults) private var showTraditionalTopTabs = false
+    @AppStorage("topTabsAutoHide", store: BrowserProfile.defaults) private var topTabsAutoHide = true
+    @AppStorage("adaptiveLargeSidebarTabs", store: BrowserProfile.defaults) private var adaptiveLargeSidebarTabs = true
+    @AppStorage(VisualTabPreferences.aspectRatioKey, store: BrowserProfile.defaults)
     private var visualTabAspectRatio = VisualTabPreferences.defaultAspectRatio
-    @AppStorage(VisualTabPreferences.livePreviewsKey)
+    @AppStorage(VisualTabPreferences.livePreviewsKey, store: BrowserProfile.defaults)
     private var visualTabLivePreviews = true
-    @AppStorage(VisualTabPreferences.switcherKey)
+    @AppStorage(VisualTabPreferences.switcherKey, store: BrowserProfile.defaults)
     private var visualTabSwitcher = true
     #if os(macOS)
-    @AppStorage(TabPeekPlacement.enabledKey) private var tabPeekEnabled = true
-    @AppStorage(TabPeekPlacement.defaultsKey) private var tabPeekPlacementRaw = TabPeekPlacement.screenTop.rawValue
+    @AppStorage(TabPeekPlacement.enabledKey, store: BrowserProfile.defaults) private var tabPeekEnabled = true
+    @AppStorage(TabPeekPlacement.defaultsKey, store: BrowserProfile.defaults) private var tabPeekPlacementRaw = TabPeekPlacement.screenTop.rawValue
     #endif
-    @AppStorage(TabCardNames.useAppleIntelligenceKey)
+    @AppStorage(TabCardNames.useAppleIntelligenceKey, store: BrowserProfile.defaults)
     private var tabCardNamesUseAI = true
-    @AppStorage(NewTabButtonVisibility.visibleKey) private var showNewTabButton = true
-    @AppStorage(SettingsManager.aiFeaturesKey) private var aiFeaturesEnabled = true
-    @AppStorage(BrowserChromePlacementSettings.Key.tabSidebarSide)
+    @AppStorage(NewTabButtonVisibility.visibleKey, store: BrowserProfile.defaults) private var showNewTabButton = true
+    @AppStorage(SettingsManager.aiFeaturesKey, store: BrowserProfile.defaults) private var aiFeaturesEnabled = true
+    @AppStorage(BrowserChromePlacementSettings.Key.tabSidebarSide, store: BrowserProfile.defaults)
     private var tabSidebarSideRaw = BrowserChromeSide.left.rawValue
     #if os(macOS)
-    @AppStorage(DeveloperToolsPlacement.defaultsKey) private var developerToolsPlacementRaw = DeveloperToolsPlacement.bottom.rawValue
+    @AppStorage(DeveloperToolsPlacement.defaultsKey, store: BrowserProfile.defaults) private var developerToolsPlacementRaw = DeveloperToolsPlacement.bottom.rawValue
     #endif
 
     // Flicker control.
-    @AppStorage("fadeInPages") private var fadeInPages = true
-    @AppStorage("fadeInDuration") private var fadeInDuration = 250.0
-    @AppStorage("pageWhitePoint") private var pageWhitePoint = 100.0
-    @AppStorage("pageBlackPoint") private var pageBlackPoint = 0.0
-    @AppStorage("toneExtendedRange") private var toneExtendedRange = false
-    @AppStorage("toneScheduleMode") private var toneScheduleMode = "always"
-    @AppStorage("toneFixedStart") private var toneFixedStart = 20.0 * 60
-    @AppStorage("toneFixedEnd") private var toneFixedEnd = 7.0 * 60
-    @AppStorage("toneSunsetOffset") private var toneSunsetOffset = 0.0
-    @AppStorage("toneSunriseOffset") private var toneSunriseOffset = 0.0
+    @AppStorage("fadeInPages", store: BrowserProfile.defaults) private var fadeInPages = true
+    @AppStorage("fadeInDuration", store: BrowserProfile.defaults) private var fadeInDuration = 250.0
+    @AppStorage("pageWhitePoint", store: BrowserProfile.defaults) private var pageWhitePoint = 100.0
+    @AppStorage("pageBlackPoint", store: BrowserProfile.defaults) private var pageBlackPoint = 0.0
+    @AppStorage("toneExtendedRange", store: BrowserProfile.defaults) private var toneExtendedRange = false
+    @AppStorage("toneScheduleMode", store: BrowserProfile.defaults) private var toneScheduleMode = "always"
+    @AppStorage("toneFixedStart", store: BrowserProfile.defaults) private var toneFixedStart = 20.0 * 60
+    @AppStorage("toneFixedEnd", store: BrowserProfile.defaults) private var toneFixedEnd = 7.0 * 60
+    @AppStorage("toneSunsetOffset", store: BrowserProfile.defaults) private var toneSunsetOffset = 0.0
+    @AppStorage("toneSunriseOffset", store: BrowserProfile.defaults) private var toneSunriseOffset = 0.0
     @ObservedObject private var toneSchedule = ToneSchedule.shared
 
     private var whitePointRange: ClosedRange<Double> { toneExtendedRange ? 10...200 : 25...100 }
     private var blackPointRange: ClosedRange<Double> { toneExtendedRange ? -50...50 : -15...15 }
 
     // Window shape and where it lands on launch.
-    @AppStorage(BrowserWindows.nativeFullScreenKey) private var nativeFullScreen = false
-    @AppStorage(WindowLayout.Key.launchEnabled) private var launchLayoutEnabled = false
-    @AppStorage(WindowLayout.Key.width) private var launchLayoutWidth = "full"
-    @AppStorage(WindowLayout.Key.position) private var launchLayoutPosition = "center"
-    @AppStorage(WindowLayout.Key.squareCorners) private var squareWindowCorners = false
+    @AppStorage(BrowserWindows.nativeFullScreenKey, store: BrowserProfile.defaults) private var nativeFullScreen = false
+    @AppStorage(WindowLayout.Key.launchEnabled, store: BrowserProfile.defaults) private var launchLayoutEnabled = false
+    @AppStorage(WindowLayout.Key.width, store: BrowserProfile.defaults) private var launchLayoutWidth = "full"
+    @AppStorage(WindowLayout.Key.position, store: BrowserProfile.defaults) private var launchLayoutPosition = "center"
+    @AppStorage(WindowLayout.Key.squareCorners, store: BrowserProfile.defaults) private var squareWindowCorners = false
 
     private let themes = ["Light", "Dark", "System"]
 
@@ -1714,13 +1716,13 @@ struct AppearanceSettingsView: View {
 // MARK: - Security
 
 struct SecuritySettingsView: View {
-    @AppStorage("sslStrictMode") private var sslStrictMode = true
-    @AppStorage("adBlockEnabled") private var adBlockEnabled = false
-    @AppStorage(CLIAuthorization.Key.enabled) private var cliAutomationEnabled = false
-    @AppStorage(CLIAuthorization.Key.pageRead) private var cliPageReadEnabled = false
-    @AppStorage(CLIAuthorization.Key.pageScript) private var cliPageScriptEnabled = false
-    @AppStorage(CLIAuthorization.Key.screenshot) private var cliScreenshotEnabled = false
-    @AppStorage("cliRealEventsEnabled") private var cliRealEventsEnabled = false
+    @AppStorage("sslStrictMode", store: BrowserProfile.defaults) private var sslStrictMode = true
+    @AppStorage("adBlockEnabled", store: BrowserProfile.defaults) private var adBlockEnabled = false
+    @AppStorage(CLIAuthorization.Key.enabled, store: BrowserProfile.defaults) private var cliAutomationEnabled = false
+    @AppStorage(CLIAuthorization.Key.pageRead, store: BrowserProfile.defaults) private var cliPageReadEnabled = false
+    @AppStorage(CLIAuthorization.Key.pageScript, store: BrowserProfile.defaults) private var cliPageScriptEnabled = false
+    @AppStorage(CLIAuthorization.Key.screenshot, store: BrowserProfile.defaults) private var cliScreenshotEnabled = false
+    @AppStorage("cliRealEventsEnabled", store: BrowserProfile.defaults) private var cliRealEventsEnabled = false
     @State private var copiedMCPConfiguration = false
 
     private var authorizedRealEvents: Binding<Bool> {
@@ -1782,8 +1784,8 @@ struct SecuritySettingsView: View {
             CollapsibleSection(searchID: "security.mcp") {
                 HStack {
                     Button(copiedMCPConfiguration ? "Copied" : "Copy MCP Configuration") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(mcpConfiguration, forType: .string)
+                        BrowserProfileSystem.pasteboard.clearContents()
+                        BrowserProfileSystem.pasteboard.setString(mcpConfiguration, forType: .string)
                         copiedMCPConfiguration = true
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                             copiedMCPConfiguration = false
@@ -1793,7 +1795,7 @@ struct SecuritySettingsView: View {
                         let directory = BrowserCLI.supportDirectory
                             .appendingPathComponent("agent-audit", isDirectory: true)
                         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                        NSWorkspace.shared.activateFileViewerSelecting([directory])
+                        BrowserProfileSystem.reveal([directory])
                     }
                 }
                 Text("Run `browser-cli install-mcp all` once to connect installed Codex, Claude Code, and Claude Desktop clients. Other clients can use the copied stdio configuration. The server exposes the 53 BrowserOS-compatible browser tools plus three for research workspaces — an outside agent can read a workspace brief and hand a cited report back — and each client session gets a local audit timeline. Reading either needs Page Content above.")
@@ -1826,8 +1828,8 @@ struct SecuritySettingsView: View {
 // MARK: - Memory
 
 struct MemorySettingsView: View {
-    @AppStorage("memorySaverEnabled") private var memorySaverEnabled = false
-    @AppStorage("memorySaverDefaultPolicy") private var defaultPolicy = MemoryPolicy.whenNeeded.rawValue
+    @AppStorage("memorySaverEnabled", store: BrowserProfile.defaults) private var memorySaverEnabled = false
+    @AppStorage("memorySaverDefaultPolicy", store: BrowserProfile.defaults) private var defaultPolicy = MemoryPolicy.whenNeeded.rawValue
     @Query(sort: \BrowserTab.orderIndex) private var tabs: [BrowserTab]
     @State private var pinnedHosts = MemoryPinnedSites.hosts
     @State private var newHost = ""
@@ -1965,7 +1967,7 @@ struct PrivacySettingsView: View {
     @Query private var browserSessions: [BrowserSession]
     @State private var signedInGroups: [SignedInGroup] = []
     @ObservedObject private var permissionStore = SitePermissionStore.shared
-    @AppStorage("convertToIncognitoEnabled") private var convertToIncognitoEnabled = false
+    @AppStorage("convertToIncognitoEnabled", store: BrowserProfile.defaults) private var convertToIncognitoEnabled = false
     @State private var showClearDataDialog = false
     @State private var clearHistory = true
     @State private var clearCookies = true
@@ -2216,7 +2218,7 @@ struct CookieManagerDialog: View {
     @State private var searchText = ""
 
     private var cookieStore: WKHTTPCookieStore {
-        WKWebsiteDataStore.default().httpCookieStore
+        BrowserProfileWebKit.dataStore().httpCookieStore
     }
 
     var filteredCookies: [HTTPCookie] {

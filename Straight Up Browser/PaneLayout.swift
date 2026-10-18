@@ -523,7 +523,7 @@ struct LocalLayoutRecipeStore {
     }
     let url: URL
     init(url: URL? = nil) {
-        self.url = url ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        self.url = url ?? BrowserProfile.applicationSupportURLs[0]
             .appendingPathComponent("Browser/LocalLayouts/recipes-v1.json")
     }
     private func read() throws -> Archive {

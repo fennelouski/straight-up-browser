@@ -33,7 +33,7 @@ final class Prefetcher: NSObject, ObservableObject, WKNavigationDelegate {
     // How long after a memory-pressure warning to stay out of the way.
     private static let pressureQuietPeriod: TimeInterval = 60
 
-    private let webView: WKWebView
+    private let webView: WKWebView?
     private var inFlight: URL?
     private var lastPressure: Date?
     /// Visits per host, tallied once when the omnibar opens so the per-keystroke
@@ -46,13 +46,14 @@ final class Prefetcher: NSObject, ObservableObject, WKNavigationDelegate {
     private var observer: NSObjectProtocol?
 
     private override init() {
+        if BrowserProfile.isIsolated { webView = nil; super.init(); return }
         // Plain configuration: no page script, so a prefetch can't run our
         // injected handlers or record itself as a visit.
-        let configuration = WKWebViewConfiguration()
+        let configuration = BrowserProfileWebKit.configuration()
         configuration.applicationNameForUserAgent = WebViewManager.userAgentAppName
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
-        webView.navigationDelegate = self
+        webView?.navigationDelegate = self
 
         observer = NotificationCenter.default.addMainActorObserver(
             forName: .memoryPressure,
@@ -66,7 +67,7 @@ final class Prefetcher: NSObject, ObservableObject, WKNavigationDelegate {
 
     static var isEnabled: Bool {
         // Absent key means on: this ships enabled.
-        UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true
+        !BrowserProfile.isIsolated && (BrowserProfile.defaults.object(forKey: enabledKey) as? Bool ?? true)
     }
 
     /// Tally the visit-count signal off the main thread when the omnibar opens,
@@ -106,10 +107,10 @@ final class Prefetcher: NSObject, ObservableObject, WKNavigationDelegate {
             return
         }
         guard target != inFlight else { return }
-        webView.stopLoading()
+        webView?.stopLoading()
         inFlight = target
         readyURL = nil
-        webView.loadURL(target)
+        webView?.loadURL(target)
     }
 
     nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -123,7 +124,7 @@ final class Prefetcher: NSObject, ObservableObject, WKNavigationDelegate {
     func cancel() {
         readyURL = nil
         guard inFlight != nil else { return }
-        webView.stopLoading()
+        webView?.stopLoading()
         inFlight = nil
     }
 

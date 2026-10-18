@@ -391,8 +391,8 @@ struct SettingsWindow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @AppStorage("settingsPane") private var paneRaw = SettingsPane.general.rawValue
-    @AppStorage("settingsPaneOrder") private var paneOrderRaw = ""
+    @AppStorage("settingsPane", store: BrowserProfile.defaults) private var paneRaw = SettingsPane.general.rawValue
+    @AppStorage("settingsPaneOrder", store: BrowserProfile.defaults) private var paneOrderRaw = ""
     @BrowserThemeStorage private var theme
     @State private var searchQuery = ""
     @FocusState private var searchFieldFocused: Bool
@@ -567,9 +567,13 @@ struct SettingsWindow: View {
         switch pane {
         case .general: GeneralSettingsView()
         case .agent:
-            VStack(spacing: 0) {
-                SettingsHelpSetupView()
-                AgentSettingsView()
+            if BrowserProfile.isIsolated {
+                ContentUnavailableView("External integrations disabled", systemImage: "lock.shield")
+            } else {
+                VStack(spacing: 0) {
+                    SettingsHelpSetupView()
+                    AgentSettingsView()
+                }
             }
         case .shortcuts: ShortcutsSettingsView()
         case .autofill: AutofillSettingsView()

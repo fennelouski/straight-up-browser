@@ -45,7 +45,7 @@ class KeyboardShortcutsManager {
     }
 
     private static var quitHoldDuration: TimeInterval {
-        let stored = UserDefaults.standard.double(forKey: quitHoldPercentKey)
+        let stored = BrowserProfile.defaults.double(forKey: quitHoldPercentKey)
         let percent = stored == 0 ? quitHoldDefaultPercent : stored
         return max(quitHoldMinPercent, min(quitHoldMaxPercent, percent)) * quitHoldMaxDuration
     }

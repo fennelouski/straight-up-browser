@@ -15,12 +15,13 @@ enum NewspaperDiscoveryPeers {
         var links: [String]
         var linksUpdatedAt: Date
     }
-    static func enabled(defaults: UserDefaults = .standard) -> Bool {
-        defaults.bool(forKey: NewspaperPreferences.Key.shareDiscovery)
+    static func enabled(defaults: UserDefaults = BrowserProfile.defaults) -> Bool {
+        !BrowserProfile.isIsolated && defaults.bool(forKey: NewspaperPreferences.Key.shareDiscovery)
             && defaults.bool(forKey: NewspaperPreferences.Key.discoverRelated)
             && defaults.bool(forKey: TabSync.Key.enabled)
     }
-    static func heartbeat(idle: Bool, defaults: UserDefaults = .standard) {
+    static func heartbeat(idle: Bool, defaults: UserDefaults = BrowserProfile.defaults) {
+        guard !BrowserProfile.isIsolated else { return }
         guard enabled(defaults: defaults) else { removeLocal(defaults: defaults); return }
         let store = NSUbiquitousKeyValueStore.default
         var row = decode(store.data(forKey: key)) ?? Advertisement(updatedAt: .now, idle: false, links: [], linksUpdatedAt: .now)
@@ -32,7 +33,7 @@ enum NewspaperDiscoveryPeers {
             store.synchronize()
         }
     }
-    static func publishCandidates(_ links: [URL], defaults: UserDefaults = .standard) {
+    static func publishCandidates(_ links: [URL], defaults: UserDefaults = BrowserProfile.defaults) {
         guard enabled(defaults: defaults) else { return }
         let store = NSUbiquitousKeyValueStore.default
         var row = decode(store.data(forKey: key)) ?? Advertisement(updatedAt: .now, idle: false, links: [], linksUpdatedAt: .now)
@@ -44,27 +45,29 @@ enum NewspaperDiscoveryPeers {
             store.synchronize()
         }
     }
-    static func isElectedIdleWorker(defaults: UserDefaults = .standard, now: Date = .now) -> Bool {
+    static func isElectedIdleWorker(defaults: UserDefaults = BrowserProfile.defaults, now: Date = .now) -> Bool {
         guard enabled(defaults: defaults) else { return true }
         return electedWorker(advertisements: advertisements(), now: now) == key
     }
     static func electedWorker(advertisements: [String: Advertisement], now: Date) -> String? {
         advertisements.filter { $0.value.idle && now.timeIntervalSince($0.value.updatedAt) >= 0 && now.timeIntervalSince($0.value.updatedAt) < 180 }.keys.sorted().first
     }
-    static func candidates(defaults: UserDefaults = .standard) -> [URL] {
+    static func candidates(defaults: UserDefaults = BrowserProfile.defaults) -> [URL] {
         guard enabled(defaults: defaults) else { return [] }
         let options = NewspaperDiscoveryOptions(defaults: defaults)
         return Array(Set(advertisements().filter { $0.key != key && Date().timeIntervalSince($0.value.linksUpdatedAt) < 86400 }
             .values.flatMap(\.links).compactMap(URL.init(string:)).filter(options.permits)).prefix(20))
     }
-    static func removeLocal(defaults: UserDefaults = .standard) {
+    static func removeLocal(defaults: UserDefaults = BrowserProfile.defaults) {
+        guard !BrowserProfile.isIsolated else { return }
         guard defaults.bool(forKey: advertisedKey) else { return }
         NSUbiquitousKeyValueStore.default.removeObject(forKey: key)
         NSUbiquitousKeyValueStore.default.synchronize()
         defaults.set(false, forKey: advertisedKey)
     }
     private static func advertisements() -> [String: Advertisement] {
-        NSUbiquitousKeyValueStore.default.dictionaryRepresentation.reduce(into: [:]) { result, item in
+        guard !BrowserProfile.isIsolated else { return [:] }
+        return NSUbiquitousKeyValueStore.default.dictionaryRepresentation.reduce(into: [:]) { result, item in
             guard item.key.hasPrefix(prefix), let data = item.value as? Data, let row = decode(data) else { return }
             result[item.key] = row
         }

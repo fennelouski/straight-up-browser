@@ -123,7 +123,7 @@ final class BrowserOnboarding: ObservableObject {
     private let defaults: UserDefaults
     private var offeredThisLaunch = false
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = BrowserProfile.defaults) {
         self.defaults = defaults
         let testing = ProcessInfo.processInfo.arguments.contains("-uiTesting")
         progress = (testing ? nil : defaults.data(forKey: Self.storageKey))

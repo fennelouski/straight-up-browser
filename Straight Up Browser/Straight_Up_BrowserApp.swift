@@ -12,14 +12,21 @@ import Sparkle
 
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    private let globalOmnibar = GlobalOmnibarController()
+    private lazy var globalOmnibar = GlobalOmnibarController()
     // Starts checking immediately (SUEnableAutomaticChecks/SUAutomaticallyUpdate
     // in Browser-Info.plist mean it's silent — downloads and installs on quit,
     // no prompt). "Check for Updates…" below just triggers an on-demand check.
-    let updaterController = SPUStandardUpdaterController(
-        startingUpdater: AppDelegate.startsUpdater, updaterDelegate: nil, userDriverDelegate: nil)
+    let updaterController: SPUStandardUpdaterController?
+
+    override init() {
+        // Resolve/fail closed before Sparkle can initialize any shared state.
+        updaterController = BrowserProfile.isIsolated ? nil : SPUStandardUpdaterController(
+            startingUpdater: AppDelegate.startsUpdater, updaterDelegate: nil, userDriverDelegate: nil)
+        super.init()
+    }
 
     static var startsUpdater: Bool {
+        guard !BrowserProfile.isIsolated else { return false }
         #if DEBUG
         // An update replaces the app bundle, including the code under test and
         // its coverage instrumentation. Development builds must stay local.
@@ -33,9 +40,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let eulaVersion = 1
     private static var isRunningUnderTests: Bool {
         let environment = ProcessInfo.processInfo.environment
-        return ProcessInfo.processInfo.arguments.contains("-uiTesting")
+        return BrowserProfile.isIsolated || ProcessInfo.processInfo.arguments.contains("-uiTesting")
             || environment["XCTestConfigurationFilePath"] != nil
             || environment["XCInjectBundleInto"] != nil
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        BrowserProfile.invalidateManifest()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -65,24 +76,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Disable automatic window tabbing
         NSWindow.allowsAutomaticWindowTabbing = false
 
-        ColorPanelPositioning.install()
+        if !BrowserProfile.isIsolated { ColorPanelPositioning.install() }
 
         // Initialize CLI interface
-        _ = BrowserCLI.shared
+        if !BrowserProfile.isIsolated { _ = BrowserCLI.shared }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AgentModelMigration.migrateSavedSelection()
-        installURLHandler()
+        if !BrowserProfile.isIsolated { installURLHandler() }
         // Test hosts cannot interact with this modal before the app finishes
         // bootstrapping. UI tests pass the accepted version explicitly; unit
         // test hosts use this environment-based bypass instead.
-        if !Self.isRunningUnderTests && UserDefaults.standard.integer(forKey: "acceptedEULAVersion") < eulaVersion {
+        if !Self.isRunningUnderTests && BrowserProfile.defaults.integer(forKey: "acceptedEULAVersion") < eulaVersion {
             guard runEULAAlert() else {
                 NSApp.terminate(nil)
                 return
             }
-            UserDefaults.standard.set(eulaVersion, forKey: "acceptedEULAVersion")
+            BrowserProfile.defaults.set(eulaVersion, forKey: "acceptedEULAVersion")
         }
         registerGlobalHotkey()
         if !Self.isRunningUnderTests {
@@ -116,6 +127,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handleOpenDocumentsEvent(_ event: NSAppleEventDescriptor, withReplyEvent: NSAppleEventDescriptor) {
+        guard !BrowserProfile.isIsolated else { return }
         guard let list = event.paramDescriptor(forKeyword: keyDirectObject) else { return }
         // A single file arrives as a bare descriptor (numberOfItems == 0).
         let items = list.numberOfItems == 0
@@ -127,6 +139,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent: NSAppleEventDescriptor) {
+        guard !BrowserProfile.isIsolated else { return }
         guard let string = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
               let url = URL(string: string) else { return }
         openInNewTab(url)
@@ -175,6 +188,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Registered only after the EULA gate passes, so the global omnibar is
     // inert until the terms are accepted.
     private func registerGlobalHotkey() {
+        guard !BrowserProfile.isIsolated else { return }
         GlobalOmnibarHotkey.install { [weak self] in
             // Browser already frontmost with a window: use the in-app overlay
             // instead of stacking a second omnibar on top of it.
@@ -266,6 +280,7 @@ private struct AgentDefinitionBrowserSessionRegistrationView: View {
     }
 
     private func update(_ ids: [UUID]) {
+        guard !BrowserProfile.isIsolated else { return }
         AgentDefinitionLiveDependencyResolver.shared
             .updateAvailableBrowserSessionIDs(Set(ids))
     }
@@ -275,14 +290,14 @@ private struct AgentDefinitionBrowserSessionRegistrationView: View {
 struct Straight_Up_BrowserApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var showSettings = false
-    @AppStorage("cmdPExportsPDF") private var cmdPExportsPDF = true
-    @AppStorage("expandBackForwardShortcuts") private var expandBackForwardShortcuts = true
-    @AppStorage("convertToIncognitoEnabled") private var convertToIncognitoEnabled = false
+    @AppStorage("cmdPExportsPDF", store: BrowserProfile.defaults) private var cmdPExportsPDF = true
+    @AppStorage("expandBackForwardShortcuts", store: BrowserProfile.defaults) private var expandBackForwardShortcuts = true
+    @AppStorage("convertToIncognitoEnabled", store: BrowserProfile.defaults) private var convertToIncognitoEnabled = false
     // Reading this in the .commands builder (via `sc`) makes the menu bar rebuild
     // its key equivalents whenever a shortcut is rebound — same invalidation the
     // cmdPExportsPDF toggle relies on.
-    @AppStorage(ShortcutStore.revisionKey) private var shortcutsRevision = 0
-    @AppStorage(SettingsManager.aiFeaturesKey) private var aiFeaturesEnabled = true
+    @AppStorage(ShortcutStore.revisionKey, store: BrowserProfile.defaults) private var shortcutsRevision = 0
+    @AppStorage(SettingsManager.aiFeaturesKey, store: BrowserProfile.defaults) private var aiFeaturesEnabled = true
     @ObservedObject private var translationLanguages = TranslationLanguages.shared
     @State private var showStartupRecoveryNotice = true
     @Environment(\.openWindow) private var openWindow
@@ -307,7 +322,7 @@ struct Straight_Up_BrowserApp: App {
     var body: some Scene {
         WindowGroup(id: "browser", for: UUID.self) { $windowID in
             if let container = modelStartup.container {
-                BrowserWindowScene(id: windowID)
+                BrowserProfileStartupView { BrowserWindowScene(id: windowID) }
                     .background(AgentDefinitionBrowserSessionRegistrationView())
                     .modelContainer(container)
                     .onReceive(NotificationCenter.default.publisher(for: .browserShowSettings)) { _ in
@@ -338,9 +353,9 @@ struct Straight_Up_BrowserApp: App {
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1200, height: 800)
 
-        Window("Settings", id: "settings") {
+        Window(BrowserProfile.windowTitle("Settings"), id: "settings") {
             if let container = modelStartup.container {
-                SettingsWindow().modelContainer(container)
+                BrowserProfileStartupView { SettingsWindow() }.modelContainer(container)
             } else {
                 ContentUnavailableView(
                     "Settings Unavailable",
@@ -348,34 +363,38 @@ struct Straight_Up_BrowserApp: App {
                 )
             }
         }
+        .restorationBehavior(BrowserProfile.isIsolated ? .disabled : .automatic)
         .windowStyle(.automatic)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 780, height: 560)
 
-        Window("Developer Tools", id: "developer-tools") {
-            DeveloperToolsDetachedWindow()
+        Window(BrowserProfile.windowTitle("Developer Tools"), id: "developer-tools") {
+            BrowserProfileStartupView { DeveloperToolsDetachedWindow() }
         }
+        .restorationBehavior(BrowserProfile.isIsolated ? .disabled : .automatic)
         .windowStyle(.automatic)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 760, height: 560)
 
-        Window("Website Activity", id: "tab-dashboard") {
-            TabDashboardWindow()
+        Window(BrowserProfile.windowTitle("Website Activity"), id: "tab-dashboard") {
+            BrowserProfileStartupView { TabDashboardWindow() }
         }
+        .restorationBehavior(BrowserProfile.isIsolated ? .disabled : .automatic)
         .windowStyle(.automatic)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1120, height: 560)
 
-        Window("Downloads", id: "downloads") {
-            FilesWindow()
+        Window(BrowserProfile.windowTitle("Downloads"), id: "downloads") {
+            BrowserProfileStartupView { FilesWindow() }
         }
+        .restorationBehavior(BrowserProfile.isIsolated ? .disabled : .automatic)
         .windowStyle(.automatic)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 700, height: 540)
 
-        Window("Newspaper", id: "newspaper") {
+        Window(BrowserProfile.windowTitle("Newspaper"), id: "newspaper") {
             if let container = modelStartup.container {
-                NewspaperWindowScene().modelContainer(container)
+                BrowserProfileStartupView { NewspaperWindowScene().modelContainer(container) }
             } else {
                 ContentUnavailableView(
                     "Newspaper Unavailable",
@@ -385,32 +404,49 @@ struct Straight_Up_BrowserApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
+        .restorationBehavior(BrowserProfile.isIsolated ? .disabled : .automatic)
         .defaultSize(width: 1120, height: 780)
 
-        Window("Scheduled Agent Tasks", id: "agent-tasks") {
-            BrowserAgentTasksView()
+        Window(BrowserProfile.windowTitle("Scheduled Agent Tasks"), id: "agent-tasks") {
+            BrowserProfileStartupView {
+                if BrowserProfile.isIsolated {
+                    ContentUnavailableView("External integrations disabled", systemImage: "lock.shield")
+                } else { BrowserAgentTasksView() }
+            }
         }
+        .restorationBehavior(BrowserProfile.isIsolated ? .disabled : .automatic)
         .windowStyle(.automatic)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 860, height: 600)
 
-        Window("Agent App Integrations", id: "agent-integrations") {
-            BrowserAgentMCPConnectionsView()
+        Window(BrowserProfile.windowTitle("Agent App Integrations"), id: "agent-integrations") {
+            BrowserProfileStartupView {
+                if BrowserProfile.isIsolated {
+                    ContentUnavailableView("External integrations disabled", systemImage: "lock.shield")
+                } else { BrowserAgentMCPConnectionsView() }
+            }
         }
+        .restorationBehavior(BrowserProfile.isIsolated ? .disabled : .automatic)
         .windowStyle(.automatic)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 900, height: 600)
 
-        Window("Agent Timeline & Replay", id: "agent-audit") {
-            BrowserAgentAuditView()
+        Window(BrowserProfile.windowTitle("Agent Timeline & Replay"), id: "agent-audit") {
+            BrowserProfileStartupView {
+                if BrowserProfile.isIsolated {
+                    ContentUnavailableView("External integrations disabled", systemImage: "lock.shield")
+                } else { BrowserAgentAuditView() }
+            }
         }
+        .restorationBehavior(BrowserProfile.isIsolated ? .disabled : .automatic)
         .windowStyle(.automatic)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1000, height: 700)
 
-        Window("Help", id: "help") {
-            HelpWindow()
+        Window(BrowserProfile.windowTitle("Help"), id: "help") {
+            BrowserProfileStartupView { HelpWindow() }
         }
+        .restorationBehavior(BrowserProfile.isIsolated ? .disabled : .automatic)
         .windowStyle(.automatic)
         .windowResizability(.contentSize)
         .commands {
@@ -423,7 +459,7 @@ struct Straight_Up_BrowserApp: App {
                     NSApplication.shared.orderFrontStandardAboutPanel(options: [.version: ""])
                 }
                 Button("Check for Updates…") {
-                    appDelegate.updaterController.updater.checkForUpdates()
+                    appDelegate.updaterController?.updater.checkForUpdates()
                 }
             }
 
@@ -879,21 +915,21 @@ struct Straight_Up_BrowserApp: App {
 
             CommandMenu("Extensions") {
                 Button("Load Extension…") {
-                    WebExtensionManager.shared.presentLoadPanel()
+                    if !BrowserProfile.isIsolated { WebExtensionManager.shared.presentLoadPanel() }
                 }
                 Button("Open Extension Popup") {
-                    WebExtensionManager.shared.showPopup()
+                    if !BrowserProfile.isIsolated { WebExtensionManager.shared.showPopup() }
                 }
                 .keyboardShortcut(sc(.extensionPopup))
                 Divider()
                 Button("Manage Extensions…") {
-                    WebExtensionManager.shared.presentManagementPanel()
+                    if !BrowserProfile.isIsolated { WebExtensionManager.shared.presentManagementPanel() }
                 }
             }
 
             CommandGroup(replacing: .help) {
                 Button("Power Up") {
-                    UserDefaults.standard.set(SettingsPane.powerUp.rawValue, forKey: "settingsPane")
+                    BrowserProfile.defaults.set(SettingsPane.powerUp.rawValue, forKey: "settingsPane")
                     openWindow(id: "settings")
                 }
                 #if DEBUG

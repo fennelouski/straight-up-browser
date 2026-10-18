@@ -186,7 +186,7 @@ struct WindowChrome: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { ChromeView(windowID: windowID) }
     func updateNSView(_ nsView: NSView, context: Context) {
         if let windowID, let window = nsView.window {
-            window.title = BrowserWindows.shared.record(windowID)?.name ?? "Browser"
+            window.title = BrowserProfile.windowTitle(BrowserWindows.shared.record(windowID)?.name ?? "Browser")
         }
     }
 
@@ -241,7 +241,7 @@ struct WindowChrome: NSViewRepresentable {
                     guard let window else { return }
                     WindowLayout.applyCornerMask(to: window)
                     BrowserWindows.applyFullScreenPolicy(to: window)
-                    if window.styleMask.contains(.fullScreen), !UserDefaults.standard.bool(forKey: BrowserWindows.nativeFullScreenKey) {
+                    if window.styleMask.contains(.fullScreen), !BrowserProfile.defaults.bool(forKey: BrowserWindows.nativeFullScreenKey) {
                         window.toggleFullScreen(nil)
                     }
                 }
@@ -318,7 +318,7 @@ enum WindowLayout {
     static let windowCornerRadius: CGFloat = 10
 
     static var isSquareCorners: Bool {
-        UserDefaults.standard.bool(forKey: Key.squareCorners)
+        BrowserProfile.defaults.bool(forKey: Key.squareCorners)
     }
 
     // nil ratio = span the full screen width; otherwise width = height * ratio.
@@ -353,7 +353,7 @@ enum WindowLayout {
 
     private static func frame(for window: NSWindow) -> NSRect? {
         guard let visible = (window.screen ?? NSScreen.main)?.visibleFrame else { return nil }
-        let d = UserDefaults.standard
+        let d = BrowserProfile.defaults
         return frame(in: visible,
                      width: d.string(forKey: Key.width) ?? "full",
                      position: d.string(forKey: Key.position) ?? "center")
@@ -379,13 +379,13 @@ enum WindowLayout {
     static func saveFrame(_ window: NSWindow) {
         // Full screen / miniaturised frames aren't where the user "left" it.
         guard !window.isMiniaturized, !window.styleMask.contains(.fullScreen) else { return }
-        UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: frameKey(for: window))
+        BrowserProfile.defaults.set(NSStringFromRect(window.frame), forKey: frameKey(for: window))
     }
 
     static func restoreFrame(_ window: NSWindow) {
-        let saved = UserDefaults.standard.string(forKey: frameKey(for: window))
+        let saved = BrowserProfile.defaults.string(forKey: frameKey(for: window))
             ?? (BrowserWindows.shared.window(BrowserWindows.shared.records[0].id) === window
-                ? UserDefaults.standard.string(forKey: frameKey) : nil)
+                ? BrowserProfile.defaults.string(forKey: frameKey) : nil)
         guard let saved else { return }
         let rect = NSRectFromString(saved)
         guard rect.width > 0, rect.height > 0 else { return }
@@ -417,7 +417,7 @@ enum WindowLayout {
 
     static func applyOnLaunch(to window: NSWindow) {
         guard !didApplyOnLaunch,
-              UserDefaults.standard.bool(forKey: Key.launchEnabled),
+              BrowserProfile.defaults.bool(forKey: Key.launchEnabled),
               let target = frame(for: window) else { return }
         didApplyOnLaunch = true
         window.setFrame(target, display: true)

@@ -1147,7 +1147,7 @@ struct CLIAuthorization {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = BrowserProfile.defaults) {
         self.defaults = defaults
     }
 
@@ -1188,6 +1188,7 @@ struct CLIAuthorization {
     }
 
     func allows(action: String) -> Bool {
+        guard !BrowserProfile.isIsolated else { return false }
         guard defaults.bool(forKey: Key.enabled) else { return false }
 
         switch Self.capability(for: action) {
@@ -1205,6 +1206,7 @@ struct CLIAuthorization {
     }
 
     func allows(capability: CLICapability) -> Bool {
+        guard !BrowserProfile.isIsolated else { return false }
         guard defaults.bool(forKey: Key.enabled) else { return false }
         switch capability {
         case .control: return true
@@ -1251,8 +1253,7 @@ struct CLIAuthorization {
 class BrowserCLI {
     static let shared = BrowserCLI()
 
-    static let supportDirectory = FileManager.default
-        .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    static let supportDirectory = BrowserProfile.applicationSupportURLs[0]
         .appendingPathComponent("Straight Up Browser", isDirectory: true)
     static let pipeURL = supportDirectory.appendingPathComponent("cli.pipe")
     static let responseDirectory = supportDirectory.appendingPathComponent("responses", isDirectory: true)
@@ -1264,6 +1265,9 @@ class BrowserCLI {
     }
 
     private func setupCommandInterface() {
+        // External automation is disabled, including listener/key initialization.
+        // supportDirectory/responseDirectory still resolve privately if inspected.
+        guard !BrowserProfile.isIsolated else { return }
         guard !isPipeSetup else { return }
 
         let fm = FileManager.default
@@ -1332,6 +1336,7 @@ class BrowserCLI {
     // Every response the app writes lives inside its own responses/ dir.
     // Errors and acks share one JSON shape: {"ok":true,...} or {"error":"..."}.
     static func writeResponse(_ dict: [String: Any], to path: String?) {
+        guard !BrowserProfile.isIsolated else { return }
         guard let path = path else { return }
         if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
@@ -1339,6 +1344,7 @@ class BrowserCLI {
     }
 
     static func writeResponseData(_ data: Data, to path: String?) {
+        guard !BrowserProfile.isIsolated else { return }
         guard let path, !data.isEmpty else { return }
         try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
     }

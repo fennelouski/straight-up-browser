@@ -16,8 +16,8 @@ import SwiftUI
 /// Kept outside AgentSettingsView so the provider/model review source remains
 /// unchanged. This setup entry stays discoverable under the AI master switch.
 struct SettingsHelpSetupView: View {
-    @AppStorage(SettingsAssistantAvailability.enabledKey) private var settingsAssistantEnabled = false
-    @AppStorage("aiFeaturesEnabled") private var aiFeaturesEnabled = true
+    @AppStorage(SettingsAssistantAvailability.enabledKey, store: BrowserProfile.defaults) private var settingsAssistantEnabled = false
+    @AppStorage("aiFeaturesEnabled", store: BrowserProfile.defaults) private var aiFeaturesEnabled = true
 
     var body: some View {
         GroupBox("Settings help") {
@@ -41,8 +41,8 @@ struct SettingsHelpSetupView: View {
 /// is inert/selectable native Text; a suggestion cannot manufacture a button.
 struct SettingsAssistantView: View {
     let openSetting: (String) -> Void
-    @AppStorage(SettingsAssistantAvailability.enabledKey) private var enabled = false
-    @AppStorage("aiFeaturesEnabled") private var aiFeaturesEnabled = true
+    @AppStorage(SettingsAssistantAvailability.enabledKey, store: BrowserProfile.defaults) private var enabled = false
+    @AppStorage("aiFeaturesEnabled", store: BrowserProfile.defaults) private var aiFeaturesEnabled = true
     @State private var isPresented = false
 
     var body: some View {
@@ -77,8 +77,8 @@ struct SettingsAssistantView: View {
 private struct SettingsAssistantConversationView: View {
     let openSetting: (String) -> Void
     @Environment(\.dismiss) private var dismiss
-    @AppStorage(SettingsAssistantAvailability.enabledKey) private var enabled = false
-    @AppStorage("aiFeaturesEnabled") private var aiFeaturesEnabled = true
+    @AppStorage(SettingsAssistantAvailability.enabledKey, store: BrowserProfile.defaults) private var enabled = false
+    @AppStorage("aiFeaturesEnabled", store: BrowserProfile.defaults) private var aiFeaturesEnabled = true
     @State private var conversation = SettingsConversationCoordinator()
     @FocusState private var composerFocused: Bool
     @FocusState private var undoFocused: Bool

@@ -53,7 +53,7 @@ final class PageTranslator: ObservableObject {
     // MARK: - Preferences
 
     private func preferredLanguageCodes() -> [String] {
-        let stored = UserDefaults.standard.string(forKey: "translationPreferredLanguages") ?? ""
+        let stored = BrowserProfile.defaults.string(forKey: "translationPreferredLanguages") ?? ""
         let codes = stored.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         if !codes.isEmpty { return codes }
         return Locale.preferredLanguages.map { Locale.Language(identifier: $0).languageCode?.identifier ?? $0 }
@@ -68,8 +68,9 @@ final class PageTranslator: ObservableObject {
     // Called from WebView's didFinish. Cheap early-outs (setting off, no page
     // text) skip before touching the Translation framework at all.
     func maybeAutoTranslate(webView: WKWebView) {
+        guard !BrowserProfile.isIsolated else { return }
         let forced = forcedTargets.removeValue(forKey: ObjectIdentifier(webView))
-        let autoEnabled = UserDefaults.standard.object(forKey: "autoTranslateEnabled") as? Bool ?? true
+        let autoEnabled = BrowserProfile.defaults.object(forKey: "autoTranslateEnabled") as? Bool ?? true
         guard forced != nil || autoEnabled else { return }
         Task { @MainActor in
             await translate(webView: webView, target: forced, explicit: forced != nil)
@@ -105,6 +106,7 @@ final class PageTranslator: ObservableObject {
     @discardableResult
     func translate(webView: WKWebView, source forcedSource: String? = nil, target forcedTarget: String? = nil,
                    explicit: Bool = true) async -> Bool {
+        guard !BrowserProfile.isIsolated else { return false }
         var all = forcedSource != nil || forcedTarget != nil
         if !all, explicit {
             all = (try? await webView.evaluateJavaScript(
@@ -192,10 +194,11 @@ final class PageTranslator: ObservableObject {
     // isn't installed already. Region comes from the device locale — no
     // network/IP lookup.
     func offerPackDownloadIfNeeded() async {
+        guard !BrowserProfile.isIsolated else { return }
         // Never during UI tests: the sheet appears ~10s in and steals key focus.
         guard !ProcessInfo.processInfo.arguments.contains("-uiTesting") else { return }
-        guard !UserDefaults.standard.bool(forKey: "translationPackPromptShown") else { return }
-        guard UserDefaults.standard.object(forKey: "autoTranslateEnabled") as? Bool ?? true else { return }
+        guard !BrowserProfile.defaults.bool(forKey: "translationPackPromptShown") else { return }
+        guard BrowserProfile.defaults.object(forKey: "autoTranslateEnabled") as? Bool ?? true else { return }
         let region = Locale.current.region?.identifier
         // maximalIdentifier applies CLDR likely subtags: "und-NL" → "nl-Latn-NL"
         let dominant = region.flatMap { r -> String? in
@@ -209,7 +212,7 @@ final class PageTranslator: ObservableObject {
 
         let downloadable = await languagePackStatuses().filter { $0.status == .supported }
         guard !downloadable.isEmpty else {
-            UserDefaults.standard.set(true, forKey: "translationPackPromptShown")
+            BrowserProfile.defaults.set(true, forKey: "translationPackPromptShown")
             return
         }
         let choices = downloadable.map { PackChoice(id: $0.id, name: $0.name, selected: suggested.contains($0.id)) }
@@ -230,6 +233,7 @@ final class PageTranslator: ObservableObject {
     // language, minus ones already in their preferred-reading list. Drives both
     // the onboarding pack picker above and the Settings language manager.
     func languagePackStatuses() async -> [LanguagePackStatus] {
+        guard !BrowserProfile.isIsolated else { return [] }
         let preferred = preferredLanguageCodes()
         let target = Locale.Language(identifier: defaultTargetCode)
         var result: [LanguagePackStatus] = []
@@ -248,13 +252,14 @@ final class PageTranslator: ObservableObject {
     // LanguageAvailability is not Sendable; keep the instance inside a
     // nonisolated call so only the [String] result crosses back to the actor.
     @concurrent nonisolated static func supportedLanguageCodes() async -> [String] {
-        await LanguageAvailability().supportedLanguages.compactMap { $0.languageCode?.identifier }
+        guard !BrowserProfile.isIsolated else { return [] }
+        return await LanguageAvailability().supportedLanguages.compactMap { $0.languageCode?.identifier }
     }
 
     // Sheet dismissal: queue downloads for the checked languages (or nothing),
     // and never show the prompt again.
     func confirmPackDownload(download: Bool) {
-        UserDefaults.standard.set(true, forKey: "translationPackPromptShown")
+        BrowserProfile.defaults.set(true, forKey: "translationPackPromptShown")
         let chosen = (packChoices ?? []).filter(\.selected).map(\.id)
         packChoices = nil
         guard download, !chosen.isEmpty else { return }
@@ -264,6 +269,7 @@ final class PageTranslator: ObservableObject {
     // Queues a model-only prefetch for one language, e.g. from the Settings
     // language manager's "Download" button.
     func downloadLanguage(_ code: String) {
+        guard !BrowserProfile.isIsolated else { return }
         queue.append(PendingRequest(
             webView: nil, nodes: [], source: Locale.Language(identifier: code), sourceCode: code,
             target: Locale.Language(identifier: defaultTargetCode), targetCode: defaultTargetCode))
@@ -335,6 +341,7 @@ final class PageTranslator: ObservableObject {
     // Invoked by ContentView's `.translationTask(pageTranslator.configuration)`
     // whenever `configuration` changes to a fresh (non-nil) value.
     func perform(session: sending TranslationSession) async {
+        guard !BrowserProfile.isIsolated else { return }
         guard let request = queue.first else { return }
         queue.removeFirst()
         await runTranslation(request, using: session)
@@ -444,6 +451,7 @@ final class TranslationLanguages: ObservableObject {
     @Published private(set) var codes: [String] = []
 
     init() {
+        guard !BrowserProfile.isIsolated else { return }
         Task { [weak self] in
             let codes = Set(await PageTranslator.supportedLanguageCodes())
             self?.codes = codes.sorted { Self.name($0) < Self.name($1) }

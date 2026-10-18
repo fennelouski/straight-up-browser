@@ -336,7 +336,7 @@ private struct PowerUpPracticeView: View {
         PowerUpLearning.shared.recordSuccess(feature: skill.id, method: .practice, isPrivate: false)
     }
     private func openSettings(_ pane: SettingsPane, section: String) {
-        UserDefaults.standard.set(pane.rawValue, forKey: "settingsPane")
+        BrowserProfile.defaults.set(pane.rawValue, forKey: "settingsPane")
         SettingsSearchNavigation.shared.pendingScrollID = section
         dismiss()
     }

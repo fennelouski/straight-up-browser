@@ -91,7 +91,7 @@ class TabManager: NSObject, ObservableObject {
     @Published var selectedTabId: UUID? {
         didSet {
             if let windowID {
-                UserDefaults.standard.set(selectedTabId?.uuidString, forKey: "selectedTabId." + windowID.uuidString)
+                BrowserProfile.defaults.set(selectedTabId?.uuidString, forKey: "selectedTabId." + windowID.uuidString)
             }
             // Selecting any tab takes focus back from a document pane (ADR 0008).
             if oldValue != selectedTabId { focusedDocumentId = nil }
@@ -117,7 +117,7 @@ class TabManager: NSObject, ObservableObject {
             // Private membership must never become a disk-backed recovery record.
             let privateIDs = Set(incognitoTabs.map(\.id))
             let publicIDs = splitTabIds.filter { !privateIDs.contains($0) }
-            UserDefaults.standard.set(publicIDs.map(\.uuidString), forKey: persistenceKey(Self.splitKey))
+            BrowserProfile.defaults.set(publicIDs.map(\.uuidString), forKey: persistenceKey(Self.splitKey))
             if !applyingPaneLayout {
                 let changedGate = refreshPaneLayoutRollout()
                 if paneLayoutsEnabled {
@@ -210,10 +210,10 @@ class TabManager: NSObject, ObservableObject {
     static let activeWorkspaceKey = "activeWorkspaceId"
 
     static func restoredActiveWorkspaceId() -> UUID? {
-        UserDefaults.standard.string(forKey: activeWorkspaceKey).flatMap(UUID.init(uuidString:))
+        BrowserProfile.defaults.string(forKey: activeWorkspaceKey).flatMap(UUID.init(uuidString:))
     }
     static var maxSplitTabs: Int {
-        PaneLayoutRolloutPolicy.newMembershipLimit(enabled: UserDefaults.standard.bool(forKey: PaneLayoutRolloutPolicy.defaultsKey))
+        PaneLayoutRolloutPolicy.newMembershipLimit(enabled: BrowserProfile.defaults.bool(forKey: PaneLayoutRolloutPolicy.defaultsKey))
     }
     private var paneMembershipLimit: Int {
         PaneLayoutRolloutPolicy.newMembershipLimit(enabled: paneLayoutDefaults.bool(forKey: PaneLayoutRolloutPolicy.defaultsKey))
@@ -236,9 +236,9 @@ class TabManager: NSObject, ObservableObject {
     @Published var activeWorkspaceId: UUID? {
         didSet {
             if let id = activeWorkspaceId {
-                UserDefaults.standard.set(id.uuidString, forKey: persistenceKey(Self.activeWorkspaceKey))
+                BrowserProfile.defaults.set(id.uuidString, forKey: persistenceKey(Self.activeWorkspaceKey))
             } else {
-                UserDefaults.standard.removeObject(forKey: persistenceKey(Self.activeWorkspaceKey))
+                BrowserProfile.defaults.removeObject(forKey: persistenceKey(Self.activeWorkspaceKey))
             }
             #if os(macOS)
             if let windowID { BrowserWindows.shared.setWorkspace(activeWorkspaceId, for: windowID) }
@@ -278,7 +278,7 @@ class TabManager: NSObject, ObservableObject {
         windowID: UUID? = nil,
         homeWorkspaceID: UUID? = nil,
         webViewManager: WebViewManager? = nil,
-        paneLayoutDefaults: UserDefaults = .standard,
+        paneLayoutDefaults: UserDefaults = BrowserProfile.defaults,
         terminateApplication: @escaping () -> Void = defaultTerminateApplication
     ) {
         self.windowID = windowID
@@ -295,15 +295,15 @@ class TabManager: NSObject, ObservableObject {
         if let windowID, BrowserWindows.shared.records.first?.id == windowID {
             for key in [Self.closedTabsKey, Self.splitKey] {
                 let scoped = persistenceKey(key)
-                if UserDefaults.standard.object(forKey: scoped) == nil,
-                   let legacy = UserDefaults.standard.object(forKey: key) {
-                    UserDefaults.standard.set(legacy, forKey: scoped)
-                    UserDefaults.standard.removeObject(forKey: key)
+                if BrowserProfile.defaults.object(forKey: scoped) == nil,
+                   let legacy = BrowserProfile.defaults.object(forKey: key) {
+                    BrowserProfile.defaults.set(legacy, forKey: scoped)
+                    BrowserProfile.defaults.removeObject(forKey: key)
                 }
             }
         }
         #endif
-        if let data = UserDefaults.standard.data(forKey: persistenceKey(Self.closedTabsKey)),
+        if let data = BrowserProfile.defaults.data(forKey: persistenceKey(Self.closedTabsKey)),
            let saved = try? JSONDecoder().decode([ClosedTabSnapshot].self, from: data) {
             closedTabs = saved
         }
@@ -327,18 +327,18 @@ class TabManager: NSObject, ObservableObject {
     private func persistClosedTabs() {
         let capped = Array(closedTabs.suffix(Self.maxClosedTabs))
         guard !capped.isEmpty else {
-            UserDefaults.standard.removeObject(forKey: persistenceKey(Self.closedTabsKey))
+            BrowserProfile.defaults.removeObject(forKey: persistenceKey(Self.closedTabsKey))
             return
         }
         if let data = try? JSONEncoder().encode(capped) {
-            UserDefaults.standard.set(data, forKey: persistenceKey(Self.closedTabsKey))
+            BrowserProfile.defaults.set(data, forKey: persistenceKey(Self.closedTabsKey))
         }
     }
 
     static func clearPersistedClosedTabs() {
-        for key in UserDefaults.standard.dictionaryRepresentation().keys
+        for key in BrowserProfile.defaults.dictionaryRepresentation().keys
             where key == closedTabsKey || key.hasPrefix(closedTabsKey + ".") {
-            UserDefaults.standard.removeObject(forKey: key)
+            BrowserProfile.defaults.removeObject(forKey: key)
         }
     }
 
@@ -445,7 +445,7 @@ class TabManager: NSObject, ObservableObject {
         newTab.groupId = source?.groupId
         newTab.isPinned = source?.isPinned ?? false
         newTab.memoryPolicy = MemoryPolicy(rawValue:
-            UserDefaults.standard.string(forKey: "memorySaverDefaultPolicy") ?? "") ?? .whenNeeded
+            BrowserProfile.defaults.string(forKey: "memorySaverDefaultPolicy") ?? "") ?? .whenNeeded
         if url != nil {
             newTab.updateTitleFromURL()
         }
@@ -1104,15 +1104,15 @@ class TabManager: NSObject, ObservableObject {
         let privateIDs = Set(incognitoTabs.map(\.id))
         if privateIDs.isDisjoint(with: tree.contentIDs),
            let data = try? JSONEncoder().encode(PaneLayoutRecovery(linkedResearchWorkspaceID: activeWorkspaceId, tree: tree, focusedContentID: focus)) {
-            UserDefaults.standard.set(data, forKey: persistenceKey("paneLayoutRecovery.v1"))
+            BrowserProfile.defaults.set(data, forKey: persistenceKey("paneLayoutRecovery.v1"))
         } else {
-            UserDefaults.standard.removeObject(forKey: persistenceKey("paneLayoutRecovery.v1"))
+            BrowserProfile.defaults.removeObject(forKey: persistenceKey("paneLayoutRecovery.v1"))
         }
     }
 
     private func validatedPaneRecovery(matching members: [PaneContentReference]) -> PaneLayoutRecovery? {
         guard paneLayoutsEnabled, paneLayoutDefaults.bool(forKey: PaneLayoutRolloutPolicy.defaultsKey) else { return nil }
-        guard let data = UserDefaults.standard.data(forKey: persistenceKey("paneLayoutRecovery.v1")) else {
+        guard let data = BrowserProfile.defaults.data(forKey: persistenceKey("paneLayoutRecovery.v1")) else {
             paneRecoveryWriteBlocked = false
             return nil
         }
@@ -1268,7 +1268,7 @@ class TabManager: NSObject, ObservableObject {
     // than 2 survivors means a plain single view.
     func restoreSplit(from tabs: [Tab]) {
         refreshPaneLayoutRollout()
-        guard let strings = UserDefaults.standard.stringArray(forKey: persistenceKey(Self.splitKey)) else { return }
+        guard let strings = BrowserProfile.defaults.stringArray(forKey: persistenceKey(Self.splitKey)) else { return }
         restoringPaneLayout = true
         defer { restoringPaneLayout = false }
         // Pane ids resolve against the tab list first, then the active
@@ -1278,14 +1278,14 @@ class TabManager: NSObject, ObservableObject {
             tabs.contains { $0.id == id } || isDocument(id)
         }
         guard ids.count >= 2 else {
-            if !strings.isEmpty { UserDefaults.standard.removeObject(forKey: persistenceKey(Self.splitKey)) }
+            if !strings.isEmpty { BrowserProfile.defaults.removeObject(forKey: persistenceKey(Self.splitKey)) }
             return
         }
         splitTabIds = ids
         // A versioned recovery snapshot extends the old local membership
         // record. It is separate from explicit saved recipe revisions.
         let recoveryKey = persistenceKey("paneLayoutRecovery.v1")
-        if paneLayoutsEnabled, UserDefaults.standard.data(forKey: recoveryKey) != nil {
+        if paneLayoutsEnabled, BrowserProfile.defaults.data(forKey: recoveryKey) != nil {
             if let recovery = validatedPaneRecovery(matching: currentPaneMembers) {
                 commitPaneLayout(recovery.tree, focus: recovery.focusedContentID, tabs: tabs)
             }

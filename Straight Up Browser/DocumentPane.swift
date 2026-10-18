@@ -221,7 +221,7 @@ final class DocumentPaneView: NSView, NSTextViewDelegate {
     // MARK: Anchor pills (design §6.4)
 
     private func handleAnchorClick(anchorId: UUID, url: URL, charIndex: Int) {
-        let behavior = UserDefaults.standard.string(forKey: "anchorLinkOpenBehavior") ?? "peek"
+        let behavior = BrowserProfile.defaults.string(forKey: "anchorLinkOpenBehavior") ?? "peek"
         if behavior == "peek" {
             showPeek(anchorId: anchorId, url: url, charIndex: charIndex)
         } else {

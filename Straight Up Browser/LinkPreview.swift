@@ -24,7 +24,7 @@ final class LinkPreviewManager: NSObject, ObservableObject, WKNavigationDelegate
 
     override init() {
         // Plain configuration: no page script, so previews can't nest previews
-        let configuration = WKWebViewConfiguration()
+        let configuration = BrowserProfileWebKit.configuration()
         configuration.applicationNameForUserAgent = WebViewManager.userAgentAppName
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
@@ -61,6 +61,7 @@ final class LinkPreviewManager: NSObject, ObservableObject, WKNavigationDelegate
     }
 
     private func linkDown(_ url: URL) {
+        guard !BrowserProfile.isIsolated else { return }
         guard !isShowing else { return }
         wantPreview = false
         contentReady = false

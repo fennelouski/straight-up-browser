@@ -8,7 +8,7 @@ enum AgentPageExpansionSettings {
         static let enabled = "browserAgentLoadsMorePageContent"
     }
 
-    static func isEnabled(in defaults: UserDefaults = .standard) -> Bool {
+    static func isEnabled(in defaults: UserDefaults = BrowserProfile.defaults) -> Bool {
         defaults.object(forKey: Key.enabled) as? Bool ?? true
     }
 }

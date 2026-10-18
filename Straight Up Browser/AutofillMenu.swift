@@ -130,7 +130,7 @@ struct AutofillMenuContent: View {
         Divider()
 
         Button("Autofill Settings…") {
-            UserDefaults.standard.set(SettingsPane.autofill.rawValue, forKey: "settingsPane")
+            BrowserProfile.defaults.set(SettingsPane.autofill.rawValue, forKey: "settingsPane")
             NotificationCenter.default.post(name: .browserShowSettings, object: nil)
         }
     }
@@ -148,7 +148,7 @@ struct AutofillMenuContent: View {
 /// live when the user rebinds the chord in Settings, the same trick the app's
 /// `sc(_:)` helper uses.
 private struct AutofillShortcutModifier: ViewModifier {
-    @AppStorage(ShortcutStore.revisionKey) private var revision = 0
+    @AppStorage(ShortcutStore.revisionKey, store: BrowserProfile.defaults) private var revision = 0
     let active: Bool
 
     private var shortcut: KeyboardShortcut? {

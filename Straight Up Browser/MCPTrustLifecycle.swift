@@ -1212,7 +1212,7 @@ nonisolated final class URLSessionMCPTransport: MCPTransport, @unchecked Sendabl
         configuration.waitsForConnectivity = false
         let delegate = MCPRedirectRejectingDelegate()
         redirectDelegate = delegate
-        session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        session = URLSession(configuration: BrowserProfileNetwork.configuration(configuration), delegate: delegate, delegateQueue: nil)
     }
 
     init(configuration: URLSessionConfiguration) {
@@ -1220,7 +1220,7 @@ nonisolated final class URLSessionMCPTransport: MCPTransport, @unchecked Sendabl
         configuration.urlCache = nil
         let delegate = MCPRedirectRejectingDelegate()
         redirectDelegate = delegate
-        session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        session = URLSession(configuration: BrowserProfileNetwork.configuration(configuration), delegate: delegate, delegateQueue: nil)
     }
 
     func send(_ request: MCPTransportRequest) async throws -> MCPTransportResponse {

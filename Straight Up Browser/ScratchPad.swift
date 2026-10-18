@@ -97,7 +97,7 @@ struct ScratchPadView: View {
     @State private var selectedItemID: UUID?
     @State private var keyEventMonitor: Any?
     @FocusState private var noteFocused: Bool
-    @AppStorage(SettingsManager.aiFeaturesKey) private var aiFeaturesEnabled = true
+    @AppStorage(SettingsManager.aiFeaturesKey, store: BrowserProfile.defaults) private var aiFeaturesEnabled = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -305,7 +305,7 @@ struct ScratchPadView: View {
 
     private func copySelection() {
         guard let selectedItem else { return }
-        let pasteboard = NSPasteboard.general
+        let pasteboard = BrowserProfileSystem.pasteboard
         pasteboard.clearContents()
         if selectedItem.kind == .image,
            let data = selectedItem.imageData,
@@ -319,7 +319,7 @@ struct ScratchPadView: View {
 
     private func openSelectedSource() {
         guard let url = selectedItem?.sourceURL else { return }
-        NSWorkspace.shared.open(url)
+        BrowserProfileSystem.open(url)
     }
 
     private func deleteSelection() {
@@ -454,7 +454,7 @@ struct ScratchPadView: View {
 
 private struct ScratchPadItemRow: View {
     @Environment(\.modelContext) private var modelContext
-    @AppStorage(SettingsManager.aiFeaturesKey) private var aiFeaturesEnabled = true
+    @AppStorage(SettingsManager.aiFeaturesKey, store: BrowserProfile.defaults) private var aiFeaturesEnabled = true
     @Bindable var item: ScratchPadItem
     let isSelected: Bool
     let onSelect: () -> Void

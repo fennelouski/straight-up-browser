@@ -18,7 +18,7 @@ boundaries = {
     'BrowserRainForecast.swift': 'struct WeatherRegionalFeedSettings: View',
     'NewspaperWeather.swift': 'struct NewspaperWeatherMasthead: View',
 }
-for filename in [*boundaries, 'BrowserWeatherService.swift', 'SharedWeatherContract.swift', 'OmnibarWeatherScene.swift']:
+for filename in [*boundaries, 'BrowserWeatherService.swift', 'SharedWeatherContract.swift', 'OmnibarWeatherScene.swift', 'BrowserTestProfile.swift', 'BrowserProfileNetwork.swift', 'WeatherPresentation.swift']:
     text = (Path('Straight Up Browser') / filename).read_text()
     if filename == 'OmnibarWeatherScene.swift':
         marker = 'nonisolated struct OmnibarWeatherParticle'
@@ -54,4 +54,4 @@ let package = Package(name: "BrowserWeatherKernel", platforms: [.macOS("15.6")],
 ])
 ''')
 PY
-swift test --package-path "$WEATHER_TEST_ROOT" --scratch-path /tmp/browser-weather-kernel-build
+CLANG_MODULE_CACHE_PATH="$WEATHER_TEST_ROOT/modules" SWIFTPM_MODULECACHE_OVERRIDE="$WEATHER_TEST_ROOT/modules" swift test --package-path "$WEATHER_TEST_ROOT" --scratch-path "$WEATHER_TEST_ROOT/build" --cache-path "$WEATHER_TEST_ROOT/cache" --config-path "$WEATHER_TEST_ROOT/config" --security-path "$WEATHER_TEST_ROOT/security" --jobs 2 --disable-sandbox

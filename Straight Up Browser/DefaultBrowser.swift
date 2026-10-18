@@ -10,7 +10,8 @@ enum DefaultBrowser {
     private static let schemes = ["http", "https"]
 
     static var isDefault: Bool {
-        schemes.allSatisfy { scheme in
+        guard !BrowserProfile.isIsolated else { return false }
+        return schemes.allSatisfy { scheme in
             guard let probe = URL(string: "\(scheme)://example.com"),
                   let handler = NSWorkspace.shared.urlForApplication(toOpen: probe) else { return false }
             return handler.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL
@@ -18,11 +19,12 @@ enum DefaultBrowser {
     }
 
     static func setPromptEnabled(_ enabled: Bool) {
-        UserDefaults.standard.set(enabled, forKey: promptEnabledKey)
+        BrowserProfile.defaults.set(enabled, forKey: promptEnabledKey)
         if enabled { DefaultBrowserEngagement.shared.rearm() }
     }
 
     static func makeDefault() async -> RequestResult {
+        guard !BrowserProfile.isIsolated else { return .notChanged }
         DefaultBrowserEngagement.shared.recordDefaultAction()
         do {
             for scheme in schemes {
@@ -52,7 +54,7 @@ final class DefaultBrowserEngagement {
     private var previousSample: Date?
     private var wasBrowsing = false
 
-    init(defaults: UserDefaults = .standard, launchDate: Date = .now) {
+    init(defaults: UserDefaults = BrowserProfile.defaults, launchDate: Date = .now) {
         self.defaults = defaults
         policy = defaults.data(forKey: Self.storageKey)
             .flatMap { try? JSONDecoder().decode(DefaultBrowserPromptPolicy.self, from: $0) }
@@ -128,7 +130,7 @@ final class DefaultBrowserEngagement {
 struct DefaultBrowserEngagementObserver: View {
     @ObservedObject var tabManager: TabManager
     var hasWebPage: Bool
-    @AppStorage(DefaultBrowser.promptEnabledKey) private var promptEnabled = true
+    @AppStorage(DefaultBrowser.promptEnabledKey, store: BrowserProfile.defaults) private var promptEnabled = true
     @State private var browserWindow = DefaultBrowserWindowReference()
     @State private var sleeping = false
     @State private var timer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()

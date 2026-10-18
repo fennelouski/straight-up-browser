@@ -185,12 +185,12 @@ struct OmnibarWeatherCard: View {
     @State private var configuringProvider = false
     @State private var busySince: Date?
     @State private var saveStatus = ""
-    @AppStorage(NewspaperPreferences.Key.weatherCity) private var city = ""
-    @AppStorage(NewspaperPreferences.Key.weatherCurrentLocation) private var currentLocation = false
-    @AppStorage(NewspaperPreferences.Key.weatherTemperatureUnit) private var unit = NewspaperTemperatureUnit.system.rawValue
-    @AppStorage("browserWeatherProvider") private var provider = "apple"
-    @AppStorage("browserWeatherCredentialRevision") private var revision = "native"
-    @AppStorage("browserWeatherBYOEnabled") private var byo = false
+    @AppStorage(NewspaperPreferences.Key.weatherCity, store: BrowserProfile.defaults) private var city = ""
+    @AppStorage(NewspaperPreferences.Key.weatherCurrentLocation, store: BrowserProfile.defaults) private var currentLocation = false
+    @AppStorage(NewspaperPreferences.Key.weatherTemperatureUnit, store: BrowserProfile.defaults) private var unit = NewspaperTemperatureUnit.system.rawValue
+    @AppStorage("browserWeatherProvider", store: BrowserProfile.defaults) private var provider = "apple"
+    @AppStorage("browserWeatherCredentialRevision", store: BrowserProfile.defaults) private var revision = "native"
+    @AppStorage("browserWeatherBYOEnabled", store: BrowserProfile.defaults) private var byo = false
 
     private var intent: BrowserWeatherQuery { BrowserWeatherQuery.parse(query) ?? .init() }
     private var usesCurrent: Bool { intent.location == nil && currentLocation && OmnibarWeatherSnapshot.testPreview == nil }

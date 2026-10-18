@@ -16,6 +16,7 @@ source = package / 'Sources/MotionPolicies'
 tests = package / 'Tests/MotionPoliciesTests'
 source.mkdir(parents=True)
 tests.mkdir(parents=True)
+(source / 'BrowserTestProfile.swift').write_text((repo / 'Straight Up Browser/BrowserTestProfile.swift').read_text())
 (package / 'Package.swift').write_text('''// swift-tools-version: 6.0
 import PackageDescription
 let package = Package(

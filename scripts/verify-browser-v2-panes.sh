@@ -14,6 +14,7 @@ let package = Package(name: "BrowserPaneModelVerification", platforms: [.macOS(.
     products: [.library(name: "Browser", targets: ["Browser"])],
     targets: [.target(name: "Browser"), .testTarget(name: "BrowserTests", dependencies: ["Browser"])])
 SWIFT
+cp "$TASK_REPOSITORY_ROOT/Straight Up Browser/BrowserTestProfile.swift" "$TASK_PACKAGE_ROOT/Sources/Browser/BrowserTestProfile.swift"
 cp -- "$TASK_REPOSITORY_ROOT/Straight Up Browser/PaneLayout.swift" "$TASK_PACKAGE_ROOT/Sources/Browser/PaneLayout.swift"
 cp -- "$TASK_REPOSITORY_ROOT/Straight Up Browser/ColdLayoutStarterScheduler.swift" "$TASK_PACKAGE_ROOT/Sources/Browser/ColdLayoutStarterScheduler.swift"
 cp -- "$TASK_REPOSITORY_ROOT/Straight Up BrowserTests/ColdLayoutStarterSchedulerTests.swift" "$TASK_PACKAGE_ROOT/Tests/BrowserTests/ColdLayoutStarterSchedulerTests.swift"

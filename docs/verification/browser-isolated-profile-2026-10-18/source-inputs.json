@@ -1,0 +1,1362 @@
+[
+  {
+    "path": "Straight Up Browser/AgentDefinitionSync.swift",
+    "sha256": "2370b7954d9540fb918ccaa9389220e72853874bf122e10e4b7120b0e4e40ff8"
+  },
+  {
+    "path": "Straight Up Browser/AgentDefinitionSyncRuntime.swift",
+    "sha256": "f892ba6db11b8a8ebeb75fc36910a613c6c9d1c8138e3c0bbcf4cea0fe9a7472"
+  },
+  {
+    "path": "Straight Up Browser/AgentHistoryDeletion.swift",
+    "sha256": "368f118eb53f52de13c1a78972e7baca83c1a1908ca7ff4350bcae38040d94ee"
+  },
+  {
+    "path": "Straight Up Browser/AgentLegacyImporter.swift",
+    "sha256": "4d185b47e7692749de26090e970be421ced980f32b065e5ec5df6045c72ecf4f"
+  },
+  {
+    "path": "Straight Up Browser/AgentLegacyMigrationCoordinator.swift",
+    "sha256": "b539f6fd49c0428646084de2d756f0718e125974c67d4aca450b372154f42abb"
+  },
+  {
+    "path": "Straight Up Browser/AgentMemory.swift",
+    "sha256": "d69cf96f488443d2eac805bd7cccf75c867c7a8e4ce71c6b41dd2d4a06485480"
+  },
+  {
+    "path": "Straight Up Browser/AgentMemoryManagementView.swift",
+    "sha256": "fc727a2b77d21724187e53f051aa982ed522fc66ea1119f90eb1bce42e627898"
+  },
+  {
+    "path": "Straight Up Browser/AgentMemoryRuntime.swift",
+    "sha256": "31e4e46237480707ce1007d7d48e25614c1d7da2283b078e961705e1688aae63"
+  },
+  {
+    "path": "Straight Up Browser/AgentModelCatalog.swift",
+    "sha256": "ba4459c9f003ac6cac1dab8ad802ae024190b9679f437ff5dbc32b1405d2af02"
+  },
+  {
+    "path": "Straight Up Browser/AgentModelMigration.swift",
+    "sha256": "c287e2a6e23065600c36e177548fc7091029dfd2294afbe8087b9b5aa7553439"
+  },
+  {
+    "path": "Straight Up Browser/AgentObservability.swift",
+    "sha256": "751aa5642d2acef98dcbf4fb7e57a096a17fbc8951e0a5b2e00abde479b262ce"
+  },
+  {
+    "path": "Straight Up Browser/AgentObservabilityRuntime.swift",
+    "sha256": "28059298adff79f34f212de4fecc3eaf5399c1f13b6f8dbcb6563ea71b7efa15"
+  },
+  {
+    "path": "Straight Up Browser/AgentPageAI.swift",
+    "sha256": "928bc698ff4c8c9fd7f6c2a7e8cdca9b06799ba049b67bf12461c68dc820e122"
+  },
+  {
+    "path": "Straight Up Browser/AgentPageLoadExpander.swift",
+    "sha256": "480c41bb418cd7ae8644aa1ee4ea7b3794fdcd34c1f92649dbf60bd5ebdf123b"
+  },
+  {
+    "path": "Straight Up Browser/AgentPolicyEngine.swift",
+    "sha256": "785fb3e239a6751c002ee4255f55a37db876b294005a7eae1ecc198d8fb23edf"
+  },
+  {
+    "path": "Straight Up Browser/AgentReplayCaptureRuntime.swift",
+    "sha256": "97ec0d10aafc7da4c4176402c1421f4da1bb6783e51acf3038f3d2bdd1c2fc69"
+  },
+  {
+    "path": "Straight Up Browser/AgentRunGroupRuntime.swift",
+    "sha256": "84d2830e4c9450d0be566209cc83ad7378a53da09240ff993ec62344243667c0"
+  },
+  {
+    "path": "Straight Up Browser/AgentRunGroups.swift",
+    "sha256": "21cbf0c847618e783f82660924029ab73af28cdbfca7cc68fd6f33051c6c7ab1"
+  },
+  {
+    "path": "Straight Up Browser/AgentRunModels.swift",
+    "sha256": "157afcef11969ca3a4b841122f0c42bbed8d77426aab3320282e539e5a08d627"
+  },
+  {
+    "path": "Straight Up Browser/AgentRunStore.swift",
+    "sha256": "a77e31d68e94d4361d79ab63e4269b4af6a1058c7250be75c0459c0abc4857f4"
+  },
+  {
+    "path": "Straight Up Browser/AgentScheduledTaskDependencyResolver.swift",
+    "sha256": "24f9c6eb5f95bbf8ff2113c1a316a03fab20c6d6abda16c567b1f6fe7cc6b4ee"
+  },
+  {
+    "path": "Straight Up Browser/AgentScheduledTaskEngine.swift",
+    "sha256": "faffed3b7121170dfca7e08c5a0154ddde0d50816e4299d1564aa37225ee2270"
+  },
+  {
+    "path": "Straight Up Browser/AgentSettingsView.swift",
+    "sha256": "ea27f1827f37ec1b159d5402c466a01a6be2c919bd79c1183d92b30750eceb81"
+  },
+  {
+    "path": "Straight Up Browser/AgentTimeline.swift",
+    "sha256": "3cd5da6061927cf24a6c62570a4cf5d04d968c1cdf47b4ab20726c37b41b8ae5"
+  },
+  {
+    "path": "Straight Up Browser/AgentToolCatalog.swift",
+    "sha256": "6111434bcb6be59474a5562f82af20db0391c185a15601e4d143490f7ff212cb"
+  },
+  {
+    "path": "Straight Up Browser/AnchorComposer.swift",
+    "sha256": "a92c4b15b268284174d3d0f9c28e47ea5c8f429b6ec4dcd65aedaea6550a1dca"
+  },
+  {
+    "path": "Straight Up Browser/AnchorLink.swift",
+    "sha256": "c48c04ce58f3f470d24133bc02a7022f584cfa9180235c0f55391fd32d844db2"
+  },
+  {
+    "path": "Straight Up Browser/AnchorResolver.swift",
+    "sha256": "e2d1392d870525e9420dda63571fdde2daec4db245e9da5c3a19a2ea522ab58e"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/AccentColor.colorset/Contents.json",
+    "sha256": "9af65086fa30b49252fae1a1225731691de794f7775af74d71befeb507d12b7c"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/AppIcon.appiconset/Contents.json",
+    "sha256": "70d639f397db8ea000b97ed6ba4cfc789df4cd8f7a05897eef6b12993d4e4df9"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/AppIcon.appiconset/icon_128x128.png",
+    "sha256": "b50d45acf2ba19e7ffb537b0d2054454434f8d43118ed0e1bc8456ff6f0aa673"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/AppIcon.appiconset/icon_128x128@2x.png",
+    "sha256": "3c1a5261537fe7af0326e209d490171f2860c9c731b326c7c7e206c5146175da"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/AppIcon.appiconset/icon_16x16.png",
+    "sha256": "0b1bc3e971593eec7fe532b738098220414d0611b187b7ae03dc3928889d24b3"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/AppIcon.appiconset/icon_16x16@2x.png",
+    "sha256": "14896833a280a71cc806f025e0a4fb519ea18f38a84d6e131aaafedf3028be41"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/AppIcon.appiconset/icon_256x256.png",
+    "sha256": "3c1a5261537fe7af0326e209d490171f2860c9c731b326c7c7e206c5146175da"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/AppIcon.appiconset/icon_256x256@2x.png",
+    "sha256": "bf9c0277b9d266124ad767f8c7a4e0bc2f9bcf17ad3525126cb97b35b1991e88"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/AppIcon.appiconset/icon_32x32.png",
+    "sha256": "14896833a280a71cc806f025e0a4fb519ea18f38a84d6e131aaafedf3028be41"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/AppIcon.appiconset/icon_32x32@2x.png",
+    "sha256": "1f661e2731015d6cd9256928bf34e6549f555f90139956e5878afa3da43af60e"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/AppIcon.appiconset/icon_512x512.png",
+    "sha256": "bf9c0277b9d266124ad767f8c7a4e0bc2f9bcf17ad3525126cb97b35b1991e88"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/AppIcon.appiconset/macOS_icon_1024.png",
+    "sha256": "f6c6d69427691581b4289ff8bec6ed3be36c361911bb7c8ee230b5a3192d0901"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/Contents.json",
+    "sha256": "0fd49ba3c3585c709678e0046a821c3c60685ec7063720d30d3a3448be3a208b"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/OnboardingAstronautCelebrate.imageset/Contents.json",
+    "sha256": "559c80adeaf26a628499efff4f6e386d1d60609221a1dadf5aac7fee63033048"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/OnboardingAstronautCelebrate.imageset/OnboardingAstronautCelebrate.png",
+    "sha256": "a9560d70cbfff7d755febaf2eed2c414977a85e126a56074543cb05f7c949ba4"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/OnboardingAstronautCurious.imageset/Contents.json",
+    "sha256": "a9ad6483d3e9d66edec07211e5bc68c03987cb24cb70800f2e2e07bb8cca6f74"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/OnboardingAstronautCurious.imageset/OnboardingAstronautCurious.png",
+    "sha256": "80a0ca6381ed102e79f0ea482c589e494b5779068f939de108bd886ab624c46a"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/OnboardingAstronautExplain.imageset/Contents.json",
+    "sha256": "2cd23aeda0dfa2222d2fb0fbba2b0e02d1b04c63f50124671564dc1c801e6ea0"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/OnboardingAstronautExplain.imageset/OnboardingAstronautExplain.png",
+    "sha256": "35153c2d42d4c49887c09c9b684480384f842f9a701721c0caf0c2f198235120"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/OnboardingAstronautFloat.imageset/Contents.json",
+    "sha256": "89792bcf79848b9ecc83474ee417745ff7fe514fb89963c1c34935549aff9dc9"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/OnboardingAstronautFloat.imageset/OnboardingAstronautFloat.png",
+    "sha256": "96be9c234b3387b3fc1512e5df19838e3459d2aee4e32f3a4f5db818d81c4844"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/OnboardingAstronautPoint.imageset/Contents.json",
+    "sha256": "7492b20b59c55e9bbfa6d2725554ccff0103d0a4baa8e7c50f422e4004af6d68"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/OnboardingAstronautPoint.imageset/OnboardingAstronautPoint.png",
+    "sha256": "80eef6476416049b484d13f484e7650f8f51429d401a659e2157232df224677b"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/OnboardingAstronautWelcome.imageset/Contents.json",
+    "sha256": "c06376874496ec5bca874ee7fc58df6f7556f42c1411019e317d7c2e7194cd08"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/OnboardingAstronautWelcome.imageset/OnboardingAstronautWelcome.png",
+    "sha256": "ab6cc3bbd9019079b4bafe5a1284ba9c9609fbbfce3862a5cdf8626f4930dd90"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/OnboardingShuttle.imageset/Contents.json",
+    "sha256": "df766677657f2a62ccd3ef976eeb09157c35e4bb5087147c20b34cf19cd24c58"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/OnboardingShuttle.imageset/OnboardingShuttle.png",
+    "sha256": "b0ce0eb9523b601fbcf2371563553af6d0ec4a031d577f3fe496e4c87d51e288"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/OnboardingShuttleOff.imageset/Contents.json",
+    "sha256": "d503dd802b0e706b6b60a4a7384fd423e11af297f6da559d2ca0938c05e0c022"
+  },
+  {
+    "path": "Straight Up Browser/Assets.xcassets/OnboardingShuttleOff.imageset/OnboardingShuttleOff.png",
+    "sha256": "723ca99708dba6adf67b5644e8bb18785c5974c9a0403b396e59cd574893f46a"
+  },
+  {
+    "path": "Straight Up Browser/AuditModel.swift",
+    "sha256": "7213dda30a04639bb65d7889649be7c4ca78dd71dd347d8973763bebb28fb87e"
+  },
+  {
+    "path": "Straight Up Browser/AuditView.swift",
+    "sha256": "ddb3f2784a9cc9eb1c8ce5916736c7d89fd482c30b1b5aea906639060055f483"
+  },
+  {
+    "path": "Straight Up Browser/Autofill.swift",
+    "sha256": "e68aaf582d987bcbe680a214ed618100fe120ae8c0b05780b48881b1b299dbd1"
+  },
+  {
+    "path": "Straight Up Browser/AutofillContacts.swift",
+    "sha256": "8fe0afdd30e40a68b841673f344b26c7412f7eb290b3861b01d78e8f851f36cb"
+  },
+  {
+    "path": "Straight Up Browser/AutofillFieldClassifier.swift",
+    "sha256": "b11e74a99fc064e5104cba8149d7ae99ade9d81f92ee1a3d888c71bc116911c4"
+  },
+  {
+    "path": "Straight Up Browser/AutofillFocusSignal.swift",
+    "sha256": "dc068e9903f33a379f78c0ac8e66910452b9163353ea9422cb2cd13880bc2ca3"
+  },
+  {
+    "path": "Straight Up Browser/AutofillMenu.swift",
+    "sha256": "1978387cf2548bd130e9be06ba8edb44360b3ff611542841c8ec17cf7b02770e"
+  },
+  {
+    "path": "Straight Up Browser/AutofillPreferences.swift",
+    "sha256": "4c7f56167f1703a13805f488c8bb371f311b388290d69556993836698167058a"
+  },
+  {
+    "path": "Straight Up Browser/AutofillProfile.swift",
+    "sha256": "eea28b3542063278e008ee1a5ce7f4754c40b442c0f5fc5d4e18f213b0271ec1"
+  },
+  {
+    "path": "Straight Up Browser/AutofillSettingsView.swift",
+    "sha256": "809d86d2f74440c8b4be9084959c5fc495d391ce7dab9935043724b65bf7538d"
+  },
+  {
+    "path": "Straight Up Browser/BackGuard.swift",
+    "sha256": "585df87291a09c161c166c5f3110f1e4b278d7f6aacd18c0fad4d828c2284eb1"
+  },
+  {
+    "path": "Straight Up Browser/BibliographyMatcher.swift",
+    "sha256": "6295c1acf63a8c86e3b364bce88f0dc38965ce96ea2d5a12a455bbb33fc6cf39"
+  },
+  {
+    "path": "Straight Up Browser/BibliographyPanel.swift",
+    "sha256": "fee3e5a65da8e616081599b2e5927068cc0fabeb8ad9a3d0615a6688ee7872ab"
+  },
+  {
+    "path": "Straight Up Browser/Bookmark.swift",
+    "sha256": "95fba772b906b7ccfbf4455c699d9c70a979938730c71093d88a1e0301eba4b8"
+  },
+  {
+    "path": "Straight Up Browser/BookmarkImporter.swift",
+    "sha256": "736f2ad0bae364dce8e6e1365257035369380e0eb7fd85023628d6643481c17a"
+  },
+  {
+    "path": "Straight Up Browser/BookmarkManager.swift",
+    "sha256": "afe203fffd77261af67a47591d13f40f0867022af2b94c251b782bdc9dfd068b"
+  },
+  {
+    "path": "Straight Up Browser/BrowserAccessibility.swift",
+    "sha256": "721cc282866edf3a7eff0b7b254fc36c950e1715dd7355afac0af203b387b80b"
+  },
+  {
+    "path": "Straight Up Browser/BrowserAgent.swift",
+    "sha256": "f3d8b654f548a19257408b2d1f2bd6a7e16f3842a4d476d4d32182ff798afe69"
+  },
+  {
+    "path": "Straight Up Browser/BrowserAgentMCPIntegration.swift",
+    "sha256": "22119e09381dd5a4feb6eb5c8d054d5156f7f0d834f69f79ab404cbef76638bf"
+  },
+  {
+    "path": "Straight Up Browser/BrowserAgentMCPLoopbackOAuth.swift",
+    "sha256": "ef531021abba269f6cff761a265dc044b150ea8d7a4b4bd77289441ff12072cf"
+  },
+  {
+    "path": "Straight Up Browser/BrowserCLI.swift",
+    "sha256": "a8707e8a9ba6cae7b9264038c51ecc86c6b412163a88f2dbd51afbdf58072d50"
+  },
+  {
+    "path": "Straight Up Browser/BrowserChromePlacement.swift",
+    "sha256": "2f1fad1144ceb4d96b625905cc3e3f676c2cb3023d31f0994f75b1e4b802066d"
+  },
+  {
+    "path": "Straight Up Browser/BrowserEngine.swift",
+    "sha256": "f19315ef806a0b1f22f6a2526b64896ce2a4f9f700702bc34ae6ae5821a59973"
+  },
+  {
+    "path": "Straight Up Browser/BrowserIntents.swift",
+    "sha256": "0f5b8b890355602077cffff9e4cfdad9959d4e035dc6901f59a27d743b94718e"
+  },
+  {
+    "path": "Straight Up Browser/BrowserLibrary.swift",
+    "sha256": "8da5325da48f784bcfefb5f85e06e57bed4627d20509d11431ec8491fb19bddb"
+  },
+  {
+    "path": "Straight Up Browser/BrowserMotion.swift",
+    "sha256": "02494bb9d36d9828c949e90d411bd2ce82eb0b2e0d52b257ac5ba65bbd0d5051"
+  },
+  {
+    "path": "Straight Up Browser/BrowserOnboarding.swift",
+    "sha256": "3a437f60f7764e7889e742206b2f3d02bbd0fcb50f8c9a261316d8405b5263a2"
+  },
+  {
+    "path": "Straight Up Browser/BrowserProfileNetwork.swift",
+    "sha256": "1b28f23750ab94fd16175505d9f5f88be6e2e2d26e7726ec790183a76c1a99fa"
+  },
+  {
+    "path": "Straight Up Browser/BrowserProfilePresentation.swift",
+    "sha256": "a5cd520a4b2fb4b4c438e2fd45732534568703aa5c72f3b801181634dda7c4bb"
+  },
+  {
+    "path": "Straight Up Browser/BrowserProfileSystem.swift",
+    "sha256": "c573d3cc7e8922bd6b8763ad339a664a7b0fd931c5c1674e949efa034445e09c"
+  },
+  {
+    "path": "Straight Up Browser/BrowserProfileWebKit.swift",
+    "sha256": "f7837abc27ec4b7ba01516b07c9492e18d8089ac752f339ae9ecea46081a504e"
+  },
+  {
+    "path": "Straight Up Browser/BrowserRainForecast.swift",
+    "sha256": "03f854cd6b4491b519bfb8bdde97c09b857665057d55e502433a9eda6f1e91cb"
+  },
+  {
+    "path": "Straight Up Browser/BrowserSession.swift",
+    "sha256": "71aef38571024af35c78bf3bf33655492bab0d8d0ccf0c9a9e1a5500654e97d1"
+  },
+  {
+    "path": "Straight Up Browser/BrowserTabOrder.swift",
+    "sha256": "2f54455da977e34dc08aaf57256cc770de3879051646d168ffd06b531f175d0d"
+  },
+  {
+    "path": "Straight Up Browser/BrowserTestProfile.swift",
+    "sha256": "240e5c05305796775072b7ae2b8b24e2c90fca663491df31d6f0cb9c2aa69890"
+  },
+  {
+    "path": "Straight Up Browser/BrowserThemeStorage.swift",
+    "sha256": "b6c9ff5dd55fa0bc608bfc01a348d60117d2cffb55b23859ccc194b387e0301c"
+  },
+  {
+    "path": "Straight Up Browser/BrowserThemeStore.swift",
+    "sha256": "c40c426e9ec91e29780ded8950c2e70f60ff426affd68d746c2fb3705134539b"
+  },
+  {
+    "path": "Straight Up Browser/BrowserWeatherService.swift",
+    "sha256": "218860c42e59a7e1790aa667d2abf72201a6e6d3759bfcf86da2427a24c93bbc"
+  },
+  {
+    "path": "Straight Up Browser/BrowserWindows.swift",
+    "sha256": "107291ad5cb309f9798dbf0af7460e04b4d31f182d249cb2c4df3340b59478bd"
+  },
+  {
+    "path": "Straight Up Browser/BrowsingDataCleaner.swift",
+    "sha256": "9c60989d3442a3e54f455bca17d5573005705d7ff8f98da469deb1a51c6b06c4"
+  },
+  {
+    "path": "Straight Up Browser/BrowsingHistoryStore.swift",
+    "sha256": "52e9899790f5b3dd07cd38a16f9858eeed7e913f1b32263d14af37cdfd12edd9"
+  },
+  {
+    "path": "Straight Up Browser/ClaimExtraction.swift",
+    "sha256": "2f61fefd336f6e29b62fca6eab0cc5a3418907264c5cf4d58b0a6fc7d7ea827a"
+  },
+  {
+    "path": "Straight Up Browser/ClaimsPanel.swift",
+    "sha256": "eed94ea91397dc15457fb1cd2b7f82b430d67e00cb65851aca8adecf36bc4938"
+  },
+  {
+    "path": "Straight Up Browser/CloudKitEntitlements.swift",
+    "sha256": "87a75d18855e7edfedda03293db4669033b0daa210610f24a1f58598ff821b29"
+  },
+  {
+    "path": "Straight Up Browser/ColdLayoutStarterScheduler.swift",
+    "sha256": "3e19628c413e3aaf4e5f3ef6bdb0a69a32961549d77aa6078358249c292ff357"
+  },
+  {
+    "path": "Straight Up Browser/CollapsibleSection.swift",
+    "sha256": "d75ba33e9ecee9227ed4118815a4c0eec10a368f4a5c6d0db807bd60333e0f6b"
+  },
+  {
+    "path": "Straight Up Browser/ColorPanelPositioning.swift",
+    "sha256": "ce7b14900c6ffeff422f52b03b587f4402797925c542760ece9ddb968d114b05"
+  },
+  {
+    "path": "Straight Up Browser/ContentView.swift",
+    "sha256": "af4490bbd0aa344429bbce47c7c68196bd442cae90530f286d28535ddbedfb38"
+  },
+  {
+    "path": "Straight Up Browser/CoworkArtifactTransactions.swift",
+    "sha256": "1a2481523a9e9e44f3d0b5b540e75ac0aecab0cc6affcfe7467907b18b48d84f"
+  },
+  {
+    "path": "Straight Up Browser/CredentialAutofillBadge.swift",
+    "sha256": "e28f39f5fccfcadfa2955042e922e478204542f43e82a61716099faa8bb564ac"
+  },
+  {
+    "path": "Straight Up Browser/CredentialPageRuntime.swift",
+    "sha256": "28623fa9c84221644ee7e3b6bbf05b865851292a257deb524b0da26d9cdf2e03"
+  },
+  {
+    "path": "Straight Up Browser/DefaultBrowser.swift",
+    "sha256": "2c8989e59dfb0d1516de6be91341a9926d50aad9d0eee96c196b01839ab407dd"
+  },
+  {
+    "path": "Straight Up Browser/DefaultBrowserPrompt.swift",
+    "sha256": "d45dd28d6479207d148c6db1c7336a16cf57235295bc81ddf11acace8c475f52"
+  },
+  {
+    "path": "Straight Up Browser/DefaultBrowserPromptPolicy.swift",
+    "sha256": "40bfb1bd1bd9d90a8c72dc56ad1807a9daaa837e4091c45c1258198a8dcddcda"
+  },
+  {
+    "path": "Straight Up Browser/DelayedHelp.swift",
+    "sha256": "d67526eaf5dd928cb641e32fadbe1f80ec90390ec48811f5e3387fefc24d350e"
+  },
+  {
+    "path": "Straight Up Browser/DeveloperTools.swift",
+    "sha256": "4c3accfe72eee7437d20458241761b535bd2e141b8a896d71bc72cfc9275fb1d"
+  },
+  {
+    "path": "Straight Up Browser/DocumentEditSession.swift",
+    "sha256": "19c2e0872b9bc63d748989d2845f574e72fbd7a1be1f22eb9900e4fdb4b5685e"
+  },
+  {
+    "path": "Straight Up Browser/DocumentPane.swift",
+    "sha256": "bce08288ceadbcad400cb56a07738b789a71f4dbd8b3d118d50444c3543153eb"
+  },
+  {
+    "path": "Straight Up Browser/DocumentSidebarRows.swift",
+    "sha256": "988ac31fcb0e306d4138c1517580c912334aa66b65e2f6c96b1c0a6f63ce9b84"
+  },
+  {
+    "path": "Straight Up Browser/DocumentStore.swift",
+    "sha256": "b07093ffac79cb5f82eb8e4674a874439cabb677652788e9ce0ed6f9006b5f3f"
+  },
+  {
+    "path": "Straight Up Browser/DomainInitialsGenerator.swift",
+    "sha256": "14eebdb0333489c9fe8a4625929afe156737aee3ad7dbc9a287318ce5022daa5"
+  },
+  {
+    "path": "Straight Up Browser/DownloadManager.swift",
+    "sha256": "51af7fa75044d619866d6e3cdc1b99682d012f0a942d17b9779707a2792ce902"
+  },
+  {
+    "path": "Straight Up Browser/FastForward.swift",
+    "sha256": "95c9bf71ccc35ebc57240a69ad3231c4f88fdbca3cf6f08a0777a193cc2c6c84"
+  },
+  {
+    "path": "Straight Up Browser/FaviconCache.swift",
+    "sha256": "a30ca7bce5da577f64866fbf237303cf0684bac2c15fb884d659124af5fefb6d"
+  },
+  {
+    "path": "Straight Up Browser/FileMetadata.swift",
+    "sha256": "3c8c88008fe586206a39df22155cd534421a8f212655aada32ebf06ec91fff53"
+  },
+  {
+    "path": "Straight Up Browser/FilesWindow.swift",
+    "sha256": "87fe49f543f98d7f0105d05f42f8aadefa35775a47910ff02fe3bc16c080ff4b"
+  },
+  {
+    "path": "Straight Up Browser/GlobalHotkeyRegistration.swift",
+    "sha256": "7e99af6d9862d5aa3be355badde992854d2d2463f7be2e05078e26acab3e0d0e"
+  },
+  {
+    "path": "Straight Up Browser/GlobalOmnibar.swift",
+    "sha256": "4329ff3167f254bf05b2ef4e7433236e2d8e9832f5d956778bcd52564dc2f5cf"
+  },
+  {
+    "path": "Straight Up Browser/GlobalOmnibarStatusView.swift",
+    "sha256": "e9a3f19ef1920439e2455107672ad055b0557a39298a3564bcadf276955ee83b"
+  },
+  {
+    "path": "Straight Up Browser/HelpWindow.swift",
+    "sha256": "37eddd1301a41669d455672e5f178a4e215bf2b4c46f24582d4fa807aaf3dd23"
+  },
+  {
+    "path": "Straight Up Browser/ImportReportSheet.swift",
+    "sha256": "cae499726dce05d677f676afe0935338c4e65ad29e6379c6d990f29edd8dd3f5"
+  },
+  {
+    "path": "Straight Up Browser/KeyboardShortcutsManager.swift",
+    "sha256": "486ca9bf5318228e127fd04252f2158482d5974edc34134c56724fb697490a80"
+  },
+  {
+    "path": "Straight Up Browser/LedgerMigrator.swift",
+    "sha256": "e74bdaef846bd6b8bd5f66532b47f3adb896f4eb5425c80ac5361df2e384362f"
+  },
+  {
+    "path": "Straight Up Browser/LedgerStore.swift",
+    "sha256": "dd2c69fa8c5dff0b96a8c215fc4be080f13fa4bc07cf772645c691101a8fc0f5"
+  },
+  {
+    "path": "Straight Up Browser/LinkPreview.swift",
+    "sha256": "236d58da24ca04357245f060833a8feaf65092f31c7c1ab4b486a78c89372692"
+  },
+  {
+    "path": "Straight Up Browser/LinkPreviewCards.swift",
+    "sha256": "87c967e2c39adca0db39e367aabfc4f9f62c4eb36a5c563027b8cebc95cb692d"
+  },
+  {
+    "path": "Straight Up Browser/Localizable.xcstrings",
+    "sha256": "ca16913a5c2fdca559b9d693eec388cb807c2b7a2c1e8b8dc2c3dd8c0e5467a8"
+  },
+  {
+    "path": "Straight Up Browser/Localization.swift",
+    "sha256": "76d691f332cdf912075a177837bc89ad24874a3f9d5bd1c8caa4bd7d19a6838f"
+  },
+  {
+    "path": "Straight Up Browser/Logger.swift",
+    "sha256": "c01b13c8e1a4d809fa4d5a7caad9342a00be02a3f1499241f21ecac1d2dfe531"
+  },
+  {
+    "path": "Straight Up Browser/MCPTrustLifecycle.swift",
+    "sha256": "2b1b2150670107494efee7921fa6e3cf895859116ef5a8215dcf25abb8221988"
+  },
+  {
+    "path": "Straight Up Browser/MarkdownStyling.swift",
+    "sha256": "84753aaf372e7eb9ce6e60477d3ffad0873814ed406a01f204de81bcae05ff3b"
+  },
+  {
+    "path": "Straight Up Browser/ModelContainerStartup.swift",
+    "sha256": "996d0b70deb69d30ab0156b26782ab2af2df9fcdc42ea26384edf3e25a5b48f5"
+  },
+  {
+    "path": "Straight Up Browser/NavigationManager.swift",
+    "sha256": "23b2feca254dce50900a159c8d3a09c44bbfc80e9cf07b4be74b2f9b49290200"
+  },
+  {
+    "path": "Straight Up Browser/NewCommandPreferences.swift",
+    "sha256": "244d6be6a6efe0567ddc57e1574ec6e13719f0b16e8ada7085c25136c90327e0"
+  },
+  {
+    "path": "Straight Up Browser/Newspaper.swift",
+    "sha256": "c31dddcb4f586541990e3a1417fe3745b2b7fa29ea82d0bb093f56529c983b03"
+  },
+  {
+    "path": "Straight Up Browser/NewspaperCoverImage.swift",
+    "sha256": "110bf6ae8da9b3d944b1ec1890f03e6d4e90c97cbe9fa0ddc04962782b87ba68"
+  },
+  {
+    "path": "Straight Up Browser/NewspaperDiscovery.swift",
+    "sha256": "c79b692aebe28f8fe18ecf30da7ba6272e7fd7938053cf99ee7fed4e2f91602e"
+  },
+  {
+    "path": "Straight Up Browser/NewspaperDiscoveryPeers.swift",
+    "sha256": "dbed7e18d897a65d44d925035727e1c631eceae3d51514012a3f872c77e89e06"
+  },
+  {
+    "path": "Straight Up Browser/NewspaperEdition.swift",
+    "sha256": "78259419e188c661ef01390ff8fd46ae0d795afc28b63935c81d128cf756e0cf"
+  },
+  {
+    "path": "Straight Up Browser/NewspaperEditionViews.swift",
+    "sha256": "a977d60b12c4738365218f2352e83d7214dffeddde21bc2464d70cc57f59ca39"
+  },
+  {
+    "path": "Straight Up Browser/NewspaperNaming.swift",
+    "sha256": "fd8cfe93aaaae1be8ee0419c48b2dc163d3d5e8b3486bb781b9143f3de1de7c2"
+  },
+  {
+    "path": "Straight Up Browser/NewspaperPaging.swift",
+    "sha256": "1559fd494c673f8c789910788b77d1a0803c102eeb2295a93bb724147b2f4636"
+  },
+  {
+    "path": "Straight Up Browser/NewspaperRecentReading.swift",
+    "sha256": "5e49dd179b31b97de946d7d7bb5c73ee7d6fa200f643d739b6299089281db45e"
+  },
+  {
+    "path": "Straight Up Browser/NewspaperShopping.swift",
+    "sha256": "01f2fc4502a6ab8e1b8d81b29ea7f5583b1c0afabc3f9c186f523589fe757cc9"
+  },
+  {
+    "path": "Straight Up Browser/NewspaperView.swift",
+    "sha256": "a98a5a7e618b42d46c3f738ba8378ec479fcaadb374bc22c2dba75e0bd6622ef"
+  },
+  {
+    "path": "Straight Up Browser/NewspaperWeather.swift",
+    "sha256": "b1c43b6aaf7a0f89dbd120134a2b6056a50896d54ade7ac3a1a563d49da6631f"
+  },
+  {
+    "path": "Straight Up Browser/NotificationManager.swift",
+    "sha256": "a27774ce945d61a2c314498d923f9a6689d05324f8e22eaceef1fdd8a7579b8e"
+  },
+  {
+    "path": "Straight Up Browser/NotificationNames.swift",
+    "sha256": "28ec69fc951a3d34d095556fd11dd948db790a89cc35c1c5c90a2e5570ad943c"
+  },
+  {
+    "path": "Straight Up Browser/OmnibarView.swift",
+    "sha256": "75c0b936755b8b62f767353d25c607003cfdbd03b4435f29b4791c59f9257c93"
+  },
+  {
+    "path": "Straight Up Browser/OmnibarWeather.swift",
+    "sha256": "c9681898c6345687df8f966202afe72f024a5d0eb6bb0e5e41e33e1c9e8a76ed"
+  },
+  {
+    "path": "Straight Up Browser/OmnibarWeatherScene.swift",
+    "sha256": "175a4dafb02c76cad8ec7b0336c0f6b30e790b4eb11fd216ea27ed319a100248"
+  },
+  {
+    "path": "Straight Up Browser/OnboardingGuide.swift",
+    "sha256": "06f6140986eab6513787697d77c26c6c73ad6d110cfab20f0d059b423ba1ecfb"
+  },
+  {
+    "path": "Straight Up Browser/OnboardingMascots.swift",
+    "sha256": "dd002e0cd307f635dc3f57350f47122de46a043913c8fcd4d2496a3749a5d32d"
+  },
+  {
+    "path": "Straight Up Browser/PageFadeCircuitBreaker.swift",
+    "sha256": "22cfb2ea21596bf900a272350ebc88c63e5e4234283263ee9013491ea645c596"
+  },
+  {
+    "path": "Straight Up Browser/PageFadeLifecycleInbox.swift",
+    "sha256": "d70076092c6866212a08c336e36339fa1568bf0f5c515f9c60319801b9504199"
+  },
+  {
+    "path": "Straight Up Browser/PageSecurity.swift",
+    "sha256": "fafd9cf5b10482bafe06e4ff63a94955fea1a270c9ef6ff538aafc6446a12637"
+  },
+  {
+    "path": "Straight Up Browser/PageTranslator.swift",
+    "sha256": "388f12d410679645d3cbe1d4e215f3db4bcc52c89f786b02665a365d1f0a6fe3"
+  },
+  {
+    "path": "Straight Up Browser/PaneArrangementPanel.swift",
+    "sha256": "35e1463f09e41928a600420d8dac7c5e2776adce57a230e28a560211783ccd64"
+  },
+  {
+    "path": "Straight Up Browser/PaneFocusOutline.swift",
+    "sha256": "9b7e831ef47a759c9bab2b9fc11263009b22118cd6314fc61b9cc8f132d78173"
+  },
+  {
+    "path": "Straight Up Browser/PaneLayout.swift",
+    "sha256": "9fc2e6b1029eccc5085f3d5485921a0b523024bac0f7134a4d5703a40176494f"
+  },
+  {
+    "path": "Straight Up Browser/PaperNote.swift",
+    "sha256": "327367bfdd7e16ec66c0fd84f446977ccaea426a8a2290e7f49f20612e8a112e"
+  },
+  {
+    "path": "Straight Up Browser/PasswordPicker.swift",
+    "sha256": "be071559f92b29e8bf6193a74980a2bef4cc8626748b523f4b9ee0d60a61cab5"
+  },
+  {
+    "path": "Straight Up Browser/PowerUp.swift",
+    "sha256": "17814bd246eaa91667e8b87ef19306cfc34f58643a109021268368fcecdb949e"
+  },
+  {
+    "path": "Straight Up Browser/PowerUpView.swift",
+    "sha256": "7b0c6ae891f1ad68b4dba83e7211c138250d81b4990790c5d896f6aea156993c"
+  },
+  {
+    "path": "Straight Up Browser/Prefetcher.swift",
+    "sha256": "3ada6578c1adf621304afe97c208c7545162da72b869f9c5852c1b3a38b8ffb8"
+  },
+  {
+    "path": "Straight Up Browser/PrivacyInfo.xcprivacy",
+    "sha256": "fbca9a3e8cc88b771c759828858293e5f6014924418a896ccd91ba9eca81efb7"
+  },
+  {
+    "path": "Straight Up Browser/ProviderAdapters.swift",
+    "sha256": "79d9e0c72a525949210dbb4c890450dcd6a0aec4204162a9bd4e2ba2803804fd"
+  },
+  {
+    "path": "Straight Up Browser/ProviderTransport.swift",
+    "sha256": "7c1d0f1b4e4403d00dd674930a3bd35f6da4ff467c6268b63b02858abbd0c0d1"
+  },
+  {
+    "path": "Straight Up Browser/RedirectLoopGuard.swift",
+    "sha256": "7c99b46670f11b39ec50aaeeb22e556cbc86f1cb3ca09615d51ec124fa1067b5"
+  },
+  {
+    "path": "Straight Up Browser/ResearchHandoff.swift",
+    "sha256": "db05236ed86fb948f18149459dba2301027566e22f3cd51c271cc9337a1784ba"
+  },
+  {
+    "path": "Straight Up Browser/ResearchLedger.swift",
+    "sha256": "28d9bf7a80abd1320198810959e5eeef773c5658642aced72f1baa524e082fbd"
+  },
+  {
+    "path": "Straight Up Browser/ResearchRecall.swift",
+    "sha256": "65355ec42d70fb99d068fc02f9a25d65ed89d691ae714a87d4064659dee099c9"
+  },
+  {
+    "path": "Straight Up Browser/ResearchReportImport.swift",
+    "sha256": "c908ebebaad19d8e2d2b20a139a9cd05f80ed8a8f46072ccc5d2b46f62552c72"
+  },
+  {
+    "path": "Straight Up Browser/SavedCredentialStore.swift",
+    "sha256": "29bf3a39426011b4fda05897d5a8dd90fbf0bd2977884f4e9b5cfea25cb00de3"
+  },
+  {
+    "path": "Straight Up Browser/ScratchPad.swift",
+    "sha256": "76f021260863c4bccc142fa630a88ff92005cea9eff50749942052ce710ea9f9"
+  },
+  {
+    "path": "Straight Up Browser/ScreenshotManager.swift",
+    "sha256": "ecffb2cf50e52e1d4793c516fdf8bbad3066f8d77555baa58699c1ffcf7f1fff"
+  },
+  {
+    "path": "Straight Up Browser/SemanticPageReferences.swift",
+    "sha256": "725d380a581043945e3b23a0f58d768c1c462286b55e566e8fe902da94ff2a2d"
+  },
+  {
+    "path": "Straight Up Browser/SettingsAssistant.swift",
+    "sha256": "bbdfc412fa1ed85c7922d1b255848e3c0fba69f530bc53ce3bdcde78ad3eb4f6"
+  },
+  {
+    "path": "Straight Up Browser/SettingsAssistantView.swift",
+    "sha256": "800565ec0bf7c03351f15efe4c55afc447e7d5fa797000da1484d083a11e17f3"
+  },
+  {
+    "path": "Straight Up Browser/SettingsDemos.swift",
+    "sha256": "ffbccc78fce8e9c7f645963865317a20ba6b0a51399309da8ca958fcac306ad7"
+  },
+  {
+    "path": "Straight Up Browser/SettingsDurableStore.swift",
+    "sha256": "32ffd0cff14c2831b61c1769225de694c1f479607e1da6eb9671c1ecf463faad"
+  },
+  {
+    "path": "Straight Up Browser/SettingsManager.swift",
+    "sha256": "49295fb6179bd023b17d83c3175b5dfd8dda5503b2c630b3a21a20db35cf6f22"
+  },
+  {
+    "path": "Straight Up Browser/SettingsPanes.swift",
+    "sha256": "71067959813e3b2a1d7a15c527c32dacb135f2c76c56873d4fb0d14ecd112f17"
+  },
+  {
+    "path": "Straight Up Browser/SettingsSearch.swift",
+    "sha256": "e591d9c52a2ddfb6880b8ac00b34eeaffe8435256b3da8fc33060408ca9217d2"
+  },
+  {
+    "path": "Straight Up Browser/SettingsWindow.swift",
+    "sha256": "0c73ced4e3892901fed5a75700ad3fc5e0d20751101ca9f4e8cdf3187b761862"
+  },
+  {
+    "path": "Straight Up Browser/SettingsWindowInteraction.swift",
+    "sha256": "776ae80062fa6a0dd161e543d2ba438666fc472ac2f247183ae38697b5447797"
+  },
+  {
+    "path": "Straight Up Browser/ShareIngest.swift",
+    "sha256": "90ad82c0dbc9682fa5ed42a6a23ad734bdb3d5072a9923eabb79251b14a06b46"
+  },
+  {
+    "path": "Straight Up Browser/ShareQueue.swift",
+    "sha256": "e1b4a0d58ad80846b663f9c38fd12d7ce81bd884b6886e2477aa68a6f9349c02"
+  },
+  {
+    "path": "Straight Up Browser/SharedWeatherContract.swift",
+    "sha256": "ecf59feac62357090686971d4e415cb4aa4e5786fbe91d8199e4be6941da6c88"
+  },
+  {
+    "path": "Straight Up Browser/ShortcutCommand.swift",
+    "sha256": "163848eec03c231c9e37087ed4db593ea8ab242a1c014787618f0134415bdb24"
+  },
+  {
+    "path": "Straight Up Browser/ShortcutDiagnostics.swift",
+    "sha256": "56f49edf97eb34f9005635950441959ef65f8d52d9d2307ce669ea9c4830c243"
+  },
+  {
+    "path": "Straight Up Browser/SiteHistory.swift",
+    "sha256": "e4663a180b38a31ae101bdd7c1068710ba333aaabed3a4de8572e457b40c922f"
+  },
+  {
+    "path": "Straight Up Browser/SitePermissionStore.swift",
+    "sha256": "02b5da83bde35b6518adca7dfac79310f50a381ebe94231fc8959649343d8dbf"
+  },
+  {
+    "path": "Straight Up Browser/SourceCanonicalizer.swift",
+    "sha256": "636b7d0330816b10d85902d4ce37551c4925efc84a2b52c31fa9e4127230152c"
+  },
+  {
+    "path": "Straight Up Browser/Straight_Up_BrowserApp.swift",
+    "sha256": "98a2e8843ea4b1ca755100c0babfddd0259a4a3deac139a54036447b207678b1"
+  },
+  {
+    "path": "Straight Up Browser/Tab.swift",
+    "sha256": "0b5f4b114957440f07b7334cb98d58c8be773398bcd9cbc535a2a647f4938e5e"
+  },
+  {
+    "path": "Straight Up Browser/TabCardNames.swift",
+    "sha256": "66ebca558673c9bbeb581e35fda4c21062777b50ae0428780ee4754ed5c149f0"
+  },
+  {
+    "path": "Straight Up Browser/TabDashboard.swift",
+    "sha256": "d77d964199e63f75958ff4003e4f4396af824dab9f88749b2622773841ace23c"
+  },
+  {
+    "path": "Straight Up Browser/TabGridView.swift",
+    "sha256": "9da37076310955235c2338954a00c737bff799c9ad9cf29e01ff572707cdbb08"
+  },
+  {
+    "path": "Straight Up Browser/TabGroup.swift",
+    "sha256": "6d09c0a2ce1dac65458acd879a4790bef06f43647b045a24883ff5bba7ed5f62"
+  },
+  {
+    "path": "Straight Up Browser/TabInsights.swift",
+    "sha256": "847c2a2d2ba4455b6b06d7b1cf7a58daa00099ed1778fdd14f6f27f9134fbfa9"
+  },
+  {
+    "path": "Straight Up Browser/TabManager.swift",
+    "sha256": "8b0a351b7bb6679254861752cb782992515c300ab69003cce3eaf08c72c9bd5e"
+  },
+  {
+    "path": "Straight Up Browser/TabPeek.swift",
+    "sha256": "f3d2e6d62b610c139112673ef5d8be9a09cc1c8ef562ba46449e8fd683c2c1aa"
+  },
+  {
+    "path": "Straight Up Browser/TabPreviewOven.swift",
+    "sha256": "ab98a342f91392e67cfd8341c0eb5dba7d8d95bd311639fd1cf5433be0d0d30e"
+  },
+  {
+    "path": "Straight Up Browser/TabRowView.swift",
+    "sha256": "412cf04d4f127033f4ea07fb9a919ce8624591a096bebdb0de88cc8fddfbdef2"
+  },
+  {
+    "path": "Straight Up Browser/TabSync.swift",
+    "sha256": "0cac7846859863a4c9ff2f5aca287651b46bc2f3aa1476cf861e434c0fe640af"
+  },
+  {
+    "path": "Straight Up Browser/TomorrowWeatherAdapter.swift",
+    "sha256": "f0c2c5ed5e68ba06fe0c4c61a5d633fba6dc5d9ddb011c417b9d90820302c9dd"
+  },
+  {
+    "path": "Straight Up Browser/ToneSchedule.swift",
+    "sha256": "9e6f1a3969a7cfe9a7c32dd55b2460f441b15dc4563a99273651c2f0a459c6d7"
+  },
+  {
+    "path": "Straight Up Browser/TranscriptFetcher.swift",
+    "sha256": "29b41953149fcbe331ab84d5dc4ecfb6c2b184f2345d1af0e0f3cd817541e669"
+  },
+  {
+    "path": "Straight Up Browser/TranscriptPanel.swift",
+    "sha256": "24f7313ca513d957b4142e8629dc28808ef31c0df92a383d35ac7113cd7580e2"
+  },
+  {
+    "path": "Straight Up Browser/TranslationHistoryStore.swift",
+    "sha256": "76c60c79a5551c6aa677f57a8c7ec1419d27f9d1a9c58bebb9b179b6d53ca60d"
+  },
+  {
+    "path": "Straight Up Browser/TranslationLanguageUsage.swift",
+    "sha256": "91226b16ac5e7f40066ef1a1b1a3262067d12feac5681fa18b832f9d58f99bac"
+  },
+  {
+    "path": "Straight Up Browser/WeatherPlaces.swift",
+    "sha256": "d3d1b6bf5dd8fccb1c53a451a7458b3bd1836f2b015908a461b28594bda73a21"
+  },
+  {
+    "path": "Straight Up Browser/WeatherPresentation.swift",
+    "sha256": "01b8aecb76c389eea9ae2ced1f54e63632ab14b05af95bad744bce71d4a607df"
+  },
+  {
+    "path": "Straight Up Browser/WeatherPreviewFixtures.json",
+    "sha256": "e60fc5fe9c3acbd8051049d1300cc16f56b29125c75cac698a02d8f7c1ea4e8a"
+  },
+  {
+    "path": "Straight Up Browser/WeatherRainChart.swift",
+    "sha256": "7bf2b7cb754f23a367b5d995177232ff4ef01190ea8b5db07a7170f2aee39ab4"
+  },
+  {
+    "path": "Straight Up Browser/WebExtension.swift",
+    "sha256": "a5bf071d62363c54de37d01deddfc33292f4d21454bf0fb34295e8bbff83d54a"
+  },
+  {
+    "path": "Straight Up Browser/WebKitAgentSignalRuntime.swift",
+    "sha256": "906967dfdc694a31a03cbcec4fe7310e6fd5e9bcd9b3e9bc8b60039c246f1246"
+  },
+  {
+    "path": "Straight Up Browser/WebKitAgentSignals.swift",
+    "sha256": "c8a7bb77055ff3bf8c6938e56c7c51b05a7777323c28406241b138d18c09429c"
+  },
+  {
+    "path": "Straight Up Browser/WebKitAgentWaits.swift",
+    "sha256": "59d73c23f59f5e9900ae60a76090ed1242c76a78252288f1da8bf7987adb6d3c"
+  },
+  {
+    "path": "Straight Up Browser/WebView.swift",
+    "sha256": "a034a84a365c8948ce5ed512eddeda0aebdea06fe209832b28db0d0bd41c5df7"
+  },
+  {
+    "path": "Straight Up Browser/WebViewManager.swift",
+    "sha256": "88216ce2839f1142d905164b1035a781cb0e6b58592ef219bd1ba66abc6db99e"
+  },
+  {
+    "path": "Straight Up Browser/WindowEdgeProgress.swift",
+    "sha256": "8a7a803e7c3d7e537f464bf8cfa4275cc15672387e7fde1f196890666bde31be"
+  },
+  {
+    "path": "Straight Up Browser/WindowManager.swift",
+    "sha256": "0629491a080b50dca9f820043aa75cc5e12ae2bfcf680a831f0080a6e1c3a579"
+  },
+  {
+    "path": "Straight Up Browser/WindowPlacementPolicy.swift",
+    "sha256": "4b71ac495be8b1b61a6a0b8f25f3973bc661cbbc508085c42937590d3fa73d63"
+  },
+  {
+    "path": "Straight Up Browser/WorkspaceDocumentFile.swift",
+    "sha256": "657aa3fbeacff39aa3f24f13eb215914b5cbafa87755ce0f99493f15ee2b9dc2"
+  },
+  {
+    "path": "Straight Up Browser/WorkspaceSettleCapture.swift",
+    "sha256": "7bd82b93c18fb7b021feab6f9dc78fa367bb5a9374cb32d43c33c53168ef0388"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentDefinitionSyncRuntimeTests.swift",
+    "sha256": "9f003ed674a9ff417983f449711c1a43b00147ad4afd10eb922e443e6beb50ec"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentDefinitionSyncTests.swift",
+    "sha256": "015866cf9b13b47b41681a789c1b86c30eef3a88d1615f8117b56f0f21462850"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentHistoryDeletionTests.swift",
+    "sha256": "d95ebe4941cae9b4b61341ac08d36acb19fb8f2cdb2d7b310d1a96db07a70bfa"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentLegacyImporterTests.swift",
+    "sha256": "f515d20ebcf19f43d96ccd83fb5e0f11ca338bd048747b62b02607fee0526f7b"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentMemoryRuntimeTests.swift",
+    "sha256": "b1bb6da8f8bd288d13b737efb500c4c3042e9aa8655be34c2e6e04bb429510cf"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentMemoryTests.swift",
+    "sha256": "fd10957e9965dcb0378d38e2d1b5bc2aa6989bf39ed7aab695cd236e88c87e76"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentModelMigrationTests.swift",
+    "sha256": "a82a5131646f77ab24aadfab83a13d236f2e958b216919986e17c776c7068be7"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentObservabilityRuntimeTests.swift",
+    "sha256": "51906b40600e7073907d98af608c4ca9ff0afff6c8823684248c380986e1fddc"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentObservabilityTests.swift",
+    "sha256": "3f44ee01d8f63920df881cf0c523db802c80df3536d41cc93e38999fc10db01e"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentPageLoadExpanderTests.swift",
+    "sha256": "62cd6cc3f8ce88bca66c0f61555e7a9d1247af424b1839afbf6623cc5087fe40"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentPolicyEngineTests.swift",
+    "sha256": "c0f2dcfdd4efd08e8d023977284fab5265c9e322a4d5bccafa892763c5908ead"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentRunGroupRuntimeIntegrationTests.swift",
+    "sha256": "d5142fc7e3dbbff5bd3c2d1af1c2a6068d52d5f593663176a951af9f0ea962d3"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentRunGroupTests.swift",
+    "sha256": "1a6650a9dcdc0daf7c2bcb6dc46fb319b63dc94d0cbe8ed58b1ed1b684fb6694"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentRunStoreTests.swift",
+    "sha256": "f97f3cae77b0fdcc5056894bc84dd58ca286aec6ee53240a69f808259850ad7a"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentScheduledTaskDependencyResolverTests.swift",
+    "sha256": "160ff6c48fe1e49dbfb5a564b669572d07c59385feadac0c8e3868e5b7a6eaf2"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentScheduledTaskEngineTests.swift",
+    "sha256": "30b11616c7e43116953edcbb846721f035a296e790e02b7fa5af50cd31e32c4a"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentSettingsTests.swift",
+    "sha256": "35a964f3fe3cde094207c53d3b4334ca1516e2e7d47f8992a66fe766b124b5d1"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentTimelineTests.swift",
+    "sha256": "b89ab0d6492f8b202c6275e0fc627fca44bd41ab698feea9461b2bd84823cc86"
+  },
+  {
+    "path": "Straight Up BrowserTests/AgentToolCatalogTests.swift",
+    "sha256": "34ec537297156fe5fc3873645946903368ed3c3dca6b59dc28ed1f68289a9667"
+  },
+  {
+    "path": "Straight Up BrowserTests/AutofillAgentIsolationTests.swift",
+    "sha256": "3be7d45f6039d75d091a0610e8bf5f1c671f1de1f1d3095ec274b3c9df5bf7b6"
+  },
+  {
+    "path": "Straight Up BrowserTests/AutofillClassifierTests.swift",
+    "sha256": "f0d6e14042853b8aebac299fa134a8c1134a6deb642f47e2fac88b3b555abd57"
+  },
+  {
+    "path": "Straight Up BrowserTests/AutofillContactsTests.swift",
+    "sha256": "d876b462b9d106cba620f8284b15754f78421ea8007a83c088e4b0ebd8adb05b"
+  },
+  {
+    "path": "Straight Up BrowserTests/AutofillFocusSignalTests.swift",
+    "sha256": "b451fe4b2606de026d98f7d8a4618ab4450d5ff52531b81c64b41af7d7582bcf"
+  },
+  {
+    "path": "Straight Up BrowserTests/AutofillPreferencesTests.swift",
+    "sha256": "02ffe992e281a987a68b04a9e347852ff5cfcabbba24b306d5295e5772cbcc7e"
+  },
+  {
+    "path": "Straight Up BrowserTests/AutofillProfileTests.swift",
+    "sha256": "74850fcc78ddebd76b9ed28eb771321a56ca09fa61c0ecb73c697c77967022f9"
+  },
+  {
+    "path": "Straight Up BrowserTests/AutofillSurfacesTests.swift",
+    "sha256": "0aabce8955c00dffc7e0a6d53a2f6b90fb0b8d95743568cb7886157edfe45e86"
+  },
+  {
+    "path": "Straight Up BrowserTests/BackGuardStoreTests.swift",
+    "sha256": "229f8cf5d805c307771a0c9d6cdfcd5decdb683ea21d5648c21eaac3b810aa59"
+  },
+  {
+    "path": "Straight Up BrowserTests/BookmarkImportTests.swift",
+    "sha256": "c4a3f6cdb256a378aa1ea72e5a659e28e3cf9a368dcc97e4e3d2868c21570a17"
+  },
+  {
+    "path": "Straight Up BrowserTests/BrowserAgentKeychainTests.swift",
+    "sha256": "d41e8237616196a1cc545ffef5f33d0c3f2a942b9e017b2f3f99df13b0a8ae43"
+  },
+  {
+    "path": "Straight Up BrowserTests/BrowserAgentMCPIntegrationTests.swift",
+    "sha256": "aaa954c7708691e1d3fcf6c04b19a0fd8b8b2b5e492abdeff3f2d98ac1fd2efc"
+  },
+  {
+    "path": "Straight Up BrowserTests/BrowserAgentMCPLoopbackOAuthTests.swift",
+    "sha256": "b6b195d23b6dedd70dd7ff976454cea91fa874dff1568f6be9b75eccebccf316"
+  },
+  {
+    "path": "Straight Up BrowserTests/BrowserAgentTests.swift",
+    "sha256": "8ecbffeb2955df5cec7a9fcc7933a0ee967dbe5918e8fed6269b79b21ad3f8d0"
+  },
+  {
+    "path": "Straight Up BrowserTests/BrowserCLIInvocationTests.swift",
+    "sha256": "f604a9199e22edeb9ec4f834137111bdc57dd5b8a8f98a668997fc9568c498fe"
+  },
+  {
+    "path": "Straight Up BrowserTests/BrowserChromePlacementTests.swift",
+    "sha256": "dd79ed8175f860822c82b6fcbe606b413a142057a0db3db757aef18161646603"
+  },
+  {
+    "path": "Straight Up BrowserTests/BrowserMotionTests.swift",
+    "sha256": "994ce8446209dbb6dfae49e9a749393b986cb6ee1ee142b475a0cf2fc5573d35"
+  },
+  {
+    "path": "Straight Up BrowserTests/BrowserTestProfileTests.swift",
+    "sha256": "8a53f214b73adce6b7a69fa261cc22bf5c2ee1119d68bdacc1f75f60bc4c891c"
+  },
+  {
+    "path": "Straight Up BrowserTests/BrowserTestProfileWebKitTests.swift",
+    "sha256": "cac0be8a8dd56c234fd7051d53fbc78f76a6d30fc6afa591aaa5e19e3b67a64a"
+  },
+  {
+    "path": "Straight Up BrowserTests/BrowserUsabilityTests.swift",
+    "sha256": "ee4232c132dc655a7546124705897b00efa61391ff1de6ab5626a70c2e7b63bb"
+  },
+  {
+    "path": "Straight Up BrowserTests/BrowserWindowsTests.swift",
+    "sha256": "4600ed4dbf736d58b9dbb3823c17ddfae71bdb2867cc376b821f6d7f82fa75b4"
+  },
+  {
+    "path": "Straight Up BrowserTests/ColdLayoutStarterSchedulerTests.swift",
+    "sha256": "ffcbad7f01cd03801e102b8db2d303b8d9d54013eb1525c008b677af925eff39"
+  },
+  {
+    "path": "Straight Up BrowserTests/CoworkArtifactTransactionTests.swift",
+    "sha256": "4ab394680aa1329bcd9c7ddb6079a72f1c14651fef1cb61eb3cd3b438f72a4b5"
+  },
+  {
+    "path": "Straight Up BrowserTests/CredentialPageRuntimeTests.swift",
+    "sha256": "e525b3bbec8742498fbde1b8c1f48821da2b901d909feec2b2a8d493dda1a593"
+  },
+  {
+    "path": "Straight Up BrowserTests/DefaultBrowserEngagementTests.swift",
+    "sha256": "0db6f4d95d75b4a8bcd416ed144070b0de808c1403ac8ea836773d4c0dc4ee92"
+  },
+  {
+    "path": "Straight Up BrowserTests/DefaultBrowserPromptPolicyTests.swift",
+    "sha256": "b9f032b471db65dfd3c567e113f80001addf4cc4e09734a2da004cc14222a60b"
+  },
+  {
+    "path": "Straight Up BrowserTests/DeveloperToolsTests.swift",
+    "sha256": "656b03acf944fa05f6b0e082aee873db5fe8e45da86982fe1f951fefb102cd21"
+  },
+  {
+    "path": "Straight Up BrowserTests/FileListTests.swift",
+    "sha256": "7e3086c883aeaac313c7ad88631d00be36b81e22cacb2e6f49433ade0ca60fe3"
+  },
+  {
+    "path": "Straight Up BrowserTests/FilterListTests.swift",
+    "sha256": "36667a86b521ec242a8eec03ccf81266fe8650b04f9bc12ac78f05377ca42582"
+  },
+  {
+    "path": "Straight Up BrowserTests/Fixtures/agent-tool-catalog-mcp.json",
+    "sha256": "bfcf224f408fa5285368eb4774103fc19757f0e7d326e216f79a6bdff853e2bd"
+  },
+  {
+    "path": "Straight Up BrowserTests/Fixtures/legacy-audit-corrupt.jsonl",
+    "sha256": "34fad2f98adb0ca876cde329014c852951896656ef525e042b313c4127a7abe7"
+  },
+  {
+    "path": "Straight Up BrowserTests/Fixtures/legacy-conversation-multiple-runs.json",
+    "sha256": "1e812726adb73be2f00a3ffb19595632a4c51345c825da6bc9cbf0dada005910"
+  },
+  {
+    "path": "Straight Up BrowserTests/Fixtures/legacy-scheduler-lossy.json",
+    "sha256": "9e44f02b521a1c4314f7f9bbe975992089d6eab2cb915cad194121358bb250fb"
+  },
+  {
+    "path": "Straight Up BrowserTests/GlobalHotkeyRegistrationTests.swift",
+    "sha256": "04fb7f34870b7f340f178c7a1462b8ce43a4b74c8cb3f887577ddbe9f4e1997e"
+  },
+  {
+    "path": "Straight Up BrowserTests/HistorySearchTests.swift",
+    "sha256": "d657ef10e11ec9a8b4be66c11c1dc15abf1cee69039694474708a25274d2ed84"
+  },
+  {
+    "path": "Straight Up BrowserTests/LinkTabOpeningTests.swift",
+    "sha256": "6eb928e463cfce5c74369294af6c45ad29d5d4ed369cde007a6fef941c77910a"
+  },
+  {
+    "path": "Straight Up BrowserTests/MCPTrustLifecycleTests.swift",
+    "sha256": "358a0801cad89773954f55ab390f6640664d50a34fe8520e20639462c11edec7"
+  },
+  {
+    "path": "Straight Up BrowserTests/NewCommandTests.swift",
+    "sha256": "7a1ef6e446350ec31991b1d4a998b5cb1a0c6a9ef4095e3c3fed71b20d5f97e9"
+  },
+  {
+    "path": "Straight Up BrowserTests/NewspaperDiscoveryTests.swift",
+    "sha256": "795b04dd886d4303bc87850a67bbb31ff124cbf53de0b5047a6fbd5df0c6c6e7"
+  },
+  {
+    "path": "Straight Up BrowserTests/NewspaperEditionTests.swift",
+    "sha256": "0c5bd3576e6f686ac5b0f59cddf41f55286bac0d2c8bd3d5ca6e15881c0e0fd4"
+  },
+  {
+    "path": "Straight Up BrowserTests/NewspaperTests.swift",
+    "sha256": "318320734fbc339d9ade48d3d228e70d72a5a60b1d74513ad3e531b1e2251f02"
+  },
+  {
+    "path": "Straight Up BrowserTests/OmnibarEditingTests.swift",
+    "sha256": "6d5cf8ccb711dc7df7c3e512e15d0c08ca8e00632051d63f22965434a646a4a6"
+  },
+  {
+    "path": "Straight Up BrowserTests/OmnibarMotionTests.swift",
+    "sha256": "600037e64054a6598d13e4529c512248a64b6800a78c58e3434d537ef3d372c6"
+  },
+  {
+    "path": "Straight Up BrowserTests/OmnibarWeatherTests.swift",
+    "sha256": "2cd42dbff3870fe3329b291bb3e29785a9430fd28d01ac0663395b2ee87b0cd3"
+  },
+  {
+    "path": "Straight Up BrowserTests/OnboardingTests.swift",
+    "sha256": "40d21721978ea8b9e3f6a6de7a0a74a94fb4d97cd543ca29bee44d26eb125fa6"
+  },
+  {
+    "path": "Straight Up BrowserTests/PageFadeCircuitBreakerTests.swift",
+    "sha256": "c3cad764dcfbebdb364c1e89aa0fa2fcaeac1f0b13ed773d1c1127e63a6dc0c0"
+  },
+  {
+    "path": "Straight Up BrowserTests/PageFadeLifecycleInboxTests.swift",
+    "sha256": "f7a2a137e7bab17939f58500be8e22ae0edac27c7fd58534009aefca8f099832"
+  },
+  {
+    "path": "Straight Up BrowserTests/PageFadeLifecycleTests.swift",
+    "sha256": "a92bc7bdfb17ff8c168d2f1b834f4a555c271ac190d2a3999b879e34627e2e94"
+  },
+  {
+    "path": "Straight Up BrowserTests/PaneBorderCornersTests.swift",
+    "sha256": "71419aa11218edc39e4dcdecc87446c8db9a04403a1639fd053a3dbaeb7c5a87"
+  },
+  {
+    "path": "Straight Up BrowserTests/PaneLayoutTests.swift",
+    "sha256": "1c833f36a6c49b3c8241b639a6d495991c093469e04c5e0134836ecbfce79e8e"
+  },
+  {
+    "path": "Straight Up BrowserTests/PaperNoteTests.swift",
+    "sha256": "858c84268266dcf70827f1f3d936f1e1dcd7d4647b5fc6c68cc5ed4f1aab2b91"
+  },
+  {
+    "path": "Straight Up BrowserTests/Phase2Tests.swift",
+    "sha256": "f121c11438ef857904d69085b82dd6bfb47882494795c942986de752fbd04636"
+  },
+  {
+    "path": "Straight Up BrowserTests/Phase3Tests.swift",
+    "sha256": "408bfdbab9eb4f3ad85bfb43f94d6e95c7063292dc18b4735873f8ffb74f1ca1"
+  },
+  {
+    "path": "Straight Up BrowserTests/Phase4Tests.swift",
+    "sha256": "b61742f54b4006d33cada1e3c63d01205ecf4673ea2701c6ed13ca48ee42f340"
+  },
+  {
+    "path": "Straight Up BrowserTests/Phase5Tests.swift",
+    "sha256": "a7946c0efab516880268a243e7ad15ab7bbeb9e29e38824ed5b704f8666179a7"
+  },
+  {
+    "path": "Straight Up BrowserTests/Phase6Tests.swift",
+    "sha256": "7e2c5bfe43393b750f5a06498da9aa3cbcdefbefe86c34159acb6a16676b49c0"
+  },
+  {
+    "path": "Straight Up BrowserTests/Phase7Tests.swift",
+    "sha256": "44372c815cf2628d3cd135a31327ebcc4323e12d3329252ab8097b3547b06dd9"
+  },
+  {
+    "path": "Straight Up BrowserTests/PowerUpIntegrationTests.swift",
+    "sha256": "65ee36b38419eceb56d0162a8c9be0d540db444ebc67eebd6fb3bbb641dd777b"
+  },
+  {
+    "path": "Straight Up BrowserTests/PowerUpTests.swift",
+    "sha256": "1f4cad6acbca55ee9ce2aa95faaf20f2ee479240ef7e43c1fc65ec8945362fe3"
+  },
+  {
+    "path": "Straight Up BrowserTests/PrefetchGateTests.swift",
+    "sha256": "dc5c07d527e6cae4de9630ab4ddd918cabc96d92ea53ed0f946537ffbd24b994"
+  },
+  {
+    "path": "Straight Up BrowserTests/ProviderAdapterTests.swift",
+    "sha256": "40846ff712a92a52634fcbdc0d1dbffa77553adb450431f2c4e9bfdc6515df40"
+  },
+  {
+    "path": "Straight Up BrowserTests/ProviderTransportTests.swift",
+    "sha256": "99904a3c7d59182a5a4b798749a26a7908b95a6409c0326cabd4d940573d637f"
+  },
+  {
+    "path": "Straight Up BrowserTests/ResearchLedgerTests.swift",
+    "sha256": "9c756e6d989952146f82ea6fc2580419a0c70d66a401e7301db2156f75ecae8b"
+  },
+  {
+    "path": "Straight Up BrowserTests/SavedCredentialStoreTests.swift",
+    "sha256": "a63cebb942e2d94023dbcf64bbd82e12d74de7ae0947393841033721f2acaa42"
+  },
+  {
+    "path": "Straight Up BrowserTests/ScratchPadTests.swift",
+    "sha256": "0b0d3fc2905c331500bee554b343e028b036537f376439ad39d48811bf4ada1f"
+  },
+  {
+    "path": "Straight Up BrowserTests/SemanticPageReferenceTests.swift",
+    "sha256": "9e4326b36110b9c1235aa34bd38f8c1e4568876555af80a872b3523760fb2553"
+  },
+  {
+    "path": "Straight Up BrowserTests/SettingsAssistantTests.swift",
+    "sha256": "b046eea204a634d08b830fe258f3641e66aea235e0231a5ac760e71167c6101d"
+  },
+  {
+    "path": "Straight Up BrowserTests/SettingsDurableStoreTests.swift",
+    "sha256": "1ae8258c113a98dd119bf369748baeeaea8a357657d9458a9f8b7140e45f0c5f"
+  },
+  {
+    "path": "Straight Up BrowserTests/ShortcutDiagnosticsTests.swift",
+    "sha256": "edb62b92c11415ae4022e8fcc1aae4774b7b37c1b081526e42495ca92a0c6ed8"
+  },
+  {
+    "path": "Straight Up BrowserTests/SignedInSitesTests.swift",
+    "sha256": "fb5baeecbedc74e39bb66027b42ee59d9fbd9f5e60e3cf1406198f7c64dd34de"
+  },
+  {
+    "path": "Straight Up BrowserTests/Straight_Up_BrowserTests.swift",
+    "sha256": "200ac2256983424bc0f86d4413e9f3d4050f97695e105ef95ce12d6a088e9ac7"
+  },
+  {
+    "path": "Straight Up BrowserTests/TabCardNamesTests.swift",
+    "sha256": "d517d9e180087f79de4b28f0415835a7824cd0efbf819029865e8c49184845d4"
+  },
+  {
+    "path": "Straight Up BrowserTests/TabCyclingAndNewTabButtonTests.swift",
+    "sha256": "76baf5eb93b146448a9fb0c636dbee4f9cda6cd3b56a1eb4a0624ebb1bce8c3c"
+  },
+  {
+    "path": "Straight Up BrowserTests/TestFixture.swift",
+    "sha256": "1b6ddc73db8e5ef77fa406c7a5e5d1899f5c068d4df7c711b0e723bda676deb7"
+  },
+  {
+    "path": "Straight Up BrowserTests/ToneScheduleTests.swift",
+    "sha256": "be0b53f53148fa5c62e7e4573fc497f53e94ad748d6fb6fefa4aa967244704b4"
+  },
+  {
+    "path": "Straight Up BrowserTests/TranslateScriptTests.swift",
+    "sha256": "f00fc9331f5cb26c1470152678255f470a81f942f5d86a147fb2bd0334e09fcc"
+  },
+  {
+    "path": "Straight Up BrowserTests/TranslationActivityTests.swift",
+    "sha256": "907cd6c4e42e308973a59e55f81b7602472718561cef662f743c684f1f7731fe"
+  },
+  {
+    "path": "Straight Up BrowserTests/UndoCloseTests.swift",
+    "sha256": "eca9f8854d20f99b7c90b072f9f89f3c5c26d6b07e48dfd4193365fbdaf58f50"
+  },
+  {
+    "path": "Straight Up BrowserTests/WeatherContractTests.swift",
+    "sha256": "400666755cbb6549ba4b6c6d364108850ad41bb6980f048814d9af4d13f59934"
+  },
+  {
+    "path": "Straight Up BrowserTests/WeatherServiceTests.swift",
+    "sha256": "528a81fa56b27fafc6578ef6da115777b2f1ad8eacf5652e683824366e0fe8ad"
+  },
+  {
+    "path": "Straight Up BrowserTests/WebKitAgentSignalRuntimeTests.swift",
+    "sha256": "cf6f6ae5372a2d9087f6b820c505f0ad2271bb67de4ad70729d75e4e038f0c3a"
+  },
+  {
+    "path": "Straight Up BrowserTests/WebKitAgentSignalTests.swift",
+    "sha256": "6b73452383534c264b0eef3d452f0e61808e069b6e1cb6e2f28117c2fd667198"
+  },
+  {
+    "path": "Straight Up BrowserTests/WebViewContainerKVOTests.swift",
+    "sha256": "46874abeef308d537e7717d81011c6ba4f061e28783ebe07dc4876111760cab9"
+  },
+  {
+    "path": "Straight Up BrowserTests/WindowEdgeProgressTests.swift",
+    "sha256": "8505e134dee01cdf28086a07237c6f3d197534402a198aeb234a9513fe7448e7"
+  },
+  {
+    "path": "Straight Up BrowserTests/WindowLayoutTests.swift",
+    "sha256": "1287f4808220291041f6204e849f03a0ffdc3ee288489f15ce5cede7f2166866"
+  },
+  {
+    "path": "Straight Up BrowserTests/YouTubeAdBlockScriptTests.swift",
+    "sha256": "c2d9533163f950de9e84af6a3069fbbb79f377f3d91e74db877ffbd37a5dd151"
+  },
+  {
+    "path": "Straight Up BrowserUITests/Straight_Up_BrowserUITests.swift",
+    "sha256": "a962ae99a815c43ca071858d7ae666c0ad6cbf20f886af4717a85ed8bf6d08b0"
+  },
+  {
+    "path": "Straight Up BrowserUITests/Straight_Up_BrowserUITestsLaunchTests.swift",
+    "sha256": "13c0efedeb1a1dfa065e2addd5988ec3dde938a1daf41abb5ddb99544d927b81"
+  }
+]

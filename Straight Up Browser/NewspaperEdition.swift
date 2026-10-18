@@ -206,8 +206,8 @@ struct NewspaperProceduralPaper: View {
 
 private struct NewspaperMotionModifier<Value: Equatable>: ViewModifier {
     let value: Value
-    @AppStorage(NewspaperEditionPreferences.motionDuration, store: NewspaperPreferences.presentationStore) private var duration = 0.28
-    @AppStorage(NewspaperEditionPreferences.motionSpring, store: NewspaperPreferences.presentationStore) private var spring = true
+    @AppStorage(NewspaperEditionPreferences.motionDuration, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var duration = 0.28
+    @AppStorage(NewspaperEditionPreferences.motionSpring, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var spring = true
     @Environment(\.accessibilityReduceMotion) private var reduced
     func body(content: Content) -> some View {
         content.animation(OmnibarMotionPreferences(duration: duration, usesSpring: spring).animation(reducedMotion: reduced), value: value)

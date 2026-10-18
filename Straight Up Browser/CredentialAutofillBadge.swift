@@ -189,6 +189,7 @@ final class CredentialManager: ObservableObject {
     /// Touch ID / Face ID, falling back to the login password when biometrics
     /// aren't enrolled. LocalAuthentication needs no entitlement on macOS.
     static func authenticate(reason: String) async -> Bool {
+        guard !BrowserProfile.isIsolated else { return false }
         let context = LAContext()
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) else { return true }
         return (try? await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)) ?? false
@@ -196,6 +197,7 @@ final class CredentialManager: ObservableObject {
 
     /// "Touch ID", "Face ID", or "your password" for the toggle's label.
     static var biometryName: String {
+        guard !BrowserProfile.isIsolated else { return String(localized: "unavailable in isolated profile") }
         let context = LAContext()
         _ = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
         switch context.biometryType {

@@ -184,6 +184,7 @@ struct AgentMemoryManagementView: View {
     }
 
     private func exportRedacted() {
+        guard !BrowserProfile.isIsolated else { return }
         Task {
             do {
                 let data = try await controller.exportData()

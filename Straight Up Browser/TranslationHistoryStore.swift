@@ -30,7 +30,7 @@ final class TranslationHistoryStore {
     private let defaults: UserDefaults
     private(set) var records: [String: TranslationHistoryRecord] = [:]
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = BrowserProfile.defaults) {
         self.defaults = defaults
         if let data = defaults.data(forKey: Self.storeKey),
            let decoded = try? JSONDecoder().decode([String: TranslationHistoryRecord].self, from: data) {

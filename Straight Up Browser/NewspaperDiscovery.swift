@@ -27,7 +27,7 @@ struct NewspaperDiscoveryOptions {
     let dailyLimit: Int
     let excludedHosts: Set<String>
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = BrowserProfile.defaults) {
         visited = defaults.object(forKey: NewspaperPreferences.Key.discoverVisited) as? Bool ?? true
         recent = defaults.object(forKey: NewspaperPreferences.Key.discoverRecent) as? Bool ?? true
         prefetched = defaults.bool(forKey: NewspaperPreferences.Key.discoverPrefetched)
@@ -97,7 +97,7 @@ final class NewspaperDiscoveryCoordinator: ObservableObject {
     private var textOnlyRules: WKContentRuleList?
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard, modelContext: ModelContext? = nil) {
+    init(defaults: UserDefaults = BrowserProfile.defaults, modelContext: ModelContext? = nil) {
         self.defaults = defaults
         context = modelContext
         lastFetch = defaults.object(forKey: "newspaperDiscoveryLastFetchAt") as? Date ?? .distantPast
@@ -105,6 +105,7 @@ final class NewspaperDiscoveryCoordinator: ObservableObject {
     }
 
     func start(modelContext: ModelContext) {
+        guard !BrowserProfile.isIsolated else { return }
         context = modelContext
         guard timer == nil else { return }
         #if os(macOS)
@@ -303,6 +304,7 @@ final class NewspaperDiscoveryCoordinator: ObservableObject {
     #endif
 
     private func fetchRelated(_ url: URL, requiresIdle: Bool, source: Source = .related, collectLinks: Bool = false) async {
+        guard !BrowserProfile.isIsolated else { return }
         let initialOptions = NewspaperDiscoveryOptions(defaults: defaults)
         if textOnlyRules == nil, let store = WKContentRuleListStore.default() {
             textOnlyRules = try? await store.compileContentRuleList(forIdentifier: "NewspaperTextOnly-v1", encodedContentRuleList: #"[{"trigger":{"url-filter":".*","resource-type":["image","media","font","style-sheet","script"]},"action":{"type":"block"}}]"#)
@@ -310,7 +312,7 @@ final class NewspaperDiscoveryCoordinator: ObservableObject {
         let currentOptions = NewspaperDiscoveryOptions(defaults: defaults)
         guard !Task.isCancelled, currentOptions.permits(url),
               source == .recent ? currentOptions.visited && currentOptions.recent && currentOptions.related == initialOptions.related : currentOptions.related else { return }
-        let config = WKWebViewConfiguration()
+        let config = BrowserProfileWebKit.configuration()
         config.websiteDataStore = .nonPersistent()
         if let textOnlyRules { config.userContentController.add(textOnlyRules) }
         config.defaultWebpagePreferences.allowsContentJavaScript = false
@@ -439,11 +441,11 @@ enum NewspaperArticleValidator {
 
     #if os(macOS)
     static func external(_ article: ReaderArticle) async -> Bool {
-        guard SettingsManager.shared.aiFeaturesEnabled, UserDefaults.standard.bool(forKey: NewspaperPreferences.Key.externalValidation) else { return false }
-        let provider = BrowserAgentProvider(rawValue: UserDefaults.standard.string(forKey: "browserAgentProvider") ?? "") ?? .appleIntelligence
+        guard SettingsManager.shared.aiFeaturesEnabled, BrowserProfile.defaults.bool(forKey: NewspaperPreferences.Key.externalValidation) else { return false }
+        let provider = BrowserAgentProvider(rawValue: BrowserProfile.defaults.string(forKey: "browserAgentProvider") ?? "") ?? .appleIntelligence
         guard provider != .appleIntelligence else { return false }
-        let model = provider.resolvedModel(UserDefaults.standard.string(forKey: "browserAgentModel") ?? "")
-        let endpoint = provider.endpoint(customEndpoint: UserDefaults.standard.string(forKey: "browserAgentEndpoint") ?? "", model: model)
+        let model = provider.resolvedModel(BrowserProfile.defaults.string(forKey: "browserAgentModel") ?? "")
+        let endpoint = provider.endpoint(customEndpoint: BrowserProfile.defaults.string(forKey: "browserAgentEndpoint") ?? "", model: model)
         let key = BrowserAgentKeychain.read(provider: provider)
         guard !provider.needsAPIKey || !key.isEmpty, !model.isEmpty, !endpoint.isEmpty else { return false }
         let agent = BrowserAgent()
@@ -457,7 +459,7 @@ enum NewspaperArticleValidator {
             execute: { _, _, _, _ in "No tools are allowed for article validation." })
         for _ in 0..<60 {
             try? await Task.sleep(for: .milliseconds(250))
-            guard SettingsManager.shared.aiFeaturesEnabled, UserDefaults.standard.bool(forKey: NewspaperPreferences.Key.externalValidation), !Task.isCancelled else { agent.cancel(); return false }
+            guard SettingsManager.shared.aiFeaturesEnabled, BrowserProfile.defaults.bool(forKey: NewspaperPreferences.Key.externalValidation), !Task.isCancelled else { agent.cancel(); return false }
             if !agent.isRunning {
                 guard agent.activeRunStatus == .succeeded else { return false }
                 return agent.messages.last(where: { $0.role == .assistant })?.text.trimmingCharacters(in: .whitespacesAndNewlines) == "ARTICLE"
@@ -470,19 +472,19 @@ enum NewspaperArticleValidator {
 }
 
 struct NewspaperDiscoverySettings: View {
-    @AppStorage(SettingsManager.aiFeaturesKey) private var aiEnabled = true
-    @AppStorage(NewspaperPreferences.Key.discoverVisited) private var visited = true
-    @AppStorage(NewspaperPreferences.Key.discoverRecent) private var recent = true
-    @AppStorage(NewspaperPreferences.Key.discoverPrefetched) private var prefetched = false
-    @AppStorage(NewspaperPreferences.Key.discoverRelated) private var related = true
-    @AppStorage(NewspaperPreferences.Key.onDeviceValidation) private var localAI = false
-    @AppStorage(NewspaperPreferences.Key.externalValidation) private var externalAI = false
-    @AppStorage(NewspaperPreferences.Key.idleDiscovery) private var idle = false
-    @AppStorage(NewspaperPreferences.Key.starterArticles) private var starters = false
-    @AppStorage(NewspaperPreferences.Key.shareDiscovery) private var shareDiscovery = false
-    @AppStorage(TabSync.Key.enabled) private var syncEnabled = false
-    @AppStorage(NewspaperPreferences.Key.dailyDiscoveryLimit) private var limit = 24
-    @AppStorage(NewspaperPreferences.Key.excludedHosts) private var excludedHosts = ""
+    @AppStorage(SettingsManager.aiFeaturesKey, store: BrowserProfile.defaults) private var aiEnabled = true
+    @AppStorage(NewspaperPreferences.Key.discoverVisited, store: BrowserProfile.defaults) private var visited = true
+    @AppStorage(NewspaperPreferences.Key.discoverRecent, store: BrowserProfile.defaults) private var recent = true
+    @AppStorage(NewspaperPreferences.Key.discoverPrefetched, store: BrowserProfile.defaults) private var prefetched = false
+    @AppStorage(NewspaperPreferences.Key.discoverRelated, store: BrowserProfile.defaults) private var related = true
+    @AppStorage(NewspaperPreferences.Key.onDeviceValidation, store: BrowserProfile.defaults) private var localAI = false
+    @AppStorage(NewspaperPreferences.Key.externalValidation, store: BrowserProfile.defaults) private var externalAI = false
+    @AppStorage(NewspaperPreferences.Key.idleDiscovery, store: BrowserProfile.defaults) private var idle = false
+    @AppStorage(NewspaperPreferences.Key.starterArticles, store: BrowserProfile.defaults) private var starters = false
+    @AppStorage(NewspaperPreferences.Key.shareDiscovery, store: BrowserProfile.defaults) private var shareDiscovery = false
+    @AppStorage(TabSync.Key.enabled, store: BrowserProfile.defaults) private var syncEnabled = false
+    @AppStorage(NewspaperPreferences.Key.dailyDiscoveryLimit, store: BrowserProfile.defaults) private var limit = 24
+    @AppStorage(NewspaperPreferences.Key.excludedHosts, store: BrowserProfile.defaults) private var excludedHosts = ""
     var body: some View {
         CollapsibleSection(searchID: "newspaper.discovery") {
             Toggle("Collect articles from pages I visit", isOn: $visited).accessibilityIdentifier("newspaper-discovery-visited")

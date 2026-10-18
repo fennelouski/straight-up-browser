@@ -13,7 +13,7 @@ private final class WeatherNoRedirectDelegate: NSObject, URLSessionTaskDelegate,
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil; configuration.httpCookieStorage = nil
         configuration.timeoutIntervalForRequest = 15; configuration.timeoutIntervalForResource = 20
-        return URLSession(configuration: configuration, delegate: WeatherNoRedirectDelegate(), delegateQueue: nil)
+        return URLSession(configuration: BrowserProfileNetwork.configuration(configuration), delegate: WeatherNoRedirectDelegate(), delegateQueue: nil)
     }()
     static func request(_ endpoint: String, place: BrowserWeatherPlace, key: String) throws -> URLRequest {
         guard ["forecast", "realtime"].contains(endpoint), place.isValid, BrowserWeatherKeychain.valid(key) else { throw BrowserWeatherError.credentials }
@@ -24,7 +24,7 @@ private final class WeatherNoRedirectDelegate: NSObject, URLSessionTaskDelegate,
         return request
     }
     static func fetch(_ place: BrowserWeatherPlace) async throws -> BrowserWeatherForecast {
-        guard UserDefaults.standard.bool(forKey: "browserWeatherBYOEnabled"), let key = BrowserWeatherKeychain.read() else { throw BrowserWeatherError.credentials }
+        guard BrowserProfile.defaults.bool(forKey: "browserWeatherBYOEnabled"), let key = BrowserWeatherKeychain.read() else { throw BrowserWeatherError.credentials }
         let realtime = try await get(request("realtime", place: place, key: key))
         try Task.checkCancellation()
         let forecast = try await get(request("forecast", place: place, key: key))
@@ -144,10 +144,10 @@ private final class WeatherNoRedirectDelegate: NSObject, URLSessionTaskDelegate,
 struct WeatherProviderSettings: View {
     var validationPlace: BrowserWeatherPlace? = nil
     @State private var validating = false
-    @AppStorage("browserWeatherProvider") private var provider = "apple"
-    @AppStorage("browserWeatherAllowAppleFallback") private var fallback = false
-    @AppStorage("browserWeatherBYOEnabled") private var enabled = false
-    @AppStorage("browserWeatherCredentialRevision") private var revision = "native"
+    @AppStorage("browserWeatherProvider", store: BrowserProfile.defaults) private var provider = "apple"
+    @AppStorage("browserWeatherAllowAppleFallback", store: BrowserProfile.defaults) private var fallback = false
+    @AppStorage("browserWeatherBYOEnabled", store: BrowserProfile.defaults) private var enabled = false
+    @AppStorage("browserWeatherCredentialRevision", store: BrowserProfile.defaults) private var revision = "native"
     @State private var key = ""
     @State private var hasKey = false
     @State private var status = ""

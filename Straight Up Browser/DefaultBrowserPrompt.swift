@@ -107,7 +107,7 @@ struct DefaultBrowserPrompt: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Button("Open System Settings") {
                         guard let settings = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.systempreferences") else { return }
-                        NSWorkspace.shared.open(settings)
+                        BrowserProfileSystem.open(settings)
                     }
                     .buttonStyle(BrowserPressStyle())
                     .font(.system(size: 13, weight: .semibold))

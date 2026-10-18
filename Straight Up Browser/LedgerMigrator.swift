@@ -29,7 +29,7 @@ struct LedgerMigrator {
     private let modelContext: ModelContext
     private let defaults: UserDefaults
 
-    init(modelContext: ModelContext, defaults: UserDefaults = .standard) {
+    init(modelContext: ModelContext, defaults: UserDefaults = BrowserProfile.defaults) {
         self.modelContext = modelContext
         self.defaults = defaults
     }

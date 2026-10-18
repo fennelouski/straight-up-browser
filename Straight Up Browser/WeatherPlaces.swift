@@ -55,7 +55,7 @@ nonisolated struct BrowserWeatherPlace: Identifiable, Codable, Equatable, Sendab
     private let preferences: UserDefaults
     private let key = "browserWeatherSavedPlaces"
     @Published private(set) var places: [String: String]
-    init(preferences: UserDefaults = .standard) {
+    init(preferences: UserDefaults = BrowserProfile.defaults) {
         self.preferences = preferences
         places = preferences.dictionary(forKey: key) as? [String: String] ?? [:]
     }
@@ -210,9 +210,10 @@ struct WeatherPlacesEditor: View {
                     .accessibilityIdentifier("weather-places-status")
             }
         }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
+        .fileImporter(isPresented: Binding(get: { !BrowserProfile.isIsolated && importing }, set: { importing = $0 }), allowedContentTypes: [.json]) { result in
             do {
                 let url = try result.get()
+                guard !BrowserProfile.isIsolated else { return }
                 let access = url.startAccessingSecurityScopedResource()
                 defer { if access { url.stopAccessingSecurityScopedResource() } }
                 try places.importGooglePlaces(Data(contentsOf: url))

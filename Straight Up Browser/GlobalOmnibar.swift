@@ -32,6 +32,7 @@ enum GlobalOmnibarHotkey {
     static var appliedBinding: String? { registration.currentChord }
 
     static func install(_ handler: @escaping () -> Void) {
+        guard !BrowserProfile.isIsolated else { return }
         onPress = handler
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
@@ -46,7 +47,8 @@ enum GlobalOmnibarHotkey {
     // Called at launch and on every UserDefaults change; no-ops unless the
     // chord setting actually changed.
     static func applyFromDefaults() {
-        let chord = UserDefaults.standard.string(forKey: defaultsKey) ?? defaultChord
+        guard !BrowserProfile.isIsolated else { return }
+        let chord = BrowserProfile.defaults.string(forKey: defaultsKey) ?? defaultChord
         guard chord != lastRequested else { return }
         _ = select(chord)
     }
@@ -54,6 +56,7 @@ enum GlobalOmnibarHotkey {
     /// Register first, then persist. A failed replacement keeps the old handle
     /// and selected value. It does not request monitoring or accessibility.
     @discardableResult static func select(_ chord: String, rememberingUndo: Bool = true) -> Bool {
+        guard !BrowserProfile.isIsolated else { return false }
         let before = registration.currentChord
         lastRequested = chord
         let accepted = registration.select(chord)
@@ -61,13 +64,13 @@ enum GlobalOmnibarHotkey {
         status.state = registration.state
         status.recoveryRequired = registration.recoveryRequired
         if accepted {
-            UserDefaults.standard.set(chord, forKey: defaultsKey)
+            BrowserProfile.defaults.set(chord, forKey: defaultsKey)
             if rememberingUndo, let before, before != chord {
                 status.undo = GlobalHotkeyChange(before: before, after: chord, revision: registration.revision)
             }
         } else if let before {
             lastRequested = before
-            UserDefaults.standard.set(before, forKey: defaultsKey)
+            BrowserProfile.defaults.set(before, forKey: defaultsKey)
         }
         return accepted
     }
