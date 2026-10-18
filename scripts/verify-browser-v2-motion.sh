@@ -19,13 +19,13 @@ tests.mkdir(parents=True)
 (package / 'Package.swift').write_text('''// swift-tools-version: 6.0
 import PackageDescription
 let package = Package(
-    name: "MotionPolicies", platforms: [.macOS(.v14)],
+    name: "MotionPolicies", platforms: [.macOS(.v15)],
     targets: [
         .target(name: "MotionPolicies", swiftSettings: [.unsafeFlags(["-default-isolation", "MainActor"])]),
         .testTarget(name: "MotionPoliciesTests", dependencies: ["MotionPolicies"])
     ])
 ''')
-for name in ['PageFadeCircuitBreaker.swift', 'WindowPlacementPolicy.swift']:
+for name in ['PageFadeCircuitBreaker.swift', 'WindowPlacementPolicy.swift', 'PageFadeLifecycleInbox.swift']:
     (source / name).write_text((repo / 'Straight Up Browser' / name).read_text())
 
 # Extract the unchanged production WindowLayout and its NSRect extension, omitting
@@ -44,7 +44,7 @@ final class BrowserWindows {
 }
 '''
 (source / 'WindowLayout.swift').write_text(window)
-for name in ['PageFadeCircuitBreakerTests.swift', 'WindowLayoutTests.swift']:
+for name in ['PageFadeCircuitBreakerTests.swift', 'WindowLayoutTests.swift', 'PageFadeLifecycleInboxTests.swift']:
     content = (repo / 'Straight Up BrowserTests' / name).read_text()
     (tests / name).write_text(content.replace('@testable import Browser', '@testable import MotionPolicies'))
 PY

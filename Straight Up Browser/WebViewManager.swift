@@ -1507,6 +1507,11 @@ class WebViewManager: NSObject, ObservableObject {
     private var pageFadeCommittedURLs: [UUID: URL] = [:]
     private var pageFadeDisplayedTabs: Set<UUID> = []
     private var pageFadeSuspensions: Set<String> = []
+    #if canImport(AppKit)
+    nonisolated private let pageFadeLifecycleInbox = PageFadeLifecycleInbox()
+    private var drainingPageFadeLifecycle = false
+    var pageFadeSuspensionReasons: Set<String> { pageFadeSuspensions }
+    #endif
 
     func setFadeDisplayedTabs(_ ids: [UUID]) {
         pageFadeDisplayedTabs = Set(ids)
@@ -1697,25 +1702,50 @@ class WebViewManager: NSObject, ObservableObject {
     // changes can originate in a background sync actor, so cross explicitly
     // before touching WebKit, window visibility or the fade policy.
     @objc nonisolated private func pageFadeVisibilityChanged() {
-        Task { @MainActor [weak self] in self?.refreshPageFadeResidence() }
+        receivePageFadeLifecycle(.visibility)
     }
     @objc nonisolated private func pageFadeWillSuspend(_ notification: Notification) {
         let reason = notification.name == NSWorkspace.willSleepNotification ? "system"
             : notification.name == NSWorkspace.screensDidSleepNotification ? "display" : "session"
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            self.pageFadeSuspensions.insert(reason)
-            self.pageFadePolicy.interrupt(clearRecentAttempts: true)
-            self.refreshPageFadeResidence()
-        }
+        receivePageFadeLifecycle(.suspend(reason))
     }
     @objc nonisolated private func pageFadeDidResume(_ notification: Notification) {
         let reason = notification.name == NSWorkspace.didWakeNotification ? "system"
             : notification.name == NSWorkspace.screensDidWakeNotification ? "display" : "session"
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            self.pageFadeSuspensions.remove(reason)
-            self.refreshPageFadeResidence()
+        receivePageFadeLifecycle(.resume(reason))
+    }
+
+    nonisolated private func receivePageFadeLifecycle(_ event: PageFadeLifecycleInbox.Event) {
+        pageFadeLifecycleInbox.append(event)
+        if Thread.isMainThread {
+            // AppKit posts on the main thread synchronously. Consume earlier
+            // background events first, without waiting for another actor task.
+            MainActor.assumeIsolated { drainPageFadeLifecycle() }
+        } else {
+            DispatchQueue.main.async { [weak self] in self?.drainPageFadeLifecycle() }
+        }
+    }
+
+    private func drainPageFadeLifecycle() {
+        // A visibility update can synchronously post another notification.
+        // Its event stays behind this batch rather than reentering the drain.
+        guard !drainingPageFadeLifecycle else { return }
+        drainingPageFadeLifecycle = true
+        defer { drainingPageFadeLifecycle = false }
+        while true {
+            let events = pageFadeLifecycleInbox.takePending()
+            guard !events.isEmpty else { return }
+            for event in events {
+                switch event {
+                case .visibility: break
+                case .suspend(let reason):
+                    pageFadeSuspensions.insert(reason)
+                    pageFadePolicy.interrupt(clearRecentAttempts: true)
+                case .resume(let reason):
+                    pageFadeSuspensions.remove(reason)
+                }
+                refreshPageFadeResidence()
+            }
         }
     }
     #endif
