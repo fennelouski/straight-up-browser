@@ -11,7 +11,7 @@ struct PageFadeLifecycleTests {
             NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: nil)
         }.value
         await Task.yield()
-        #expect(manager.webViews.isEmpty)
+        #expect(manager.activeWebView == nil)
     }
 }
 #endif
