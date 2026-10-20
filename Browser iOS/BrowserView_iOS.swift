@@ -105,6 +105,22 @@ struct BrowserView_iOS: View {
     @State private var selectedSuggestion = -1
     @FocusState private var omnibarFocused: Bool
     @State private var showOmnibar = false
+    @State private var omnibarEditingID = UUID()
+    @StateObject private var pageChrome = MobilePageChrome()
+    @State private var editingGestureBar = false
+    @State private var showVisualTabs = false
+    @State private var visualTabPreview: UIImage?
+    @State private var visualTabPreviewID: UUID?
+    @AppStorage(MobileChromeSettings.customPosition) private var customBarPosition = false
+    @AppStorage(MobileChromeSettings.x) private var barX = 0.5
+    @AppStorage(MobileChromeSettings.y) private var barY = 1.0
+    @AppStorage(MobileChromeSettings.width) private var barWidth = 0.4
+    @AppStorage(MobileChromeSettings.snapping) private var barSnapping = true
+    @AppStorage(MobileChromeSettings.hidden) private var barHidden = false
+    @AppStorage(MobileChromeSettings.hideGesture) private var barHideGesture = false
+    @AppStorage(MobileChromeSettings.visualTabsGesture) private var visualTabsGesture = false
+    @AppStorage(MobileChromeSettings.rotationRules) private var domainRotationRules = Data()
+
     @State private var weatherSurfaces: [CGRect] = []
     @State private var weatherCredited = false
     @State private var weatherSnapshot: OmnibarWeatherSnapshot?
@@ -246,8 +262,9 @@ struct BrowserView_iOS: View {
     }
 
     private func refreshSuggestions() async {
-        guard showOmnibar, !omnibarText.isEmpty, !omnibarWeatherIntent else { cachedSuggestions = []; return }
+        guard showOmnibar, activeTab?.sessionKind != .incognito, !omnibarText.isEmpty, !omnibarWeatherIntent else { cachedSuggestions = []; return }
         let query = omnibarText
+        let requestedTabID = activeTab?.id
         try? await Task.sleep(for: .milliseconds(100))
         guard !Task.isCancelled else { return }
         var bookmarkValues: [(title: String, url: URL)] = []
@@ -257,13 +274,16 @@ struct BrowserView_iOS: View {
             guard !Task.isCancelled else { return }
         }
         var histories: [[String]] = []
-        for (index, tab) in tabs.enumerated() {
+        for (index, tab) in tabs.filter({ $0.sessionKind != .incognito }).enumerated() {
             histories.append(tab.historyStrings)
             if index % 100 == 99 { await Task.yield() }
             guard !Task.isCancelled else { return }
         }
         var result = await omnibarSuggestions(input: query, tabHistory: histories,
-            bookmarks: bookmarkValues, durableHistory: browsingHistory.visits)
+            bookmarks: bookmarkValues, durableHistory: browsingHistory.visits,
+            openTabs: tabs.filter { $0.sessionKind != .incognito }.compactMap { tab in
+                tab.url.map { MobileOpenTabSuggestion(url: $0, title: tab.title, lastAccessed: tab.lastAccessed) }
+            })
         guard !Task.isCancelled else { return }
         result += await transcriptSuggestions(for: query)
         guard !Task.isCancelled else { return }
@@ -271,7 +291,9 @@ struct BrowserView_iOS: View {
             result[index].ledgerNote = ledgerNote(for: result[index].url)
         }
         var seen: Set<String> = []
-        cachedSuggestions = result.filter { seen.insert($0.id).inserted }
+        guard showOmnibar, requestedTabID == activeTab?.id, query == omnibarText,
+              activeTab?.sessionKind != .incognito else { return }
+        cachedSuggestions = result.filter { seen.insert(MobileChromeLayout.canonicalURL($0.url)).inserted }
         if selectedSuggestion >= cachedSuggestions.count { selectedSuggestion = -1 }
     }
 
@@ -319,6 +341,13 @@ struct BrowserView_iOS: View {
         // and omnibar as summoned overlays, so the chrome truly disappears.
         ZStack(alignment: .leading) {
             Color(.systemBackground).ignoresSafeArea()
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    Color(uiColor: pageChrome.top ?? .systemBackground).frame(height: geometry.safeAreaInsets.top)
+                    Spacer(minLength: 0)
+                    Color(uiColor: pageChrome.bottom ?? .systemBackground).frame(height: geometry.safeAreaInsets.bottom)
+                }.ignoresSafeArea()
+            }.allowsHitTesting(false).accessibilityHidden(true)
 
             if managersInitialized {
                 TabWebView(url: webViewURLBinding,
@@ -343,7 +372,9 @@ struct BrowserView_iOS: View {
                     // Keep the page viewport below the top safe area. Sites that
                     // use sticky headers can then occlude their own content instead
                     // of letting scrolled text leak into the sensor/status strip.
-                    .ignoresSafeArea(edges: [.horizontal, .bottom])
+                    .ignoresSafeArea(edges: [.horizontal])
+                    .scaleEffect(showOmnibar && !reduceMotion ? 0.98 : 1)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: showOmnibar)
                     .accessibilityHidden(
                         BrowserAccessibility.backgroundIsHidden(
                             sidebarPresented: showSidebar,
@@ -380,9 +411,6 @@ struct BrowserView_iOS: View {
             // iPhones, and in the same slim top strip on every other device.
             GeometryReader { geometry in
                 let railPlacement = desiredTabRailPlacement(for: geometry.size)
-                if managersInitialized && !showOmnibar && !showSidebar {
-                    topBrowserControls(showsTabsMenu: railPlacement == nil)
-                }
                 if managersInitialized {
                     adaptiveTabRail(
                         desiredPlacement: showOmnibar || showSidebar ? nil : railPlacement
@@ -396,8 +424,17 @@ struct BrowserView_iOS: View {
 
             // Touch's stand-in for the keyboard (iPhone has no ⌘L / ⌘T). Hidden
             // whenever the omnibar or sidebar is already up.
-            if managersInitialized && !showOmnibar && !showSidebar {
-                browserGestureBar
+            if managersInitialized && !showOmnibar && !showSidebar && !barHidden {
+                if customBarPosition {
+                    MobileGestureBar(x: $barX, y: $barY, width: $barWidth, editing: $editingGestureBar,
+                        snapping: barSnapping, pageEdges: pageChrome.fixedEdges,
+                        activate: focusOmnibar, newTab: createNewTab,
+                        showTabs: { if visualTabsGesture { presentVisualTabs() } else { toggleSidebar() } },
+                        showWorkspaces: { showWorkspaceSwitcher = true },
+                        nextTab: { tabManager.switchToNextTab(tabs: visibleTabOrder) },
+                        previousTab: { tabManager.switchToPreviousTab(tabs: visibleTabOrder) },
+                        swipe: handleBarSwipe)
+                } else { browserGestureBar }
             }
 
             // Slide-in tab sidebar (⇧⌘L), dim backdrop, tap-out to close.
@@ -408,8 +445,11 @@ struct BrowserView_iOS: View {
                 sidebarPanel.transition(.move(edge: .leading))
             }
 
-            if showOmnibar {
-                omnibarOverlay.transition(.opacity)
+            if showOmnibar { omnibarOverlay.transition(.opacity) }
+            GeometryReader { geometry in
+                if managersInitialized && !showSidebar {
+                    topBrowserControls(showsTabsMenu: showOmnibar || desiredTabRailPlacement(for: geometry.size) == nil)
+                }
             }
         }
     }
@@ -428,6 +468,22 @@ struct BrowserView_iOS: View {
             await pageTranslator.perform(session: session)
         }
         .onAppear(perform: firstAppear)
+        .task(id: "\(activeTab?.id.uuidString ?? "none")|\(activeTab?.url?.absoluteString ?? "")|\(isLoading)") {
+            if let webView = webViewManager?.activeWebView {
+                if isLoading { pageChrome.detach() } else { pageChrome.attach(webView) }
+                OrientationLockController.shared.updateContext(activeTab?.url, scene: webView.window?.windowScene)
+            } else { pageChrome.detach() }
+        }
+        .onDisappear { pageChrome.detach() }
+        .onChange(of: domainRotationRules) { _, _ in
+            OrientationLockController.shared.updateContext(activeTab?.url, scene: webViewManager?.activeWebView?.window?.windowScene)
+        }
+        .sheet(isPresented: $showVisualTabs, onDismiss: { visualTabPreview = nil }) {
+            MobileVisualTabs(tabs: visibleTabOrder.filter { ($0.sessionKind == .incognito) == (activeTab?.sessionKind == .incognito) },
+                selectedID: activeTab?.id, preview: visualTabPreviewID == activeTab?.id ? visualTabPreview : nil,
+                select: { tabManager.selectedTabId = $0.id },
+                close: { tabManager.closeTab($0, tabs: visibleTabs, reason: .userRejected) })
+        }
         .task {
             if ProcessInfo.processInfo.arguments.contains("-uiTesting"), ProcessInfo.processInfo.arguments.contains("-newspaperOpenUITesting") {
                 showOmnibar = false
@@ -435,6 +491,7 @@ struct BrowserView_iOS: View {
             }
         }
         .onChange(of: tabManager.selectedTabId) { _, newValue in
+            cachedSuggestions = []; suggestionRevision += 1
             tabManager.updateActiveTab(in: allTabs)
             webViewManager?.setActiveTab(newValue)
             syncOmnibarToActiveTab()
@@ -543,7 +600,11 @@ struct BrowserView_iOS: View {
         .sheet(isPresented: $showGestureGuide) {
             GestureGuide_iOS().presentationDetents([.medium, .large])
         }
-        .sheet(isPresented: $showSettings) { Settings_iOS() }
+        .sheet(isPresented: $showSettings) {
+            Settings_iOS(moveGestureBar: {
+                showSettings = false; barHidden = false; customBarPosition = true; editingGestureBar = true
+            })
+        }
         .sheet(isPresented: $showWorkspaceSwitcher) { workspaceSwitcher }
         .sheet(isPresented: $showDownloads) {
             Downloads_iOS()
@@ -891,6 +952,9 @@ struct BrowserView_iOS: View {
     private func topBrowserControls(showsTabsMenu: Bool) -> some View {
         TopBrowserControls_iOS(
             activeTab: activeTab,
+            isNavigating: showOmnibar,
+            hideGestureEnabled: barHideGesture,
+            gestureBarHidden: barHidden,
             showsTabsMenu: showsTabsMenu,
             allowsSplitPanes: supportsSplitPanes,
             canGoBack: canGoBack,
@@ -906,6 +970,8 @@ struct BrowserView_iOS: View {
     private var browserControlActions: BrowserControlActions_iOS {
         BrowserControlActions_iOS(
             showTabs: toggleSidebar,
+            showVisualTabs: presentVisualTabs,
+            toggleGestureBar: { barHidden.toggle(); editingGestureBar = false },
             newTab: createNewTab,
             newRegularTab: createNewRegularTab,
             newIncognitoTab: createNewIncognitoTab,
@@ -1085,7 +1151,7 @@ struct BrowserView_iOS: View {
                 }
                 .frame(maxWidth: 640)
                 .padding(.horizontal, 16)
-                .padding(.top, 10)
+                .padding(.top, UIDevice.current.userInterfaceIdiom == .phone && geometry.size.width > geometry.size.height ? 10 : 54)
                 if omnibarWeatherIntent {
                     OmnibarWeatherScene(layer: .precipitation, surfaces: weatherSurfaces, attributionVisible: weatherCredited, snapshot: weatherSnapshot)
                         .transition(.opacity)
@@ -1349,7 +1415,7 @@ struct BrowserView_iOS: View {
             Capsule()
                 .fill(Color.secondary.opacity(0.5))
                 .frame(
-                    width: placement == .left || placement == .right ? 5 : 140,
+                    width: placement == .left || placement == .right ? 5 : max(140, geometry.size.width * 0.30),
                     height: placement == .left || placement == .right ? 140 : 5
                 )
                 .padding(20)      // at least a 44-point touch target
@@ -1411,7 +1477,7 @@ struct BrowserView_iOS: View {
     private func handleBarSwipe(_ value: DragGesture.Value) {
         let dx = value.translation.width, dy = value.translation.height
         if dy < -30, abs(dy) > abs(dx) {
-            toggleSidebar()                                    // up → all tabs
+            if visualTabsGesture { presentVisualTabs() } else { toggleSidebar() }
         } else if dy > 30, abs(dy) > abs(dx) {
             // down → up a level, to the projects themselves. Switching away from
             // a workspace IS suspending it, so there is no separate gesture.
@@ -2054,12 +2120,33 @@ struct BrowserView_iOS: View {
         }
     }
 
+    private func presentVisualTabs() {
+        dismissOmnibar()
+        visualTabPreview = nil
+        showVisualTabs = true
+        guard let webView = webViewManager?.activeWebView else { return }
+        let tabID = activeTab?.id
+        visualTabPreviewID = tabID
+        Task { @MainActor in
+            let configuration = WKSnapshotConfiguration()
+            configuration.snapshotWidth = 300
+            configuration.afterScreenUpdates = false
+            let image = try? await webView.takeSnapshot(configuration: configuration)
+            guard showVisualTabs, activeTab?.id == tabID else { return }
+            visualTabPreview = image
+        }
+    }
+
     private func focusOmnibar() {
+        guard !showOmnibar else { omnibarFocused = true; return }
+        let editingID = UUID()
+        omnibarEditingID = editingID
         omnibarText = activeTab?.url?.absoluteString ?? ""
         omnibarHasUserEdited = false
         selectedSuggestion = -1
         withAnimation(.easeOut(duration: 0.15)) { showOmnibar = true }
         DispatchQueue.main.async {
+            guard showOmnibar, omnibarEditingID == editingID else { return }
             omnibarFocused = true
             omnibarSelection = TextSelection(
                 range: omnibarText.startIndex..<omnibarText.endIndex
@@ -2069,6 +2156,7 @@ struct BrowserView_iOS: View {
     }
 
     private func dismissOmnibar() {
+        omnibarEditingID = UUID()
         omnibarFocused = false
         selectedSuggestion = -1
         withAnimation(.easeOut(duration: 0.15)) { showOmnibar = false }

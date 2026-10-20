@@ -12,6 +12,8 @@ import UIKit
 
 struct BrowserControlActions_iOS {
     let showTabs: () -> Void
+    let showVisualTabs: () -> Void
+    let toggleGestureBar: () -> Void
     let newTab: () -> Void
     let newRegularTab: () -> Void
     let newIncognitoTab: () -> Void
@@ -64,6 +66,9 @@ struct BrowserControlActions_iOS {
 
 struct TopBrowserControls_iOS: View {
     let activeTab: Tab?
+    var isNavigating = false
+    var hideGestureEnabled = false
+    var gestureBarHidden = false
     let showsTabsMenu: Bool
     let allowsSplitPanes: Bool
     let canGoBack: Bool
@@ -74,6 +79,7 @@ struct TopBrowserControls_iOS: View {
     let isCurrentInNewspaper: Bool
     let actions: BrowserControlActions_iOS
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var orientationLock = OrientationLockController.shared
 
     var body: some View {
@@ -86,13 +92,21 @@ struct TopBrowserControls_iOS: View {
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.18), value: UIDevice.current.orientation)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: UIDevice.current.orientation)
     }
 
     private var topControls: some View {
         HStack(spacing: 0) {
             if showsTabsMenu { tabMenu }
             Spacer(minLength: 96)
+                .overlay { if hideGestureEnabled {
+                    Color.clear.contentShape(Rectangle())
+                        .accessibilityElement()
+                        .onTapGesture(count: 2, perform: actions.toggleGestureBar)
+                        .accessibilityLabel(gestureBarHidden ? "Show Gesture Bar" : "Hide Gesture Bar")
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityAction { actions.toggleGestureBar() }
+                } }
             pageMenu
         }
         .padding(.horizontal, 39)
@@ -106,6 +120,14 @@ struct TopBrowserControls_iOS: View {
         return VStack(spacing: 0) {
             if showsTabsMenu { tabMenu }
             Spacer(minLength: 96)
+                .overlay { if hideGestureEnabled {
+                    Color.clear.contentShape(Rectangle())
+                        .accessibilityElement()
+                        .onTapGesture(count: 2, perform: actions.toggleGestureBar)
+                        .accessibilityLabel(gestureBarHidden ? "Show Gesture Bar" : "Hide Gesture Bar")
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityAction { actions.toggleGestureBar() }
+                } }
             pageMenu
         }
         .padding(.vertical, 7)
@@ -127,6 +149,7 @@ struct TopBrowserControls_iOS: View {
             Button(action: actions.showTabs) {
                 Label("Show All Tabs", systemImage: "square.stack")
             }
+            Button("Visual Tabs", systemImage: "square.grid.2x2", action: actions.showVisualTabs)
             Divider()
             Button(action: actions.newTab) {
                 Label("New Tab", systemImage: "plus.square")
@@ -194,6 +217,7 @@ struct TopBrowserControls_iOS: View {
             Button(action: actions.changeURL) {
                 Label("Change URL…", systemImage: "text.cursor")
             }
+            Button("Visual Tabs", systemImage: "square.grid.2x2", action: actions.showVisualTabs)
             Divider()
             Menu("Navigation", systemImage: "arrow.triangle.turn.up.right.diamond") {
                 Button(action: actions.back) {
@@ -291,6 +315,7 @@ struct TopBrowserControls_iOS: View {
             Button(action: actions.showGestures) {
                 Label("Touch Gestures", systemImage: "hand.draw")
             }
+            Button(gestureBarHidden ? "Show Gesture Bar" : "Hide Gesture Bar", systemImage: "capsule", action: actions.toggleGestureBar)
             Button(action: actions.showSettings) {
                 Label("Settings", systemImage: "gearshape")
             }
@@ -310,16 +335,23 @@ struct TopBrowserControls_iOS: View {
     ) -> some View {
         content()
             .frame(width: 24, height: 24)
-            .frame(width: 36, height: 36)
+            .frame(width: isNavigating ? 36 : 28, height: isNavigating ? 36 : 28)
             .background(.regularMaterial, in: Circle())
             .overlay(Circle().stroke(Color.primary.opacity(0.1)))
             .shadow(color: .black.opacity(0.16), radius: 4, y: 1)
             .frame(width: 44, height: 44)
             .contentShape(Circle())
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: isNavigating)
     }
 
     private var orientationMenu: some View {
         Menu {
+            if let url = activeTab?.url, let host = MobileDomainRotation.host(url) {
+                Button("Allow Rotation on \(host)") { orientationLock.setDomainRule("allow", url: url) }
+                Button("Lock Current Orientation on \(host)") { orientationLock.lockCurrentOrientation(for: url) }
+                Button("Use App Rotation Setting for \(host)") { orientationLock.setDomainRule(nil, url: url) }
+                Divider()
+            }
             orientationButton(.unlocked)
             Divider()
             orientationButton(.portrait)

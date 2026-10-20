@@ -14,6 +14,7 @@ import UIKit
 import WebKit
 
 struct Settings_iOS: View {
+    var moveGestureBar: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Query private var tabs: [Tab]
@@ -192,6 +193,10 @@ struct Settings_iOS: View {
                     Text("Downloads")
                 } footer: {
                     Text("Downloads are saved to the app's Downloads folder and shared via the system share sheet (Save to Files, AirDrop, …). ⌥-click needs a keyboard or trackpad (iOS or iPadOS 18.4+).")
+                }
+
+                Section {
+                    NavigationLink("Mobile Controls", destination: MobileChromeSettingsView(moveBar: moveGestureBar))
                 }
 
                 Section("Appearance") {

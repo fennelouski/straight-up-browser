@@ -10,7 +10,7 @@
 import SwiftUI
 import UIKit
 
-enum BrowserOrientationLock: CaseIterable, Equatable {
+enum BrowserOrientationLock: String, CaseIterable, Equatable {
     case unlocked
     case portrait
     case portraitUpsideDown
@@ -49,24 +49,82 @@ final class OrientationLockController: ObservableObject {
 
     @Published private(set) var selection: BrowserOrientationLock = .unlocked
 
+    private var appSelection: BrowserOrientationLock = .unlocked
+    private var sceneURLs: [String: URL] = [:]
+    private var domainLocks: [String: (host: String, orientation: BrowserOrientationLock)] = [:]
     private init() {}
 
-    func apply(_ newSelection: BrowserOrientationLock) {
-        selection = newSelection
+    func updateContext(_ url: URL?, scene: UIWindowScene?) {
+        guard let scene else { return }
+        let key = scene.session.persistentIdentifier
+        if MobileDomainRotation.host(sceneURLs[key]) != MobileDomainRotation.host(url) { domainLocks.removeValue(forKey: key) }
+        sceneURLs[key] = url
+        update(scene)
+    }
 
-        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
-            guard scene.activationState == .foregroundActive else { continue }
-            scene.windows.forEach {
-                $0.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
-            }
-            scene.requestGeometryUpdate(
-                .iOS(interfaceOrientations: newSelection.mask)
-            ) { error in
-                Logger.log(
-                    "Could not update interface orientation: \(error.localizedDescription)",
-                    type: "Orientation"
-                )
-            }
+    func supportedMask(for window: UIWindow?) -> UIInterfaceOrientationMask {
+        guard let scene = window?.windowScene else { return appSelection.mask }
+        return effectiveSelection(for: scene).mask
+    }
+
+    func apply(_ newSelection: BrowserOrientationLock) {
+        appSelection = newSelection
+        updateScenes(requestGeometry: true)
+    }
+
+    func setDomainRule(_ value: String?, url: URL) {
+        let defaults = UserDefaults.standard
+        let old = defaults.data(forKey: MobileChromeSettings.rotationRules) ?? Data()
+        defaults.set(MobileDomainRotation.setting(value, for: url, in: old), forKey: MobileChromeSettings.rotationRules)
+        domainLocks = domainLocks.filter { $0.value.host != MobileDomainRotation.host(url) }
+        updateScenes()
+    }
+
+    func lockCurrentOrientation(for url: URL) {
+        setDomainRule("locked", url: url)
+    }
+
+    private func currentOrientation(_ scene: UIWindowScene) -> BrowserOrientationLock {
+        switch scene.interfaceOrientation {
+        case .portrait: .portrait
+        case .portraitUpsideDown: .portraitUpsideDown
+        case .landscapeLeft: .landscapeLeft
+        case .landscapeRight: .landscapeRight
+        default: .unlocked
+        }
+    }
+
+    private func effectiveSelection(for scene: UIWindowScene) -> BrowserOrientationLock {
+        let rules = MobileDomainRotation.rules(UserDefaults.standard.data(forKey: MobileChromeSettings.rotationRules) ?? Data())
+        let key = scene.session.persistentIdentifier
+        guard let host = MobileDomainRotation.host(sceneURLs[key]), let rule = rules[host] else {
+            domainLocks.removeValue(forKey: key)
+            return appSelection
+        }
+        guard rule == "locked" else { domainLocks.removeValue(forKey: key); return .unlocked }
+        if domainLocks[key]?.host != host {
+            domainLocks[key] = (host, currentOrientation(scene))
+        }
+        return domainLocks[key]?.orientation ?? .unlocked
+    }
+
+    private func updateScenes(requestGeometry: Bool = false) {
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes where scene.activationState == .foregroundActive {
+            update(scene, requestGeometry: requestGeometry)
+        }
+    }
+
+    private func update(_ scene: UIWindowScene, requestGeometry: Bool = false) {
+        let resolved = effectiveSelection(for: scene)
+        selection = resolved
+        scene.windows.forEach { $0.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations() }
+        // Domain rules constrain future autorotation at the current interface
+        // orientation. They never request a rotation or attempt to read/override
+        // system rotation lock. Only the existing explicit app rotation menu
+        // retains its user-requested geometry operation.
+        guard requestGeometry else { return }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: resolved.mask)) { error in
+            Logger.log("Could not update interface orientation: \(error.localizedDescription)", type: "Orientation")
         }
     }
 }
@@ -98,6 +156,6 @@ final class BrowserAppDelegate_iOS: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         supportedInterfaceOrientationsFor window: UIWindow?
     ) -> UIInterfaceOrientationMask {
-        OrientationLockController.shared.selection.mask
+        OrientationLockController.shared.supportedMask(for: window)
     }
 }

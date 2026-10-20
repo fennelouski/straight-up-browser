@@ -181,6 +181,49 @@ final class Browser_iOSUITests: XCTestCase {
     }
 
     @MainActor
+    func testHiddenGestureBarHasAnAccessibleRecoveryAction() {
+        let app = configuredApplication()
+        app.launchArguments += ["-mobileChrome.hidden", "YES"]
+        launchBrowser(app)
+        XCTAssertFalse(app.descendants(matching: .any)["browser.controls"].exists)
+        let pageMenu = app.buttons["browser.pageMenu"]
+        XCTAssertGreaterThanOrEqual(pageMenu.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(pageMenu.frame.height, 44)
+        pageMenu.tap()
+        app.buttons["Show Gesture Bar"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["browser.controls"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testVisualTabsHasAMenuRouteWithoutAnEdgeGesture() {
+        let app = configuredApplication()
+        launchBrowser(app)
+        app.buttons["browser.tabsMenu"].tap()
+        app.buttons["Visual Tabs"].tap()
+        XCTAssertTrue(app.navigationBars["Visual Tabs"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Close Tab"].firstMatch.exists)
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.buttons["browser.pageMenu"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testEnteringURLReplacesSelectionButSubsequentTypingAppends() {
+        let app = configuredApplication()
+        app.launchArguments += ["-openURL", "data:text/html,<title>Selection fixture</title><p>Local only</p>"]
+        app.launch()
+        let controls = app.descendants(matching: .any)["browser.controls"]
+        XCTAssertTrue(controls.waitForExistence(timeout: 10))
+        controls.tap()
+        let field = app.textFields["browser.omnibar"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("replacement")
+        XCTAssertEqual(field.value as? String, "replacement")
+        // A second input after suggestion rendering must not re-select the URL.
+        field.typeText(".example")
+        XCTAssertEqual(field.value as? String, "replacement.example")
+    }
+
+    @MainActor
     private func launchBrowser(_ app: XCUIApplication) {
         app.launch()
         // A fresh profile starts in the address bar. Dismiss it before testing

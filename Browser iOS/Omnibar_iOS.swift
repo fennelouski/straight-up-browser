@@ -10,22 +10,6 @@
 
 import SwiftUI
 
-nonisolated enum SuggestionType: Sendable {
-    case history
-    case bookmark
-    /// "said at 6:57 in <video>" — cross-transcript recall (Phase 2, design §8.3).
-    case transcript
-}
-
-nonisolated struct Suggestion: Identifiable, Sendable {
-    var id: String { "\(type):\(url.absoluteString)" }
-    let url: URL
-    let title: String?
-    let type: SuggestionType
-    /// Prior encounter from the research ledger ("Rated 4 in Fermentation").
-    var ledgerNote: String?
-}
-
 // Turns raw omnibar text into a loadable URL string: adds https:// to a bare
 // domain, otherwise sends it to the configured search engine. Pure + testable.
 enum OmnibarInput {
@@ -55,50 +39,6 @@ enum OmnibarInput {
     #endif
 }
 
-// Ranked history + bookmark matches for the current omnibar text (ported from
-// the Mac OmnibarView.filteredSuggestions).
-@concurrent func omnibarSuggestions(
-    input: String,
-    tabHistory: [[String]],
-    bookmarks: [(title: String, url: URL)],
-    durableHistory: [HistoryVisit] = []
-) async -> [Suggestion] {
-    assert(!Thread.isMainThread)
-    let lowercased = input.lowercased()
-    guard !lowercased.isEmpty else { return [] }
-
-    let matchingBookmarks = bookmarks.filter {
-        $0.title.lowercased().contains(lowercased)
-            || $0.url.absoluteString.lowercased().contains(lowercased)
-            || ($0.url.host?.lowercased().contains(lowercased) ?? false)
-    }.map { Suggestion(url: $0.url, title: $0.title, type: .bookmark) }
-
-    let bookmarkedURLs = Set(bookmarks.map { $0.url.absoluteString })
-    var historyURLs = Set(durableHistory.map(\.url))
-    for history in tabHistory {
-        guard !Task.isCancelled else { return [] }
-        historyURLs.formUnion(history.compactMap(URL.init(string:)))
-    }
-    let matchingHistory = historyURLs.filter { url in
-        !bookmarkedURLs.contains(url.absoluteString)
-            && (url.absoluteString.lowercased().contains(lowercased)
-                || (url.host?.lowercased().contains(lowercased) ?? false))
-    }.map { Suggestion(url: $0, title: nil, type: .history) }
-
-    let all = matchingBookmarks + matchingHistory
-    let ranked = Array(all.sorted { a, b in
-        if a.type == .bookmark && b.type == .history { return true }
-        if a.type == .history && b.type == .bookmark { return false }
-        let aStr = a.url.absoluteString.lowercased(), bStr = b.url.absoluteString.lowercased()
-        let aStarts = aStr.hasPrefix(lowercased) || (a.url.host?.lowercased().hasPrefix(lowercased) ?? false)
-        let bStarts = bStr.hasPrefix(lowercased) || (b.url.host?.lowercased().hasPrefix(lowercased) ?? false)
-        if aStarts != bStarts { return aStarts }
-        return aStr.count != bStr.count ? aStr.count < bStr.count : aStr < bStr
-    }.prefix(8))
-
-    return Task.isCancelled ? [] : ranked
-}
-
 // The dropdown under the omnibar field. Selection is keyboard-navigable
 // (↑/↓ move `selectedIndex`, Return commits) and tap-selectable.
 struct SuggestionsPanel: View {
@@ -109,6 +49,7 @@ struct SuggestionsPanel: View {
     private func suggestionIcon(_ type: SuggestionType) -> String {
         switch type {
         case .bookmark: "bookmark.fill"
+        case .openTab: "square.on.square"
         case .history: "clock.arrow.circlepath"
         case .transcript: "play.circle"
         }
