@@ -7,8 +7,8 @@ import Testing
 struct MobileChromePolicyTests {
     @Test func widthAndPositionClampCorruptPreferences() {
         let viewport = CGRect(x: 12, y: 60, width: 360, height: 650)
-        let frame = MobileChromeLayout.frame(viewport: viewport, x: -.infinity, y: 50, width: -10)
-        #expect(frame.width == 108)
+        let frame = MobileChromeLayout.frame(viewport: viewport, containerWidth: 390, x: -.infinity, y: 50, width: -10)
+        #expect(frame.width == 117)
         #expect(frame.height == 44)
         #expect(frame.midX == viewport.midX)
         #expect(frame.maxY == viewport.maxY)
@@ -17,12 +17,30 @@ struct MobileChromePolicyTests {
 
     @Test func normalizedPlacementSurvivesKeyboardAndRotation() {
         for viewport in [CGRect(x: 8, y: 60, width: 374, height: 680), CGRect(x: 60, y: 48, width: 700, height: 250), CGRect(x: 8, y: 60, width: 374, height: 230)] {
-            let frame = MobileChromeLayout.frame(viewport: viewport, x: 0.8, y: 0.7, width: 0.4)
+            let frame = MobileChromeLayout.frame(viewport: viewport, containerWidth: viewport.width + 2 * viewport.minX, x: 0.8, y: 0.7, width: 0.4)
             #expect(viewport.contains(frame))
             let position = MobileChromeLayout.normalized(center: CGPoint(x: frame.midX, y: frame.midY), frame: frame, viewport: viewport)
             #expect(abs(position.x - 0.8) < 0.00001)
             #expect(abs(position.y - 0.7) < 0.00001)
         }
+    }
+
+    @Test func minimumWidthUsesContainingViewInPortraitAndLandscape() {
+        let portrait = CGRect(x: 8, y: 60, width: 374, height: 680)
+        let portraitBar = MobileChromeLayout.frame(viewport: portrait, containerWidth: 390, x: 0.5, y: 1, width: 0.3)
+        #expect(abs(portraitBar.width - 117) < 0.000001)
+        #expect(portrait.contains(portraitBar))
+        let landscape = CGRect(x: 67, y: 48, width: 710, height: 280)
+        let landscapeBar = MobileChromeLayout.frame(viewport: landscape, containerWidth: 844, x: 0.5, y: 1, width: 0.3)
+        #expect(abs(landscapeBar.width - 253.2) < 0.000001)
+        #expect(landscape.contains(landscapeBar))
+    }
+
+    @Test func insufficientSafeAreaStillContainsTheBar() {
+        let viewport = CGRect(x: 155, y: 60, width: 80, height: 200)
+        let bar = MobileChromeLayout.frame(viewport: viewport, containerWidth: 390, x: 0.5, y: 1, width: 0.3)
+        #expect(bar.width == 80)
+        #expect(viewport.contains(bar))
     }
 
     @Test func snapHysteresisDoesNotChaseDistantOrRemovedTargets() {

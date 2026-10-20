@@ -30,7 +30,7 @@ struct MobileChromeSettingsView: View {
                 if let moveBar { Button("Move Bar on Page", action: moveBar) }
                 Button("Reset Position and Width") { custom = false; x = 0.5; y = 1; width = 0.4; hidden = false }
             } header: { Text("Gesture Bar") } footer: {
-                Text("Choose Move Bar on Page, drag, then choose Done Moving. Width is at least 30% of the available viewport. Position adjusts to the keyboard, safe areas and rotation. Snapping uses viewport edges and stable fixed page borders when available; scrolling never moves the bar. Existing per-site edge choices apply when Custom Position is off.")
+                Text("Choose Move Bar on Page, drag, then choose Done Moving. Width is at least 30% of this window’s width, limited only by available safe-area space. Position adjusts to the keyboard, safe areas and rotation. Snapping uses viewport edges and stable fixed page borders when available; scrolling never moves the bar. Existing per-site edge choices apply when Custom Position is off.")
             }
             Section {
                 Toggle("Show gesture bar", isOn: Binding(get: { !hidden }, set: { hidden = !$0 }))

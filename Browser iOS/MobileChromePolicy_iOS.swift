@@ -22,8 +22,11 @@ nonisolated enum MobileChromeLayout {
     }
     static func widthFraction(_ value: Double) -> Double { max(minimumWidth, unit(value)) }
 
-    static func frame(viewport: CGRect, x: Double, y: Double, width: Double) -> CGRect {
-        let length = min(viewport.width, max(44, viewport.width * widthFraction(width)))
+    static func frame(viewport: CGRect, containerWidth: CGFloat, x: Double, y: Double, width: Double) -> CGRect {
+        // Width percentages refer to the local containing view, before safe-area
+        // insets. Containment wins only if that view has insufficient usable space.
+        let containingWidth = containerWidth.isFinite ? max(0, containerWidth) : viewport.width
+        let length = min(viewport.width, max(44, containingWidth * widthFraction(width)))
         let height = min(hitHeight, viewport.height)
         return CGRect(x: viewport.minX + (viewport.width - length) * unit(x),
                       y: viewport.minY + (viewport.height - height) * unit(y),

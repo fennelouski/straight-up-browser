@@ -24,7 +24,7 @@ struct MobileGestureBar: View {
             let viewport = CGRect(x: safe.leading + 8, y: max(48, safe.top),
                                   width: max(1, geometry.size.width - safe.leading - safe.trailing - 16),
                                   height: max(1, geometry.size.height - max(48, safe.top) - safe.bottom - 8))
-            let frame = MobileChromeLayout.frame(viewport: viewport, x: x, y: y, width: width)
+            let frame = MobileChromeLayout.frame(viewport: viewport, containerWidth: geometry.size.width, x: x, y: y, width: width)
             Capsule().fill(editing ? Color.accentColor : Color.secondary.opacity(0.6))
                 .frame(width: frame.width, height: 5)
                 .frame(width: frame.width, height: max(44, frame.height))

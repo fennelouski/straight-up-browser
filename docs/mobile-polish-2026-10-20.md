@@ -13,7 +13,7 @@ acceptance.** Full iOS compilation and actual iPhone/iPad interactions remain pe
 | # | Acceptance checkpoint | Implementation and checked evidence | Remaining native acceptance |
 |---|---|---|---|
 | 1 | Snap near stationary borders without following page scrolling | Explicit bar placement acquires at 8pt and holds until 16pt away. Viewport edges plus stable, visible fixed horizontal page borders qualify. Two samples reject moving edges; sticky elements and transformed containing blocks are excluded. Tree traversal stops at 400 nodes / 12 ancestors / 24 edges. Policy and actual sampler-script tests pass. | Move near a synthetic fixed footer, scroll, animate a border, zoom and rotate. Snapping intentionally applies while moving, not as automatic page-driven repositioning. Page vertical borders are not sampled. |
-| 2 | Move in both axes, persist width with a 30% floor | Settings → Mobile Controls provides normalized X/Y/width sliders and Move Bar on Page. Drag mode has a Done action and accessibility adjustment. Preferences are viewport-relative, clamped for safe-area and available keyboard geometry. Legacy per-site edge placements remain when custom position is off. Clamp, rotation and keyboard-sized viewport policy tests pass. | Drag, relaunch, rotate, use a keyboard, test iPad window sizes and VoiceOver. |
+| 2 | Move in both axes, persist width with a 30% floor | Settings → Mobile Controls provides normalized X/Y/width sliders and Move Bar on Page. Drag mode has a Done action and accessibility adjustment. Position is viewport-relative; width uses the local containing view before safe-area insets, then clamps to available safe-area and keyboard geometry. Legacy per-site edge placements remain when custom position is off. The initial clamp tests passed on a9cacb0; the corrected containing-width tests are added but not yet executed. | Measure the rendered bar at the minimum against its containing view width in portrait and landscape, then drag, relaunch, rotate, use a keyboard, test iPad window sizes and VoiceOver. |
 | 3 | Idle circles are 8pt smaller in diameter | Visible circles are 28pt idle / 36pt in navigation; 44pt targets remain. Same control instances animate their diameter, with Reduce Motion respected. Actual helper API/typecheck passes. | Measure native idle/navigation appearance and hit frames at large text sizes. |
 | 4 | Select the current URL once upon entry | Existing selection behavior is retained; repeated focus commands while already editing now preserve text and caret. Deferred initial selection is canceled if the overlay has closed. A functional UI regression is added. | Execute replacement-then-append UI test on the iOS target. |
 | 5 | Local autocomplete, existing same-user sync, no private sources | Refines the existing cancellation-aware suggestion pipeline: open-tab titles/URLs, durable history titles, recency/frequency and bookmarks; canonical URL deduplication; credential-bearing URLs excluded. Incognito does not query this pipeline. No networking is introduced. Ranking, deduplication, private-source and cancellation tests pass. | Type quickly, switch sessions mid-request and choose results. Cross-device results are limited to records already received through opted-in same-account iCloud sync; history itself is local and sync can be delayed. This does not query all live instances or infer intent through a provider. |
@@ -22,7 +22,17 @@ acceptance.** Full iOS compilation and actual iPhone/iPad interactions remain pe
 | 8 | Optional hide/show gesture, always recoverable | Opt-in double tap in the gap between top controls. Page Menu always has Show/Hide Gesture Bar and Settings; Settings also has a Show toggle. Old bar long press still creates a tab. Recovery UI regression added. | Enable, hide, relaunch, recover by menu and accessibility, including landscape sensor-side layout. |
 | 9 | Per-domain rotation with exact matching/reset | Exact HTTP(S) host rules: allow or lock while on the domain; lock captures the current interface orientation at entry, with an immediate Page Menu action. Per-scene URL context avoids applying one domain rule to every window. Individual/all resets are available. New domain rules only update supported masks and never request a rotation; the existing explicit app rotation menu retains its geometry requests. No private API or device-orientation forcing. Exact-host/reset policy tests and helper API/typecheck pass. | Verify supported phone/tablet orientations, navigation to subdomains, multiple scenes, system rotation lock and iPad windowing limits. OS policy remains authoritative. |
 
-## Actual validation
+## Width review correction (21 October)
+
+The coordinator found that a9cacb0 applied 30% after safe-area insets. The corrected
+policy accepts the local containing view width explicitly, without global screen
+state: a 390pt container now requests at least 117pt, including when its available
+viewport is only 374pt. Landscape has a corresponding case. Available safe-area
+containment wins only if there is physically insufficient usable width. Relevant
+source, tests and this document changed. No compiler, tests or native execution
+were run for this correction; the results below remain bound to a9cacb0.
+
+## Actual validation (prior a9cacb0 only)
 
 - `python3 scripts/verify-mobile-chrome-policy.py`: **13 tests passed, 0 failed**.
   This is an offline, single-job Swift package using the actual pure production
