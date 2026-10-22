@@ -89,20 +89,33 @@ import WebKit
     }
 
     private static func edgeColors(_ view: WKWebView) async -> (UIColor?, UIColor?) {
-        let configuration = WKSnapshotConfiguration()
-        // Cropping WebKit to a two-point bottom strip can omit fixed elements.
-        // Capture the complete viewport at bounded resolution, then average its
-        // edge rows. This also keeps the two colors from the same rendered frame.
-        configuration.rect = view.bounds
-        configuration.snapshotWidth = NSNumber(value: Double(max(1, 64 * view.bounds.width / max(view.bounds.width, view.bounds.height))))
-        configuration.afterScreenUpdates = false
-        guard let image = try? await view.takeSnapshot(configuration: configuration),
-              let cgImage = image.cgImage else { return (nil, nil) }
+        let ratio = 64 / max(view.bounds.width, view.bounds.height)
+        let size = CGSize(width: max(1, view.bounds.width * ratio), height: max(1, view.bounds.height * ratio))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        format.preferredRange = .standard
+        var complete = false
+        let rendered = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            context.cgContext.scaleBy(x: ratio, y: ratio)
+            complete = view.drawHierarchy(in: view.bounds, afterScreenUpdates: true)
+        }
+        var image = complete ? rendered.cgImage : nil
+        // WebKit's own snapshot can omit fixed compositor layers. Prefer the
+        // actual on-screen hierarchy; retain its API as an offscreen fallback.
+        if image == nil {
+            let configuration = WKSnapshotConfiguration()
+            configuration.rect = view.bounds
+            configuration.snapshotWidth = NSNumber(value: Double(size.width))
+            configuration.afterScreenUpdates = true
+            image = (try? await view.takeSnapshot(configuration: configuration))?.cgImage
+        }
+        guard let image else { return (nil, nil) }
         let inset = view.scrollView.adjustedContentInset
-        let scale = CGFloat(cgImage.height) / max(1, view.bounds.height)
-        let topRow = min(cgImage.height - 1, max(0, Int(max(0, inset.top) * scale)))
-        let bottomRow = min(cgImage.height - 1, max(topRow, Int((view.bounds.height - max(0, inset.bottom)) * scale) - 1))
-        return (rowColor(cgImage, y: topRow), rowColor(cgImage, y: bottomRow))
+        let scale = CGFloat(image.height) / max(1, view.bounds.height)
+        let topRow = min(image.height - 1, max(0, Int(max(0, inset.top) * scale)))
+        let bottomRow = min(image.height - 1, max(topRow, Int((view.bounds.height - max(0, inset.bottom)) * scale) - 1))
+        return (rowColor(image, y: topRow), rowColor(image, y: bottomRow))
     }
 
     private static func rowColor(_ image: CGImage, y: Int) -> UIColor? {

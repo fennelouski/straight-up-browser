@@ -416,7 +416,7 @@ final class Browser_iOSUITests: XCTestCase {
     @MainActor
     func testBrowserControlsHaveAccessibleTargetsAndDescriptions() throws {
         let app = configuredApplication()
-        app.launchArguments += ["-openURL", "data:text/html,<title>Accessibility fixture</title><p>Local content</p>",
+        app.launchArguments += ["-openURL", "data:text/html,<meta name=viewport content=width=device-width><title>Accessibility fixture</title><p style=font-size:24px>Local content</p>",
             "-mobileChrome.customPosition", "YES"]
         app.launch()
         let bar = app.descendants(matching: .any)["browser.controls"]
