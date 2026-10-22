@@ -31,7 +31,7 @@ struct MobileGestureBar: View {
                 .contentShape(Rectangle())
                 .onTapGesture { if !editing { activate() } }
                 .onLongPressGesture(minimumDuration: 0.4) { if !editing { newTab() } }
-                .highPriorityGesture(DragGesture(minimumDistance: editing ? 0 : 20)
+                .highPriorityGesture(DragGesture(minimumDistance: editing ? 0 : 20, coordinateSpace: .named("mobileGestureBarViewport"))
                     .onChanged { value in
                         guard editing else { return }
                         if dragOrigin == nil { dragOrigin = CGPoint(x: frame.midX, y: frame.midY) }
@@ -76,5 +76,6 @@ struct MobileGestureBar: View {
                     .padding(.top, 52)
             }
         }
+        .coordinateSpace(name: "mobileGestureBarViewport")
     }
 }

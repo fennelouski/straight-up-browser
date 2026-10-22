@@ -34,10 +34,10 @@ struct MobileChromeSettingsView: View {
             }
             Section {
                 Toggle("Show gesture bar", isOn: Binding(get: { !hidden }, set: { hidden = !$0 }))
-                Toggle("Double-tap top gap to hide or show", isOn: $hideGesture)
+                Toggle("Double-tap near top controls to hide or show", isOn: $hideGesture)
                 Toggle("Edge-pan or swipe bar up for Visual Tabs", isOn: $visualTabsGesture)
             } header: { Text("Optional Gestures") } footer: {
-                Text("Double-tap the gap between the top circles. Page Menu always offers Show Gesture Bar and Settings. When enabled, swipe inward from the right edge or swipe the bar up for Visual Tabs. Use the Page Menu for Forward; left-edge Back and system gestures stay available. Visual Tabs also opens from the Tabs menu. Reduce Motion disables the page zoom.")
+                Text("Double-tap just below the top circles, or just inside the sensor-side strip in landscape. Page Menu always offers Show Gesture Bar and Settings. When enabled, swipe inward from the right edge or swipe the bar up for Visual Tabs. Use the Page Menu for Forward; left-edge Back and system gestures stay available. Visual Tabs also opens from the Tabs menu. Reduce Motion disables the page zoom.")
             }
             Section {
                 HStack {

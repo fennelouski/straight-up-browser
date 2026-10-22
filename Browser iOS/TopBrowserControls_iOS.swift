@@ -88,14 +88,14 @@ struct TopBrowserControls_iOS: View {
                 sideControls(in: geometry)
                     .transition(.opacity)
             } else {
-                topControls
+                topControls(in: geometry)
                     .transition(.opacity)
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: UIDevice.current.orientation)
     }
 
-    private var topControls: some View {
+    private func topControls(in geometry: GeometryProxy) -> some View {
         HStack(spacing: 0) {
             if showsTabsMenu { tabMenu }
             Spacer(minLength: 96)
@@ -108,6 +108,7 @@ struct TopBrowserControls_iOS: View {
                         .accessibilityLabel(gestureBarHidden ? "Show Gesture Bar" : "Hide Gesture Bar")
                         .accessibilityAddTraits(.isButton)
                         .accessibilityAction { actions.toggleGestureBar() }
+                        .offset(y: max(44, geometry.safeAreaInsets.top))
                 } }
             pageMenu
         }
@@ -131,6 +132,7 @@ struct TopBrowserControls_iOS: View {
                         .accessibilityLabel(gestureBarHidden ? "Show Gesture Bar" : "Hide Gesture Bar")
                         .accessibilityAddTraits(.isButton)
                         .accessibilityAction { actions.toggleGestureBar() }
+                        .offset(x: sensorIsLeading ? geometry.safeAreaInsets.leading : -geometry.safeAreaInsets.trailing)
                 } }
             pageMenu
         }

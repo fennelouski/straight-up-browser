@@ -1,7 +1,8 @@
 import SwiftUI
 import WebKit
 
-/// Two tiny, in-memory WebKit strips. No page text, images or colors are saved.
+/// One tiny, in-memory viewport snapshot supplies independent edge colors.
+/// No page text, images or colors are saved.
 /// Scroll observations debounce work; they never reposition browser controls.
 @MainActor final class MobilePageChrome: ObservableObject {
     @Published private(set) var top: UIColor?
@@ -9,6 +10,7 @@ import WebKit
     @Published private(set) var fixedEdges: [Double] = []
     private weak var webView: WKWebView?
     private var offsetObservation: NSKeyValueObservation?
+    private var boundsObservation: NSKeyValueObservation?
     private var work: Task<Void, Never>?
     private var generation = UUID()
     private var sampling = false
@@ -21,6 +23,10 @@ import WebKit
             offsetObservation = view.scrollView.observe(\.contentOffset) { [weak self, weak view] _, _ in
                 Task { @MainActor in if let view { self?.schedule(view) } }
             }
+            boundsObservation = view.observe(\.bounds, options: [.old, .new]) { [weak self, weak view] _, change in
+                guard change.oldValue?.size != change.newValue?.size else { return }
+                Task { @MainActor in if let view { self?.schedule(view) } }
+            }
         }
         schedule(view)
     }
@@ -29,6 +35,7 @@ import WebKit
         work?.cancel()
         pendingSample = false
         offsetObservation = nil
+        boundsObservation = nil
         webView = nil
         generation = UUID()
         top = nil; bottom = nil; fixedEdges = []
@@ -56,11 +63,9 @@ import WebKit
                 }
             }
             let fallback = view.underPageBackgroundColor
-            let top = await Self.strip(view, y: 0) ?? fallback
+            let colors = await Self.edgeColors(view)
             guard !Task.isCancelled, self.generation == token else { return }
-            let bottom = await Self.strip(view, y: view.bounds.height - 2) ?? fallback
-            guard !Task.isCancelled, self.generation == token else { return }
-            self.top = top; self.bottom = bottom
+            self.top = colors.0 ?? fallback; self.bottom = colors.1 ?? fallback
             // Fixed-position horizontal borders only. Sticky/scrolling elements
             // are intentionally excluded. Compare two samples to reject animation.
             guard BrowserProfile.isIsolated
@@ -75,18 +80,31 @@ import WebKit
         }
     }
 
-    private static func strip(_ view: WKWebView, y: CGFloat) async -> UIColor? {
+    private static func edgeColors(_ view: WKWebView) async -> (UIColor?, UIColor?) {
         let configuration = WKSnapshotConfiguration()
-        configuration.rect = CGRect(x: 0, y: y, width: view.bounds.width, height: 2)
-        configuration.snapshotWidth = 32
+        // Cropping WebKit to a two-point bottom strip can omit fixed elements.
+        // Capture the complete viewport at bounded resolution, then average its
+        // edge rows. This also keeps the two colors from the same rendered frame.
+        configuration.rect = view.bounds
+        configuration.snapshotWidth = 64
         configuration.afterScreenUpdates = false
-        guard let image = try? await view.takeSnapshot(configuration: configuration), let cgImage = image.cgImage else { return nil }
+        guard let image = try? await view.takeSnapshot(configuration: configuration),
+              let cgImage = image.cgImage else { return (nil, nil) }
+        let inset = view.scrollView.adjustedContentInset
+        let scale = CGFloat(cgImage.height) / max(1, view.bounds.height)
+        let topRow = min(cgImage.height - 1, max(0, Int(max(0, inset.top) * scale)))
+        let bottomRow = min(cgImage.height - 1, max(topRow, Int((view.bounds.height - max(0, inset.bottom)) * scale) - 1))
+        return (rowColor(cgImage, y: topRow), rowColor(cgImage, y: bottomRow))
+    }
+
+    private static func rowColor(_ image: CGImage, y: Int) -> UIColor? {
+        guard let row = image.cropping(to: CGRect(x: 0, y: y, width: image.width, height: 1)) else { return nil }
         var pixel = [UInt8](repeating: 0, count: 4)
         return pixel.withUnsafeMutableBytes { bytes in
             guard let context = CGContext(data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
                                           bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
                                           bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            context.draw(row, in: CGRect(x: 0, y: 0, width: 1, height: 1))
             guard bytes[3] > 240 else { return nil }
             return UIColor(red: CGFloat(bytes[0]) / 255, green: CGFloat(bytes[1]) / 255,
                            blue: CGFloat(bytes[2]) / 255, alpha: 1)

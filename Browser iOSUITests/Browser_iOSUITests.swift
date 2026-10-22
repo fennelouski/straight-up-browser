@@ -4,6 +4,7 @@
 //
 
 import XCTest
+import UIKit
 
 final class Browser_iOSUITests: XCTestCase {
     override func setUpWithError() throws {
@@ -253,6 +254,7 @@ final class Browser_iOSUITests: XCTestCase {
         wait(for: [rotated], timeout: 10)
         XCTAssertGreaterThanOrEqual(bar.frame.width, app.frame.width * 0.30 - 1)
         XCTAssertTrue(app.frame.contains(bar.frame))
+        app.webViews.buttons["Stationary Edge"].tap()
         saveScreenshot(app, name: "Minimum-width-landscape")
     }
 
@@ -309,10 +311,10 @@ final class Browser_iOSUITests: XCTestCase {
         let edge = app.webViews.buttons["Stationary Edge"]
         XCTAssertTrue(edge.waitForExistence(timeout: 10))
         let target = app.coordinate(withNormalizedOffset: .zero)
-            .withOffset(CGVector(dx: bar.frame.midX, dy: edge.frame.minY + 3))
+            .withOffset(CGVector(dx: bar.frame.midX, dy: edge.frame.minY + 6))
         bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .press(forDuration: 0.1, thenDragTo: target)
-        XCTAssertEqual(bar.frame.midY, edge.frame.minY, accuracy: 3)
+        XCTAssertEqual(bar.frame.midY, edge.frame.minY, accuracy: 1.5)
         app.buttons["Done Moving"].tap()
         let before = bar.frame
         app.webViews.firstMatch.swipeUp()
@@ -375,6 +377,57 @@ final class Browser_iOSUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         let reset = expectation(for: NSPredicate { _, _ in app.frame.height > app.frame.width }, evaluatedWith: app)
         wait(for: [reset], timeout: 10)
+    }
+
+    @MainActor
+    func testSafeAreaColorsMatchIndependentPageEdges() {
+        let app = configuredApplication()
+        app.launchArguments += ["-openURL", localFixtureURL]
+        app.launch()
+        XCTAssertTrue(app.webViews.buttons["Stationary Edge"].waitForExistence(timeout: 15))
+        let colored = expectation(for: NSPredicate { _, _ in
+            let pair = self.edgePixels(app)
+            return pair.top.0 > 200 && pair.top.1 < 100 && pair.top.2 < 100
+                && pair.bottom.0 < 100 && pair.bottom.1 < 150 && pair.bottom.2 > 180
+        }, evaluatedWith: app)
+        wait(for: [colored], timeout: 10)
+        saveScreenshot(app, name: "Independent-safe-area-colors")
+    }
+
+    @MainActor
+    func testBrowserControlsHaveAccessibleTargetsAndDescriptions() throws {
+        let app = configuredApplication()
+        app.launchArguments += ["-openURL", "data:text/html,<title>Accessibility fixture</title><p>Local content</p>",
+            "-mobileChrome.customPosition", "YES"]
+        app.launch()
+        let bar = app.descendants(matching: .any)["browser.controls"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 15))
+        for control in [bar, app.buttons["browser.tabsMenu"], app.buttons["browser.pageMenu"]] {
+            XCTAssertGreaterThanOrEqual(control.frame.width, 44)
+            XCTAssertGreaterThanOrEqual(control.frame.height, 44)
+            XCTAssertFalse(control.label.isEmpty)
+        }
+        try app.performAccessibilityAudit(for: [.hitRegion, .sufficientElementDescription])
+        saveScreenshot(app, name: "Idle-circles-and-accessible-controls")
+        bar.tap()
+        XCTAssertTrue(app.textFields["browser.omnibar"].waitForExistence(timeout: 5))
+        saveScreenshot(app, name: "Navigation-circles-and-address-field")
+    }
+
+    @MainActor
+    private func edgePixels(_ app: XCUIApplication) -> (top: (Int, Int, Int), bottom: (Int, Int, Int)) {
+        guard let image = UIImage(data: app.screenshot().pngRepresentation)?.cgImage else { return ((0,0,0),(0,0,0)) }
+        func pixel(_ y: Int) -> (Int, Int, Int) {
+            guard let point = image.cropping(to: CGRect(x: image.width / 2, y: y, width: 1, height: 1)) else { return (0,0,0) }
+            var bytes = [UInt8](repeating: 0, count: 4)
+            bytes.withUnsafeMutableBytes { buffer in
+                let context = CGContext(data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                    bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+                context.draw(point, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            }
+            return (Int(bytes[0]), Int(bytes[1]), Int(bytes[2]))
+        }
+        return (pixel(3), pixel(image.height - 3))
     }
 
     private var localFixtureURL: String {
