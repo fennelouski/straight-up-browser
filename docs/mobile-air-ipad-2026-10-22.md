@@ -1,3 +1,5 @@
+> Historical checkpoint: the later [conditional iPad rotation fix and final focused results](mobile-air-ipad-rotation-fix-2026-10-22.md) supersede the pending iPad enforcement status below. Its original test counts and failures are preserved.
+
 # Additional iPad acceptance — 2026-10-22
 
 This follow-up ran entirely on the existing task-owned MacBook Air iPad Pro 11-inch (M4) / iOS 26.5 Simulator (23F77). No production application source changed from validated commit `943b9150fe64df882aac328059c7aba532e34864`. New tests were built at `81d03a9fc7156477ce41bab263418f99837877d5` and `141d750e1fcb470dc3ba835bfa451d8d9e9389d7`. The passed 40-test phone suite was not repeated.

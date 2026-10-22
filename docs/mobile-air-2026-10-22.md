@@ -1,3 +1,5 @@
+> Historical checkpoint: the later [conditional iPad rotation fix and final focused results](mobile-air-ipad-rotation-fix-2026-10-22.md) supersede the pending iPad enforcement status below. Its original test counts and failures are preserved.
+
 # Mobile Browser — Air implementation and acceptance
 
 Validated application code: `943b9150fe64df882aac328059c7aba532e34864` on `codex/mobile-air-20261022`. Later test/documentation commit `c2264ffa299c7d4e8ae1b6826cb5d336ee941beb` leaves application source byte-for-byte unchanged; its full build also passed. This work continues the original mobile commits `a9cacb0` and `2f0d772`; it does not replace their history. Source, implementation, builds and native testing were completed on the MacBook Air. The Studio was not operated.
