@@ -418,9 +418,12 @@ final class Browser_iOSUITests: XCTestCase {
         XCUIDevice.shared.orientation = restoredLandscape ? .portrait : .landscapeLeft
         recordLayout(preferredLandscape: restoredLandscape, name: "iPad-domain-lock-after-background", holdLock: true)
         choose("Use App Rotation Setting for 127.0.0.1")
-        XCUIDevice.shared.orientation = .landscapeLeft
-        XCUIDevice.shared.orientation = .portrait
-        recordLayout(preferredLandscape: false, name: "iPad-domain-reset-to-app-portrait")
+        // System menu presentation can also temporarily make a scene ineligible
+        // for the conditional lock. Reset must reapply the app's lock at the
+        // granted orientation; it cannot force the app's old target geometry.
+        let resetLandscape = app.frame.width > app.frame.height
+        XCUIDevice.shared.orientation = resetLandscape ? .portrait : .landscapeLeft
+        recordLayout(preferredLandscape: resetLandscape, name: "iPad-domain-reset-to-app-lock", holdLock: true)
         choose("Unlocked")
         XCUIDevice.shared.orientation = .landscapeRight
         recordLayout(preferredLandscape: true, name: "iPad-app-unlocked-landscape-right")
