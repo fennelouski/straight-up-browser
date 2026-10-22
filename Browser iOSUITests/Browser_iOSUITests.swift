@@ -388,8 +388,8 @@ final class Browser_iOSUITests: XCTestCase {
         let colored = expectation(for: NSPredicate { _, _ in
             let pair = self.edgePixels(app)
             print("Screenshot edges \(pair); native sampler \(String(describing: app.descendants(matching: .any)["browser.controls"].value))")
-            return pair.top.0 > 200 && pair.top.1 < 100 && pair.top.2 < 100
-                && pair.bottom.0 < 100 && pair.bottom.1 < 150 && pair.bottom.2 > 180
+            return abs(pair.top.0 - 239) <= 3 && abs(pair.top.1 - 48) <= 3 && abs(pair.top.2 - 48) <= 3
+                && abs(pair.bottom.0 - 32) <= 3 && abs(pair.bottom.1 - 64) <= 3 && abs(pair.bottom.2 - 239) <= 3
         }, evaluatedWith: app)
         wait(for: [colored], timeout: 10)
         saveScreenshot(app, name: "Independent-safe-area-colors")
@@ -401,8 +401,8 @@ final class Browser_iOSUITests: XCTestCase {
         address.typeText(alternate + "\n")
         let updated = expectation(for: NSPredicate { _, _ in
             let pair = self.edgePixels(app)
-            return pair.top.0 < 100 && pair.top.1 > 150 && pair.top.2 < 150
-                && pair.bottom.0 > 180 && pair.bottom.1 > 150 && pair.bottom.2 < 100
+            return abs(pair.top.0 - 32) <= 3 && abs(pair.top.1 - 207) <= 3 && abs(pair.top.2 - 64) <= 3
+                && abs(pair.bottom.0 - 239) <= 3 && abs(pair.bottom.1 - 207) <= 3 && abs(pair.bottom.2 - 32) <= 3
         }, evaluatedWith: app)
         wait(for: [updated], timeout: 10)
         XCUIDevice.shared.press(.home)
@@ -410,8 +410,8 @@ final class Browser_iOSUITests: XCTestCase {
         let foreground = expectation(for: NSPredicate { _, _ in
             let pair = self.edgePixels(app)
             print("Foreground edges \(pair); native sampler \(String(describing: app.descendants(matching: .any)["browser.controls"].value))")
-            return pair.top.0 < 100 && pair.top.1 > 150 && pair.top.2 < 150
-                && pair.bottom.0 > 180 && pair.bottom.1 > 150 && pair.bottom.2 < 100
+            return abs(pair.top.0 - 32) <= 3 && abs(pair.top.1 - 207) <= 3 && abs(pair.top.2 - 64) <= 3
+                && abs(pair.bottom.0 - 239) <= 3 && abs(pair.bottom.1 - 207) <= 3 && abs(pair.bottom.2 - 32) <= 3
         }, evaluatedWith: app)
         wait(for: [foreground], timeout: 10)
         saveScreenshot(app, name: "Page-colors-after-navigation-and-background")

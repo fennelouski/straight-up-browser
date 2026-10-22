@@ -144,8 +144,12 @@ import WebKit
                                           bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
             context.draw(row, in: CGRect(x: 0, y: 0, width: 1, height: 1))
             guard bytes[3] > 240 else { return nil }
-            return UIColor(red: CGFloat(bytes[0]) / 255, green: CGFloat(bytes[1]) / 255,
-                           blue: CGFloat(bytes[2]) / 255, alpha: 1)
+            // CGContext stores premultiplied channels. Fractional snapshot
+            // edges can carry alpha below 255; unpremultiply before displaying
+            // the average as an opaque safe-area color.
+            let alpha = CGFloat(bytes[3])
+            return UIColor(red: CGFloat(bytes[0]) / alpha, green: CGFloat(bytes[1]) / alpha,
+                           blue: CGFloat(bytes[2]) / alpha, alpha: 1)
         }
     }
 
