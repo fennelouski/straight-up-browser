@@ -352,7 +352,9 @@ final class Browser_iOSUITests: XCTestCase {
 
     @MainActor
     func testDomainRotationLocksAllowsAndResetsWithoutForcing() throws {
-        let address = try XCTUnwrap(ProcessInfo.processInfo.environment["MOBILE_FIXTURE_URL"])
+        guard let address = ProcessInfo.processInfo.environment["MOBILE_FIXTURE_URL"] else {
+            throw XCTSkip("Requires the local fixture server; see docs/mobile-air-2026-10-22.md")
+        }
         let app = configuredApplication()
         app.launchArguments += ["-openURL", address]
         XCUIDevice.shared.orientation = .portrait
@@ -384,6 +386,9 @@ final class Browser_iOSUITests: XCTestCase {
 
     @MainActor
     func testSafeAreaColorsMatchIndependentPageEdges() throws {
+        guard let fixture = ProcessInfo.processInfo.environment["MOBILE_FIXTURE_URL"] else {
+            throw XCTSkip("Requires the local fixture server; see docs/mobile-air-2026-10-22.md")
+        }
         let app = configuredApplication()
         app.launchArguments += ["-openURL", localFixtureURL, "-mobileChrome.customPosition", "YES", "-mobileTestChromeMetrics"]
         app.launch()
@@ -396,7 +401,6 @@ final class Browser_iOSUITests: XCTestCase {
         }, evaluatedWith: app)
         wait(for: [colored], timeout: 10)
         saveScreenshot(app, name: "Independent-safe-area-colors")
-        let fixture = try XCTUnwrap(ProcessInfo.processInfo.environment["MOBILE_FIXTURE_URL"])
         let alternate = fixture.replacingOccurrences(of: "/fixture", with: "/alternate")
         app.descendants(matching: .any)["browser.controls"].tap()
         let address = app.textFields["browser.omnibar"]
