@@ -202,7 +202,7 @@ final class BrowserOrientationRootController: UIViewController {
 
     @objc private func sceneDidActivate(_ notification: Notification) {
         guard let scene = notification.object as? UIWindowScene,
-              scene === viewIfLoaded?.window?.windowScene else { return }
+              scene.windows.contains(where: { $0.rootViewController === self }) else { return }
         // The WebKit view may not yet be reattached when the app notification
         // arrives. The UIKit root owns a stable scene attachment at activation.
         OrientationLockController.shared.restoreSceneLockAfterActivation(scene)
