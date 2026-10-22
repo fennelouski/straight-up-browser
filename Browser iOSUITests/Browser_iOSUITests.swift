@@ -125,7 +125,7 @@ final class Browser_iOSUITests: XCTestCase {
     @MainActor
     func testWeatherAppearsWhileTypingAndFitsAboveThePhoneKeyboard() {
         let app = configuredApplication()
-        app.launchArguments += ["-weatherUITesting", "rain"]
+        app.launchArguments += ["-weatherUITesting", "rain", "-newspaperWeatherCity", "leiden"]
         app.launch()
         let field = app.textFields["browser.omnibar"]
         XCTAssertTrue(field.waitForExistence(timeout: 10))
@@ -407,9 +407,13 @@ final class Browser_iOSUITests: XCTestCase {
         wait(for: [updated], timeout: 10)
         XCUIDevice.shared.press(.home)
         app.activate()
-        let restored = self.edgePixels(app)
-        XCTAssertGreaterThan(restored.top.1, 150)
-        XCTAssertGreaterThan(restored.bottom.0, 180)
+        let foreground = expectation(for: NSPredicate { _, _ in
+            let pair = self.edgePixels(app)
+            print("Foreground edges \(pair); native sampler \(String(describing: app.descendants(matching: .any)["browser.controls"].value))")
+            return pair.top.0 < 100 && pair.top.1 > 150 && pair.top.2 < 150
+                && pair.bottom.0 > 180 && pair.bottom.1 > 150 && pair.bottom.2 < 100
+        }, evaluatedWith: app)
+        wait(for: [foreground], timeout: 10)
         saveScreenshot(app, name: "Page-colors-after-navigation-and-background")
     }
 

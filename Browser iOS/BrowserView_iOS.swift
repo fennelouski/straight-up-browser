@@ -809,10 +809,15 @@ struct BrowserView_iOS: View {
         case .browserImportReport:
             toggleImportReportSheet()
         case UIApplication.didBecomeActiveNotification:
+            if !isLoading, let view = webViewManager?.activeWebView {
+                pageChrome.attach(view)
+                OrientationLockController.shared.updateContext(activeTab?.url, scene: view.window?.windowScene)
+            }
             // Share-sheet capture (Phase 3): ingest anything queued while the
             // app was away, and keep the extension's picker mirror fresh.
             drainSharedItems()
         case UIApplication.willResignActiveNotification:
+            pageChrome.pause()
             ShareIngest.updateMirror(workspaces: workspaces, activeWorkspaceId: tabManager.activeWorkspaceId)
         default:
             break

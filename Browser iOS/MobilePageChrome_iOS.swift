@@ -15,12 +15,13 @@ import WebKit
     private var generation = UUID()
     private var sampling = false
     private var pendingSample = false
+    private var paused = false
 
     #if DEBUG
     var acceptanceSummary: String? {
         guard BrowserProfile.isIsolated, MobileTestConfiguration.isUITesting,
               ProcessInfo.processInfo.arguments.contains("-mobileTestChromeMetrics") else { return nil }
-        return "top=\(String(describing: top)); bottom=\(String(describing: bottom)); bounds=\(String(describing: webView?.bounds)); insets=\(String(describing: webView?.scrollView.adjustedContentInset)); edges=\(fixedEdges)"
+        return "top=\(String(describing: top)); bottom=\(String(describing: bottom)); bounds=\(String(describing: webView?.bounds)); insets=\(String(describing: webView?.scrollView.adjustedContentInset)); edges=\(fixedEdges); scheme=\(webView?.url?.scheme ?? "none")"
     }
     #endif
 
@@ -28,15 +29,31 @@ import WebKit
         if webView !== view {
             detach()
             webView = view
-            offsetObservation = view.scrollView.observe(\.contentOffset) { [weak self, weak view] _, _ in
+        }
+        paused = false
+        if offsetObservation == nil {
+            offsetObservation = view.scrollView.observe(\.contentOffset, options: [.old, .new]) { [weak self, weak view] _, change in
+                guard change.oldValue != change.newValue else { return }
                 Task { @MainActor in if let view { self?.schedule(view) } }
             }
+        }
+        if boundsObservation == nil {
             boundsObservation = view.observe(\.bounds, options: [.old, .new]) { [weak self, weak view] _, change in
                 guard change.oldValue?.size != change.newValue?.size else { return }
                 Task { @MainActor in if let view { self?.schedule(view) } }
             }
         }
         schedule(view)
+    }
+
+    func pause() {
+        paused = true
+        work?.cancel()
+        pendingSample = false
+        offsetObservation = nil
+        boundsObservation = nil
+        generation = UUID()
+        // Keep the last visible colors while the OS snapshots/suspends the page.
     }
 
     func detach() {
@@ -50,7 +67,7 @@ import WebKit
     }
 
     private func schedule(_ view: WKWebView) {
-        guard webView === view else { return }
+        guard !paused, webView === view else { return }
         if sampling {
             generation = UUID()
             pendingSample = true
