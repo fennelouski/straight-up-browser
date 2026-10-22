@@ -56,7 +56,7 @@ struct MobileAddressField: UIViewRepresentable {
         }
 
         func textFieldDidBeginEditing(_ field: UITextField) {
-            parent.isFocused = true
+            if !parent.isFocused { parent.isFocused = true }
             let entry = parent.entryID
             guard selectedEntry != entry else { return }
             selectedEntry = entry
@@ -67,7 +67,9 @@ struct MobileAddressField: UIViewRepresentable {
             }
         }
 
-        func textFieldDidEndEditing(_ field: UITextField) { parent.isFocused = false }
+        func textFieldDidEndEditing(_ field: UITextField) {
+            if parent.isFocused { parent.isFocused = false }
+        }
         func textFieldShouldReturn(_ field: UITextField) -> Bool { parent.submit(); return false }
     }
 }

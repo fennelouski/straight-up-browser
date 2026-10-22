@@ -102,7 +102,7 @@ struct BrowserView_iOS: View {
     }
     @State private var omnibarHasUserEdited = false
     @State private var selectedSuggestion = -1
-    @FocusState private var omnibarFocused: Bool
+    @State private var omnibarFocused = false
     @State private var showOmnibar = false
     @State private var omnibarEditingID = UUID()
     @StateObject private var pageChrome = MobilePageChrome()
@@ -334,6 +334,51 @@ struct BrowserView_iOS: View {
         eventContent
     }
 
+    private var visualTabsEdgeAction: (() -> Void)? {
+        guard visualTabsGesture, !showOmnibar, !showSidebar else { return nil }
+        return { presentVisualTabs() }
+    }
+
+    private var activePage: some View {
+        TabWebView(url: webViewURLBinding,
+                   canGoBack: $canGoBack,
+                   canGoForward: $canGoForward,
+                   title: webViewTitleBinding,
+                   isLoading: $isLoading,
+                   progressValue: $progressValue,
+                   hasRenderedContent: $hasRenderedContent,
+                   webViewManager: webViewManager,
+                   tabManager: tabManager,
+                   fastForward: fastForward,
+                   tabs: allTabs,
+                   activeTabId: tabManager.selectedTabId,
+                   splitTabIds: supportsSplitPanes ? tabManager.splitTabIds : [],
+                   documentPaneProvider: supportsSplitPanes
+                       ? { documentPaneManager.paneView(for: $0) }
+                       : nil,
+                   focusedDocumentId: tabManager.focusedDocumentId,
+                   onURLChange: { _ in },
+                   onPageFinished: { pageTranslator.maybeAutoTranslate(webView: $0) },
+                   onVisualTabsEdgePan: visualTabsEdgeAction)
+            // Keep the page viewport below the top safe area. Sites that
+            // use sticky headers can then occlude their own content instead
+            // of letting scrolled text leak into the sensor/status strip.
+            .ignoresSafeArea(edges: [.horizontal])
+            .scaleEffect(showOmnibar && !reduceMotion ? 0.98 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: showOmnibar)
+            .accessibilityHidden(
+                BrowserAccessibility.backgroundIsHidden(
+                    sidebarPresented: showSidebar,
+                    omnibarPresented: showOmnibar,
+                    modalPresented: false
+                )
+            )
+            .accessibilityFocused(
+                $accessibilityFocus,
+                equals: .page
+            )
+    }
+
     private var browserLayout: some View {
         // Custom immersive layout (not NavigationSplitView, whose detail wouldn't
         // instantiate the WKWebView representable): full-bleed web with the sidebar
@@ -341,52 +386,23 @@ struct BrowserView_iOS: View {
         ZStack(alignment: .leading) {
             Color(.systemBackground).ignoresSafeArea()
             GeometryReader { geometry in
-                VStack(spacing: 0) {
-                    Color(uiColor: pageChrome.top ?? .systemBackground).frame(height: geometry.safeAreaInsets.top)
-                    Spacer(minLength: 0)
-                    Color(uiColor: pageChrome.bottom ?? .systemBackground).frame(height: geometry.safeAreaInsets.bottom)
-                }.ignoresSafeArea()
-            }.allowsHitTesting(false).accessibilityHidden(true)
+                Color.clear
+                    .overlay(alignment: .top) {
+                        Color(uiColor: pageChrome.top ?? .systemBackground)
+                            .frame(height: geometry.safeAreaInsets.top)
+                            .offset(y: -geometry.safeAreaInsets.top)
+                    }
+                    .overlay(alignment: .bottom) {
+                        Color(uiColor: pageChrome.bottom ?? .systemBackground)
+                            .frame(height: geometry.safeAreaInsets.bottom)
+                            .offset(y: geometry.safeAreaInsets.bottom)
+                    }
+            }
+            .ignoresSafeArea(edges: .horizontal)
+            .allowsHitTesting(false).accessibilityHidden(true)
 
             if managersInitialized {
-                TabWebView(url: webViewURLBinding,
-                           canGoBack: $canGoBack,
-                           canGoForward: $canGoForward,
-                           title: webViewTitleBinding,
-                           isLoading: $isLoading,
-                           progressValue: $progressValue,
-                           hasRenderedContent: $hasRenderedContent,
-                           webViewManager: webViewManager,
-                           tabManager: tabManager,
-                           fastForward: fastForward,
-                           tabs: allTabs,
-                           activeTabId: tabManager.selectedTabId,
-                           splitTabIds: supportsSplitPanes ? tabManager.splitTabIds : [],
-                           documentPaneProvider: supportsSplitPanes
-                               ? { documentPaneManager.paneView(for: $0) }
-                               : nil,
-                           focusedDocumentId: tabManager.focusedDocumentId,
-                           onURLChange: { _ in },
-                           onPageFinished: { pageTranslator.maybeAutoTranslate(webView: $0) },
-                           onVisualTabsEdgePan: visualTabsGesture && !showOmnibar && !showSidebar
-                               ? presentVisualTabs : nil)
-                    // Keep the page viewport below the top safe area. Sites that
-                    // use sticky headers can then occlude their own content instead
-                    // of letting scrolled text leak into the sensor/status strip.
-                    .ignoresSafeArea(edges: [.horizontal])
-                    .scaleEffect(showOmnibar && !reduceMotion ? 0.98 : 1)
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: showOmnibar)
-                    .accessibilityHidden(
-                        BrowserAccessibility.backgroundIsHidden(
-                            sidebarPresented: showSidebar,
-                            omnibarPresented: showOmnibar,
-                            modalPresented: false
-                        )
-                    )
-                    .accessibilityFocused(
-                        $accessibilityFocus,
-                        equals: .page
-                    )
+                activePage
             }
 
             // A focused document displays full screen where the page would
@@ -435,7 +451,8 @@ struct BrowserView_iOS: View {
                         nextTab: { tabManager.switchToNextTab(tabs: visibleTabOrder) },
                         previousTab: { tabManager.switchToPreviousTab(tabs: visibleTabOrder) },
                         swipe: handleBarSwipe)
-                } else { browserGestureBar }
+                    .ignoresSafeArea(edges: .horizontal)
+                } else { browserGestureBar.ignoresSafeArea(edges: .horizontal) }
             }
 
             // Slide-in tab sidebar (⇧⌘L), dim backdrop, tap-out to close.
@@ -1742,6 +1759,9 @@ struct BrowserView_iOS: View {
             #endif
             syncOmnibarToActiveTab()
         }
+        #if DEBUG
+        MobileAcceptanceFixtures.seedSuggestions(in: modelContext)
+        #endif
     }
 
     @discardableResult

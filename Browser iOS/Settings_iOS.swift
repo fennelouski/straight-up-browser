@@ -197,6 +197,7 @@ struct Settings_iOS: View {
 
                 Section {
                     NavigationLink("Mobile Controls", destination: MobileChromeSettingsView(moveBar: moveGestureBar))
+                        .accessibilityIdentifier("settings.mobileControls")
                 }
 
                 Section("Appearance") {

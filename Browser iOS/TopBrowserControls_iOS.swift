@@ -99,6 +99,7 @@ struct TopBrowserControls_iOS: View {
         HStack(spacing: 0) {
             if showsTabsMenu { tabMenu }
             Spacer(minLength: 96)
+                .frame(height: 44)
                 .overlay { if hideGestureEnabled {
                     Color.clear.contentShape(Rectangle())
                         .accessibilityElement()
@@ -121,6 +122,7 @@ struct TopBrowserControls_iOS: View {
         return VStack(spacing: 0) {
             if showsTabsMenu { tabMenu }
             Spacer(minLength: 96)
+                .frame(width: 44)
                 .overlay { if hideGestureEnabled {
                     Color.clear.contentShape(Rectangle())
                         .accessibilityElement()

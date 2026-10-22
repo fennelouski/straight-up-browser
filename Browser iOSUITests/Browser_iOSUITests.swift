@@ -246,6 +246,7 @@ final class Browser_iOSUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(bar.frame.width, app.frame.width * 0.30 - 1)
         XCTAssertGreaterThanOrEqual(bar.frame.height, 44)
         XCTAssertTrue(app.frame.contains(bar.frame))
+        XCTAssertTrue(app.webViews.buttons["Stationary Edge"].waitForExistence(timeout: 10))
         saveScreenshot(app, name: "Minimum-width-portrait")
         XCUIDevice.shared.orientation = .landscapeLeft
         let rotated = expectation(for: NSPredicate { _, _ in app.frame.width > app.frame.height }, evaluatedWith: app)
@@ -293,11 +294,15 @@ final class Browser_iOSUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["browser.controls"].waitForExistence(timeout: 15))
         app.buttons["browser.pageMenu"].tap()
         app.buttons["Settings"].tap()
-        for _ in 0..<8 {
-            if app.buttons["Mobile Controls"].isHittable { break }
-            app.swipeUp()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        let settings = app.collectionViews.firstMatch
+        let mobileControls = app.descendants(matching: .any)["settings.mobileControls"]
+        for _ in 0..<12 {
+            if mobileControls.exists && mobileControls.isHittable { break }
+            settings.swipeUp()
         }
-        app.buttons["Mobile Controls"].tap()
+        XCTAssertTrue(mobileControls.exists)
+        mobileControls.tap()
         app.buttons["Move Bar on Page"].tap()
         let bar = app.descendants(matching: .any)["browser.controls"]
         XCTAssertTrue(app.buttons["Done Moving"].waitForExistence(timeout: 5))
@@ -305,13 +310,71 @@ final class Browser_iOSUITests: XCTestCase {
         XCTAssertTrue(edge.waitForExistence(timeout: 10))
         let target = app.coordinate(withNormalizedOffset: .zero)
             .withOffset(CGVector(dx: bar.frame.midX, dy: edge.frame.minY + 3))
-        bar.press(forDuration: 0.1, thenDragTo: target)
+        bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: target)
         XCTAssertEqual(bar.frame.midY, edge.frame.minY, accuracy: 3)
         app.buttons["Done Moving"].tap()
         let before = bar.frame
         app.webViews.firstMatch.swipeUp()
         XCTAssertEqual(bar.frame.minY, before.minY, accuracy: 1)
         saveScreenshot(app, name: "Stationary-edge-and-page-colors")
+    }
+
+    @MainActor
+    func testReceivedRecordsSuggestLocallyAndPrivateRecordsStayExcluded() {
+        let app = configuredApplication()
+        app.launchArguments += ["-openURL", localFixtureURL, "-mobileTestSuggestions"]
+        app.launch()
+        let controls = app.descendants(matching: .any)["browser.controls"]
+        XCTAssertTrue(controls.waitForExistence(timeout: 15))
+        controls.tap()
+        let field = app.textFields["browser.omnibar"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("airfoil")
+        XCTAssertTrue(app.buttons["Airfoil Reference"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Airfoil Private"].exists)
+        saveScreenshot(app, name: "Synthetic-received-suggestions")
+        field.typeText(".no-match")
+        XCTAssertTrue(app.buttons["Airfoil Reference"].waitForNonExistence(timeout: 5))
+        app.buttons["Close Address and Search"].tap()
+        app.buttons["browser.tabsMenu"].tap()
+        app.buttons["New Incognito Tab"].tap()
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("airfoil")
+        XCTAssertFalse(app.buttons["Airfoil Reference"].exists)
+        XCTAssertFalse(app.buttons["Airfoil Private"].exists)
+    }
+
+    @MainActor
+    func testDomainRotationLocksAllowsAndResetsWithoutForcing() throws {
+        let address = try XCTUnwrap(ProcessInfo.processInfo.environment["MOBILE_FIXTURE_URL"])
+        let app = configuredApplication()
+        app.launchArguments += ["-openURL", address]
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+        app.launch()
+        XCTAssertTrue(app.webViews.buttons["Stationary Edge"].waitForExistence(timeout: 15))
+        app.buttons["browser.pageMenu"].tap()
+        app.buttons["Rotation Lock"].tap()
+        app.buttons["Lock Current Orientation on 127.0.0.1"].tap()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let forbidden = expectation(for: NSPredicate { _, _ in app.frame.width > app.frame.height }, evaluatedWith: app)
+        forbidden.isInverted = true
+        wait(for: [forbidden], timeout: 2)
+        XCTAssertGreaterThan(app.frame.height, app.frame.width)
+        app.buttons["browser.pageMenu"].tap()
+        app.buttons["Rotation Lock"].tap()
+        app.buttons["Allow Rotation on 127.0.0.1"].tap()
+        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let allowed = expectation(for: NSPredicate { _, _ in app.frame.width > app.frame.height }, evaluatedWith: app)
+        wait(for: [allowed], timeout: 10)
+        app.buttons["browser.pageMenu"].tap()
+        app.buttons["Rotation Lock"].tap()
+        app.buttons["Use App Rotation Setting for 127.0.0.1"].tap()
+        XCUIDevice.shared.orientation = .portrait
+        let reset = expectation(for: NSPredicate { _, _ in app.frame.height > app.frame.width }, evaluatedWith: app)
+        wait(for: [reset], timeout: 10)
     }
 
     private var localFixtureURL: String {

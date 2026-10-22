@@ -874,7 +874,7 @@ final class WebViewContainer_iOS: UIView, UIGestureRecognizerDelegate {
         onVisualTabsEdgePan?()
     }
 
-    func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+    override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
         guard recognizer === visualTabsEdgePan else { return true }
         let velocity = visualTabsEdgePan.velocity(in: self)
         return onVisualTabsEdgePan != nil && velocity.x < 0 && abs(velocity.x) > abs(velocity.y)
