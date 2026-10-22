@@ -1,3 +1,5 @@
+> Later investigation resolved the 18.5 test-launch blocker using Apple's process-local runtime workaround. The unchanged app passed the two previously blocked 18.5 checks; the 26-only check skipped. See [the WebKit loader investigation](mobile-air-webkit-overlay-2026-10-22.md). The original failure evidence below remains historical.
+
 # iPad conditional rotation-lock fix — Air, 2026-10-22
 
 Application implementation: `e5638ae9cbdb49bca8413013f153286054541d1e`. Latest built test harness: `013c8cb42fedaad65211ff113305b62fbb8021f3`. Application files are identical between those commits. Work remains on the isolated `codex/mobile-air-20261022` branch. All work and tests ran on the MacBook Air; Studio was not operated.
