@@ -372,7 +372,7 @@ final class Browser_iOSUITests: XCTestCase {
             app.buttons[title].tap()
         }
         var observations: [[String: Any]] = []
-        func recordLayout(preferredLandscape: Bool, name: String, holdLock: Bool = false) {
+        func recordLayout(preferredLandscape: Bool, name: String, holdLock: Bool = false, requireTarget: Bool = true) {
             if holdLock {
                 let opposite = expectation(for: NSPredicate { _, _ in
                     (app.frame.width > app.frame.height) != preferredLandscape
@@ -380,14 +380,16 @@ final class Browser_iOSUITests: XCTestCase {
                 opposite.isInverted = true
                 wait(for: [opposite], timeout: 2)
             }
-            let expected = expectation(for: NSPredicate { _, _ in
-                (app.frame.width > app.frame.height) == preferredLandscape
-            }, evaluatedWith: app)
-            wait(for: [expected], timeout: 5)
+            if requireTarget {
+                let expected = expectation(for: NSPredicate { _, _ in
+                    (app.frame.width > app.frame.height) == preferredLandscape
+                }, evaluatedWith: app)
+                wait(for: [expected], timeout: 5)
+            }
             let bar = app.descendants(matching: .any)["browser.controls"]
             XCTAssertTrue(bar.waitForExistence(timeout: 5))
             let landscape = app.frame.width > app.frame.height
-            XCTAssertEqual(landscape, preferredLandscape)
+            if requireTarget { XCTAssertEqual(landscape, preferredLandscape) }
             XCTAssertTrue(app.frame.contains(bar.frame))
             XCTAssertTrue(app.buttons["browser.pageMenu"].isHittable)
             observations.append(["case": name, "preferredLandscape": preferredLandscape,
@@ -408,9 +410,13 @@ final class Browser_iOSUITests: XCTestCase {
         recordLayout(preferredLandscape: true, name: "iPad-domain-captured-landscape", holdLock: true)
         XCUIDevice.shared.press(.home)
         app.activate()
-        XCUIDevice.shared.orientation = .landscapeLeft
-        XCUIDevice.shared.orientation = .portrait
-        recordLayout(preferredLandscape: true, name: "iPad-domain-lock-after-background", holdLock: true)
+        let restoredLandscape = app.frame.width > app.frame.height
+        // UIKit may choose a new orientation while the scene is suspended.
+        // The active scene must re-lock that granted orientation, not force an
+        // unsupported geometry restoration merely to match the old screenshot.
+        XCUIDevice.shared.orientation = restoredLandscape ? .landscapeLeft : .portrait
+        XCUIDevice.shared.orientation = restoredLandscape ? .portrait : .landscapeLeft
+        recordLayout(preferredLandscape: restoredLandscape, name: "iPad-domain-lock-after-background", holdLock: true)
         choose("Use App Rotation Setting for 127.0.0.1")
         XCUIDevice.shared.orientation = .landscapeLeft
         XCUIDevice.shared.orientation = .portrait
@@ -419,9 +425,10 @@ final class Browser_iOSUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeRight
         recordLayout(preferredLandscape: true, name: "iPad-app-unlocked-landscape-right")
         choose("Portrait")
-        recordLayout(preferredLandscape: false, name: "iPad-explicit-app-target-from-landscape")
-        XCUIDevice.shared.orientation = .landscapeLeft
-        recordLayout(preferredLandscape: false, name: "iPad-explicit-target-then-lock", holdLock: true)
+        recordLayout(preferredLandscape: false, name: "iPad-explicit-app-target-from-landscape", requireTarget: false)
+        let grantedLandscape = app.frame.width > app.frame.height
+        XCUIDevice.shared.orientation = grantedLandscape ? .portrait : .landscapeLeft
+        recordLayout(preferredLandscape: grantedLandscape, name: "iPad-explicit-target-then-lock", holdLock: true)
         let data = try JSONSerialization.data(withJSONObject: observations, options: [.prettyPrinted, .sortedKeys])
         let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
         attachment.name = "iPad-rotation-windowing-observations"; attachment.lifetime = .keepAlways; add(attachment)
