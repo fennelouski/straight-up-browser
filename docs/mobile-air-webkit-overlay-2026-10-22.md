@@ -44,6 +44,6 @@ python3 scripts/mobile-simulator-environment.py \
   --output /path/to/new-18.5.xctestrun
 ```
 
-Then run only the intended failed checks with `xcodebuild test-without-building -xctestrun /path/to/new-18.5.xctestrun -destination 'platform=iOS Simulator,id=<same-UDID>'` and explicit test selectors. The output must stay beside the original test products, or retain valid original product paths; no product files need rewriting. Without xctestrun arguments, the helper prints only the selected process environment and rationale.
+Then run only the intended failed checks with `xcodebuild test-without-building -xctestrun /path/to/new-18.5.xctestrun -destination 'platform=iOS Simulator,id=<same-UDID>'` and explicit test selectors. The helper requires the output to stay beside the original xctestrun so its `__TESTROOT__` product paths remain valid; no product files need rewriting. Without xctestrun arguments, the helper prints only the selected process environment and rationale.
 
 The task-owned Simulator is shut down and the bounded test group ended. No services or heavy workers remain owned by this follow-up. Studio, published Mac 2.9.34, physical devices, accounts, credentials, system/privacy/security settings and app release/upload workflows were untouched. This follow-up installed nothing and made no broad rebuild or passed-test-suite rerun.
