@@ -76,6 +76,16 @@ final class OrientationLockController: ObservableObject {
         return resolved != .unlocked && resolved == currentOrientation(scene)
     }
 
+    func restoreSceneLockAfterActivation(_ scene: UIWindowScene?) {
+        guard #available(iOS 26.0, *), let scene,
+              scene.windows.contains(where: { $0.rootViewController is BrowserOrientationRootController }) else { return }
+        let resolved = effectiveSelection(for: scene)
+        // iPadOS releases its conditional lock while our scene is backgrounded.
+        // Re-establish the orientation already chosen by the user, if the system
+        // permits. New domain navigation still never makes a geometry request.
+        update(scene, requestGeometry: resolved != .unlocked && resolved != currentOrientation(scene))
+    }
+
     func apply(_ newSelection: BrowserOrientationLock) {
         appSelection = newSelection
         updateScenes(requestGeometry: true)

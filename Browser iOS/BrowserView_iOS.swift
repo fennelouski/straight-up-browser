@@ -812,6 +812,7 @@ struct BrowserView_iOS: View {
             if !isLoading, let view = webViewManager?.activeWebView {
                 pageChrome.attach(view)
                 OrientationLockController.shared.updateContext(activeTab?.url, scene: view.window?.windowScene)
+                OrientationLockController.shared.restoreSceneLockAfterActivation(view.window?.windowScene)
             }
             // Share-sheet capture (Phase 3): ingest anything queued while the
             // app was away, and keep the extension's picker mirror fresh.
