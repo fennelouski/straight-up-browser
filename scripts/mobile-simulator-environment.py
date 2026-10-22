@@ -53,6 +53,8 @@ def main():
         parser.error("--xctestrun and --output must be provided together")
     compatibility = simulator_environment(args.device)
     if args.xctestrun:
+        if args.output.resolve().parent != args.xctestrun.resolve().parent:
+            parser.error("Keep the prepared plan beside the original xctestrun so __TESTROOT__ product paths remain valid")
         if args.output.exists():
             parser.error("Choose a new output path; an existing test plan will not be overwritten")
         plan = plistlib.loads(args.xctestrun.read_bytes())
