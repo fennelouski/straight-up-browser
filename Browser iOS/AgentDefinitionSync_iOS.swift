@@ -3,6 +3,16 @@ import Foundation
 import UIKit
 
 nonisolated enum MobileTestConfiguration {
+    #if DEBUG
+    static func seedMutableChromeFixture() {
+        guard isUITesting, BrowserProfile.isIsolated,
+              ProcessInfo.processInfo.arguments.contains("-mobileTestHiddenBar") else { return }
+        // Seed the private persistent domain, avoiding the read-only argument
+        // domain so the real recovery action can change this preference.
+        BrowserProfile.defaults.set(true, forKey: MobileChromeSettings.hidden)
+    }
+    #endif
+
     static var isUITesting: Bool {
         ProcessInfo.processInfo.arguments.contains("-uiTesting")
     }
@@ -30,16 +40,16 @@ final class AgentDefinitionSyncViewModel_iOS: ObservableObject {
     private let runtime: AgentDefinitionSyncRuntime
 
     init(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = BrowserProfile.defaults,
         runtime: AgentDefinitionSyncRuntime? = nil
     ) {
         self.defaults = defaults
         if let runtime {
             self.runtime = runtime
-        } else if MobileTestConfiguration.isUITesting {
+        } else if MobileTestConfiguration.isUITesting || BrowserProfile.isIsolated {
             let backend = try! AgentDefinitionInMemorySyncBackend()
             self.runtime = AgentDefinitionSyncRuntime(
-                baseDirectory: FileManager.default.temporaryDirectory
+                baseDirectory: (BrowserProfile.paths?.support ?? FileManager.default.temporaryDirectory)
                     .appendingPathComponent(
                         "straight-up-browser-ui-tests",
                         isDirectory: true

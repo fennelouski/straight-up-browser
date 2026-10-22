@@ -103,6 +103,7 @@ struct TopBrowserControls_iOS: View {
                     Color.clear.contentShape(Rectangle())
                         .accessibilityElement()
                         .onTapGesture(count: 2, perform: actions.toggleGestureBar)
+                        .accessibilityIdentifier("browser.barVisibilityGesture")
                         .accessibilityLabel(gestureBarHidden ? "Show Gesture Bar" : "Hide Gesture Bar")
                         .accessibilityAddTraits(.isButton)
                         .accessibilityAction { actions.toggleGestureBar() }
@@ -124,6 +125,7 @@ struct TopBrowserControls_iOS: View {
                     Color.clear.contentShape(Rectangle())
                         .accessibilityElement()
                         .onTapGesture(count: 2, perform: actions.toggleGestureBar)
+                        .accessibilityIdentifier("browser.barVisibilityGesture")
                         .accessibilityLabel(gestureBarHidden ? "Show Gesture Bar" : "Hide Gesture Bar")
                         .accessibilityAddTraits(.isButton)
                         .accessibilityAction { actions.toggleGestureBar() }

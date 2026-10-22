@@ -73,7 +73,7 @@ final class OrientationLockController: ObservableObject {
     }
 
     func setDomainRule(_ value: String?, url: URL) {
-        let defaults = UserDefaults.standard
+        let defaults = BrowserProfile.defaults
         let old = defaults.data(forKey: MobileChromeSettings.rotationRules) ?? Data()
         defaults.set(MobileDomainRotation.setting(value, for: url, in: old), forKey: MobileChromeSettings.rotationRules)
         domainLocks = domainLocks.filter { $0.value.host != MobileDomainRotation.host(url) }
@@ -95,7 +95,7 @@ final class OrientationLockController: ObservableObject {
     }
 
     private func effectiveSelection(for scene: UIWindowScene) -> BrowserOrientationLock {
-        let rules = MobileDomainRotation.rules(UserDefaults.standard.data(forKey: MobileChromeSettings.rotationRules) ?? Data())
+        let rules = MobileDomainRotation.rules(BrowserProfile.defaults.data(forKey: MobileChromeSettings.rotationRules) ?? Data())
         let key = scene.session.persistentIdentifier
         guard let host = MobileDomainRotation.host(sceneURLs[key]), let rule = rules[host] else {
             domainLocks.removeValue(forKey: key)

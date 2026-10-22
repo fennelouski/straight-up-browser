@@ -100,7 +100,6 @@ struct BrowserView_iOS: View {
         let query: String
         let revision: Int
     }
-    @State private var omnibarSelection: TextSelection?
     @State private var omnibarHasUserEdited = false
     @State private var selectedSuggestion = -1
     @FocusState private var omnibarFocused: Bool
@@ -368,7 +367,9 @@ struct BrowserView_iOS: View {
                                : nil,
                            focusedDocumentId: tabManager.focusedDocumentId,
                            onURLChange: { _ in },
-                           onPageFinished: { pageTranslator.maybeAutoTranslate(webView: $0) })
+                           onPageFinished: { pageTranslator.maybeAutoTranslate(webView: $0) },
+                           onVisualTabsEdgePan: visualTabsGesture && !showOmnibar && !showSidebar
+                               ? presentVisualTabs : nil)
                     // Keep the page viewport below the top safe area. Sites that
                     // use sticky headers can then occlude their own content instead
                     // of letting scrolled text leak into the sensor/status strip.
@@ -1198,27 +1199,14 @@ struct BrowserView_iOS: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
-                TextField(
-                    "Search or enter address",
-                    text: $omnibarText,
-                    selection: $omnibarSelection
-                )
-                .accessibilityIdentifier("browser.omnibar")
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.webSearch)
-                .submitLabel(.go)
-                .focused($omnibarFocused)
-                .onSubmit(navigateFromOmnibar)
-                .onKeyPress(.downArrow) {
-                    if !suggestions.isEmpty { selectedSuggestion = min(selectedSuggestion + 1, suggestions.count - 1); return .handled }
-                    return .ignored
-                }
-                .onKeyPress(.upArrow) {
-                    if selectedSuggestion >= 0 { selectedSuggestion -= 1; return .handled }
-                    return .ignored
-                }
-                .onKeyPress(.escape) { dismissOmnibar(); return .handled }
+                MobileAddressField(text: $omnibarText,
+                    isFocused: Binding(get: { omnibarFocused }, set: { omnibarFocused = $0 }),
+                    entryID: omnibarEditingID, submit: navigateFromOmnibar,
+                    moveSuggestion: { direction in
+                        if direction > 0, !suggestions.isEmpty {
+                            selectedSuggestion = min(selectedSuggestion + 1, suggestions.count - 1)
+                        } else if direction < 0, selectedSuggestion >= 0 { selectedSuggestion -= 1 }
+                    }, dismiss: dismissOmnibar)
             }
             .padding(.horizontal, 16)
             .frame(minHeight: 52)
@@ -1566,7 +1554,7 @@ struct BrowserView_iOS: View {
         // document" reuses or opens the source's tab as a pane next to the
         // focused document, exactly like the Mac. iPhone (no splits) and the
         // "As a tab" setting keep full-screen navigation.
-        let behavior = UserDefaults.standard.string(forKey: "anchorLinkOpenBehavior") ?? "split"
+        let behavior = BrowserProfile.defaults.string(forKey: "anchorLinkOpenBehavior") ?? "split"
         let besideDocument = supportsSplitPanes && behavior != "tab"
             && tabManager.focusedDocumentId != nil
 
@@ -1814,8 +1802,8 @@ struct BrowserView_iOS: View {
     @discardableResult
     private func maybeShowGestureGuide() -> Bool {
         guard GCKeyboard.coalesced == nil,
-              !UserDefaults.standard.bool(forKey: "hasSeenGestureGuide") else { return false }
-        UserDefaults.standard.set(true, forKey: "hasSeenGestureGuide")
+              !BrowserProfile.defaults.bool(forKey: "hasSeenGestureGuide") else { return false }
+        BrowserProfile.defaults.set(true, forKey: "hasSeenGestureGuide")
         DispatchQueue.main.async { showGestureGuide = true }
         return true
     }
@@ -2148,9 +2136,6 @@ struct BrowserView_iOS: View {
         DispatchQueue.main.async {
             guard showOmnibar, omnibarEditingID == editingID else { return }
             omnibarFocused = true
-            omnibarSelection = TextSelection(
-                range: omnibarText.startIndex..<omnibarText.endIndex
-            )
             omnibarHasUserEdited = false
         }
     }

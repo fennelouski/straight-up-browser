@@ -14,7 +14,7 @@ import SwiftUI
 // domain, otherwise sends it to the configured search engine. Pure + testable.
 enum OmnibarInput {
     /// Resolve trimmed omnibar text to a URL string, or nil if empty.
-    static func resolve(_ text: String, searchEngine: String? = UserDefaults.standard.string(forKey: "searchEngine")) -> String? {
+    static func resolve(_ text: String, searchEngine: String? = BrowserProfile.defaults.string(forKey: "searchEngine")) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         if trimmed.contains("://") { return trimmed }

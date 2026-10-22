@@ -44,6 +44,7 @@ struct BrowserApp: App {
 
     init() {
         #if DEBUG
+        MobileTestConfiguration.seedMutableChromeFixture()
         OmnibarInput.selfCheck()
         ShortcutStore.selfCheck()
         #endif
@@ -51,34 +52,37 @@ struct BrowserApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if let container = modelStartup.container {
-                BrowserView_iOS()
-                    .modelContainer(container)
-                    .environmentObject(externalURLRouter)
-                    .onOpenURL { externalURLRouter.receive($0) }
-                    .task {
-                        if !MobileTestConfiguration.isUITesting {
-                            _ = try? await AgentDefinitionSyncRuntime.shared.refresh()
+            BrowserProfileStartupView {
+                if let container = modelStartup.container {
+                    BrowserView_iOS()
+                        .modelContainer(container)
+                        .environmentObject(externalURLRouter)
+                        .onOpenURL { externalURLRouter.receive($0) }
+                        .task {
+                            if !MobileTestConfiguration.isUITesting && !BrowserProfile.isIsolated {
+                                _ = try? await AgentDefinitionSyncRuntime.shared.refresh()
+                            }
                         }
-                    }
-                    .alert(
-                        "Browsing Data Recovery Mode",
-                        isPresented: Binding(
-                            get: { showStartupRecoveryNotice && modelStartup.didRecover },
-                            set: { showStartupRecoveryNotice = $0 }
-                        )
-                    ) {
-                        Button("Continue", role: .cancel) {}
-                    } message: {
-                        Text("The persistent browser database could not be opened. This session is using temporary storage, so its tabs and bookmarks won’t be saved. Restart to retry.\n\n\(modelStartup.errorDescription ?? "")")
-                    }
-            } else {
-                ContentUnavailableView(
-                    "Browser Data Unavailable",
-                    systemImage: "externaldrive.badge.xmark",
-                    description: Text(modelStartup.errorDescription ?? "The browser database could not be opened.")
-                )
+                        .alert(
+                            "Browsing Data Recovery Mode",
+                            isPresented: Binding(
+                                get: { showStartupRecoveryNotice && modelStartup.didRecover },
+                                set: { showStartupRecoveryNotice = $0 }
+                            )
+                        ) {
+                            Button("Continue", role: .cancel) {}
+                        } message: {
+                            Text("The persistent browser database could not be opened. This session is using temporary storage, so its tabs and bookmarks won’t be saved. Restart to retry.\n\n\(modelStartup.errorDescription ?? "")")
+                        }
+                } else {
+                    ContentUnavailableView(
+                        "Browser Data Unavailable",
+                        systemImage: "externaldrive.badge.xmark",
+                        description: Text(modelStartup.errorDescription ?? "The browser database could not be opened.")
+                    )
+                }
             }
+            .defaultAppStorage(BrowserProfile.defaults)
         }
         .commands { browserCommands }
         .onChange(of: scenePhase) { _, phase in

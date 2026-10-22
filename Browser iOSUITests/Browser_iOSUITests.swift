@@ -183,7 +183,7 @@ final class Browser_iOSUITests: XCTestCase {
     @MainActor
     func testHiddenGestureBarHasAnAccessibleRecoveryAction() {
         let app = configuredApplication()
-        app.launchArguments += ["-mobileChrome.hidden", "YES"]
+        app.launchArguments += ["-mobileTestHiddenBar"]
         launchBrowser(app)
         XCTAssertFalse(app.descendants(matching: .any)["browser.controls"].exists)
         let pageMenu = app.buttons["browser.pageMenu"]
@@ -221,6 +221,110 @@ final class Browser_iOSUITests: XCTestCase {
         // A second input after suggestion rendering must not re-select the URL.
         field.typeText(".example")
         XCTAssertEqual(field.value as? String, "replacement.example")
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        field.typeText(".continued")
+        XCTAssertEqual(field.value as? String, "replacement.example.continued")
+        app.buttons["Close Address and Search"].tap()
+        controls.tap()
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("fresh")
+        XCTAssertEqual(field.value as? String, "fresh")
+    }
+
+    @MainActor
+    func testMinimumWidthAndPlacementSurviveRotation() {
+        let app = configuredApplication()
+        app.launchArguments += ["-openURL", localFixtureURL,
+            "-mobileChrome.customPosition", "YES", "-mobileChrome.width", "0.3",
+            "-mobileChrome.x", "0.2", "-mobileChrome.y", "0.65"]
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+        app.launch()
+        let bar = app.descendants(matching: .any)["browser.controls"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 15))
+        XCTAssertGreaterThanOrEqual(bar.frame.width, app.frame.width * 0.30 - 1)
+        XCTAssertGreaterThanOrEqual(bar.frame.height, 44)
+        XCTAssertTrue(app.frame.contains(bar.frame))
+        saveScreenshot(app, name: "Minimum-width-portrait")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let rotated = expectation(for: NSPredicate { _, _ in app.frame.width > app.frame.height }, evaluatedWith: app)
+        wait(for: [rotated], timeout: 10)
+        XCTAssertGreaterThanOrEqual(bar.frame.width, app.frame.width * 0.30 - 1)
+        XCTAssertTrue(app.frame.contains(bar.frame))
+        saveScreenshot(app, name: "Minimum-width-landscape")
+    }
+
+    @MainActor
+    func testOptionalEdgePanOpensVisualTabsAndRecovers() {
+        let app = configuredApplication()
+        app.launchArguments += ["-openURL", localFixtureURL,
+            "-mobileChrome.visualTabsGesture", "YES"]
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["browser.controls"].waitForExistence(timeout: 15))
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.5)))
+        XCTAssertTrue(app.navigationBars["Visual Tabs"].waitForExistence(timeout: 5))
+        saveScreenshot(app, name: "Visual-tabs-edge-pan")
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.buttons["browser.pageMenu"].isHittable)
+    }
+
+    @MainActor
+    func testOptionalGapGestureCanHideAndRestoreBar() {
+        let app = configuredApplication()
+        app.launchArguments += ["-openURL", localFixtureURL, "-mobileChrome.hideGesture", "YES"]
+        app.launch()
+        let bar = app.descendants(matching: .any)["browser.controls"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 15))
+        let gap = app.descendants(matching: .any)["browser.barVisibilityGesture"]
+        XCTAssertTrue(gap.exists)
+        gap.doubleTap()
+        XCTAssertTrue(bar.waitForNonExistence(timeout: 5))
+        gap.doubleTap()
+        XCTAssertTrue(bar.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testStationaryBorderSnappingDoesNotFollowPageScroll() {
+        let app = configuredApplication()
+        app.launchArguments += ["-openURL", localFixtureURL, "-mobileChrome.customPosition", "YES"]
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["browser.controls"].waitForExistence(timeout: 15))
+        app.buttons["browser.pageMenu"].tap()
+        app.buttons["Settings"].tap()
+        for _ in 0..<8 {
+            if app.buttons["Mobile Controls"].isHittable { break }
+            app.swipeUp()
+        }
+        app.buttons["Mobile Controls"].tap()
+        app.buttons["Move Bar on Page"].tap()
+        let bar = app.descendants(matching: .any)["browser.controls"]
+        XCTAssertTrue(app.buttons["Done Moving"].waitForExistence(timeout: 5))
+        let edge = app.webViews.buttons["Stationary Edge"]
+        XCTAssertTrue(edge.waitForExistence(timeout: 10))
+        let target = app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: bar.frame.midX, dy: edge.frame.minY + 3))
+        bar.press(forDuration: 0.1, thenDragTo: target)
+        XCTAssertEqual(bar.frame.midY, edge.frame.minY, accuracy: 3)
+        app.buttons["Done Moving"].tap()
+        let before = bar.frame
+        app.webViews.firstMatch.swipeUp()
+        XCTAssertEqual(bar.frame.minY, before.minY, accuracy: 1)
+        saveScreenshot(app, name: "Stationary-edge-and-page-colors")
+    }
+
+    private var localFixtureURL: String {
+        let html = "<meta name='viewport' content='width=device-width, initial-scale=1'><title>Mobile fixture</title><style>body{margin:0;height:2400px;background:#eee} .top,.bottom{position:fixed;left:0;width:100%;height:90px;pointer-events:none}.top{top:0;background:#ef3030}.bottom{bottom:0;background:#2040ef}button{position:fixed;left:0;top:180px;width:100%;height:40px;border:0;border-top:2px solid black;background:white}</style><div class='top'></div><div class='bottom'></div><button>Stationary Edge</button><p style='padding-top:300px'>Synthetic local fixture</p>"
+        return "data:text/html," + html.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
+    }
+
+    @MainActor
+    private func saveScreenshot(_ app: XCUIApplication, name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     @MainActor
@@ -242,6 +346,7 @@ final class Browser_iOSUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = [
             "-uiTesting",
+            "-isolatedTestProfile", "MobileAir-" + UUID().uuidString,
             "-ApplePersistenceIgnoreState", "YES",
             "-tabSyncEnabled", "NO",
             "-agentDefinitionSync.schedules.enabled", "NO",

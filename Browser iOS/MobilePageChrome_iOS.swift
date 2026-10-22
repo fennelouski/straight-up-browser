@@ -63,8 +63,8 @@ import WebKit
             self.top = top; self.bottom = bottom
             // Fixed-position horizontal borders only. Sticky/scrolling elements
             // are intentionally excluded. Compare two samples to reject animation.
-            guard !BrowserProfile.isIsolated,
-                  UserDefaults.standard.object(forKey: "javaScriptEnabled") as? Bool != false else {
+            guard BrowserProfile.isIsolated
+                    || BrowserProfile.defaults.object(forKey: "javaScriptEnabled") as? Bool != false else {
                 self.fixedEdges = []; return
             }
             let first = await Self.edges(view)

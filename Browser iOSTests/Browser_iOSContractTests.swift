@@ -129,7 +129,7 @@ struct BrowserIOSContractTests {
             effectiveContainerIdentifiers: [TabSync.containerID],
             accountStatus: { .available }
         )
-        #expect(available)
+        #expect(available == !BrowserProfile.isIsolated)
     }
 
     @Test("Provider sync records use the secret-free allowlist")

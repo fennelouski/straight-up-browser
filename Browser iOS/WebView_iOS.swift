@@ -42,6 +42,7 @@ struct TabWebView: UIViewRepresentable {
     var focusedDocumentId: UUID?
     var onURLChange: ((URL?) -> Void)?
     var onPageFinished: ((WKWebView) -> Void)?
+    var onVisualTabsEdgePan: (() -> Void)?
 
     init(url: Binding<URL?>,
          canGoBack: Binding<Bool>,
@@ -59,7 +60,8 @@ struct TabWebView: UIViewRepresentable {
          documentPaneProvider: ((UUID) -> UIView?)? = nil,
          focusedDocumentId: UUID? = nil,
          onURLChange: ((URL?) -> Void)?,
-         onPageFinished: ((WKWebView) -> Void)? = nil) {
+         onPageFinished: ((WKWebView) -> Void)? = nil,
+         onVisualTabsEdgePan: (() -> Void)? = nil) {
         self._url = url
         self._canGoBack = canGoBack
         self._canGoForward = canGoForward
@@ -77,6 +79,7 @@ struct TabWebView: UIViewRepresentable {
         self.focusedDocumentId = focusedDocumentId
         self.onURLChange = onURLChange
         self.onPageFinished = onPageFinished
+        self.onVisualTabsEdgePan = onVisualTabsEdgePan
     }
 
     func makeUIView(context: Context) -> WebViewContainer_iOS {
@@ -91,6 +94,7 @@ struct TabWebView: UIViewRepresentable {
         context.coordinator.tabs = tabs
         context.coordinator.tabManager = tabManager
 
+        uiView.onVisualTabsEdgePan = onVisualTabsEdgePan
         uiView.documentPaneProvider = documentPaneProvider
         uiView.setDisplayedTabs(
             activeTabId: activeTabId,
@@ -237,7 +241,7 @@ struct TabWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
             // Push the spacebar-scroll percentage into the new page; the injected
             // user script reads it on each keypress.
-            let pct = UserDefaults.standard.object(forKey: "spaceScrollPercent") as? Double ?? 90
+            let pct = BrowserProfile.defaults.object(forKey: "spaceScrollPercent") as? Double ?? 90
             webView.evaluateJavaScript("window.__subSpacePct = \(pct)")
             if let tab = tab(for: webView) {
                 parent.fastForward?.pageCommitted(webView: webView, tab: tab)
@@ -428,8 +432,8 @@ struct TabWebView: UIViewRepresentable {
 
             tab(for: webView)?.securityLevel = .insecure
             // Strict SSL (settings toggle, default on): refuse invalid certs outright.
-            let strict = UserDefaults.standard.object(forKey: "sslStrictMode") == nil
-                || UserDefaults.standard.bool(forKey: "sslStrictMode")
+            let strict = BrowserProfile.defaults.object(forKey: "sslStrictMode") == nil
+                || BrowserProfile.defaults.bool(forKey: "sslStrictMode")
             if strict {
                 completionHandler(.cancelAuthenticationChallenge, nil)
                 return
@@ -460,6 +464,10 @@ struct TabWebView: UIViewRepresentable {
         // MARK: - Navigation policy (downloads, ⌘/⌥-click, JS toggle)
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, preferences: WKWebpagePreferences, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
+            if let url = navigationAction.request.url, !BrowserProfile.allowsNavigation(url) {
+                decisionHandler(.cancel, preferences)
+                return
+            }
             if navigationAction.shouldPerformDownload {
                 decisionHandler(.download, preferences)
                 return
@@ -495,9 +503,9 @@ struct TabWebView: UIViewRepresentable {
 
             // JS on/off per navigation (unset means enabled) — the path WebKit
             // reliably honors.
-            preferences.allowsContentJavaScript =
-                UserDefaults.standard.object(forKey: "javaScriptEnabled") == nil
-                || UserDefaults.standard.bool(forKey: "javaScriptEnabled")
+            preferences.allowsContentJavaScript = !BrowserProfile.isIsolated && (
+                BrowserProfile.defaults.object(forKey: "javaScriptEnabled") == nil
+                || BrowserProfile.defaults.bool(forKey: "javaScriptEnabled"))
 
             if navigationAction.navigationType != .other {
                 resetRedirectLoopGuard(for: webView)
@@ -783,7 +791,7 @@ struct TabWebView: UIViewRepresentable {
             else { return false }
 
             let suppressionKey = "externalSchemeAlwaysAllow.\(scheme)"
-            if UserDefaults.standard.bool(forKey: suppressionKey) {
+            if BrowserProfile.defaults.bool(forKey: suppressionKey) {
                 UIApplication.shared.open(url)
                 return true
             }
@@ -800,7 +808,7 @@ struct TabWebView: UIViewRepresentable {
                 UIApplication.shared.open(url)
             })
             alert.addAction(UIAlertAction(title: String(localized: "Always Allow"), style: .default) { _ in
-                UserDefaults.standard.set(true, forKey: suppressionKey)
+                BrowserProfile.defaults.set(true, forKey: suppressionKey)
                 UIApplication.shared.open(url)
             })
             presenter.present(alert, animated: true)
@@ -849,7 +857,35 @@ struct TabWebView: UIViewRepresentable {
 
 // UIKit twin of WebViewContainer: shows the active tab's WKWebView and hides the
 // rest. The web views themselves are owned and reused by WebViewManager.
-final class WebViewContainer_iOS: UIView {
+final class WebViewContainer_iOS: UIView, UIGestureRecognizerDelegate {
+    var onVisualTabsEdgePan: (() -> Void)? {
+        didSet { visualTabsEdgePan.isEnabled = onVisualTabsEdgePan != nil }
+    }
+    private lazy var visualTabsEdgePan: UIScreenEdgePanGestureRecognizer = {
+        let pan = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(openVisualTabsFromEdge(_:)))
+        pan.edges = .right
+        pan.delegate = self
+        pan.isEnabled = false
+        return pan
+    }()
+
+    @objc private func openVisualTabsFromEdge(_ pan: UIScreenEdgePanGestureRecognizer) {
+        guard pan.state == .ended, pan.translation(in: self).x < -50 else { return }
+        onVisualTabsEdgePan?()
+    }
+
+    func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+        guard recognizer === visualTabsEdgePan else { return true }
+        let velocity = visualTabsEdgePan.velocity(in: self)
+        return onVisualTabsEdgePan != nil && velocity.x < 0 && abs(velocity.x) > abs(velocity.y)
+    }
+
+    func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+        // The opt-in trailing edge belongs to Visual Tabs. Leading-edge back
+        // and vertical page scrolling retain their normal gesture recognizers.
+        recognizer === visualTabsEdgePan
+    }
+
     private var webViewManager: WebViewManager?
     private weak var coordinator: TabWebView.Coordinator?
     private var activeTabId: UUID?
@@ -873,6 +909,7 @@ final class WebViewContainer_iOS: UIView {
         super.init(frame: .zero)
         backgroundColor = .clear
         clipsToBounds = true
+        addGestureRecognizer(visualTabsEdgePan)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
