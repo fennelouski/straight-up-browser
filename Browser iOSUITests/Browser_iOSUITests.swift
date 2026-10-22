@@ -418,6 +418,10 @@ final class Browser_iOSUITests: XCTestCase {
         choose("Unlocked")
         XCUIDevice.shared.orientation = .landscapeRight
         recordLayout(preferredLandscape: true, name: "iPad-app-unlocked-landscape-right")
+        choose("Portrait")
+        recordLayout(preferredLandscape: false, name: "iPad-explicit-app-target-from-landscape")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        recordLayout(preferredLandscape: false, name: "iPad-explicit-target-then-lock", holdLock: true)
         let data = try JSONSerialization.data(withJSONObject: observations, options: [.prettyPrinted, .sortedKeys])
         let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
         attachment.name = "iPad-rotation-windowing-observations"; attachment.lifetime = .keepAlways; add(attachment)
