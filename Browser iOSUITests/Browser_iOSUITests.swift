@@ -265,7 +265,10 @@ final class Browser_iOSUITests: XCTestCase {
             "-mobileChrome.visualTabsGesture", "YES"]
         app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["browser.controls"].waitForExistence(timeout: 15))
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5))
+        // A fixed edge inset keeps the start inside UIKit's edge-recognition
+        // band on both phone and tablet widths.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5))
+            .withOffset(CGVector(dx: -2, dy: 0))
             .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.5)))
         XCTAssertTrue(app.navigationBars["Visual Tabs"].waitForExistence(timeout: 5))
         saveScreenshot(app, name: "Visual-tabs-edge-pan")
