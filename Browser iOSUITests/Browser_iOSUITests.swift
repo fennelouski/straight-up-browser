@@ -351,7 +351,10 @@ final class Browser_iOSUITests: XCTestCase {
     }
 
     @MainActor
-    func testIPadRotationControlsUnderSystemWindowingWithLocalPage() throws {
+    func testIPadRotationLocksAreEnforcedWithLocalPage() throws {
+        guard #available(iOS 26.0, *) else {
+            throw XCTSkip("Conditional scene orientation-lock preference requires iPadOS 26; legacy mask tests are separate")
+        }
         guard let address = ProcessInfo.processInfo.environment["MOBILE_FIXTURE_URL"] else {
             throw XCTSkip("Requires the local fixture server")
         }
@@ -369,11 +372,22 @@ final class Browser_iOSUITests: XCTestCase {
             app.buttons[title].tap()
         }
         var observations: [[String: Any]] = []
-        func recordLayout(preferredLandscape: Bool, name: String, requirePreference: Bool = false) {
+        func recordLayout(preferredLandscape: Bool, name: String, holdLock: Bool = false) {
+            if holdLock {
+                let opposite = expectation(for: NSPredicate { _, _ in
+                    (app.frame.width > app.frame.height) != preferredLandscape
+                }, evaluatedWith: app)
+                opposite.isInverted = true
+                wait(for: [opposite], timeout: 2)
+            }
+            let expected = expectation(for: NSPredicate { _, _ in
+                (app.frame.width > app.frame.height) == preferredLandscape
+            }, evaluatedWith: app)
+            wait(for: [expected], timeout: 5)
             let bar = app.descendants(matching: .any)["browser.controls"]
             XCTAssertTrue(bar.waitForExistence(timeout: 5))
             let landscape = app.frame.width > app.frame.height
-            if requirePreference { XCTAssertEqual(landscape, preferredLandscape) }
+            XCTAssertEqual(landscape, preferredLandscape)
             XCTAssertTrue(app.frame.contains(bar.frame))
             XCTAssertTrue(app.buttons["browser.pageMenu"].isHittable)
             observations.append(["case": name, "preferredLandscape": preferredLandscape,
@@ -384,23 +398,26 @@ final class Browser_iOSUITests: XCTestCase {
         }
         choose("Portrait")
         XCUIDevice.shared.orientation = .landscapeLeft
-        // iPad windowing may ignore masks. Preserve the observed outcome instead
-        // of claiming a lock was enforced merely because controls stayed usable.
-        recordLayout(preferredLandscape: false, name: "iPad-app-portrait-lock")
+        recordLayout(preferredLandscape: false, name: "iPad-app-portrait-lock", holdLock: true)
         choose("Allow Rotation on 127.0.0.1")
         XCUIDevice.shared.orientation = .portrait
         XCUIDevice.shared.orientation = .landscapeLeft
-        recordLayout(preferredLandscape: true, name: "iPad-domain-allow-over-app-portrait", requirePreference: true)
+        recordLayout(preferredLandscape: true, name: "iPad-domain-allow-over-app-portrait")
         choose("Lock Current Orientation on 127.0.0.1")
         XCUIDevice.shared.orientation = .portrait
-        recordLayout(preferredLandscape: true, name: "iPad-domain-captured-landscape")
+        recordLayout(preferredLandscape: true, name: "iPad-domain-captured-landscape", holdLock: true)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCUIDevice.shared.orientation = .portrait
+        recordLayout(preferredLandscape: true, name: "iPad-domain-lock-after-background", holdLock: true)
         choose("Use App Rotation Setting for 127.0.0.1")
         XCUIDevice.shared.orientation = .landscapeLeft
         XCUIDevice.shared.orientation = .portrait
-        recordLayout(preferredLandscape: false, name: "iPad-domain-reset-to-app-portrait", requirePreference: true)
+        recordLayout(preferredLandscape: false, name: "iPad-domain-reset-to-app-portrait")
         choose("Unlocked")
         XCUIDevice.shared.orientation = .landscapeRight
-        recordLayout(preferredLandscape: true, name: "iPad-app-unlocked-landscape-right", requirePreference: true)
+        recordLayout(preferredLandscape: true, name: "iPad-app-unlocked-landscape-right")
         let data = try JSONSerialization.data(withJSONObject: observations, options: [.prettyPrinted, .sortedKeys])
         let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
         attachment.name = "iPad-rotation-windowing-observations"; attachment.lifetime = .keepAlways; add(attachment)

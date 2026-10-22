@@ -67,6 +67,15 @@ final class OrientationLockController: ObservableObject {
         return effectiveSelection(for: scene).mask
     }
 
+    /// The iPadOS preference locks the current orientation, rather than forcing
+    /// a target orientation. Wait until an explicit app geometry request reaches
+    /// its target; domain locks already capture the current scene orientation.
+    func prefersSceneLock(for scene: UIWindowScene?) -> Bool {
+        guard let scene else { return false }
+        let resolved = effectiveSelection(for: scene)
+        return resolved != .unlocked && resolved == currentOrientation(scene)
+    }
+
     func apply(_ newSelection: BrowserOrientationLock) {
         appSelection = newSelection
         updateScenes(requestGeometry: true)
@@ -117,7 +126,12 @@ final class OrientationLockController: ObservableObject {
     private func update(_ scene: UIWindowScene, requestGeometry: Bool = false) {
         let resolved = effectiveSelection(for: scene)
         selection = resolved
-        scene.windows.forEach { $0.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations() }
+        scene.windows.forEach {
+            $0.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+            if #available(iOS 26.0, *), $0.rootViewController is BrowserOrientationRootController {
+                $0.rootViewController?.setNeedsUpdateOfPrefersInterfaceOrientationLocked()
+            }
+        }
         // Domain rules constrain future autorotation at the current interface
         // orientation. They never request a rotation or attempt to read/override
         // system rotation lock. Only the existing explicit app rotation menu
@@ -125,6 +139,77 @@ final class OrientationLockController: ObservableObject {
         guard requestGeometry else { return }
         scene.requestGeometryUpdate(.iOS(interfaceOrientations: resolved.mask)) { error in
             Logger.log("Could not update interface orientation: \(error.localizedDescription)", type: "Orientation")
+        }
+    }
+}
+
+/// SwiftUI owns its hosting controller and scene lifecycle. On iPadOS 26 only,
+/// retain that controller as a child of a small UIKit root so the system can
+/// query its documented orientation-lock preference. No private hosting types,
+/// method replacement, scene configuration or full-screen opt-out is involved.
+@available(iOS 26.0, *)
+final class BrowserOrientationRootController: UIViewController {
+    private let content: UIViewController
+
+    init(content: UIViewController) {
+        self.content = content
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+        addChild(content)
+        content.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(content.view)
+        NSLayoutConstraint.activate([
+            content.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            content.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            content.view.topAnchor.constraint(equalTo: view.topAnchor),
+            content.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        content.didMove(toParent: self)
+    }
+
+    override var prefersInterfaceOrientationLocked: Bool {
+        OrientationLockController.shared.prefersSceneLock(for: view.window?.windowScene)
+    }
+
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+        OrientationLockController.shared.supportedMask(for: view.window)
+    }
+
+    override var childForStatusBarHidden: UIViewController? { content }
+    override var childForStatusBarStyle: UIViewController? { content }
+    override var childForHomeIndicatorAutoHidden: UIViewController? { content }
+    override var childForScreenEdgesDeferringSystemGestures: UIViewController? { content }
+
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+            // A requested app orientation can now be locked at its destination.
+            self?.setNeedsUpdateOfPrefersInterfaceOrientationLocked()
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserOrientationRootAttachment: UIViewRepresentable {
+    func makeUIView(context: Context) -> AttachmentView { AttachmentView() }
+    func updateUIView(_ uiView: AttachmentView, context: Context) {}
+
+    final class AttachmentView: UIView {
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard UIDevice.current.userInterfaceIdiom == .pad else { return }
+            // Defer until SwiftUI has finished attaching the existing root.
+            DispatchQueue.main.async { [weak self] in
+                guard let window = self?.window, let content = window.rootViewController,
+                      !(content is BrowserOrientationRootController) else { return }
+                window.rootViewController = BrowserOrientationRootController(content: content)
+            }
         }
     }
 }

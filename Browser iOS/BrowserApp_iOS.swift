@@ -83,6 +83,11 @@ struct BrowserApp: App {
                 }
             }
             .defaultAppStorage(BrowserProfile.defaults)
+            .background {
+                if #available(iOS 26.0, *), UIDevice.current.userInterfaceIdiom == .pad {
+                    BrowserOrientationRootAttachment().frame(width: 0, height: 0)
+                }
+            }
         }
         .commands { browserCommands }
         .onChange(of: scenePhase) { _, phase in

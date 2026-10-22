@@ -13,6 +13,18 @@ struct BrowserIOSContractTests {
         }
         let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = try #require(scene.windows.first)
+        if #available(iOS 26.0, *), UIDevice.current.userInterfaceIdiom == .pad {
+            for _ in 0..<40 where !(window.rootViewController is BrowserOrientationRootController) {
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            let root = try #require(window.rootViewController as? BrowserOrientationRootController)
+            #expect(root.children.count == 1)
+            #expect(root.children.first?.parent === root)
+            #expect(root.childForStatusBarHidden === root.children.first)
+            print("AIR_ORIENTATION_HOST conditional=installed contentChildren=\(root.children.count)")
+        } else {
+            print("AIR_ORIENTATION_HOST conditional=unavailable-or-phone legacyHostRetained=true")
+        }
         let manifest = try #require(Bundle.main.infoDictionary?["UIApplicationSceneManifest"] as? [String: Any])
         #expect(manifest["UIApplicationSupportsMultipleScenes"] as? Bool == false)
         #expect(!UIApplication.shared.supportsMultipleScenes)
@@ -38,11 +50,13 @@ struct BrowserIOSContractTests {
         controller.apply(.portrait)
         controller.setDomainRule("allow", url: url)
         #expect(controller.supportedMask(for: window) == BrowserOrientationLock.unlocked.mask)
+        #expect(!controller.prefersSceneLock(for: scene))
         let current = scene.interfaceOrientation
         let capturedMask = UIInterfaceOrientationMask(rawValue: 1 << current.rawValue)
         #expect(current != .unknown)
         controller.setDomainRule("locked", url: url)
         #expect(controller.supportedMask(for: window) == capturedMask)
+        #expect(controller.prefersSceneLock(for: scene))
         controller.apply(.landscapeLeft)
         #expect(controller.supportedMask(for: window) == capturedMask)
         controller.updateContext(other, scene: scene)
