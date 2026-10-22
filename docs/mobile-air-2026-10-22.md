@@ -1,6 +1,6 @@
 # Mobile Browser — Air implementation and acceptance
 
-Validated application code: `943b9150fe64df882aac328059c7aba532e34864` on `codex/mobile-air-20261022`. This work continues the original mobile commits `a9cacb0` and `2f0d772`; it does not replace their history. Source, implementation, builds and native testing were completed on the MacBook Air. The Studio was not operated.
+Validated application code: `943b9150fe64df882aac328059c7aba532e34864` on `codex/mobile-air-20261022`. Later test/documentation commit `c2264ffa299c7d4e8ae1b6826cb5d336ee941beb` leaves application source byte-for-byte unchanged; its full build also passed. This work continues the original mobile commits `a9cacb0` and `2f0d772`; it does not replace their history. Source, implementation, builds and native testing were completed on the MacBook Air. The Studio was not operated.
 
 The handoff archive from Nathan's Library was verified at SHA-256 `878b106cca36b6c1ac7a8218166e33fc1908288cb2f3f71f1c2d0f069a868ccf`; all 21 manifest entries, the bundle prerequisite, both commits and their trees matched. The original dirty Air checkout remained separate. No upstream is configured on the isolated mobile branch.
 
@@ -57,3 +57,9 @@ Continue only from this isolated branch or a verified source bundle. Keep one mo
 Start `python3 scripts/serve-mobile-chrome-fixtures.py --state-file /tmp/browser-mobile-fixture.json` and keep that owned process running. It binds only `127.0.0.1`, prints its ephemeral URL and serves synthetic HTML with no external resources. Set the UI test runner's `MOBILE_FIXTURE_URL` environment variable to the printed `/fixture` URL. `/alternate` supplies the second color pair. Stop the server with Ctrl-C after the test run.
 
 The domain-rotation and page-color lifecycle tests explicitly skip when this integration fixture is not configured. The 40-test Air run supplied it, executed both tests and had zero skips. Standard test launches therefore do not depend on an unrecorded service or attempt a real website as a fallback. The source-only handoff includes this helper.
+
+## Completion checkpoint
+
+The portable fixture guards and fixed two-point edge test were compiled in `build-air/attempt-13/` and then executed on the phone: `build-air/final-fixture-and-edge/summary.json` records **3 passed, 0 failed, 0 skipped** for domain rotation, exact-edge Visual Tabs, and strict page-color/navigation/foreground checks. The 40-test phone suite and four tablet smoke methods remain bound to the identical application source.
+
+Both task-owned Simulator guests are shut down, the owned loopback fixture server has ended, and all build/test process groups have been joined. No coding or build blocker remains. Device/manual VoiceOver, system rotation-lock combinations and simultaneous multi-scene acceptance remain outside the verified matrix. The source-only delivery bundle preserves the original unpublished commits plus the Air fixes and this report; no app, cache, runtime profile, screenshot, credential or signing asset is included.
