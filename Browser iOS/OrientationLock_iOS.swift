@@ -164,7 +164,11 @@ final class BrowserOrientationRootController: UIViewController {
     init(content: UIViewController) {
         self.content = content
         super.init(nibName: nil, bundle: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(sceneDidActivate(_:)),
+            name: UIScene.didActivateNotification, object: nil)
     }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
@@ -195,6 +199,14 @@ final class BrowserOrientationRootController: UIViewController {
     override var childForStatusBarStyle: UIViewController? { content }
     override var childForHomeIndicatorAutoHidden: UIViewController? { content }
     override var childForScreenEdgesDeferringSystemGestures: UIViewController? { content }
+
+    @objc private func sceneDidActivate(_ notification: Notification) {
+        guard let scene = notification.object as? UIWindowScene,
+              scene === viewIfLoaded?.window?.windowScene else { return }
+        // The WebKit view may not yet be reattached when the app notification
+        // arrives. The UIKit root owns a stable scene attachment at activation.
+        OrientationLockController.shared.restoreSceneLockAfterActivation(scene)
+    }
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
