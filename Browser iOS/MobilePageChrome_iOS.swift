@@ -16,6 +16,14 @@ import WebKit
     private var sampling = false
     private var pendingSample = false
 
+    #if DEBUG
+    var acceptanceSummary: String? {
+        guard BrowserProfile.isIsolated, MobileTestConfiguration.isUITesting,
+              ProcessInfo.processInfo.arguments.contains("-mobileTestChromeMetrics") else { return nil }
+        return "top=\(String(describing: top)); bottom=\(String(describing: bottom)); bounds=\(String(describing: webView?.bounds)); insets=\(String(describing: webView?.scrollView.adjustedContentInset)); edges=\(fixedEdges)"
+    }
+    #endif
+
     func attach(_ view: WKWebView) {
         if webView !== view {
             detach()
@@ -86,7 +94,7 @@ import WebKit
         // Capture the complete viewport at bounded resolution, then average its
         // edge rows. This also keeps the two colors from the same rendered frame.
         configuration.rect = view.bounds
-        configuration.snapshotWidth = 64
+        configuration.snapshotWidth = NSNumber(value: Double(max(1, 64 * view.bounds.width / max(view.bounds.width, view.bounds.height))))
         configuration.afterScreenUpdates = false
         guard let image = try? await view.takeSnapshot(configuration: configuration),
               let cgImage = image.cgImage else { return (nil, nil) }

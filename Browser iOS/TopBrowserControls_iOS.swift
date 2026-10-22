@@ -345,8 +345,8 @@ struct TopBrowserControls_iOS: View {
             .background(.regularMaterial, in: Circle())
             .overlay(Circle().stroke(Color.primary.opacity(0.1)))
             .shadow(color: .black.opacity(0.16), radius: 4, y: 1)
-            .frame(width: 44, height: 44)
-            .contentShape(Circle())
+            .frame(width: 48, height: 48)
+            .contentShape(Rectangle())
             .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: isNavigating)
     }
 

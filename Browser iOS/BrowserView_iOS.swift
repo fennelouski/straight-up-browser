@@ -334,6 +334,13 @@ struct BrowserView_iOS: View {
         eventContent
     }
 
+    private var gestureBarAccessibilityValue: String {
+        #if DEBUG
+        if let summary = pageChrome.acceptanceSummary { return summary }
+        #endif
+        return activeTab?.title ?? activeTab?.url?.host ?? String(localized: "New Tab")
+    }
+
     private var visualTabsEdgeAction: (() -> Void)? {
         guard visualTabsGesture, !showOmnibar, !showSidebar else { return nil }
         return { presentVisualTabs() }
@@ -384,21 +391,11 @@ struct BrowserView_iOS: View {
         // instantiate the WKWebView representable): full-bleed web with the sidebar
         // and omnibar as summoned overlays, so the chrome truly disappears.
         ZStack(alignment: .leading) {
-            Color(.systemBackground).ignoresSafeArea()
-            GeometryReader { geometry in
-                Color.clear
-                    .overlay(alignment: .top) {
-                        Color(uiColor: pageChrome.top ?? .systemBackground)
-                            .frame(height: geometry.safeAreaInsets.top)
-                            .offset(y: -geometry.safeAreaInsets.top)
-                    }
-                    .overlay(alignment: .bottom) {
-                        Color(uiColor: pageChrome.bottom ?? .systemBackground)
-                            .frame(height: geometry.safeAreaInsets.bottom)
-                            .offset(y: geometry.safeAreaInsets.bottom)
-                    }
+            VStack(spacing: 0) {
+                Color(uiColor: pageChrome.top ?? .systemBackground)
+                Color(uiColor: pageChrome.bottom ?? .systemBackground)
             }
-            .ignoresSafeArea(edges: .horizontal)
+            .ignoresSafeArea()
             .allowsHitTesting(false).accessibilityHidden(true)
 
             if managersInitialized {
@@ -450,7 +447,7 @@ struct BrowserView_iOS: View {
                         showWorkspaces: { showWorkspaceSwitcher = true },
                         nextTab: { tabManager.switchToNextTab(tabs: visibleTabOrder) },
                         previousTab: { tabManager.switchToPreviousTab(tabs: visibleTabOrder) },
-                        swipe: handleBarSwipe)
+                        swipe: handleBarSwipe, status: gestureBarAccessibilityValue)
                     .ignoresSafeArea(edges: .horizontal)
                 } else { browserGestureBar.ignoresSafeArea(edges: .horizontal) }
             }
@@ -1430,7 +1427,7 @@ struct BrowserView_iOS: View {
                 .highPriorityGesture(DragGesture(minimumDistance: 20).onEnded(handleBarSwipe))
                 .accessibilityElement()
                 .accessibilityLabel("Browser Controls")
-                .accessibilityValue(activeTab?.title ?? activeTab?.url?.host ?? String(localized: "New Tab"))
+                .accessibilityValue(gestureBarAccessibilityValue)
                 .accessibilityHint("Activate for the address bar. Swipe up for tabs, down for workspaces, or left and right to change tabs.")
                 .accessibilityAddTraits(.isButton)
                 .accessibilityIdentifier("browser.controls")

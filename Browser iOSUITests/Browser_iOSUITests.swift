@@ -380,18 +380,37 @@ final class Browser_iOSUITests: XCTestCase {
     }
 
     @MainActor
-    func testSafeAreaColorsMatchIndependentPageEdges() {
+    func testSafeAreaColorsMatchIndependentPageEdges() throws {
         let app = configuredApplication()
-        app.launchArguments += ["-openURL", localFixtureURL]
+        app.launchArguments += ["-openURL", localFixtureURL, "-mobileChrome.customPosition", "YES", "-mobileTestChromeMetrics"]
         app.launch()
         XCTAssertTrue(app.webViews.buttons["Stationary Edge"].waitForExistence(timeout: 15))
         let colored = expectation(for: NSPredicate { _, _ in
             let pair = self.edgePixels(app)
+            print("Screenshot edges \(pair); native sampler \(String(describing: app.descendants(matching: .any)["browser.controls"].value))")
             return pair.top.0 > 200 && pair.top.1 < 100 && pair.top.2 < 100
                 && pair.bottom.0 < 100 && pair.bottom.1 < 150 && pair.bottom.2 > 180
         }, evaluatedWith: app)
         wait(for: [colored], timeout: 10)
         saveScreenshot(app, name: "Independent-safe-area-colors")
+        let fixture = try XCTUnwrap(ProcessInfo.processInfo.environment["MOBILE_FIXTURE_URL"])
+        let alternate = fixture.replacingOccurrences(of: "/fixture", with: "/alternate")
+        app.descendants(matching: .any)["browser.controls"].tap()
+        let address = app.textFields["browser.omnibar"]
+        XCTAssertTrue(address.waitForExistence(timeout: 5))
+        address.typeText(alternate + "\n")
+        let updated = expectation(for: NSPredicate { _, _ in
+            let pair = self.edgePixels(app)
+            return pair.top.0 < 100 && pair.top.1 > 150 && pair.top.2 < 150
+                && pair.bottom.0 > 180 && pair.bottom.1 > 150 && pair.bottom.2 < 100
+        }, evaluatedWith: app)
+        wait(for: [updated], timeout: 10)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        let restored = self.edgePixels(app)
+        XCTAssertGreaterThan(restored.top.1, 150)
+        XCTAssertGreaterThan(restored.bottom.0, 180)
+        saveScreenshot(app, name: "Page-colors-after-navigation-and-background")
     }
 
     @MainActor
@@ -407,14 +426,16 @@ final class Browser_iOSUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(control.frame.height, 44)
             XCTAssertFalse(control.label.isEmpty)
         }
-        try app.performAccessibilityAudit(for: [.hitRegion, .sufficientElementDescription])
+        try app.performAccessibilityAudit(for: [.hitRegion, .sufficientElementDescription]) { issue in
+            print("Accessibility issue: \(issue.compactDescription) \(String(describing: issue.element))")
+            return false
+        }
         saveScreenshot(app, name: "Idle-circles-and-accessible-controls")
         bar.tap()
         XCTAssertTrue(app.textFields["browser.omnibar"].waitForExistence(timeout: 5))
         saveScreenshot(app, name: "Navigation-circles-and-address-field")
     }
 
-    @MainActor
     private func edgePixels(_ app: XCUIApplication) -> (top: (Int, Int, Int), bottom: (Int, Int, Int)) {
         guard let image = UIImage(data: app.screenshot().pngRepresentation)?.cgImage else { return ((0,0,0),(0,0,0)) }
         func pixel(_ y: Int) -> (Int, Int, Int) {

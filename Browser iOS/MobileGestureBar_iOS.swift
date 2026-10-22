@@ -14,6 +14,7 @@ struct MobileGestureBar: View {
     let nextTab: () -> Void
     let previousTab: () -> Void
     let swipe: (DragGesture.Value) -> Void
+    var status = ""
     @State private var dragOrigin: CGPoint?
     @State private var snapX: Double?
     @State private var snapY: Double?
@@ -51,6 +52,7 @@ struct MobileGestureBar: View {
                     })
                 .accessibilityElement()
                 .accessibilityLabel(editing ? "Move Gesture Bar" : "Browser Controls")
+                .accessibilityValue(status)
                 .accessibilityHint("Activate for the address bar. Position and width controls are also in Settings.")
                 .accessibilityAddTraits(.isButton)
                 .accessibilityAction { activate() }
