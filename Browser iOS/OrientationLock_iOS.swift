@@ -76,10 +76,24 @@ final class OrientationLockController: ObservableObject {
         return resolved != .unlocked && resolved == currentOrientation(scene)
     }
 
+    #if DEBUG
+    func acceptanceTrace(_ event: String, scene: UIWindowScene) {
+        guard BrowserProfile.isIsolated, MobileTestConfiguration.isUITesting,
+              ProcessInfo.processInfo.arguments.contains("-mobileTestOrientationMetrics") else { return }
+        let locked: String
+        if #available(iOS 26.0, *) { locked = String(scene.effectiveGeometry.isInterfaceOrientationLocked) }
+        else { locked = "unavailable" }
+        Logger.log("AIR_LOCK \(event) resolved=\(effectiveSelection(for: scene).rawValue) actual=\(scene.interfaceOrientation.rawValue) activation=\(scene.activationState.rawValue) prefers=\(prefersSceneLock(for: scene)) effective=\(locked)", type: "Orientation", visibility: .public)
+    }
+    #endif
+
     func restoreSceneLockAfterActivation(_ scene: UIWindowScene?) {
         guard #available(iOS 26.0, *), let scene,
               scene.windows.contains(where: { $0.rootViewController is BrowserOrientationRootController }) else { return }
         let resolved = effectiveSelection(for: scene)
+        #if DEBUG
+        acceptanceTrace("restore", scene: scene)
+        #endif
         // iPadOS releases its conditional lock while our scene is backgrounded.
         // Re-establish the orientation already chosen by the user, if the system
         // permits. New domain navigation still never makes a geometry request.
@@ -142,6 +156,9 @@ final class OrientationLockController: ObservableObject {
                 $0.rootViewController?.setNeedsUpdateOfPrefersInterfaceOrientationLocked()
             }
         }
+        #if DEBUG
+        acceptanceTrace(requestGeometry ? "update-with-geometry" : "update", scene: scene)
+        #endif
         // Domain rules constrain future autorotation at the current interface
         // orientation. They never request a rotation or attempt to read/override
         // system rotation lock. Only the existing explicit app rotation menu
@@ -149,6 +166,9 @@ final class OrientationLockController: ObservableObject {
         guard requestGeometry else { return }
         scene.requestGeometryUpdate(.iOS(interfaceOrientations: resolved.mask)) { error in
             Logger.log("Could not update interface orientation: \(error.localizedDescription)", type: "Orientation")
+            #if DEBUG
+            self.acceptanceTrace("geometry-error-\((error as NSError).code)", scene: scene)
+            #endif
         }
     }
 }
@@ -188,7 +208,13 @@ final class BrowserOrientationRootController: UIViewController {
     }
 
     override var prefersInterfaceOrientationLocked: Bool {
-        OrientationLockController.shared.prefersSceneLock(for: view.window?.windowScene)
+        if let scene = view.window?.windowScene {
+            #if DEBUG
+            OrientationLockController.shared.acceptanceTrace("preference-query", scene: scene)
+            #endif
+            return OrientationLockController.shared.prefersSceneLock(for: scene)
+        }
+        return false
     }
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
@@ -203,6 +229,9 @@ final class BrowserOrientationRootController: UIViewController {
     @objc private func sceneDidActivate(_ notification: Notification) {
         guard let scene = notification.object as? UIWindowScene,
               scene.windows.contains(where: { $0.rootViewController === self }) else { return }
+        #if DEBUG
+        OrientationLockController.shared.acceptanceTrace("root-scene-activated", scene: scene)
+        #endif
         // The WebKit view may not yet be reattached when the app notification
         // arrives. The UIKit root owns a stable scene attachment at activation.
         OrientationLockController.shared.restoreSceneLockAfterActivation(scene)
@@ -213,6 +242,11 @@ final class BrowserOrientationRootController: UIViewController {
         coordinator.animate(alongsideTransition: nil) { [weak self] _ in
             // A requested app orientation can now be locked at its destination.
             self?.setNeedsUpdateOfPrefersInterfaceOrientationLocked()
+            #if DEBUG
+            if let scene = self?.view.window?.windowScene {
+                OrientationLockController.shared.acceptanceTrace("transition-completed", scene: scene)
+            }
+            #endif
         }
     }
 }

@@ -359,7 +359,7 @@ final class Browser_iOSUITests: XCTestCase {
             throw XCTSkip("Requires the local fixture server")
         }
         let app = configuredApplication()
-        app.launchArguments += ["-openURL", address]
+        app.launchArguments += ["-openURL", address, "-mobileTestOrientationMetrics"]
         XCUIDevice.shared.orientation = .portrait
         defer { XCUIDevice.shared.orientation = .portrait }
         app.launch()
