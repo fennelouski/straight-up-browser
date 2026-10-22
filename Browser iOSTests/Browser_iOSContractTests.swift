@@ -1,10 +1,58 @@
 import Foundation
 import CloudKit
 import Testing
+import UIKit
 @testable import Browser
 
 @Suite("Universal iOS contracts")
 struct BrowserIOSContractTests {
+    @MainActor @Test("Live scene capabilities and app/domain rotation precedence")
+    func liveSceneRotationPrecedenceAndCapabilities() async throws {
+        for _ in 0..<40 where UIApplication.shared.connectedScenes.isEmpty {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = try #require(scene.windows.first)
+        let manifest = try #require(Bundle.main.infoDictionary?["UIApplicationSceneManifest"] as? [String: Any])
+        #expect(manifest["UIApplicationSupportsMultipleScenes"] as? Bool == false)
+        #expect(!UIApplication.shared.supportsMultipleScenes)
+        #expect(UIApplication.shared.connectedScenes.count == 1)
+        print("AIR_CAPABILITIES multipleScenes=\(UIApplication.shared.supportsMultipleScenes) connectedScenes=\(UIApplication.shared.connectedScenes.count) voiceOverRunning=\(UIAccessibility.isVoiceOverRunning) idiom=\(UIDevice.current.userInterfaceIdiom.rawValue)")
+
+        let controller = OrientationLockController.shared
+        let url = URL(string: "https://rotation-fixture.example/page")!
+        let other = URL(string: "https://other-fixture.example/page")!
+        let previousRules = BrowserProfile.defaults.data(forKey: MobileChromeSettings.rotationRules)
+        defer {
+            BrowserProfile.defaults.set(previousRules, forKey: MobileChromeSettings.rotationRules)
+            controller.updateContext(nil, scene: scene)
+            controller.apply(.unlocked)
+        }
+        controller.updateContext(url, scene: scene)
+        controller.setDomainRule(nil, url: url)
+        for choice in BrowserOrientationLock.allCases {
+            controller.apply(choice)
+            #expect(controller.supportedMask(for: window) == choice.mask)
+            print("AIR_ROTATION app=\(choice.rawValue) mask=\(controller.supportedMask(for: window).rawValue)")
+        }
+        controller.apply(.portrait)
+        controller.setDomainRule("allow", url: url)
+        #expect(controller.supportedMask(for: window) == BrowserOrientationLock.unlocked.mask)
+        let current = scene.interfaceOrientation
+        let capturedMask = UIInterfaceOrientationMask(rawValue: 1 << current.rawValue)
+        #expect(current != .unknown)
+        controller.setDomainRule("locked", url: url)
+        #expect(controller.supportedMask(for: window) == capturedMask)
+        controller.apply(.landscapeLeft)
+        #expect(controller.supportedMask(for: window) == capturedMask)
+        controller.updateContext(other, scene: scene)
+        #expect(controller.supportedMask(for: window) == .landscapeLeft)
+        controller.updateContext(url, scene: scene)
+        controller.setDomainRule(nil, url: url)
+        #expect(controller.supportedMask(for: window) == .landscapeLeft)
+        print("AIR_ROTATION precedence=passed capturedOrientation=\(current.rawValue); system rotation lock was neither read nor changed")
+    }
+
     @MainActor @Test func suggestionsRankLargeHistoriesOffMainWithStableIDs() async {
         let url = URL(string: "https://example.com")!
         let history = (0..<10_000).map { "https://example.com/item/\($0)" }

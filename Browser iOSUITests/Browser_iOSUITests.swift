@@ -351,6 +351,60 @@ final class Browser_iOSUITests: XCTestCase {
     }
 
     @MainActor
+    func testIPadAppAndDomainRotationPrecedenceWithLocalPage() throws {
+        guard let address = ProcessInfo.processInfo.environment["MOBILE_FIXTURE_URL"] else {
+            throw XCTSkip("Requires the local fixture server")
+        }
+        let app = configuredApplication()
+        app.launchArguments += ["-openURL", address]
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+        app.launch()
+        XCTAssertTrue(app.webViews.buttons["Stationary Edge"].waitForExistence(timeout: 15))
+        guard app.frame.width >= 600 else { throw XCTSkip("iPad-only additional acceptance") }
+        func choose(_ title: String) {
+            app.buttons["browser.pageMenu"].tap()
+            app.buttons["Rotation Lock"].tap()
+            XCTAssertTrue(app.buttons[title].waitForExistence(timeout: 3))
+            app.buttons[title].tap()
+        }
+        func requireLayout(landscape: Bool, name: String) {
+            let result = expectation(for: NSPredicate { _, _ in
+                landscape ? app.frame.width > app.frame.height : app.frame.height > app.frame.width
+            }, evaluatedWith: app)
+            wait(for: [result], timeout: 10)
+            let bar = app.descendants(matching: .any)["browser.controls"]
+            XCTAssertTrue(app.frame.contains(bar.frame))
+            XCTAssertTrue(app.buttons["browser.pageMenu"].isHittable)
+            print("AIR_IPAD_ROTATION \(name) frame=\(app.frame)")
+            saveScreenshot(app, name: name)
+        }
+        choose("Portrait")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let forbidden = expectation(for: NSPredicate { _, _ in app.frame.width > app.frame.height }, evaluatedWith: app)
+        forbidden.isInverted = true
+        wait(for: [forbidden], timeout: 2)
+        requireLayout(landscape: false, name: "iPad-app-portrait-lock")
+        choose("Allow Rotation on 127.0.0.1")
+        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.orientation = .landscapeLeft
+        requireLayout(landscape: true, name: "iPad-domain-allow-over-app-portrait")
+        choose("Lock Current Orientation on 127.0.0.1")
+        XCUIDevice.shared.orientation = .portrait
+        let portraitForbidden = expectation(for: NSPredicate { _, _ in app.frame.height > app.frame.width }, evaluatedWith: app)
+        portraitForbidden.isInverted = true
+        wait(for: [portraitForbidden], timeout: 2)
+        requireLayout(landscape: true, name: "iPad-domain-captured-landscape")
+        choose("Use App Rotation Setting for 127.0.0.1")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCUIDevice.shared.orientation = .portrait
+        requireLayout(landscape: false, name: "iPad-domain-reset-to-app-portrait")
+        choose("Unlocked")
+        XCUIDevice.shared.orientation = .landscapeRight
+        requireLayout(landscape: true, name: "iPad-app-unlocked-landscape-right")
+    }
+
+    @MainActor
     func testDomainRotationLocksAllowsAndResetsWithoutForcing() throws {
         guard let address = ProcessInfo.processInfo.environment["MOBILE_FIXTURE_URL"] else {
             throw XCTSkip("Requires the local fixture server; see docs/mobile-air-2026-10-22.md")
