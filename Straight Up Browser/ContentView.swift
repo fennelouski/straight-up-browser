@@ -352,11 +352,13 @@ private enum ContentAccessibilityFocus: Hashable {
 private enum ContentModal: Identifiable, Equatable {
     case library
     case reader(ReaderArticle)
+    case arrangePanes
 
     var id: String {
         switch self {
         case .library: "library"
         case .reader: "reader"
+        case .arrangePanes: "arrangePanes"
         }
     }
 }
@@ -469,7 +471,7 @@ struct ContentView: View {
     let windowID: UUID
     @ObservedObject private var windows = BrowserWindows.shared
     private var nativeFullScreen: Bool { windows.fullScreenIDs.contains(windowID) }
-    @AppStorage(BrowserWindows.nativeFullScreenKey) private var immersiveFullScreenEnabled = false
+    @AppStorage(BrowserWindows.nativeFullScreenKey, store: BrowserProfile.defaults) private var immersiveFullScreenEnabled = false
     @State private var renameWindowPresented = false
     @State private var windowName = ""
     @State private var windowObservers: [NSObjectProtocol] = []
@@ -509,6 +511,8 @@ struct ContentView: View {
 
     // UI State
     @State private var showOmnibar = false
+    @State private var newCommandQuery: String?
+    @State private var newCommandRequest = UUID()
     @State private var omnibarWeatherActive = false
     @State private var showTabGrid = false
     @State private var showPasswordPicker = false
@@ -517,19 +521,19 @@ struct ContentView: View {
     @State private var passwordPickerSubmits = false
     @State private var showAgentPanel = false
     @State private var showScratchPad = false
-    @AppStorage(AgentSettingsRuntimeKey.adjustsPageLayout) private var agentAdjustsPageLayout = false
-    @AppStorage(AgentSettingsRuntimeKey.loadsMorePageContent) private var agentLoadsMorePageContent = true
-    @AppStorage(AgentSettingsRuntimeKey.panelSide) private var agentPanelSideRaw = BrowserChromeSide.left.rawValue
+    @AppStorage(AgentSettingsRuntimeKey.adjustsPageLayout, store: BrowserProfile.defaults) private var agentAdjustsPageLayout = false
+    @AppStorage(AgentSettingsRuntimeKey.loadsMorePageContent, store: BrowserProfile.defaults) private var agentLoadsMorePageContent = true
+    @AppStorage(AgentSettingsRuntimeKey.panelSide, store: BrowserProfile.defaults) private var agentPanelSideRaw = BrowserChromeSide.left.rawValue
     @State private var agentLassoSelection: AgentLassoSelection?
     @State private var showDeveloperTools = false
     @StateObject private var developerTools = DeveloperToolsModel()
-    @AppStorage(DeveloperToolsPlacement.defaultsKey) private var developerToolsPlacementRaw = DeveloperToolsPlacement.bottom.rawValue
+    @AppStorage(DeveloperToolsPlacement.defaultsKey, store: BrowserProfile.defaults) private var developerToolsPlacementRaw = DeveloperToolsPlacement.bottom.rawValue
     @State private var showFindBar = false
     @State private var findText = ""
     @State private var findMatchIndex = 0 // 1-based position of the current match, 0 before the first hit
     @State private var findMatchCount = 0
-    @AppStorage(FindBar.positionKey) private var findBarPosition = FindBar.defaultPosition
-    @AppStorage(FindBar.intensityKey) private var findFlashIntensity = FindBar.defaultIntensity
+    @AppStorage(FindBar.positionKey, store: BrowserProfile.defaults) private var findBarPosition = FindBar.defaultPosition
+    @AppStorage(FindBar.intensityKey, store: BrowserProfile.defaults) private var findFlashIntensity = FindBar.defaultIntensity
     @State private var canGoBack = false
     @State private var canGoForward = false
     @State private var currentTitle = ""
@@ -565,20 +569,20 @@ struct ContentView: View {
     @State private var seenBeforeNote: String?
     @State private var seenBeforeToken = UUID()
     @State private var workspaceName = ""
-    @AppStorage("tabBarWidth") private var tabBarWidth: Double = 200.0
-    @AppStorage(BrowserChromePlacementSettings.Key.tabSidebarSide) private var tabSidebarSideRaw = BrowserChromeSide.left.rawValue
+    @AppStorage("tabBarWidth", store: BrowserProfile.defaults) private var tabBarWidth: Double = 200.0
+    @AppStorage(BrowserChromePlacementSettings.Key.tabSidebarSide, store: BrowserProfile.defaults) private var tabSidebarSideRaw = BrowserChromeSide.left.rawValue
     @State private var tabBarResizeStartWidth: Double?
-    @AppStorage("showTraditionalTopTabs") private var showTraditionalTopTabs = false
-    @AppStorage("topTabsAutoHide") private var topTabsAutoHide = true
-    @AppStorage("adaptiveLargeSidebarTabs") private var adaptiveLargeSidebarTabs = true
-    @AppStorage(VisualTabPreferences.aspectRatioKey)
+    @AppStorage("showTraditionalTopTabs", store: BrowserProfile.defaults) private var showTraditionalTopTabs = false
+    @AppStorage("topTabsAutoHide", store: BrowserProfile.defaults) private var topTabsAutoHide = true
+    @AppStorage("adaptiveLargeSidebarTabs", store: BrowserProfile.defaults) private var adaptiveLargeSidebarTabs = true
+    @AppStorage(VisualTabPreferences.aspectRatioKey, store: BrowserProfile.defaults)
     private var visualTabAspectRatio = VisualTabPreferences.defaultAspectRatio
-    @AppStorage(VisualTabPreferences.livePreviewsKey)
+    @AppStorage(VisualTabPreferences.livePreviewsKey, store: BrowserProfile.defaults)
     private var visualTabLivePreviews = true
-    @AppStorage(VisualTabPreferences.switcherKey)
+    @AppStorage(VisualTabPreferences.switcherKey, store: BrowserProfile.defaults)
     private var visualTabSwitcher = true
-    @AppStorage(SettingsManager.aiFeaturesKey) private var aiFeaturesEnabled = true
-    @AppStorage(NewTabButtonVisibility.visibleKey) private var showNewTabButton = true
+    @AppStorage(SettingsManager.aiFeaturesKey, store: BrowserProfile.defaults) private var aiFeaturesEnabled = true
+    @AppStorage(NewTabButtonVisibility.visibleKey, store: BrowserProfile.defaults) private var showNewTabButton = true
     @State private var topTabsRevealed = false
     @State private var visualPreviewRefresh = UUID()
     @State private var showTabSwitcher = false
@@ -605,17 +609,17 @@ struct ContentView: View {
     @State private var hasRenderedContent = false
 
     // Which window edges show the load progress bar (any combination)
-    @AppStorage("progressBarTop") private var progressBarTop = true
-    @AppStorage("progressBarBottom") private var progressBarBottom = false
-    @AppStorage("progressBarLeft") private var progressBarLeft = false
-    @AppStorage("progressBarRight") private var progressBarRight = false
+    @AppStorage("progressBarTop", store: BrowserProfile.defaults) private var progressBarTop = true
+    @AppStorage("progressBarBottom", store: BrowserProfile.defaults) private var progressBarBottom = false
+    @AppStorage("progressBarLeft", store: BrowserProfile.defaults) private var progressBarLeft = false
+    @AppStorage("progressBarRight", store: BrowserProfile.defaults) private var progressBarRight = false
     // Show progress as a ring around the favicon in the tab bar
-    @AppStorage("progressFaviconRing") private var progressFaviconRing = false
+    @AppStorage("progressFaviconRing", store: BrowserProfile.defaults) private var progressFaviconRing = false
 
     // Memory saving: release background tabs from RAM under memory pressure
-    @AppStorage("memorySaverEnabled") private var memorySaverEnabled = false
-    @AppStorage("javaScriptEnabled") private var javaScriptEnabled = true
-    @AppStorage("adBlockEnabled") private var adBlockEnabled = false
+    @AppStorage("memorySaverEnabled", store: BrowserProfile.defaults) private var memorySaverEnabled = false
+    @AppStorage("javaScriptEnabled", store: BrowserProfile.defaults) private var javaScriptEnabled = true
+    @AppStorage("adBlockEnabled", store: BrowserProfile.defaults) private var adBlockEnabled = false
 
     // ⇧⌘H / ⇧⌘K shortcut cheat sheet
     @State private var showShortcutCheatSheet = false
@@ -729,6 +733,7 @@ struct ContentView: View {
         // visible too and must not go blank under pressure.
         let displayed = displayedTabIds
         for tab in tabs where !displayed.contains(tab.id)
+            && !tabManager.paneIsProtected(tab.id, tabs: tabs + tabManager.incognitoTabs)
             && BrowserResourcePolicy.shouldUnload(tab.memoryPolicy, url: tab.url, critical: critical) {
             webViewManager?.unloadWebView(for: tab.id)
         }
@@ -737,9 +742,9 @@ struct ContentView: View {
     // At most once a week, when memory is tight and the feature is off, offer to enable it.
     private func maybeNudgeMemorySaver() {
         let key = "memorySaverPromptLastShown"
-        let last = UserDefaults.standard.object(forKey: key) as? Date ?? .distantPast
+        let last = BrowserProfile.defaults.object(forKey: key) as? Date ?? .distantPast
         guard Date().timeIntervalSince(last) > 7 * 24 * 3600 else { return }
-        UserDefaults.standard.set(Date(), forKey: key)
+        BrowserProfile.defaults.set(Date(), forKey: key)
 
         let alert = NSAlert()
         alert.messageText = String(localized: "Running low on memory?")
@@ -748,7 +753,7 @@ struct ContentView: View {
         alert.addButton(withTitle: String(localized: "Not Now"))
         let handle: (NSApplication.ModalResponse) -> Void = { response in
             if response == .alertFirstButtonReturn {
-                UserDefaults.standard.set(true, forKey: "memorySaverEnabled")
+                BrowserProfile.defaults.set(true, forKey: "memorySaverEnabled")
             }
         }
         if let window = webViewManager?.activeWebView?.window {
@@ -786,6 +791,23 @@ struct ContentView: View {
         tabManager.splitTabIds.isEmpty
             ? [tabManager.focusedDocumentId ?? tabManager.selectedTabId].compactMap { $0 }
             : tabManager.splitTabIds
+    }
+
+    private var paneArrangementContent: [PaneArrangementContent] {
+        var items = allTabs.map { tab in
+            let protected = tabManager.paneIsProtected(tab.id, tabs: allTabs)
+            let title = tab.sessionKind == .incognito ? "Private tab"
+                : protected ? "Protected tab"
+                : tab.title.contains("://") ? (tab.url?.host ?? "Tab")
+                : String(tab.title.prefix(80))
+            return PaneArrangementContent(reference: .tab(tab.id), title: title, isProtected: protected)
+        }
+        if let workspaceID = tabManager.activeWorkspaceId, let documentStore {
+            items += documentStore.documents(workspaceId: workspaceID).map {
+                PaneArrangementContent(reference: .document($0.id), title: $0.displayName, isProtected: false)
+            }
+        }
+        return items
     }
 
     // The tint for a tab's isolated session (nil for a normal tab): a container's
@@ -1487,7 +1509,7 @@ struct ContentView: View {
     // Fraction of the window height above the omnibar. Fixed (not centered)
     // so the bar never moves while suggestions appear below it.
     private var omnibarTopFraction: CGFloat {
-        switch UserDefaults.standard.string(forKey: "omnibarPosition") {
+        switch BrowserProfile.defaults.string(forKey: "omnibarPosition") {
         case "Top": return 0.08
         case "Center": return 0.45
         default: return 0.25 // "Upper": about 3/4 of the way up the window
@@ -1532,8 +1554,10 @@ struct ContentView: View {
                 onSwitchToTab: { tabManager.selectedTabId = $0 },
                 pageProtection: pageProtectionSummary,
                 focusedDocumentName: focusedDocumentName,
+                initialQuery: newCommandQuery,
                 onWeatherVisibilityChanged: { omnibarWeatherActive = $0 }
             )
+            .id(newCommandRequest)
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(.isModal)
             .accessibilityFocused($accessibilityFocus, equals: .omnibar)
@@ -2340,7 +2364,6 @@ struct ContentView: View {
         .overlay(downloadProgressOverlay.zIndex(1.5))
         .overlay(newTabPageOverlay.zIndex(2))
         .overlay(linkPreviewOverlay.zIndex(3))
-        .overlay(omnibarOverlay.zIndex(3))
         .overlay(findBarOverlay.zIndex(3))
         .overlay(createGroupDialogOverlay.zIndex(4))
         .overlay(createContainerDialogOverlay.zIndex(4))
@@ -2349,6 +2372,7 @@ struct ContentView: View {
         .overlay(autofillHUDOverlay.zIndex(7))
         .overlay(shortcutCheatSheetOverlay.zIndex(8))
         .overlay(tabGridOverlay.zIndex(8))
+        .overlay(omnibarOverlay.zIndex(9))
         .overlay(passwordPickerOverlay.zIndex(9))
         .overlay(alignment: .bottomTrailing, content: { defaultBrowserOverlay.zIndex(9) })
         .background(DefaultBrowserEngagementObserver(tabManager: tabManager, hasWebPage: activeTab?.url?.scheme == "https" || activeTab?.url?.scheme == "http"))
@@ -2574,6 +2598,7 @@ struct ContentView: View {
                     refreshLivePreviews: refreshVisualTabPreviews,
                     labels: cardLabels,
                     onHover: hoverPreview,
+                    keyboardEnabled: !showOmnibar,
                     onHoverChanged: { tab, hovering in
                         if !hovering { endHoverPreview(tab) }
                     }
@@ -2590,7 +2615,7 @@ struct ContentView: View {
     /// instead of leaving the keystroke silent.
     private func fillSavedPassword(submit: Bool) {
         guard let tabID = tabManager.selectedTabId else { return }
-        let domain = allTabs.first { $0.id == tabID }?.url?.host?.lowercased()
+        let domain = credentialManager.focusedDomain(tabID: tabID) ?? allTabs.first { $0.id == tabID }?.url?.host?.lowercased()
         let usernames = domain.map { SavedCredentialStore.usernames(domain: $0) } ?? []
         if let domain, usernames.count == 1 {
             credentialManager.dismissSuggestions()
@@ -2610,7 +2635,7 @@ struct ContentView: View {
             if showPasswordPicker {
                 let currentTabId = tabManager.selectedTabId
                 let currentTab = allTabs.first { $0.id == currentTabId }
-                let domain = currentTab?.url?.host?.lowercased()
+                let domain = currentTabId.flatMap { credentialManager.focusedDomain(tabID: $0) } ?? currentTab?.url?.host?.lowercased()
                 PasswordPickerView(
                     isPresented: $showPasswordPicker,
                     domain: domain,
@@ -2675,9 +2700,8 @@ struct ContentView: View {
         .browserSlideMotion(showShortcutCheatSheet)
     }
 
-    // Same "theme" key SettingsManager reads — @AppStorage (not SettingsManager.shared.colorScheme)
-    // so this view actually re-renders when Theme changes, instead of waiting for an unrelated update.
-    @AppStorage("theme") private var themePreference = "System"
+    // The shared durable theme owner invalidates every open window after a verified change.
+    @BrowserThemeStorage private var themePreference
 
     private var colorScheme: ColorScheme? {
         switch themePreference {
@@ -2721,7 +2745,7 @@ struct ContentView: View {
                 @unknown default:
                     break
                 }
-                UserDefaults.standard.set(tabBarWidth, forKey: "tabBarWidth")
+                BrowserProfile.defaults.set(tabBarWidth, forKey: "tabBarWidth")
             }
             // Global coordinate space, not the grip's own: the grip rides the
             // edge it's resizing, so a local translation is measured against a
@@ -3052,10 +3076,10 @@ struct ContentView: View {
                     queue: .main
                 ) { [self] _ in
                     if tabBarWidth > 0 {
-                        UserDefaults.standard.set(tabBarWidth, forKey: "lastTabBarWidth")
+                        BrowserProfile.defaults.set(tabBarWidth, forKey: "lastTabBarWidth")
                         tabBarWidth = 0
                     } else {
-                        let last = UserDefaults.standard.double(forKey: "lastTabBarWidth")
+                        let last = BrowserProfile.defaults.double(forKey: "lastTabBarWidth")
                         tabBarWidth = last > 0 ? last : 200
                     }
                 }
@@ -3067,6 +3091,16 @@ struct ContentView: View {
                 }
                 addWindowObserver(forName: .browserPreviousTab, object: nil, queue: .main) { [self] _ in
                     flashTabSwitcher()
+                }
+
+                addWindowObserver(forName: .browserNewCommand, object: nil, queue: .main) { [self] _ in
+                    performConfiguredNewCommand()
+                }
+                addWindowObserver(forName: .browserMovePaneLeft, object: nil, queue: .main) { [self] _ in
+                    _ = tabManager.moveFocusedPane(by: -1)
+                }
+                addWindowObserver(forName: .browserMovePaneRight, object: nil, queue: .main) { [self] _ in
+                    _ = tabManager.moveFocusedPane(by: 1)
                 }
 
                 addWindowObserver(forName: .browserShowTabGrid, object: nil, queue: .main) { [self] _ in
@@ -3106,6 +3140,9 @@ struct ContentView: View {
                 addWindowObserver(forName: .browserClearAllData, object: nil, queue: .main) { [self] _ in
                     clearAllData()
                 }
+                addWindowObserver(forName: .browserArrangePanes, object: nil, queue: .main) { [self] _ in
+                    contentModal = .arrangePanes
+                }
 
                 // SwiftData is the session store: tabs are already loaded via @Query.
                 // Register any restored container tabs' sessions before they activate.
@@ -3118,7 +3155,7 @@ struct ContentView: View {
                     showOmnibar = true
                 } else {
                     tabManager.selectedTabId =
-                        visiblePersistedTabs.first(where: { $0.id.uuidString == UserDefaults.standard.string(forKey: "selectedTabId." + windowID.uuidString) })?.id
+                        visiblePersistedTabs.first(where: { $0.id.uuidString == BrowserProfile.defaults.string(forKey: "selectedTabId." + windowID.uuidString) })?.id
                         ?? visiblePersistedTabs.first(where: { $0.isActive })?.id
                         ?? visiblePersistedTabs.first?.id
                     // Restore last session's split (drops ids that no longer resolve)
@@ -3129,11 +3166,17 @@ struct ContentView: View {
             // Safe to re-run: observer setup is balanced by cleanup/teardown in onDisappear
             notificationManager?.setupNotificationObservers()
             keyboardShortcutsManager?.setupKeyboardShortcuts()
+            if let presentation = NewCommandPreferences.pendingWindows.removeValue(forKey: windowID) {
+                presentConfiguredNewCommand(presentation)
+            }
         }
         // Every way the active tab changes writes selectedTabId, so peek from
         // here rather than the individual switch/close/reopen paths: Cmd+W and
         // Cmd+Shift+T get it too, and a no-op switch (Cmd+5 with 3 tabs open)
         // doesn't peek because the value never changed.
+        .onChange(of: showOmnibar) { _, visible in
+            if !visible { newCommandQuery = nil }
+        }
         .onChange(of: tabManager.selectedTabId) { _, _ in peekFavicon() }
         .onChange(of: showOmnibar) { _, isShowing in
             // Dismissing the omnibar (Esc, click-away) without navigating takes
@@ -3153,6 +3196,7 @@ struct ContentView: View {
                 switch modal {
                 case .library: accessibilityFocus = .library
                 case .reader: accessibilityFocus = .reader
+                case .arrangePanes: accessibilityFocus = nil
                 case nil: accessibilityFocus = .page
                 }
             }
@@ -3279,6 +3323,8 @@ struct ContentView: View {
                 librarySheet
             case .reader(let article):
                 readerSheet(article)
+            case .arrangePanes:
+                PaneArrangementPanel(tabManager: tabManager, tabs: allTabs, content: paneArrangementContent)
             }
         }
         .alert(item: $persistenceDiagnostics.latestIssue, content: persistenceAlert)
@@ -3460,7 +3506,7 @@ struct ContentView: View {
             forceNewTabAction: { self.forceCreateNewTab() },
             setTabBarWidth: { width in
                 self.tabBarWidth = width
-                UserDefaults.standard.set(width, forKey: "tabBarWidth")
+                BrowserProfile.defaults.set(width, forKey: "tabBarWidth")
             },
             switchToTabAction: { index in self.switchToTab(at: index) },
             switchToNextTabAction: { self.switchToNextTab() },
@@ -3483,6 +3529,31 @@ struct ContentView: View {
             goForwardAction: { self.goForward() },
             webViewManager: webViewManager
         )
+    }
+
+    private func performConfiguredNewCommand() {
+        let presentation = NewCommandPreferences.presentation()
+        switch NewCommandPreferences.destination() {
+        case .window:
+            let id = BrowserWindows.shared.create()
+            NewCommandPreferences.pendingWindows[id] = presentation
+            openWindow(id: "browser", value: id)
+            return
+        case .currentContext: break
+        case .tab:
+            _ = tabManager.createCommandTab(inSplit: false, tabs: allTabs, inheriting: activeSession())
+        case .splitPane:
+            _ = tabManager.createCommandTab(inSplit: true, tabs: allTabs, inheriting: activeSession())
+        }
+        presentConfiguredNewCommand(presentation)
+    }
+
+    private func presentConfiguredNewCommand(_ presentation: NewCommandPresentation) {
+        webViewManager?.captureThumbnail(for: tabManager.selectedTabId)
+        showTabGrid = presentation == .visualTabs
+        newCommandQuery = presentation == .weather ? "weather" : ""
+        newCommandRequest = UUID()
+        showOmnibar = true
     }
 
     private func createNewTab() {
@@ -3647,6 +3718,7 @@ struct ContentView: View {
             Button(tabManager.splitTabIds.isEmpty ? "Open in Split" : "Add to Split",
                    action: { tabManager.toggleSplitMembership(tab, tabs: allTabs) })
         }
+        Button("Arrange Panes / Saved Layouts…") { contentModal = .arrangePanes }
         Divider()
 
         let newspaperSourceKey = tab.url.map {
@@ -3881,7 +3953,7 @@ struct ContentView: View {
 
     private func handleOpenAnchor(_ note: Notification) {
         guard let url = note.userInfo?["url"] as? URL else { return }
-        let behavior = UserDefaults.standard.string(forKey: "anchorLinkOpenBehavior") ?? "peek"
+        let behavior = BrowserProfile.defaults.string(forKey: "anchorLinkOpenBehavior") ?? "peek"
         if behavior == "tab" {
             // Ordinary link behavior; single-view dissolve rules apply.
             _ = tabManager.createNewTab(url: url)
@@ -4169,11 +4241,12 @@ struct ContentView: View {
 
     private func copyURL(of tab: Tab) {
         guard let url = tab.url else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        BrowserProfileSystem.pasteboard.clearContents()
+        BrowserProfileSystem.pasteboard.setString(url.absoluteString, forType: .string)
     }
 
     private func shareTab(_ tab: Tab) {
+        guard !BrowserProfile.isIsolated else { return }
         guard let url = tab.url, let window = NSApp.keyWindow, let contentView = window.contentView else { return }
         let point = contentView.convert(window.mouseLocationOutsideOfEventStream, from: nil)
         NSSharingServicePicker(items: [url]).show(relativeTo: NSRect(origin: point, size: .zero), of: contentView, preferredEdge: .minY)
@@ -4350,6 +4423,7 @@ struct ContentView: View {
         // tab a real snapshot, the og:image is only what it shows until then.
         let cold = allTabs.filter {
             !displayed.contains($0.id) && $0.url != nil
+                && !tabManager.shouldDeferColdLayoutStarter($0.id)
                 && !warmedTabIds.contains($0.id)
                 && webViewManager?.thumbnails[$0.id] == nil
         }

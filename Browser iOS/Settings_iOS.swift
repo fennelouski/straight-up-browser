@@ -46,7 +46,7 @@ struct Settings_iOS: View {
     @AppStorage("optionClickDownloadEnabled") private var optionClickDownloadEnabled = false
     @AppStorage("optionClickDownloadLinks") private var optionClickDownloadLinks = true
     @AppStorage("optionClickDownloadImages") private var optionClickDownloadImages = true
-    @AppStorage("theme") private var theme = "System"
+    @BrowserThemeStorage private var theme
     @AppStorage("progressBarTop") private var progressBarTop = true
     @AppStorage("progressBarBottom") private var progressBarBottom = false
     @AppStorage("progressBarLeft") private var progressBarLeft = false
@@ -200,6 +200,10 @@ struct Settings_iOS: View {
                         Text("System").tag("System")
                         Text("Light").tag("Light")
                         Text("Dark").tag("Dark")
+                    }
+                    if let message = BrowserThemeStore.shared.statusMessage {
+                        Text(message).font(.caption).foregroundStyle(.red)
+                        if BrowserThemeStore.shared.canRetryLoading { Button("Retry loading theme") { BrowserThemeStore.shared.retryLoading() } }
                     }
                     Toggle("Progress bar: top", isOn: $progressBarTop)
                     Toggle("Progress bar: bottom", isOn: $progressBarBottom)

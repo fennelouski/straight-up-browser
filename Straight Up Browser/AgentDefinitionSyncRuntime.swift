@@ -34,10 +34,7 @@ actor AgentDefinitionSyncRuntime {
 
     #if canImport(CloudKit)
     static let shared = AgentDefinitionSyncRuntime(
-        baseDirectory: FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        )[0].appendingPathComponent("Straight Up Browser", isDirectory: true),
+        baseDirectory: BrowserProfile.applicationSupportURLs[0].appendingPathComponent("Straight Up Browser", isDirectory: true),
         backend: CloudKitAgentDefinitionSyncBackend()
     )
     #endif
@@ -47,8 +44,7 @@ actor AgentDefinitionSyncRuntime {
         defaultsSuiteName: String? = nil,
         backend: any AgentDefinitionSyncBackend
     ) {
-        let defaults = defaultsSuiteName.flatMap { UserDefaults(suiteName: $0) }
-            ?? .standard
+        let defaults = BrowserProfile.defaults(defaultsSuiteName.flatMap { UserDefaults(suiteName: $0) } ?? .standard)
         self.defaults = defaults
         let directory = baseDirectory
             .appendingPathComponent("agent", isDirectory: true)
@@ -505,7 +501,7 @@ final class AgentDefinitionLiveDependencyResolver:
         changesSubject.eraseToAnyPublisher()
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = BrowserProfile.defaults) {
         self.defaults = defaults
         BrowserAgentMCPStore.shared.$connections
             .dropFirst()
@@ -641,13 +637,13 @@ final class AgentDefinitionSyncService: ObservableObject {
 
     private static var isRunningUnderTests: Bool {
         let environment = ProcessInfo.processInfo.environment
-        return ProcessInfo.processInfo.arguments.contains("-uiTesting")
+        return BrowserProfile.isIsolated || ProcessInfo.processInfo.arguments.contains("-uiTesting")
             || environment["XCTestConfigurationFilePath"] != nil
             || environment["XCInjectBundleInto"] != nil
     }
 
     init(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = BrowserProfile.defaults,
         runtime: AgentDefinitionSyncRuntime = .shared,
         dependencyResolver: any AgentDefinitionLocalDependencyResolving =
             AgentDefinitionLiveDependencyResolver.shared,

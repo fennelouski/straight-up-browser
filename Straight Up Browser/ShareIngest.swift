@@ -25,7 +25,7 @@ enum ShareIngest {
     /// Permanent home for imported file bytes (design §4): content-hashed, so
     /// the same bytes shared twice land on one file.
     static func importsDirectory() -> URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        let base = BrowserProfile.applicationSupportURLs.first
             ?? FileManager.default.temporaryDirectory
         return base.appendingPathComponent("Imports", isDirectory: true)
     }
@@ -36,9 +36,10 @@ enum ShareIngest {
     @discardableResult
     static func drain(
         ledgerStore: LedgerStore,
-        container: URL? = ShareQueue.containerURL(),
+        container: URL? = BrowserProfile.isIsolated ? nil : ShareQueue.containerURL(),
         importsDirectory: URL = importsDirectory()
     ) async -> Result {
+        guard !BrowserProfile.isIsolated else { return Result() }
         guard let container, drainingContainers.insert(container).inserted else { return Result() }
         defer { drainingContainers.remove(container) }
         var result = Result()
@@ -82,6 +83,7 @@ enum ShareIngest {
     }
 
     @concurrent static func prepare(_ source: URL, directory: URL) async throws -> (url: URL, hash: String) {
+        guard !BrowserProfile.isIsolated else { throw CocoaError(.featureUnsupported) }
         assert(!Thread.isMainThread)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let temporary = directory.appendingPathComponent(UUID().uuidString + ".tmp")
@@ -112,6 +114,7 @@ enum ShareIngest {
 
     /// Refresh the extension's picker mirror from the live workspace list.
     static func updateMirror(workspaces: [Workspace], activeWorkspaceId: UUID?) {
+        guard !BrowserProfile.isIsolated else { return }
         ShareQueue.updateMirror(
             workspaces.filter { !$0.isArchived }.map {
                 ShareQueue.MirroredWorkspace(id: $0.id, name: $0.name, lastActiveAt: $0.lastActiveAt)

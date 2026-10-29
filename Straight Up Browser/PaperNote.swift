@@ -37,7 +37,7 @@ nonisolated enum PaperNote {
     /// behind cookies come back empty and fall through to the normal failure.
     /// Reuse the web view's cookie store if that ever matters.
     static func readerArticle(pdfAt url: URL, fallbackTitle: String) async -> ReaderArticle? {
-        guard let (data, _) = try? await URLSession.shared.data(from: url),
+        guard let (data, _) = try? await BrowserProfileNetwork.session.data(from: url),
               data.count <= maximumPDFBytes,
               let document = PDFDocument(data: data)
         else { return nil }
@@ -194,7 +194,7 @@ nonisolated enum PaperNote {
     #if canImport(FoundationModels)
     @available(macOS 26.0, iOS 26.0, *)
     private static func onDeviceCompose(_ source: String, title: String) async throws -> String {
-        guard SystemLanguageModel.default.availability == .available else {
+        guard !BrowserProfile.isIsolated && SystemLanguageModel.default.availability == .available else {
             throw NewspaperCondensationError.unavailable
         }
         let chunks = NewspaperCondensationService.chunks(source)

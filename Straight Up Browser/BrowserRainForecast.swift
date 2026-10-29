@@ -140,8 +140,9 @@ struct WeatherRegionalFeedSettings: View {
                 .accessibilityLabel("Regional rain options")
             }
             if !status.isEmpty { Text(status).font(.caption).lineLimit(3) }
-        }.fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
+        }.fileImporter(isPresented: Binding(get: { !BrowserProfile.isIsolated && importing }, set: { importing = $0 }), allowedContentTypes: [.json]) { result in
             do {
+                guard !BrowserProfile.isIsolated else { return }
                 let url = try result.get(), access = url.startAccessingSecurityScopedResource()
                 defer { if access { url.stopAccessingSecurityScopedResource() } }
                 try regional.load(Data(contentsOf: url)); status = "Tile loaded"

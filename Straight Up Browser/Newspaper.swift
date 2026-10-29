@@ -236,13 +236,14 @@ enum NewspaperPreferences {
 
     /// Empty means the system serif face (New York).
     static var fontFamily: String {
-        UserDefaults.standard.string(forKey: Key.fontFamily) ?? ""
+        BrowserProfile.defaults.string(forKey: Key.fontFamily) ?? ""
     }
 
     static let defaultAppearance = NewspaperAppearance.system.rawValue
     // UI previews exercise live choices without changing the installed browser's
     // layout or appearance preferences. Ordinary launches retain their saved choices.
     static let presentationStore: UserDefaults = {
+        if BrowserProfile.isIsolated { return BrowserProfile.defaults }
         let arguments = ProcessInfo.processInfo.arguments
         guard arguments.contains("-uiTesting"), arguments.contains("-newspaperUITesting"),
               let store = UserDefaults(suiteName: "Browser.NewspaperPresentationUITests") else { return .standard }
@@ -261,24 +262,24 @@ enum NewspaperPreferences {
     static let maximumTargetCharacterCount = 40_000
 
     static var condensesArticles: Bool {
-        UserDefaults.standard.bool(forKey: Key.condenseArticles)
+        BrowserProfile.defaults.bool(forKey: Key.condenseArticles)
     }
 
     static var targetWordCount: Int {
-        let stored = UserDefaults.standard.integer(forKey: Key.targetWordCount)
+        let stored = BrowserProfile.defaults.integer(forKey: Key.targetWordCount)
         let value = stored == 0 ? defaultTargetWordCount : stored
         return min(max(value, minimumTargetWordCount), maximumTargetWordCount)
     }
 
     static var lengthTarget: NewspaperLengthTarget {
         let unit = NewspaperLengthUnit(
-            rawValue: UserDefaults.standard.string(forKey: Key.lengthUnit) ?? ""
+            rawValue: BrowserProfile.defaults.string(forKey: Key.lengthUnit) ?? ""
         ) ?? .words
         switch unit {
         case .words:
             return NewspaperLengthTarget(unit: .words, maximum: targetWordCount)
         case .characters:
-            let stored = UserDefaults.standard.integer(forKey: Key.targetCharacterCount)
+            let stored = BrowserProfile.defaults.integer(forKey: Key.targetCharacterCount)
             let value = stored == 0 ? defaultTargetCharacterCount : stored
             return NewspaperLengthTarget(
                 unit: .characters,
@@ -295,11 +296,11 @@ enum NewspaperWorkIdentity {
     private static let key = "newspaperWorkDeviceID"
 
     static var current: String {
-        if let existing = UserDefaults.standard.string(forKey: key), !existing.isEmpty {
+        if let existing = BrowserProfile.defaults.string(forKey: key), !existing.isEmpty {
             return existing
         }
         let generated = UUID().uuidString.lowercased()
-        UserDefaults.standard.set(generated, forKey: key)
+        BrowserProfile.defaults.set(generated, forKey: key)
         return generated
     }
 }
@@ -419,9 +420,10 @@ enum NewspaperBackgroundCapture {
         _ article: NewspaperArticle,
         url: URL,
         store: NewspaperStore,
-        dataStore: WKWebsiteDataStore = .default()
+        dataStore: WKWebsiteDataStore = BrowserProfileWebKit.dataStore()
     ) {
-        let configuration = WKWebViewConfiguration()
+        guard !BrowserProfile.isIsolated else { return }
+        let configuration = BrowserProfileWebKit.configuration()
         configuration.websiteDataStore = dataStore
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         let captureWebView = WKWebView(frame: .zero, configuration: configuration)
@@ -446,7 +448,7 @@ enum NewspaperAutoFeed {
     static func runIfNeeded(modelContext: ModelContext, now: Date = Date()) {
         guard !ProcessInfo.processInfo.arguments.contains("-uiTesting"),
               ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
-        let defaults = UserDefaults.standard
+        let defaults = BrowserProfile.defaults
         guard defaults.bool(forKey: NewspaperPreferences.Key.starterArticles) else { return }
         let today = now.formatted(.iso8601.year().month().day())
         let articles = (try? modelContext.fetch(FetchDescriptor<NewspaperArticle>())) ?? []
@@ -1103,7 +1105,7 @@ final class NewspaperStore {
     }
 
     static func defaultSection(for url: URL) -> String {
-        let preferred = UserDefaults.standard.string(
+        let preferred = BrowserProfile.defaults.string(
             forKey: NewspaperPreferences.Key.defaultSection
         )?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let preferred, !preferred.isEmpty { return preferred }

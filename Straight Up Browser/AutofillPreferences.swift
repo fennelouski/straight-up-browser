@@ -76,7 +76,7 @@ final class AutofillPreferences {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = BrowserProfile.defaults) {
         self.defaults = defaults
         // On by default: the feature never writes without an explicit pick, so
         // there's nothing to protect the user from until they've saved a profile.

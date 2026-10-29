@@ -113,7 +113,7 @@ final class ScreenshotSettings {
     private(set) var configs: [String: ScreenshotConfig] = [:]
 
     private init() {
-        if let data = UserDefaults.standard.data(forKey: Key.configs),
+        if let data = BrowserProfile.defaults.data(forKey: Key.configs),
            let decoded = try? JSONDecoder().decode([String: ScreenshotConfig].self, from: data) {
             configs = decoded
         }
@@ -128,7 +128,7 @@ final class ScreenshotSettings {
         mutate(&config)
         configs[kind.rawValue] = config
         if let data = try? JSONEncoder().encode(configs) {
-            UserDefaults.standard.set(data, forKey: Key.configs)
+            BrowserProfile.defaults.set(data, forKey: Key.configs)
         }
     }
 
@@ -143,7 +143,8 @@ final class ScreenshotSettings {
 
     /// Where "save to the shared folder" writes. Empty setting = ~/Pictures/Browser Screenshots.
     var sharedFolder: URL {
-        let custom = UserDefaults.standard.string(forKey: Key.sharedFolder) ?? ""
+        if let paths = BrowserProfile.paths { return paths.documents.appendingPathComponent("Screenshots", isDirectory: true) }
+        let custom = BrowserProfile.defaults.string(forKey: Key.sharedFolder) ?? ""
         guard custom.isEmpty else {
             return SecurityScopedFolderRegistry.shared.accessibleURL(
                 for: URL(fileURLWithPath: custom)
@@ -155,15 +156,15 @@ final class ScreenshotSettings {
 
     /// ⌘S over a split: focused pane only (default), or every pane composited.
     var visibleCapturesWholeContentArea: Bool {
-        UserDefaults.standard.bool(forKey: Key.visibleWholeContentArea)
+        BrowserProfile.defaults.bool(forKey: Key.visibleWholeContentArea)
     }
 
     /// Unset means we haven't explained the permission trade-off yet.
     var windowCaptureMode: WindowCaptureMode {
         get {
-            (UserDefaults.standard.string(forKey: Key.windowCaptureMode)).flatMap(WindowCaptureMode.init) ?? .ask
+            (BrowserProfile.defaults.string(forKey: Key.windowCaptureMode)).flatMap(WindowCaptureMode.init) ?? .ask
         }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: Key.windowCaptureMode) }
+        set { BrowserProfile.defaults.set(newValue.rawValue, forKey: Key.windowCaptureMode) }
     }
 }
 
@@ -185,6 +186,7 @@ enum ScreenshotManager {
     // MARK: Entry points
 
     static func capture(_ kind: ScreenshotKind, in webViewManager: WebViewManager) {
+        guard !BrowserProfile.isIsolated else { return }
         guard let webView = webViewManager.activeWebView else { return }
         switch kind {
         case .visible:
@@ -221,7 +223,7 @@ enum ScreenshotManager {
 
     static func openScreenRecordingSettings() {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") else { return }
-        NSWorkspace.shared.open(url)
+        BrowserProfileSystem.open(url)
     }
 
     // Shown once, before macOS would spring its own Screen Recording prompt.
@@ -511,7 +513,7 @@ enum ScreenshotManager {
 
         if config.clipboard.enabled, let data = encode(shot, as: config.clipboard.format) {
             let type = pasteboardType(for: config.clipboard.format)
-            let pasteboard = NSPasteboard.general
+            let pasteboard = BrowserProfileSystem.pasteboard
             // declareTypes, not a bare clearContents: setData for a type the
             // pasteboard was never told about is dropped.
             pasteboard.declareTypes([type], owner: nil)
@@ -613,7 +615,7 @@ enum ScreenshotManager {
 // the response file, regardless of what a shortcut's format setting is).
 extension ScreenshotManager {
     static func copyPNGToClipboard(_ data: Data) {
-        let pasteboard = NSPasteboard.general
+        let pasteboard = BrowserProfileSystem.pasteboard
         pasteboard.declareTypes([.png], owner: nil)
         pasteboard.setData(data, forType: .png)
     }

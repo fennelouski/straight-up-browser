@@ -1,0 +1,69 @@
+Building for debugging...
+[Planning deferred tasks]
+[27 / 50]
+[28 / 51] ShortcutPolicies
+[33 / 124]
+[39 / 124]
+[41 / 124]
+[48 / 124]
+[50 / 124]
+[52 / 124]
+[54 / 124]
+[58 / 124]
+[59 / 124]
+[61 / 124]
+[64 / 124]
+[69 / 124]
+[71 / 124]
+[74 / 124]
+[75 / 124]
+[79 / 124]
+[84 / 124]
+[87 / 124]
+[88 / 124]
+[89 / 124]
+[92 / 124]
+[94 / 124]
+[98 / 124] ShortcutPolicies
+[100 / 124] ShortcutPolicies
+[106 / 124] ShortcutPolicies
+[107 / 124] ShortcutPoliciesTests-product
+[114 / 125] ShortcutPoliciesTests-product
+[115 / 133]
+[118 / 133]
+[121 / 133] ShortcutPoliciesTests-product
+[127 / 133] ShortcutPoliciesTests-product
+[129 / 133] ShortcutPoliciesTests-product
+Build complete! (12.12 sec)
+Test Suite 'All tests' started at 2026-10-18 18:29:55.470.
+Test Suite 'All tests' passed at 2026-10-18 18:29:55.472.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+􀟈  Test run started.
+􀄵  Testing Library Version: 2084
+􀄵  Target Platform: arm64e-apple-macos14.0
+􀟈  Suite ShortcutDiagnosticsTests started.
+􀟈  Suite GlobalHotkeyRegistrationTests started.
+􀟈  Test previewCannotOverwriteAnAwayAndBackEdit() started.
+􀟈  Test comparisonIncludesShiftedPunctuationAndModifiers() started.
+􀟈  Test undoRestoresASafeBindingButPreservesLaterEdits() started.
+􀟈  Test unshiftedPunctuationDoesNotAcquireAUSShiftModifier() started.
+􀟈  Test undoCannotRestoreAnAliasEnabledAfterTheRepair() started.
+􀟈  Test failedReleaseRollsBackCandidateAndRejectsUnknownPreset() started.
+􀟈  Test repairedCollisionPreservesPeerAndRejectsUnsafeUndo() started.
+􀟈  Test fixedBrowserAliasesAreDiagnosedWithoutAnOSScan() started.
+􀟈  Test failedRollbackRetainsExtraHandleUntilCleanupSucceeds() started.
+􀟈  Test failedGlobalReplacementRetainsOldHandleAndRevision() started.
+􁁛  Test comparisonIncludesShiftedPunctuationAndModifiers() passed after 0.016 seconds.
+􁁛  Test undoCannotRestoreAnAliasEnabledAfterTheRepair() passed after 0.016 seconds.
+􁁛  Test undoRestoresASafeBindingButPreservesLaterEdits() passed after 0.016 seconds.
+􁁛  Test previewCannotOverwriteAnAwayAndBackEdit() passed after 0.016 seconds.
+􁁛  Test fixedBrowserAliasesAreDiagnosedWithoutAnOSScan() passed after 0.096 seconds.
+􁁛  Test failedReleaseRollsBackCandidateAndRejectsUnknownPreset() passed after 0.096 seconds.
+􁁛  Test unshiftedPunctuationDoesNotAcquireAUSShiftModifier() passed after 0.096 seconds.
+􁁛  Test repairedCollisionPreservesPeerAndRejectsUnsafeUndo() passed after 0.096 seconds.
+􁁛  Test failedGlobalReplacementRetainsOldHandleAndRevision() passed after 0.096 seconds.
+􁁛  Test failedRollbackRetainsExtraHandleUntilCleanupSucceeds() passed after 0.096 seconds.
+􁁛  Suite ShortcutDiagnosticsTests passed after 0.096 seconds.
+􁁛  Suite GlobalHotkeyRegistrationTests passed after 0.096 seconds.
+􁁛  Test run with 10 tests in 2 suites passed after 0.096 seconds.
+Shortcut model harness: /var/folders/_7/88k0tj090n96y9fs1rpjnchr0000gn/T//browser-v2-shortcuts.FN1UnG

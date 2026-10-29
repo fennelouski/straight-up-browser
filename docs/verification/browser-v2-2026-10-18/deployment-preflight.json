@@ -1,0 +1,33 @@
+{
+  "recordedAt": "2026-10-18T08:43:12.902124+00:00",
+  "xcode": "27.0 (27A266a)",
+  "diagnosis": "Minimal independent, background-only, unique-identity AppKit/XCTest host reproduces IDELaunchServicesLauncher childPID > 0 assertion. Not specific to Browser code. Exact OS/launcher root cause unproven.",
+  "command": "xcodebuild test -quiet -project Probe.xcodeproj -scheme Probe -destination platform=macOS,arch=arm64 -derivedDataPath /tmp/browser-v2-host-launch-probe-derived -resultBundlePath /tmp/browser-v2-host-launch-probe-posix.xcresult -jobs 2 -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 20 -maximum-test-execution-time-allowance 30 CODE_SIGNING_ALLOWED=NO ENABLE_DEBUG_DYLIB=NO GCC_TREAT_WARNINGS_AS_ERRORS=YES SWIFT_TREAT_WARNINGS_AS_ERRORS=YES",
+  "exitCode": 134,
+  "completedTests": null,
+  "noOSOrSecurityChanges": true,
+  "installedApp": {
+    "path": "/Applications/Browser.app",
+    "version": "2.9.26",
+    "build": "133",
+    "developerIDSignatureValid": true,
+    "stapledTicketValid": true,
+    "runningPIDPreserved": 23878,
+    "executableSHA256": "6a1875f7ada92133faefd12da839ad75f8b30f7edbd29dff2466be4358092964",
+    "backupOrReplacementAttempted": false
+  },
+  "signingPreflight": {
+    "validIdentityTypes": [
+      "Apple Development"
+    ],
+    "requiredDeveloperIDApplicationAvailable": false,
+    "newCredentialsRequested": false
+  },
+  "temporaryHostCleanup": {
+    "baselineHostPID": 54799,
+    "probeHostPID": 99878,
+    "method": "SIGTERM only after exact task-owned path and identity verification",
+    "installedBrowserSignaled": false
+  },
+  "deliveryStatus": "Release and installation blocked by hosted verification and required Developer ID identity; no release tag/artifact/install created."
+}

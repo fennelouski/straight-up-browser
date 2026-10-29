@@ -26,7 +26,7 @@ enum NewspaperTemperatureUnit: String, CaseIterable, Identifiable {
 final class NewspaperWeatherStore: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
     static let shared = NewspaperWeatherStore()
     private let preferences: UserDefaults
-    init(preferences: UserDefaults = .standard, locationManager: CLLocationManager? = nil) {
+    init(preferences: UserDefaults = BrowserProfile.defaults, locationManager: CLLocationManager? = nil) {
         self.preferences = preferences; self.locationManager = locationManager; super.init()
     }
     @Published private(set) var weather: CurrentWeather?
@@ -80,6 +80,7 @@ final class NewspaperWeatherStore: NSObject, ObservableObject, @preconcurrency C
     private var pendingCity = ""
 
     func useCurrentLocation(requestPermission: Bool) {
+        guard !BrowserProfile.isIsolated else { return }
         guard weatherRequested,
               preferences.bool(forKey: NewspaperPreferences.Key.weatherCurrentLocation) else { return }
         guard Date().timeIntervalSince(currentLocationFetchedAt) >= 3600 || forecast?.isFresh(at: Date()) != true
@@ -274,15 +275,15 @@ final class NewspaperWeatherStore: NSObject, ObservableObject, @preconcurrency C
 }
 
 struct NewspaperWeatherMasthead: View {
-    @AppStorage("browserWeatherProvider") private var provider = "apple"
-    @AppStorage("browserWeatherCredentialRevision") private var revision = "native"
-    @AppStorage("browserWeatherBYOEnabled") private var byo = false
+    @AppStorage("browserWeatherProvider", store: BrowserProfile.defaults) private var provider = "apple"
+    @AppStorage("browserWeatherCredentialRevision", store: BrowserProfile.defaults) private var revision = "native"
+    @AppStorage("browserWeatherBYOEnabled", store: BrowserProfile.defaults) private var byo = false
     @State private var configuring = false
     @StateObject private var credit = WeatherAttributionLoader()
-    @AppStorage(NewspaperPreferences.Key.showWeather) private var enabled = false
-    @AppStorage(NewspaperPreferences.Key.weatherCity) private var city = ""
-    @AppStorage(NewspaperPreferences.Key.weatherCurrentLocation) private var currentLocation = false
-    @AppStorage(NewspaperPreferences.Key.weatherTemperatureUnit) private var unit = NewspaperTemperatureUnit.system.rawValue
+    @AppStorage(NewspaperPreferences.Key.showWeather, store: BrowserProfile.defaults) private var enabled = false
+    @AppStorage(NewspaperPreferences.Key.weatherCity, store: BrowserProfile.defaults) private var city = ""
+    @AppStorage(NewspaperPreferences.Key.weatherCurrentLocation, store: BrowserProfile.defaults) private var currentLocation = false
+    @AppStorage(NewspaperPreferences.Key.weatherTemperatureUnit, store: BrowserProfile.defaults) private var unit = NewspaperTemperatureUnit.system.rawValue
     @Environment(\.colorScheme) private var scheme
     @ObservedObject private var store = NewspaperWeatherStore.shared
 
@@ -334,13 +335,13 @@ struct NewspaperWeatherMasthead: View {
 }
 
 struct NewspaperWeatherLocationPopup: View {
-    @AppStorage(NewspaperPreferences.Key.weatherTemperatureUnit) private var unit = NewspaperTemperatureUnit.system.rawValue
+    @AppStorage(NewspaperPreferences.Key.weatherTemperatureUnit, store: BrowserProfile.defaults) private var unit = NewspaperTemperatureUnit.system.rawValue
     var enablesMasthead = true
     var validationPlace: BrowserWeatherPlace? = nil
     var aliasToSave: String? = nil
-    @AppStorage(NewspaperPreferences.Key.showWeather) private var enabled = false
-    @AppStorage(NewspaperPreferences.Key.weatherCity) private var city = ""
-    @AppStorage(NewspaperPreferences.Key.weatherCurrentLocation) private var currentLocation = false
+    @AppStorage(NewspaperPreferences.Key.showWeather, store: BrowserProfile.defaults) private var enabled = false
+    @AppStorage(NewspaperPreferences.Key.weatherCity, store: BrowserProfile.defaults) private var city = ""
+    @AppStorage(NewspaperPreferences.Key.weatherCurrentLocation, store: BrowserProfile.defaults) private var currentLocation = false
     @State private var draftCity = ""
     @State private var showingHelp = false
     @State private var showingAdvanced = false
@@ -431,10 +432,10 @@ struct NewspaperWeatherLocationPopup: View {
 }
 
 struct NewspaperWeatherSettings: View {
-    @AppStorage(NewspaperPreferences.Key.weatherTemperatureUnit) private var unit = NewspaperTemperatureUnit.system.rawValue
-    @AppStorage(NewspaperPreferences.Key.showWeather) private var enabled = false
-    @AppStorage(NewspaperPreferences.Key.weatherCity) private var city = ""
-    @AppStorage(NewspaperPreferences.Key.weatherCurrentLocation) private var currentLocation = false
+    @AppStorage(NewspaperPreferences.Key.weatherTemperatureUnit, store: BrowserProfile.defaults) private var unit = NewspaperTemperatureUnit.system.rawValue
+    @AppStorage(NewspaperPreferences.Key.showWeather, store: BrowserProfile.defaults) private var enabled = false
+    @AppStorage(NewspaperPreferences.Key.weatherCity, store: BrowserProfile.defaults) private var city = ""
+    @AppStorage(NewspaperPreferences.Key.weatherCurrentLocation, store: BrowserProfile.defaults) private var currentLocation = false
     @State private var configuring = false
     var body: some View {
         CollapsibleSection(searchID: "newspaper.weather") {

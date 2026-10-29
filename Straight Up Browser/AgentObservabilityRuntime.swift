@@ -19,7 +19,7 @@ nonisolated enum AgentObservabilitySettings {
     }
 
     static func executionLimits(
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = BrowserProfile.defaults
     ) -> AgentExecutionLimits {
         let baseline = AgentExecutionLimits.defaults
         func integer(_ key: String, default fallback: Int, range: ClosedRange<Int>) -> Int {
@@ -83,13 +83,13 @@ nonisolated enum AgentObservabilitySettings {
         )) ?? baseline
     }
 
-    static func localMetricsEnabled(defaults: UserDefaults = .standard) -> Bool {
+    static func localMetricsEnabled(defaults: UserDefaults = BrowserProfile.defaults) -> Bool {
         defaults.object(forKey: Key.localMetricsEnabled) == nil
             ? true : defaults.bool(forKey: Key.localMetricsEnabled)
     }
 
     static func metricRetention(
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = BrowserProfile.defaults
     ) -> AgentMetricRetentionPolicy {
         let days = defaults.object(forKey: Key.metricRetentionDays) == nil
             ? 30 : min(max(defaults.integer(forKey: Key.metricRetentionDays), 1), 365)
@@ -106,11 +106,8 @@ actor AgentObservabilityRuntime {
     private var metricStore: AgentLocalMetricStore
 
     init(
-        baseDirectory: URL = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        )[0].appendingPathComponent("Straight Up Browser", isDirectory: true),
-        defaults: UserDefaults = .standard
+        baseDirectory: URL = BrowserProfile.applicationSupportURLs[0].appendingPathComponent("Straight Up Browser", isDirectory: true),
+        defaults: UserDefaults = BrowserProfile.defaults
     ) {
         self.defaults = defaults
         snapshotURL = baseDirectory
@@ -145,7 +142,7 @@ actor AgentObservabilityRuntime {
     /// Constructs the defaults object inside the actor initializer so tests do
     /// not transfer a non-Sendable `UserDefaults` reference across isolation.
     init(baseDirectory: URL, defaultsSuiteName: String) {
-        let suiteDefaults = UserDefaults(suiteName: defaultsSuiteName) ?? .standard
+        let suiteDefaults = BrowserProfile.defaults(UserDefaults(suiteName: defaultsSuiteName) ?? .standard)
         defaults = suiteDefaults
         snapshotURL = baseDirectory
             .appendingPathComponent("agent", isDirectory: true)
@@ -570,10 +567,12 @@ final class AgentObservabilityController: ObservableObject {
     @Published private(set) var eventCount = 0
 
     private init() {
+        guard !BrowserProfile.isIsolated else { return }
         Task { await refresh() }
     }
 
     func refresh() async {
+        guard !BrowserProfile.isIsolated else { return }
         dashboard = await AgentObservabilityRuntime.shared.dashboard()
         eventCount = await AgentObservabilityRuntime.shared.events().count
     }

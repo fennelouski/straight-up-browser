@@ -51,10 +51,10 @@ enum MemoryPinnedSites {
     ]
 
     static var hosts: [String] {
-        get { UserDefaults.standard.array(forKey: defaultsKey) as? [String] ?? starterHosts }
+        get { BrowserProfile.defaults.array(forKey: defaultsKey) as? [String] ?? starterHosts }
         set {
             let cleaned = Array(Set(newValue.map(normalized).filter { !$0.isEmpty })).sorted()
-            UserDefaults.standard.set(cleaned, forKey: defaultsKey)
+            BrowserProfile.defaults.set(cleaned, forKey: defaultsKey)
         }
     }
 
@@ -238,6 +238,9 @@ final class Tab {
     // historyStrings is only a visit log for omnibar suggestions.
     @MainActor
     func navigateTo(_ url: URL) {
+        // Browser-owned navigation supersedes pending recipe cold starts. The
+        // notification carries identity only, never the URL or page contents.
+        NotificationCenter.default.post(name: .browserAppRequestedTabNavigation, object: id)
         Logger.log("Tab.navigateTo: setting URL to \(url.absoluteString)", type: "Tab")
         self.url = url
 

@@ -45,7 +45,7 @@ class KeyboardShortcutsManager {
     }
 
     private static var quitHoldDuration: TimeInterval {
-        let stored = UserDefaults.standard.double(forKey: quitHoldPercentKey)
+        let stored = BrowserProfile.defaults.double(forKey: quitHoldPercentKey)
         let percent = stored == 0 ? quitHoldDefaultPercent : stored
         return max(quitHoldMinPercent, min(quitHoldMaxPercent, percent)) * quitHoldMaxDuration
     }
@@ -138,6 +138,13 @@ class KeyboardShortcutsManager {
             let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
             let store = ShortcutStore.shared
 
+            // Holding a placement key must not race through several cycle
+            // states. Match the live customized binding used by the menu.
+            if event.isARepeat,
+               [ShortcutCommand.windowSnapLeft, .windowSnapRight, .windowSnapTop, .windowSnapBottom].contains(where: {
+                   store.shortcut(for: $0).matches(event)
+               }) { return nil }
+
             // Swallow Cmd+Q and its repeats so the Quit menu item never fires.
             // Only a fresh press can start a hold, including after Escape.
             // The hold gate isn't a normal binding, so it stays a literal.
@@ -174,7 +181,13 @@ class KeyboardShortcutsManager {
                 return nil
             }
 
-            // ⌘N now belongs to the New Window menu command.
+            // Chrome actions must also work while the omnibar owns focus.
+            for (command, name) in [(ShortcutCommand.newCommand, Notification.Name.browserNewCommand),
+                                    (.movePaneLeft, .browserMovePaneLeft),
+                                    (.movePaneRight, .browserMovePaneRight)] where store.matches(event, command) {
+                NotificationCenter.default.post(name: name, object: self.webViewManager?.activeWebView?.window)
+                return nil
+            }
             // ⇧⌘N saves the page behind the omnibar as well as the ordinarily
             // focused page, and is fixed so websites cannot claim it.
             // Two bugs used to live here. ⌥⌘N was a second alias, and a local
@@ -352,7 +365,6 @@ class KeyboardShortcutsManager {
     // no two *registered* defaults collide; nothing proved a registered
     // default did not land on one of these until ⌥⌘N did.
     static let fixedChords: [Shortcut: String] = [
-        Shortcut(key: "n", command: true): "New Window",
         Shortcut(key: "n", command: true, shift: true): "Add to Newspaper",
         Shortcut(key: "k", command: true, shift: true): "Keyboard Shortcuts (fixed alias)",
         Shortcut(key: "i", command: true, option: true): "Developer Tools",

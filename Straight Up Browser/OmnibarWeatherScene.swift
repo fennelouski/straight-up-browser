@@ -12,7 +12,7 @@ struct OmnibarWeatherScene: View {
     var snapshot: OmnibarWeatherSnapshot? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
-    @AppStorage(OmnibarMotionPreferences.durationKey) private var duration = OmnibarMotionPreferences.defaultDuration
+    @AppStorage(OmnibarMotionPreferences.durationKey, store: BrowserProfile.defaults) private var duration = OmnibarMotionPreferences.defaultDuration
     @State private var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
     @State private var started = Date()
 

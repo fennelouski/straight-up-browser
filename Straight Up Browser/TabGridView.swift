@@ -18,8 +18,8 @@ enum VisualTabPreferences {
     static let defaultAspectRatio = 1.6
 
     static var livePreviewsEnabled: Bool {
-        UserDefaults.standard.object(forKey: livePreviewsKey) == nil
-            || UserDefaults.standard.bool(forKey: livePreviewsKey)
+        BrowserProfile.defaults.object(forKey: livePreviewsKey) == nil
+            || BrowserProfile.defaults.bool(forKey: livePreviewsKey)
     }
 }
 
@@ -166,6 +166,7 @@ struct TabGridView: View {
     var refreshLivePreviews: (() -> Void)? = nil
     var labels: ((Tab) -> (title: String, detail: String))? = nil
     var onHover: ((Tab) -> Void)? = nil
+    var keyboardEnabled = true
     var onHoverChanged: ((Tab, Bool) -> Void)? = nil
 
     @State private var index = 0
@@ -173,9 +174,9 @@ struct TabGridView: View {
     @State private var previewRefresh = 0
     @State private var columns = 1
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage(VisualTabPreferences.aspectRatioKey)
+    @AppStorage(VisualTabPreferences.aspectRatioKey, store: BrowserProfile.defaults)
     private var aspectRatio = VisualTabPreferences.defaultAspectRatio
-    @AppStorage(VisualTabPreferences.livePreviewsKey)
+    @AppStorage(VisualTabPreferences.livePreviewsKey, store: BrowserProfile.defaults)
     private var livePreviews = true
 
     nonisolated private static let cardWidth: CGFloat = 220
@@ -257,6 +258,10 @@ struct TabGridView: View {
             index = tabs.firstIndex { $0.id == selectedTabId } ?? 0
             startMonitor()
         }
+        .onChange(of: keyboardEnabled) { _, _ in
+            stopMonitor()
+            startMonitor()
+        }
         .onDisappear { stopMonitor() }
         .task(id: livePreviews) {
             guard livePreviews else { return }
@@ -332,8 +337,9 @@ struct TabGridView: View {
     // A local NSEvent monitor rather than .onKeyPress: the overlay sits above a
     // WKWebView, which is a stubborn first responder (see OmnibarTextField).
     private func startMonitor() {
-        guard keyMonitor == nil else { return }
+        guard keyboardEnabled, keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection([.command, .control, .option]).isEmpty else { return event }
             switch event.keyCode {
             case 53:  // Escape
                 isPresented = false

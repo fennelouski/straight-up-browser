@@ -30,18 +30,18 @@ struct NewspaperView: View {
     let onOpenOriginal: (URL) -> Void
     let onClose: () -> Void
 
-    @AppStorage(NewspaperPreferences.Key.layout, store: NewspaperPreferences.presentationStore)
+    @AppStorage(NewspaperPreferences.Key.layout, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore))
     private var layoutRaw = NewspaperPreferences.defaultLayout
-    @AppStorage(NewspaperPreferences.Key.navigationStyle, store: NewspaperPreferences.presentationStore)
+    @AppStorage(NewspaperPreferences.Key.navigationStyle, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore))
     private var navigationStyleRaw = NewspaperPreferences.defaultNavigationStyle
-    @AppStorage(NewspaperPreferences.Key.fontFamily) private var fontFamily = ""
+    @AppStorage(NewspaperPreferences.Key.fontFamily, store: BrowserProfile.defaults) private var fontFamily = ""
 
-    @AppStorage(NewspaperPreferences.Key.appearance, store: NewspaperPreferences.presentationStore) private var appearance = NewspaperPreferences.defaultAppearance
-    @AppStorage(NewspaperPreferences.Key.showHeadline) private var showHeadline = true
-    @AppStorage(NewspaperPreferences.Key.headlineID) private var headlineID = ""
-    @AppStorage(NewspaperEditionPreferences.style, store: NewspaperPreferences.presentationStore) private var styleRaw = NewspaperEditionStyle.metropolitan.rawValue
-    @AppStorage(NewspaperEditionPreferences.showShopping) private var showShopping = true
-    @AppStorage(NewspaperEditionPreferences.shoppingSignals) private var shoppingData = Data()
+    @AppStorage(NewspaperPreferences.Key.appearance, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var appearance = NewspaperPreferences.defaultAppearance
+    @AppStorage(NewspaperPreferences.Key.showHeadline, store: BrowserProfile.defaults) private var showHeadline = true
+    @AppStorage(NewspaperPreferences.Key.headlineID, store: BrowserProfile.defaults) private var headlineID = ""
+    @AppStorage(NewspaperEditionPreferences.style, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var styleRaw = NewspaperEditionStyle.metropolitan.rawValue
+    @AppStorage(NewspaperEditionPreferences.showShopping, store: BrowserProfile.defaults) private var showShopping = true
+    @AppStorage(NewspaperEditionPreferences.shoppingSignals, store: BrowserProfile.defaults) private var shoppingData = Data()
     @State private var preparingEdition = true
     @State private var showingSettings = false
     @State private var viewportWidth: CGFloat = 0
@@ -247,7 +247,7 @@ struct NewspaperView: View {
         .accessibilityLabel("Newspaper")
     }
 
-    @AppStorage(NewspaperNaming.titleKey, store: NewspaperPreferences.presentationStore) private var personalTitle = ""
+    @AppStorage(NewspaperNaming.titleKey, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var personalTitle = ""
 
     private var closeButton: some View {
         Button(action: onClose) {
@@ -350,7 +350,7 @@ struct NewspaperView: View {
                     ProgressView().controlSize(.small)
                     Text(discovery.catchUpStatus).font(.caption)
                     Button("Pause") {
-                        UserDefaults.standard.set(false, forKey: NewspaperPreferences.Key.discoverRecent)
+                        BrowserProfile.defaults.set(false, forKey: NewspaperPreferences.Key.discoverRecent)
                     }.buttonStyle(BrowserPressStyle())
                 }
             }
@@ -381,7 +381,7 @@ struct NewspaperView: View {
     private var settingsButton: some View {
         Button {
             #if os(macOS)
-            UserDefaults.standard.set("newspaper", forKey: "settingsPane")
+            BrowserProfile.defaults.set("newspaper", forKey: "settingsPane")
             openWindow(id: "settings")
             #else
             showingSettings = true
@@ -652,7 +652,7 @@ private struct NewspaperPagedIssue: View {
     let direction: Int
     let actions: NewspaperArticleActions
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage(NewspaperEditionPreferences.motionDuration, store: NewspaperPreferences.presentationStore) private var duration = 0.28
+    @AppStorage(NewspaperEditionPreferences.motionDuration, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var duration = 0.28
     private var count: Int { NewspaperPageProjection.pageCount(articleCount: articles.count, layout: layout) }
     private var current: Int { min(max(0, pageIndex), max(0, count - 1)) }
     private var pageArticles: [NewspaperArticle] {
@@ -717,8 +717,8 @@ struct NewspaperStoryLink: View {
                 }
             }
             Button("Make Today's Headline") {
-                UserDefaults.standard.set(article.id.uuidString, forKey: NewspaperPreferences.Key.headlineID)
-                UserDefaults.standard.set(true, forKey: NewspaperPreferences.Key.showHeadline)
+                BrowserProfile.defaults.set(article.id.uuidString, forKey: NewspaperPreferences.Key.headlineID)
+                BrowserProfile.defaults.set(true, forKey: NewspaperPreferences.Key.showHeadline)
             }
             // "Items movable afterward" (Phase 3, design §5): re-points the
             // most recent workspace reference; the Section never re-files.
@@ -791,9 +791,9 @@ private struct NewspaperStoryCard: View {
     let layout: NewspaperLayout
     let prominence: NewspaperStoryProminence
 
-    @AppStorage(NewspaperPreferences.Key.photoLimit)
+    @AppStorage(NewspaperPreferences.Key.photoLimit, store: BrowserProfile.defaults)
     private var photoLimit = NewspaperPreferences.defaultPhotoLimit
-    @AppStorage(NewspaperPreferences.Key.fontFamily) private var fontFamily = ""
+    @AppStorage(NewspaperPreferences.Key.fontFamily, store: BrowserProfile.defaults) private var fontFamily = ""
 
     private var showsImage: Bool {
         layout.usesImages && photoLimit > 0 && article.leadImage != nil
@@ -949,17 +949,17 @@ private struct NewspaperArticleView: View {
     let onOpenOriginal: (URL) -> Void
     let onDelete: () -> Void
 
-    @AppStorage(SettingsManager.aiFeaturesKey) private var aiFeaturesEnabled = true
+    @AppStorage(SettingsManager.aiFeaturesKey, store: BrowserProfile.defaults) private var aiFeaturesEnabled = true
 
-    @AppStorage(NewspaperPreferences.Key.photoLimit)
+    @AppStorage(NewspaperPreferences.Key.photoLimit, store: BrowserProfile.defaults)
     private var photoLimit = NewspaperPreferences.defaultPhotoLimit
-    @AppStorage(NewspaperPreferences.Key.targetWordCount)
+    @AppStorage(NewspaperPreferences.Key.targetWordCount, store: BrowserProfile.defaults)
     private var targetWordCount = NewspaperPreferences.defaultTargetWordCount
-    @AppStorage(NewspaperPreferences.Key.targetCharacterCount)
+    @AppStorage(NewspaperPreferences.Key.targetCharacterCount, store: BrowserProfile.defaults)
     private var targetCharacterCount = NewspaperPreferences.defaultTargetCharacterCount
-    @AppStorage(NewspaperPreferences.Key.lengthUnit)
+    @AppStorage(NewspaperPreferences.Key.lengthUnit, store: BrowserProfile.defaults)
     private var lengthUnitRaw = NewspaperLengthUnit.words.rawValue
-    @AppStorage(NewspaperPreferences.Key.fontFamily) private var fontFamily = ""
+    @AppStorage(NewspaperPreferences.Key.fontFamily, store: BrowserProfile.defaults) private var fontFamily = ""
 
     @State private var showsOriginal = false
     @State private var showsAllPhotos = false
@@ -1334,7 +1334,7 @@ private struct NewspaperRemoteImage: View {
 
 private struct NewspaperDocumentBlockView: View {
     let block: ReaderBlock
-    @AppStorage(NewspaperPreferences.Key.fontFamily) private var fontFamily = ""
+    @AppStorage(NewspaperPreferences.Key.fontFamily, store: BrowserProfile.defaults) private var fontFamily = ""
 
     @ViewBuilder
     var body: some View {
@@ -1465,8 +1465,8 @@ private enum NewspaperPresentation {
 
 private struct NewspaperPaper: View {
     @Environment(\.newspaperEdition) private var style
-    @AppStorage(NewspaperEditionPreferences.texture, store: NewspaperPreferences.presentationStore) private var texture = NewspaperPaperTexture.recommended.rawValue
-    @AppStorage(NewspaperEditionPreferences.textureStrength, store: NewspaperPreferences.presentationStore) private var strength = 0.55
+    @AppStorage(NewspaperEditionPreferences.texture, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var texture = NewspaperPaperTexture.recommended.rawValue
+    @AppStorage(NewspaperEditionPreferences.textureStrength, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var strength = 0.55
     var body: some View {
         let selected = NewspaperPaperTexture(rawValue: texture) ?? .recommended
         NewspaperProceduralPaper(texture: selected == .recommended ? style.recommendedPaper : selected, strength: strength)
@@ -1641,27 +1641,27 @@ struct NewspaperLayoutPreview: View {
 
 struct NewspaperSettingsView: View {
     @Environment(\.colorScheme) private var systemScheme
-    @AppStorage(NewspaperPreferences.Key.layout, store: NewspaperPreferences.presentationStore)
+    @AppStorage(NewspaperPreferences.Key.layout, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore))
     private var layout = NewspaperPreferences.defaultLayout
-    @AppStorage(NewspaperPreferences.Key.navigationStyle, store: NewspaperPreferences.presentationStore)
+    @AppStorage(NewspaperPreferences.Key.navigationStyle, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore))
     private var navigationStyle = NewspaperPreferences.defaultNavigationStyle
-    @AppStorage(NewspaperPreferences.Key.photoLimit)
+    @AppStorage(NewspaperPreferences.Key.photoLimit, store: BrowserProfile.defaults)
     private var photoLimit = NewspaperPreferences.defaultPhotoLimit
-    @AppStorage(NewspaperPreferences.Key.fontFamily)
+    @AppStorage(NewspaperPreferences.Key.fontFamily, store: BrowserProfile.defaults)
     private var fontFamily = ""
-    @AppStorage(NewspaperPreferences.Key.condenseArticles)
+    @AppStorage(NewspaperPreferences.Key.condenseArticles, store: BrowserProfile.defaults)
     private var condenseArticles = false
-    @AppStorage(NewspaperPreferences.Key.lengthUnit)
+    @AppStorage(NewspaperPreferences.Key.lengthUnit, store: BrowserProfile.defaults)
     private var lengthUnit = NewspaperLengthUnit.words.rawValue
-    @AppStorage(NewspaperPreferences.Key.targetWordCount)
+    @AppStorage(NewspaperPreferences.Key.targetWordCount, store: BrowserProfile.defaults)
     private var targetWordCount = NewspaperPreferences.defaultTargetWordCount
-    @AppStorage(NewspaperPreferences.Key.targetCharacterCount)
+    @AppStorage(NewspaperPreferences.Key.targetCharacterCount, store: BrowserProfile.defaults)
     private var targetCharacterCount = NewspaperPreferences.defaultTargetCharacterCount
-    @AppStorage(NewspaperPreferences.Key.defaultSection)
+    @AppStorage(NewspaperPreferences.Key.defaultSection, store: BrowserProfile.defaults)
     private var defaultSection = ""
 
-    @AppStorage(NewspaperPreferences.Key.appearance, store: NewspaperPreferences.presentationStore) private var appearance = NewspaperPreferences.defaultAppearance
-    @AppStorage(NewspaperPreferences.Key.showHeadline) private var showHeadline = true
+    @AppStorage(NewspaperPreferences.Key.appearance, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var appearance = NewspaperPreferences.defaultAppearance
+    @AppStorage(NewspaperPreferences.Key.showHeadline, store: BrowserProfile.defaults) private var showHeadline = true
 
     var body: some View {
         Form {
@@ -1678,7 +1678,7 @@ struct NewspaperSettingsView: View {
                 }
                 Toggle("Show a front-page headline", isOn: $showHeadline)
                 Button("Choose the headline automatically") {
-                    UserDefaults.standard.removeObject(forKey: NewspaperPreferences.Key.headlineID)
+                    BrowserProfile.defaults.removeObject(forKey: NewspaperPreferences.Key.headlineID)
                 }
                 Picker(selection: $navigationStyle) {
                     ForEach(NewspaperNavigationStyle.allCases) { style in

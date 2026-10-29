@@ -131,16 +131,16 @@ enum TabSync {
         static let locallyClosed = "tabSyncLocallyClosedIds"
     }
 
-    static var enabled: Bool { UserDefaults.standard.bool(forKey: Key.enabled) }
+    static var enabled: Bool { BrowserProfile.defaults.bool(forKey: Key.enabled) }
     static var mode: TabSyncMode {
-        TabSyncMode(rawValue: UserDefaults.standard.string(forKey: Key.mode) ?? "") ?? .openOnly
+        TabSyncMode(rawValue: BrowserProfile.defaults.string(forKey: Key.mode) ?? "") ?? .openOnly
     }
-    static var cacheStateEnabled: Bool { UserDefaults.standard.bool(forKey: Key.cacheState) }
+    static var cacheStateEnabled: Bool { BrowserProfile.defaults.bool(forKey: Key.cacheState) }
 
     /// The database the SwiftData store binds to at launch: the private CloudKit
     /// DB when sync is on, or none (local only) when off.
     static var cloudKitDatabase: ModelConfiguration.CloudKitDatabase {
-        enabled ? .private(containerID) : .none
+        BrowserProfile.isIsolated ? .none : (enabled ? .private(containerID) : .none)
     }
 
     /// Whether the user's iCloud account can actually back CloudKit sync (signed
@@ -153,6 +153,7 @@ enum TabSync {
             try await CKContainer(identifier: containerID).accountStatus()
         }
     ) async -> Bool {
+        guard !BrowserProfile.isIsolated else { return false }
         guard CloudKitEntitlements.permits(
             containerID,
             effectiveIdentifiers: effectiveContainerIdentifiers
@@ -171,8 +172,8 @@ enum TabSync {
     /// Tab ids hidden on THIS device only (open-only mode). Closing a tab records
     /// its id here and keeps the CloudKit record, so it stays open on other devices.
     static var locallyClosedIds: Set<String> {
-        get { Set(UserDefaults.standard.stringArray(forKey: Key.locallyClosed) ?? []) }
-        set { UserDefaults.standard.set(Array(newValue), forKey: Key.locallyClosed) }
+        get { Set(BrowserProfile.defaults.stringArray(forKey: Key.locallyClosed) ?? []) }
+        set { BrowserProfile.defaults.set(Array(newValue), forKey: Key.locallyClosed) }
     }
 
     static func markLocallyClosed(_ id: UUID) {
@@ -184,7 +185,7 @@ enum TabSync {
     }
 
     static func clearLocallyClosed() {
-        UserDefaults.standard.removeObject(forKey: Key.locallyClosed)
+        BrowserProfile.defaults.removeObject(forKey: Key.locallyClosed)
     }
 
     /// True while sync is on in open-only mode and this tab was closed on this

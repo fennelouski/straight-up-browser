@@ -121,7 +121,7 @@ nonisolated struct AppleIntelligenceAgentProviderAdapter: AgentProviderAdapter {
         return AsyncThrowingStream { continuation in
             let task = Task {
                 #if canImport(FoundationModels)
-                if #available(macOS 26.0, *), SystemLanguageModel.default.availability == .available {
+                if #available(macOS 26.0, *), !BrowserProfile.isIsolated && SystemLanguageModel.default.availability == .available {
                     do {
                         let instructions = request.messages.compactMap { message -> String? in
                             guard message.role == .system else { return nil }
@@ -213,7 +213,7 @@ nonisolated enum AgentProviderModelDiscovery {
             apiKey: apiKey,
             customEndpoint: customEndpoint
         )
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await BrowserProfileNetwork.session.data(for: request)
         guard let response = response as? HTTPURLResponse,
               (200..<300).contains(response.statusCode) else {
             throw DiscoveryError.requestFailed(
@@ -373,7 +373,7 @@ nonisolated enum AgentProviderPricingSettings {
     static func metadata(
         providerID: String,
         model: String,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = BrowserProfile.defaults
     ) -> AgentProviderPricingMetadata? {
         let published = AgentProviderModelCatalog.pricing(
             providerID: providerID,
@@ -850,7 +850,7 @@ enum AgentRunStoreRegistry {
     static func enforceRetention(
         _ store: AgentRunStore,
         baseDirectory: URL,
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = BrowserProfile.defaults,
         now: Date = Date()
     ) async throws -> AgentHistoryRetentionReport {
         try await AgentHistoryRetentionController.enforce(
@@ -870,7 +870,8 @@ enum BrowserAgentKeychain {
     private static let service = "com.nathanfennel.Straight-Up-Browser.agent"
 
     static func permitsAccess(arguments: [String] = ProcessInfo.processInfo.arguments) -> Bool {
-        !arguments.contains("-uiTesting")
+        !BrowserProfile.isIsolated && !arguments.contains("-uiTesting")
+            && !arguments.contains(where: { $0.hasPrefix(BrowserTestProfileSelection.flag) })
     }
 
     static func read(provider: BrowserAgentProvider) -> String {
@@ -938,6 +939,7 @@ final class BrowserAgentWorkspace: ObservableObject {
     private init() { restore() }
 
     func chooseFolder() {
+        guard !BrowserProfile.isIsolated else { return }
         let panel = NSOpenPanel()
         panel.title = "Choose Agent Cowork Folder"
         panel.message = "The agent can only read and change files inside the folder you choose."
@@ -951,7 +953,7 @@ final class BrowserAgentWorkspace: ObservableObject {
     func clear() {
         guard let currentRoot = rootURL else {
             transactionWorkspaces.removeAll()
-            UserDefaults.standard.removeObject(forKey: bookmarkKey)
+            BrowserProfile.defaults.removeObject(forKey: bookmarkKey)
             return
         }
         do {
@@ -972,7 +974,7 @@ final class BrowserAgentWorkspace: ObservableObject {
         currentRoot.stopAccessingSecurityScopedResource()
         rootURL = nil
         transactionWorkspaces.removeAll()
-        UserDefaults.standard.removeObject(forKey: bookmarkKey)
+        BrowserProfile.defaults.removeObject(forKey: bookmarkKey)
     }
 
     fileprivate func call(
@@ -1207,7 +1209,7 @@ final class BrowserAgentWorkspace: ObservableObject {
                 currentRoot.stopAccessingSecurityScopedResource()
             }
             transactionWorkspaces.removeAll()
-            UserDefaults.standard.set(bookmark, forKey: bookmarkKey)
+            BrowserProfile.defaults.set(bookmark, forKey: bookmarkKey)
             rootURL = url
             _ = rootURL?.startAccessingSecurityScopedResource()
         } catch {
@@ -1216,7 +1218,8 @@ final class BrowserAgentWorkspace: ObservableObject {
     }
 
     private func restore() {
-        guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else { return }
+        guard !BrowserProfile.isIsolated else { return }
+        guard let data = BrowserProfile.defaults.data(forKey: bookmarkKey) else { return }
         var stale = false
         guard let url = try? URL(
             resolvingBookmarkData: data,
@@ -1232,7 +1235,7 @@ final class BrowserAgentWorkspace: ObservableObject {
                includingResourceValuesForKeys: nil,
                relativeTo: nil
            ) {
-            UserDefaults.standard.set(refreshed, forKey: bookmarkKey)
+            BrowserProfile.defaults.set(refreshed, forKey: bookmarkKey)
         }
     }
 
@@ -1823,6 +1826,7 @@ final class BrowserAgent: ObservableObject {
             _ authorizedPageBindings: [BrowserAutomationPageDispatchBinding]
         ) async -> String
     ) {
+        guard !BrowserProfile.isIsolated else { return }
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isRunning else { return }
         isRunning = true
@@ -5403,9 +5407,9 @@ struct BrowserAgentPanel: View {
         self.execute = execute
     }
 
-    @AppStorage("browserAgentProvider") private var providerRaw = BrowserAgentProvider.appleIntelligence.rawValue
-    @AppStorage("browserAgentEndpoint") private var customEndpoint = ""
-    @AppStorage("browserAgentModel") private var savedModel = ""
+    @AppStorage("browserAgentProvider", store: BrowserProfile.defaults) private var providerRaw = BrowserAgentProvider.appleIntelligence.rawValue
+    @AppStorage("browserAgentEndpoint", store: BrowserProfile.defaults) private var customEndpoint = ""
+    @AppStorage("browserAgentModel", store: BrowserProfile.defaults) private var savedModel = ""
     @State private var apiKey = ""
     @State private var prompt = ""
     @State private var showingConfiguration = false
@@ -5415,9 +5419,9 @@ struct BrowserAgentPanel: View {
     @State private var isPreparingLocalContext = false
     @State private var promptHistoryIndex: Int?
     @State private var promptBeforeHistoryNavigation = ""
-    @AppStorage("browserAgentPromptHistory") private var promptHistoryData = Data()
-    @AppStorage("browserAgentChatMode") private var chatModeRaw = AgentChatMode.continuous.rawValue
-    @AppStorage("aiSearchEffectColorHex") private var aiSearchEffectColorHex = "#007AFF"
+    @AppStorage("browserAgentPromptHistory", store: BrowserProfile.defaults) private var promptHistoryData = Data()
+    @AppStorage("browserAgentChatMode", store: BrowserProfile.defaults) private var chatModeRaw = AgentChatMode.continuous.rawValue
+    @AppStorage("aiSearchEffectColorHex", store: BrowserProfile.defaults) private var aiSearchEffectColorHex = "#007AFF"
     @FocusState private var promptFocused: Bool
     @FocusState private var promptHistorySearchFocused: Bool
     @State private var isPromptHistorySearchPresented = false
@@ -6987,6 +6991,7 @@ final class BrowserAgentScheduler: ObservableObject {
             ($0.taskDefinitionID, $0)
         })
         errorMessage = initialError
+        guard !BrowserProfile.isIsolated else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
             Task { @MainActor in await BrowserAgentScheduler.shared.evaluateDueTasks() }
         }
@@ -7002,6 +7007,7 @@ final class BrowserAgentScheduler: ObservableObject {
     }
 
     func register(_ manager: NotificationManager) {
+        guard !BrowserProfile.isIsolated else { return }
         automationManager = manager
         Task { [weak self] in
             guard let self else { return }
@@ -7141,6 +7147,7 @@ final class BrowserAgentScheduler: ObservableObject {
     }
 
     func runNow(_ id: UUID) {
+        guard !BrowserProfile.isIsolated else { return }
         Task { [weak self] in
             guard let self, let definition = await engine.definition(id: id) else { return }
             let occurrence = AgentTaskOccurrence(
@@ -7258,6 +7265,7 @@ final class BrowserAgentScheduler: ObservableObject {
     }
 
     private func evaluateDueTasks() async {
+        guard !BrowserProfile.isIsolated else { return }
         do {
             let evaluation = try await engine.evaluateDueTasks(
                 at: Date(),
@@ -7287,6 +7295,7 @@ final class BrowserAgentScheduler: ObservableObject {
     }
 
     private func start(_ directive: AgentTaskRunDirective) async {
+        guard !BrowserProfile.isIsolated else { return }
         let taskID = directive.definitionSnapshot.id
         guard runningAgents[taskID] == nil else { return }
         let providerSnapshot = directive.providerSnapshot
@@ -7674,10 +7683,10 @@ final class BrowserAgentScheduler: ObservableObject {
         dailyMinute: Int
     ) throws -> AgentTaskDefinition {
         let provider = BrowserAgentProvider(
-            rawValue: UserDefaults.standard.string(forKey: "browserAgentProvider") ?? ""
+            rawValue: BrowserProfile.defaults.string(forKey: "browserAgentProvider") ?? ""
         ) ?? .openRouter
-        let savedModel = UserDefaults.standard.string(forKey: "browserAgentModel") ?? ""
-        let customEndpoint = UserDefaults.standard.string(forKey: "browserAgentEndpoint") ?? ""
+        let savedModel = BrowserProfile.defaults.string(forKey: "browserAgentModel") ?? ""
+        let customEndpoint = BrowserProfile.defaults.string(forKey: "browserAgentEndpoint") ?? ""
         let model = provider.resolvedModel(savedModel)
         let now = Date()
         let schedule: AgentTaskSchedule = switch scheduleKind {
@@ -7767,12 +7776,12 @@ final class BrowserAgentScheduler: ObservableObject {
             .descriptors(visibleIn: .scheduler)
             .flatMap(\.requiredCapabilities))
         let provider = BrowserAgentProvider(
-            rawValue: UserDefaults.standard.string(forKey: "browserAgentProvider") ?? ""
+            rawValue: BrowserProfile.defaults.string(forKey: "browserAgentProvider") ?? ""
         ) ?? .openRouter
         let model = provider.resolvedModel(
-            UserDefaults.standard.string(forKey: "browserAgentModel") ?? ""
+            BrowserProfile.defaults.string(forKey: "browserAgentModel") ?? ""
         )
-        let customEndpoint = UserDefaults.standard.string(
+        let customEndpoint = BrowserProfile.defaults.string(
             forKey: "browserAgentEndpoint"
         ) ?? ""
         let definitions = legacy.compactMap { item -> AgentTaskDefinition? in
@@ -8856,7 +8865,7 @@ private struct BrowserAgentLegacyAuditView: View {
                 }
                 Spacer()
                 Button("Show Files") {
-                    NSWorkspace.shared.activateFileViewerSelecting([
+                    BrowserProfileSystem.reveal([
                         BrowserCLI.supportDirectory.appendingPathComponent("agent-audit/\(session.id)", isDirectory: true)
                     ])
                 }
@@ -9096,7 +9105,7 @@ struct BrowserAgentAuditView: View {
     @State private var replayError: String?
     @State private var playbackTask: Task<Void, Never>?
     @State private var runPendingDeletion: AgentTimelineRunSummary?
-    @AppStorage("agentAuditNewestFirst") private var newestFirst = true
+    @AppStorage("agentAuditNewestFirst", store: BrowserProfile.defaults) private var newestFirst = true
 
     private var timelineItems: [AgentTimelineItem] {
         store.projection.items.filter { selectedRunID == nil || $0.runID == selectedRunID }
@@ -9669,6 +9678,7 @@ struct BrowserAgentAuditView: View {
     }
 
     private func exportDiagnostics() {
+        guard !BrowserProfile.isIsolated else { return }
         Task { @MainActor in
             do {
                 let data = try await store.exportDiagnostics(runID: selectedRunID)

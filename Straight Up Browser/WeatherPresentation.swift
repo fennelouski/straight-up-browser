@@ -12,15 +12,18 @@ import UIKit
 @MainActor final class WeatherNetworkStatus: ObservableObject {
     static let shared = WeatherNetworkStatus()
     @Published private(set) var offline = false
-    private let monitor = NWPathMonitor()
+    private var monitor: NWPathMonitor?
     init() {
+        guard !BrowserProfile.isIsolated else { return }
+        let monitor = NWPathMonitor()
+        self.monitor = monitor
         monitor.pathUpdateHandler = { [weak self] path in
             let offline = path.status == .unsatisfied
             Task { @MainActor [weak self] in self?.offline = offline }
         }
         monitor.start(queue: DispatchQueue(label: "Browser.weather-connectivity"))
     }
-    deinit { monitor.cancel() }
+    deinit { monitor?.cancel() }
 }
 
 /// Provider marks are keyed by their URL, not a location or view appearance.
@@ -68,7 +71,7 @@ import UIKit
     @concurrent private static func fetchMark(_ url: URL) async throws -> Data {
         guard url.scheme == "https" else { throw BrowserWeatherError.unavailable }
         let request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 15)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await BrowserProfileNetwork.session.data(for: request)
         guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
             throw BrowserWeatherError.unavailable
         }

@@ -10,16 +10,16 @@ enum AgentMemorySettings {
         static let retention = "agent.memory.retention"
     }
 
-    static func enabled(in defaults: UserDefaults = .standard) -> Bool {
+    static func enabled(in defaults: UserDefaults = BrowserProfile.defaults) -> Bool {
         defaults.bool(forKey: Key.enabled)
     }
 
-    static func allowSensitiveProposals(in defaults: UserDefaults = .standard) -> Bool {
+    static func allowSensitiveProposals(in defaults: UserDefaults = BrowserProfile.defaults) -> Bool {
         defaults.bool(forKey: Key.allowSensitiveProposals)
     }
 
     static func retrievalLimits(
-        in defaults: UserDefaults = .standard
+        in defaults: UserDefaults = BrowserProfile.defaults
     ) -> AgentMemoryRetrievalLimits {
         let entries = defaults.object(forKey: Key.maximumRetrievedEntries) == nil
             ? 4 : defaults.integer(forKey: Key.maximumRetrievedEntries)
@@ -32,7 +32,7 @@ enum AgentMemorySettings {
         )
     }
 
-    static func retention(in defaults: UserDefaults = .standard) -> AgentMemoryRetentionPolicy {
+    static func retention(in defaults: UserDefaults = BrowserProfile.defaults) -> AgentMemoryRetentionPolicy {
         guard let raw = defaults.string(forKey: Key.retention),
               let value = AgentMemoryRetentionPolicy(rawValue: raw)
         else { return .untilManuallyDeleted }
@@ -40,7 +40,7 @@ enum AgentMemorySettings {
     }
 
     static func configuration(
-        in defaults: UserDefaults = .standard
+        in defaults: UserDefaults = BrowserProfile.defaults
     ) -> AgentMemoryConfiguration {
         AgentMemoryConfiguration(
             retrievalLimits: retrievalLimits(in: defaults),
@@ -62,11 +62,8 @@ final class AgentMemoryController: ObservableObject {
     private var store: AgentMemoryStore?
 
     init(
-        baseDirectory: URL = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        )[0].appendingPathComponent("Straight Up Browser", isDirectory: true),
-        defaults: UserDefaults = .standard
+        baseDirectory: URL = BrowserProfile.applicationSupportURLs[0].appendingPathComponent("Straight Up Browser", isDirectory: true),
+        defaults: UserDefaults = BrowserProfile.defaults
     ) {
         directoryURL = baseDirectory
             .appendingPathComponent("agent", isDirectory: true)

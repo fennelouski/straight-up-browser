@@ -44,7 +44,7 @@ struct ClaimsPanel: View {
         #endif
         .task { [weak ledgerStore] in
             if !session.isLoaded { await session.open() }
-            scout.isAlreadyPromoted = { [weak ledgerStore] text in
+            scout.isAlreadyPromoted = { [weak ledgerStore = ledgerStore] text in
                 ledgerStore?.claimExists(normalizedFrom: text) ?? false
             }
             rescan(immediate: true)

@@ -25,7 +25,7 @@ actor NewspaperCoverImageWorker {
         configuration.httpCookieStorage = nil
         configuration.urlCredentialStorage = nil
         configuration.timeoutIntervalForRequest = 15
-        session = URLSession(configuration: configuration, delegate: NewspaperImageRequestPolicy(), delegateQueue: nil)
+        session = URLSession(configuration: BrowserProfileNetwork.configuration(configuration), delegate: NewspaperImageRequestPolicy(), delegateQueue: nil)
     }
     func load(_ url: URL, cutout: Bool) async -> NewspaperCoverBitmap? {
         guard NewspaperImageRequestPolicy.permits(url) else { return nil }

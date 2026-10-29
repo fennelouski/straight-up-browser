@@ -701,7 +701,7 @@ nonisolated enum AgentHistoryRetentionSettings {
         static let policy = "agent.history.retention"
     }
 
-    static func policy(in defaults: UserDefaults = .standard) -> AgentRetentionPolicy {
+    static func policy(in defaults: UserDefaults = BrowserProfile.defaults) -> AgentRetentionPolicy {
         guard let rawValue = defaults.string(forKey: Key.policy),
               let policy = AgentRetentionPolicy(rawValue: rawValue) else {
             return .days30
@@ -849,7 +849,7 @@ nonisolated enum AgentHistoryRetentionController {
     static func enforce(
         store: AgentRunStore,
         baseDirectory: URL,
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = BrowserProfile.defaults,
         now: Date = Date(),
         cleanupPrivateState: (Set<UUID>) async throws -> Void = { _ in }
     ) async throws -> AgentHistoryRetentionReport {

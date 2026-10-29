@@ -31,7 +31,7 @@ nonisolated enum NewspaperNaming {
         var seen = Set<String>()
         return Array(values.compactMap(validName).filter { seen.insert($0.lowercased()).inserted }.prefix(12))
     }
-    @MainActor static func eligibleHosts(_ visits: [HistoryVisit], defaults: UserDefaults = .standard, now: Date = Date()) -> [String] {
+    @MainActor static func eligibleHosts(_ visits: [HistoryVisit], defaults: UserDefaults = BrowserProfile.defaults, now: Date = Date()) -> [String] {
         let options = NewspaperDiscoveryOptions(defaults: defaults)
         var seen = Set<String>()
         return Array(visits.filter { now.timeIntervalSince($0.visitedAt) < 30 * 86400 && $0.visitedAt <= now && options.permits($0.url) }
@@ -116,7 +116,7 @@ nonisolated enum NewspaperNaming {
     }
     #if os(macOS)
     static func configuration(fast: Bool) throws -> BrowserAgentConfiguration {
-        let defaults = UserDefaults.standard
+        let defaults = BrowserProfile.defaults
         let provider = BrowserAgentProvider(rawValue: defaults.string(forKey: "browserAgentProvider") ?? "") ?? .appleIntelligence
         guard provider != .appleIntelligence else { throw Failure.unavailable }
         var model = provider.resolvedModel(defaults.string(forKey: "browserAgentModel") ?? "")
@@ -168,9 +168,9 @@ nonisolated enum NewspaperNaming {
 
 struct NewspaperNamingSettings: View {
     @Environment(\.modelContext) private var context
-    @AppStorage(NewspaperNaming.titleKey, store: NewspaperPreferences.presentationStore) private var title = ""
-    @AppStorage(SettingsManager.aiFeaturesKey) private var aiEnabled = true
-    @AppStorage(NewspaperEditionPreferences.style, store: NewspaperPreferences.presentationStore) private var styleRaw = NewspaperEditionStyle.metropolitan.rawValue
+    @AppStorage(NewspaperNaming.titleKey, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var title = ""
+    @AppStorage(SettingsManager.aiFeaturesKey, store: BrowserProfile.defaults) private var aiEnabled = true
+    @AppStorage(NewspaperEditionPreferences.style, store: BrowserProfile.defaults(NewspaperPreferences.presentationStore)) private var styleRaw = NewspaperEditionStyle.metropolitan.rawValue
     @State private var useExternal = false
     @State private var fast = false
     @State private var refine = true
@@ -247,7 +247,7 @@ struct NewspaperNamingSettings: View {
     }
     private func prepare() {
         let articles = (try? context.fetch(FetchDescriptor<NewspaperArticle>(sortBy: [SortDescriptor(\.addedAt, order: .reverse)]))) ?? []
-        let options = NewspaperDiscoveryOptions(defaults: .standard)
+        let options = NewspaperDiscoveryOptions(defaults: BrowserProfile.defaults)
         let eligible = articles.filter { options.permits($0.url) }
         #if os(macOS)
         let device = includeDevice ? Host.current().localizedName : nil

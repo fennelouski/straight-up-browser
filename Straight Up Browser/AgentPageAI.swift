@@ -195,7 +195,7 @@ enum AgentLocalPageRouter {
         }
 
         #if canImport(FoundationModels)
-        if #available(macOS 26.0, *), SystemLanguageModel.default.availability == .available,
+        if #available(macOS 26.0, *), !BrowserProfile.isIsolated && SystemLanguageModel.default.availability == .available,
            let planned = await onDeviceCommand(for: prompt) {
             return planned
         }
@@ -270,7 +270,7 @@ enum AgentPageAISearch {
         let bounded = Array(candidates.prefix(120))
 
         #if canImport(FoundationModels)
-        if #available(macOS 26.0, *), SystemLanguageModel.default.availability == .available,
+        if #available(macOS 26.0, *), !BrowserProfile.isIsolated && SystemLanguageModel.default.availability == .available,
            let index = await onDeviceIndex(query: query, candidates: bounded),
            bounded.indices.contains(index) {
             return bounded[index]

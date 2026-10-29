@@ -92,7 +92,7 @@ final class WorkspaceDocumentFile: NSDocument, WorkspaceDocumentFileProtocol {
     }
 
     func openFile() async -> Bool {
-        guard let url = fileURL else { return false }
+        guard let url = fileURL, BrowserProfile.allowsFileAccess(url) else { return false }
         do {
             // Coordinated read through NSDocument's own machinery.
             try revert(toContentsOf: url, ofType: markdownFileType)
@@ -107,7 +107,7 @@ final class WorkspaceDocumentFile: NSDocument, WorkspaceDocumentFileProtocol {
     }
 
     func saveFile() async -> Bool {
-        guard let url = fileURL else { return false }
+        guard let url = fileURL, BrowserProfile.allowsFileAccess(url) else { return false }
         // An external write bumps the on-disk date, and NSDocument refuses to
         // overwrite what it reads as someone else's changes. By the time this
         // runs, the conflict flow has already preserved the disk version as a
@@ -128,7 +128,7 @@ final class WorkspaceDocumentFile: NSDocument, WorkspaceDocumentFileProtocol {
     }
 
     func revertFromDisk() async -> Bool {
-        guard let url = fileURL else { return false }
+        guard let url = fileURL, BrowserProfile.allowsFileAccess(url) else { return false }
         return (try? revert(toContentsOf: url, ofType: markdownFileType)) != nil
     }
 }

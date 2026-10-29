@@ -75,9 +75,9 @@ struct OmnibarPresentation<Content: View>: View {
 
 private struct OmnibarValueMotion<Value: Equatable>: ViewModifier {
     let value: Value
-    @AppStorage(OmnibarMotionPreferences.durationKey)
+    @AppStorage(OmnibarMotionPreferences.durationKey, store: BrowserProfile.defaults)
     private var duration = OmnibarMotionPreferences.defaultDuration
-    @AppStorage(OmnibarMotionPreferences.springKey) private var usesSpring = true
+    @AppStorage(OmnibarMotionPreferences.springKey, store: BrowserProfile.defaults) private var usesSpring = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {

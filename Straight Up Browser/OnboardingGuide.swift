@@ -227,15 +227,15 @@ private struct OnboardingLesson: View {
     @ObservedObject var guide: BrowserOnboarding
     let action: (OnboardingAction) -> Void
     @Environment(\.openWindow) private var openWindow
-    @AppStorage("memorySaverEnabled") private var memory = false
-    @AppStorage("showTraditionalTopTabs") private var topTabs = false
-    @AppStorage("topTabsAutoHide") private var topAutoHide = true
-    @AppStorage("tabBarWidth") private var sidebarWidth = 200.0
-    @AppStorage(TabPeekPlacement.enabledKey) private var tabPeekEnabled = true
-    @AppStorage("pageWhitePoint") private var whitePoint = 100.0
-    @AppStorage("downloadsFolder") private var downloadFolder = ""
-    @AppStorage(SettingsManager.aiFeaturesKey) private var ai = true
-    @AppStorage(BrowserWindows.nativeFullScreenKey) private var fullScreen = false
+    @AppStorage("memorySaverEnabled", store: BrowserProfile.defaults) private var memory = false
+    @AppStorage("showTraditionalTopTabs", store: BrowserProfile.defaults) private var topTabs = false
+    @AppStorage("topTabsAutoHide", store: BrowserProfile.defaults) private var topAutoHide = true
+    @AppStorage("tabBarWidth", store: BrowserProfile.defaults) private var sidebarWidth = 200.0
+    @AppStorage(TabPeekPlacement.enabledKey, store: BrowserProfile.defaults) private var tabPeekEnabled = true
+    @AppStorage("pageWhitePoint", store: BrowserProfile.defaults) private var whitePoint = 100.0
+    @AppStorage("downloadsFolder", store: BrowserProfile.defaults) private var downloadFolder = ""
+    @AppStorage(SettingsManager.aiFeaturesKey, store: BrowserProfile.defaults) private var ai = true
+    @AppStorage(BrowserWindows.nativeFullScreenKey, store: BrowserProfile.defaults) private var fullScreen = false
     @State private var folderError = false
     @State private var defaultResult: String?
 
@@ -470,7 +470,7 @@ private struct OnboardingLesson: View {
             Text("Navigation and tab control have a master switch. Reading pages, running scripts, screenshots, and genuine mouse clicks each have separate permissions. Review what you want to allow before enabling access.")
             Button("Review agent permissions") { settings(.security, "security.agent-automation") }
                 .buttonStyle(.borderedProminent)
-            Button("Keep external-agent access off") { UserDefaults.standard.set(false, forKey: CLIAuthorization.Key.enabled) }
+            Button("Keep external-agent access off") { BrowserProfile.defaults.set(false, forKey: CLIAuthorization.Key.enabled) }
             Text("This guide does not grant permissions automatically. The Security pane includes the CLI location and client setup instructions.")
                 .font(.caption).foregroundStyle(.secondary)
         }
@@ -501,7 +501,7 @@ private struct OnboardingLesson: View {
         Button(title) { settings(pane, section) }
     }
     private func settings(_ pane: SettingsPane, _ section: String?) {
-        UserDefaults.standard.set(pane.rawValue, forKey: "settingsPane")
+        BrowserProfile.defaults.set(pane.rawValue, forKey: "settingsPane")
         SettingsSearchNavigation.shared.pendingScrollID = section
         openWindow(id: "settings")
     }
@@ -513,6 +513,7 @@ private struct OnboardingLesson: View {
         }
     }
     private func chooseDownloads() {
+        guard !BrowserProfile.isIsolated else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false; panel.message = "Choose where Browser saves downloads"

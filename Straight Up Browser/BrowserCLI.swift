@@ -1134,6 +1134,7 @@ enum CLICapability: Equatable {
     case pageRead
     case pageScript
     case screenshot
+    case unavailable
 }
 
 struct CLIAuthorization {
@@ -1146,7 +1147,7 @@ struct CLIAuthorization {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = BrowserProfile.defaults) {
         self.defaults = defaults
     }
 
@@ -1158,16 +1159,21 @@ struct CLIAuthorization {
             return .pageScript
         case "screenshot":
             return .screenshot
-        default:
+        case "open", "search", "new", "close", "back", "forward", "reload", "switch", "wait", "notify", "focus":
             return .control
+        default:
+            return .unavailable
         }
     }
 
     static func capability(forAgentTool tool: String) -> CLICapability {
         guard let descriptor = AgentToolCatalog.canonical.descriptor(named: tool) else {
-            return .control
+            return .unavailable
         }
         let capabilities = descriptor.requiredCapabilities
+        if tool.hasPrefix("browser_settings_") || !capabilities.intersection(AgentCapability.settingsCapabilities).isEmpty {
+            return .unavailable
+        }
         if capabilities.contains(.screenshot) { return .screenshot }
         if capabilities.contains(.pageScript) || capabilities.contains(.download) {
             return .pageScript
@@ -1182,6 +1188,7 @@ struct CLIAuthorization {
     }
 
     func allows(action: String) -> Bool {
+        guard !BrowserProfile.isIsolated else { return false }
         guard defaults.bool(forKey: Key.enabled) else { return false }
 
         switch Self.capability(for: action) {
@@ -1193,16 +1200,20 @@ struct CLIAuthorization {
             return defaults.bool(forKey: Key.pageScript)
         case .screenshot:
             return defaults.bool(forKey: Key.screenshot)
+        case .unavailable:
+            return false
         }
     }
 
     func allows(capability: CLICapability) -> Bool {
+        guard !BrowserProfile.isIsolated else { return false }
         guard defaults.bool(forKey: Key.enabled) else { return false }
         switch capability {
         case .control: return true
         case .pageRead: return defaults.bool(forKey: Key.pageRead)
         case .pageScript: return defaults.bool(forKey: Key.pageScript)
         case .screenshot: return defaults.bool(forKey: Key.screenshot)
+        case .unavailable: return false
         }
     }
 
@@ -1220,6 +1231,8 @@ struct CLIAuthorization {
             return "CLI JavaScript and synthetic interaction are disabled. Enable them in Settings > Security > CLI Automation."
         case .screenshot:
             return "CLI screenshots are disabled. Enable them in Settings > Security > CLI Automation."
+        case .unavailable:
+            return "Unknown command or unavailable capability. Legacy CLI automation cannot access Settings assistance."
         }
     }
 
@@ -1232,6 +1245,7 @@ struct CLIAuthorization {
         case .pageRead: return "Agent page reading is disabled in Settings > Security > Agent Automation."
         case .pageScript: return "Agent JavaScript and synthetic interaction are disabled in Settings > Security > Agent Automation."
         case .screenshot: return "Agent screenshots are disabled in Settings > Security > Agent Automation."
+        case .unavailable: return "Unknown tool or unavailable capability. Settings access requires a separately authenticated Settings connection."
         }
     }
 }
@@ -1239,8 +1253,7 @@ struct CLIAuthorization {
 class BrowserCLI {
     static let shared = BrowserCLI()
 
-    static let supportDirectory = FileManager.default
-        .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    static let supportDirectory = BrowserProfile.applicationSupportURLs[0]
         .appendingPathComponent("Straight Up Browser", isDirectory: true)
     static let pipeURL = supportDirectory.appendingPathComponent("cli.pipe")
     static let responseDirectory = supportDirectory.appendingPathComponent("responses", isDirectory: true)
@@ -1252,6 +1265,9 @@ class BrowserCLI {
     }
 
     private func setupCommandInterface() {
+        // External automation is disabled, including listener/key initialization.
+        // supportDirectory/responseDirectory still resolve privately if inspected.
+        guard !BrowserProfile.isIsolated else { return }
         guard !isPipeSetup else { return }
 
         let fm = FileManager.default
@@ -1320,6 +1336,7 @@ class BrowserCLI {
     // Every response the app writes lives inside its own responses/ dir.
     // Errors and acks share one JSON shape: {"ok":true,...} or {"error":"..."}.
     static func writeResponse(_ dict: [String: Any], to path: String?) {
+        guard !BrowserProfile.isIsolated else { return }
         guard let path = path else { return }
         if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
@@ -1327,6 +1344,7 @@ class BrowserCLI {
     }
 
     static func writeResponseData(_ data: Data, to path: String?) {
+        guard !BrowserProfile.isIsolated else { return }
         guard let path, !data.isEmpty else { return }
         try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
     }

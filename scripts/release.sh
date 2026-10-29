@@ -77,9 +77,11 @@ RUN_UI_TESTS="${RUN_UI_TESTS:-1}" RUN_IOS_UI_TESTS="${RUN_IOS_UI_TESTS:-0}" ./sc
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
 
+# Reuse this Mac's installed identities/profiles. Missing signing assets stop
+# the release; this workflow must not create or download provisioning material.
 xcodebuild archive -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
     -onlyUsePackageVersionsFromResolvedFile \
-    -archivePath "$BUILD/Browser.xcarchive" -allowProvisioningUpdates \
+    -archivePath "$BUILD/Browser.xcarchive" \
     ARCHS=arm64 ONLY_ACTIVE_ARCH=YES
 
 cat > "$BUILD/exportOptions.plist" <<'EOF'
@@ -93,8 +95,7 @@ cat > "$BUILD/exportOptions.plist" <<'EOF'
 EOF
 
 xcodebuild -exportArchive -archivePath "$BUILD/Browser.xcarchive" \
-    -exportOptionsPlist "$BUILD/exportOptions.plist" -exportPath "$BUILD/export" \
-    -allowProvisioningUpdates
+    -exportOptionsPlist "$BUILD/exportOptions.plist" -exportPath "$BUILD/export"
 
 STAGE="$BUILD/dmg"
 DMG="$BUILD/Browser.dmg"
@@ -121,26 +122,29 @@ xcrun stapler staple "$STAGE/Browser.app"
 xcrun stapler validate "$STAGE/Browser.app"
 spctl -a -t exec -vv "$STAGE/Browser.app"
 
-# `hdiutil create -volname Browser -srcfolder` mounts the volume to copy into
-# it, and macOS App Management refuses the write to the exact path
-# /Volumes/Browser/Browser.app unless the calling terminal holds that
-# permission — it fails from some hosts and not others. Stage the payload on a
-# differently-named volume, then rename the volume: a rename is not a write at
-# the protected path. (`hdiutil makehybrid` avoids mounting altogether but
-# stamps com.apple.FinderInfo on every file, which fails the strict signature
-# check below with "resource fork, Finder information, or similar detritus not
-# allowed".)
+# Write through a unique task-owned mount point. Fixed /Volumes paths can
+# already belong to the user and must never be detached by a release. Keeping
+# Browser.app under this private path also avoids writing to the protected
+# /Volumes/Browser/Browser.app path. The finished volume is still named Browser.
 RW_DMG="$BUILD/rw.dmg"
-STAGE_VOLUME="BrowserStage"
+STAGE_MOUNT="$(mktemp -d "${TMPDIR:-/tmp}/browser-release-stage.XXXXXX")"
+cleanup_stage_mount() {
+    hdiutil detach "$STAGE_MOUNT" >/dev/null 2>&1 || true
+    # rmdir cannot remove a mounted/populated volume; never recursively clean it.
+    if ! rmdir "$STAGE_MOUNT" >/dev/null 2>&1; then
+        echo "Release staging path remains; inspect this task-owned mount: $STAGE_MOUNT" >&2
+    fi
+}
+trap cleanup_stage_mount EXIT
 DMG_SIZE_MB=$(( $(du -sm "$STAGE" | awk '{ print $1 }') + 60 ))
-hdiutil detach "/Volumes/$STAGE_VOLUME" >/dev/null 2>&1 || true
 rm -f "$RW_DMG"
-hdiutil create -size "${DMG_SIZE_MB}m" -volname "$STAGE_VOLUME" -fs HFS+ -ov "$RW_DMG"
-hdiutil attach "$RW_DMG" -nobrowse >/dev/null
-ditto "$STAGE/Browser.app" "/Volumes/$STAGE_VOLUME/Browser.app"
-ln -s /Applications "/Volumes/$STAGE_VOLUME/Applications"
-diskutil rename "/Volumes/$STAGE_VOLUME" Browser >/dev/null
-hdiutil detach "/Volumes/Browser" >/dev/null
+hdiutil create -size "${DMG_SIZE_MB}m" -volname Browser -fs HFS+ -ov "$RW_DMG"
+hdiutil attach "$RW_DMG" -nobrowse -noautoopen -mountpoint "$STAGE_MOUNT" >/dev/null
+ditto "$STAGE/Browser.app" "$STAGE_MOUNT/Browser.app"
+ln -s /Applications "$STAGE_MOUNT/Applications"
+hdiutil detach "$STAGE_MOUNT" >/dev/null
+rmdir "$STAGE_MOUNT"
+trap - EXIT
 hdiutil convert "$RW_DMG" -format UDZO -ov -o "$DMG" >/dev/null
 rm -f "$RW_DMG"
 

@@ -38,8 +38,8 @@ struct WindowEdgeProgress: View {
     }
 }
 
-struct WindowEdgeProgressShape: Shape {
-    enum Edge: nonisolated Equatable { case top, bottom, left, right }
+nonisolated struct WindowEdgeProgressShape: Shape {
+    enum Edge: Equatable { case top, bottom, left, right }
 
     var edge: Edge
     var cornerRadius: CGFloat

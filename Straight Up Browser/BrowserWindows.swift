@@ -20,6 +20,7 @@ final class BrowserWindows: ObservableObject {
     @Published private(set) var fullScreenIDs: Set<UUID> = []
     nonisolated(unsafe) private var tokens: [UUID: [NSObjectProtocol]] = [:]
     private let defaults: UserDefaults
+    private let titleForWindow: (String) -> String
     private let persistsRecords: Bool
     private var windows: [UUID: WeakWindow] = [:]
     var openWindowAction: ((UUID) -> Void)?
@@ -27,8 +28,10 @@ final class BrowserWindows: ObservableObject {
     private var restored = false
     private struct WeakWindow { weak var value: NSWindow? }
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = BrowserProfile.defaults,
+         titleForWindow: @escaping (String) -> String = BrowserProfile.windowTitle) {
         self.defaults = defaults
+        self.titleForWindow = titleForWindow
         persistsRecords = !ProcessInfo.processInfo.arguments.contains("-uiTesting")
         records = (persistsRecords ? defaults.data(forKey: Self.storageKey) : nil)
             .flatMap { try? JSONDecoder().decode([BrowserWindowRecord].self, from: $0) } ?? []
@@ -61,7 +64,7 @@ final class BrowserWindows: ObservableObject {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let index = records.firstIndex(where: { $0.id == id }) else { return }
         records[index].name = trimmed
-        window(id)?.title = trimmed
+        window(id)?.title = titleForWindow(trimmed)
         persist()
     }
 
@@ -93,7 +96,7 @@ final class BrowserWindows: ObservableObject {
                 }
             ]
         }
-        window.title = record(id)?.name ?? "Browser"
+        window.title = titleForWindow(record(id)?.name ?? "Browser")
         window.isExcludedFromWindowsMenu = false
         if let index = records.firstIndex(where: { $0.id == id }), !records[index].isOpen {
             records[index].isOpen = true
@@ -134,7 +137,7 @@ final class BrowserWindows: ObservableObject {
 
     static func applyFullScreenPolicy(to window: NSWindow) {
         guard !window.styleMask.contains(.fullScreen) else { return }
-        if UserDefaults.standard.bool(forKey: nativeFullScreenKey) {
+        if BrowserProfile.defaults.bool(forKey: nativeFullScreenKey) {
             window.collectionBehavior.remove([.fullScreenNone, .fullScreenAuxiliary])
             window.collectionBehavior.insert(.fullScreenPrimary)
         } else {
@@ -144,7 +147,7 @@ final class BrowserWindows: ObservableObject {
     }
 
     static func toggleFullScreen(_ window: NSWindow) {
-        if window.styleMask.contains(.fullScreen) || UserDefaults.standard.bool(forKey: nativeFullScreenKey) {
+        if window.styleMask.contains(.fullScreen) || BrowserProfile.defaults.bool(forKey: nativeFullScreenKey) {
             window.collectionBehavior.remove([.fullScreenAuxiliary, .fullScreenNone])
             window.collectionBehavior.insert(.fullScreenPrimary)
             // Preserve the content-only appearance while retaining the titled
@@ -175,7 +178,7 @@ struct BrowserWindowScene: View {
     var body: some View {
         ContentView(windowID: id)
             .ignoresSafeArea()
-            .navigationTitle(windows.record(id)?.name ?? "Browser")
+            .navigationTitle(BrowserProfile.windowTitle(windows.record(id)?.name ?? "Browser"))
             .toolbarVisibility(.hidden, for: .windowToolbar)
             .onAppear {
                 windows.openWindowAction = { openWindow(id: "browser", value: $0) }

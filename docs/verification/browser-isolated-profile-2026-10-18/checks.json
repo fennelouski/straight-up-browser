@@ -1,0 +1,54 @@
+{
+  "baseCommit": "342632c2cc6220d74c7d1a0ec0473e704f35a25c",
+  "scope": "source-only isolated native test profile; no release metadata or publisher changes",
+  "sourceInputManifestSHA256": "38316393ecbccfd56a8067426e3bc0c5fd90fa211c879e865cc871759dbf6bc9",
+  "nativeCompile": {
+    "operation": "xcodebuild build-for-testing",
+    "configuration": "Debug",
+    "destination": "platform=macOS,arch=arm64",
+    "jobs": 2,
+    "signingAllowed": false,
+    "appLaunched": false,
+    "appTestsExecuted": 0,
+    "exitCode": 0,
+    "warningsAsErrors": true,
+    "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "note": "Compilation includes app, native unit-test bundle and UI-test bundle; no hosted test execution or coverage claimed. Two-job Xcode scheduling with whole-module compilation; no global OS-thread cap claim.",
+    "finalSourceSnapshot": true
+  },
+  "sourceTests": {
+    "profile": 15,
+    "motion": 33,
+    "settings": 48,
+    "powerup": 14,
+    "panes": 42,
+    "shortcuts": 10,
+    "weather": 32,
+    "total": 194
+  },
+  "pending": [
+    "Air independent source review",
+    "hosted native unit suite and coverage on exact reconciled source",
+    "iOS/Release verification after version/release.sh reconciliation",
+    "exact signed executable isolated-profile startup and manifest readiness",
+    "production-preservation sentinels and actual native-controls acceptance",
+    "signing/notarization/install/publication remain Air-owned and gated"
+  ],
+  "preserved": [
+    "No production Browser launch, install, restart or profile access on Studio",
+    "No main/tag push or deployment",
+    "scripts/release.sh, project version and model review unchanged"
+  ],
+  "profileHarnessFinalExitCode": 0,
+  "profileHarnessLogSHA256": "f05f8410979d4d96dea4e532fe512f5e18bef233c2be978b370fac1f9f792c33",
+  "headlessProbes": [
+    "Production selection without integration calls",
+    "Four malformed startup cases exit 78",
+    "Private defaults do not inherit a disposable executable application-domain nonce",
+    "Credential entry guards and absent CLI pipe",
+    "Actual private WKContentRuleList compilation",
+    "Nonpersistent, JavaScript-disabled WebKit configuration",
+    "Readiness false -> true -> false via actual preparation/invalidation",
+    "60-second owned process deadline verified"
+  ]
+}

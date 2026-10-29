@@ -40,7 +40,7 @@ final class TabCardNames: ObservableObject {
 
     @Published private(set) var names: [String: Pair] = [:]
     private var asking: Set<String> = []
-    private let defaults = UserDefaults.standard
+    private let defaults = BrowserProfile.defaults
 
     private init() {
         if let data = defaults.data(forKey: Self.storageKey),

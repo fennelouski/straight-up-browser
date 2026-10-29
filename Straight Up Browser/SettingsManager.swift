@@ -14,19 +14,17 @@ class SettingsManager {
     static let automaticLinkMitosisKey = "automaticLinkMitosisEnabled"
     static let automaticLinkSplitKey = "automaticLinkSplitEnabled"
 
-    private let userDefaults = UserDefaults.standard
+    private let userDefaults = BrowserProfile.defaults
 
     // Keys for UserDefaults
     private enum Keys {
         static let maxHistorySize = "maxHistorySize"
-        static let theme = "theme"
         static let showWebpageTitlesInTabs = "showWebpageTitlesInTabs"
     }
 
     // Default values
     private enum Defaults {
         static let maxHistorySize = 100
-        static let theme = "System"
         static let showWebpageTitlesInTabs = false
     }
 
@@ -34,9 +32,6 @@ class SettingsManager {
         // Initialize defaults if not set
         if userDefaults.object(forKey: Keys.maxHistorySize) == nil {
             userDefaults.set(Defaults.maxHistorySize, forKey: Keys.maxHistorySize)
-        }
-        if userDefaults.object(forKey: Keys.theme) == nil {
-            userDefaults.set(Defaults.theme, forKey: Keys.theme)
         }
         if userDefaults.object(forKey: Keys.showWebpageTitlesInTabs) == nil {
             userDefaults.set(Defaults.showWebpageTitlesInTabs, forKey: Keys.showWebpageTitlesInTabs)
@@ -61,11 +56,10 @@ class SettingsManager {
     /// Current theme preference
     var theme: String {
         get {
-            return userDefaults.string(forKey: Keys.theme) ?? Defaults.theme
+            return BrowserThemeStore.shared.value
         }
         set {
-            userDefaults.set(newValue, forKey: Keys.theme)
-            userDefaults.synchronize()
+            BrowserThemeStore.shared.setManually(newValue)
         }
     }
 
@@ -206,19 +200,19 @@ enum NewTabButtonVisibility {
     static let neglectInterval: TimeInterval = 7 * 24 * 60 * 60
     static let neglectLaunches = 10
 
-    static func isVisible(_ defaults: UserDefaults = .standard) -> Bool {
+    static func isVisible(_ defaults: UserDefaults = BrowserProfile.defaults) -> Bool {
         defaults.object(forKey: visibleKey) == nil || defaults.bool(forKey: visibleKey)
     }
 
     /// Clicking the button resets both counters.
-    static func noteUsed(now: Date = Date(), defaults: UserDefaults = .standard) {
+    static func noteUsed(now: Date = Date(), defaults: UserDefaults = BrowserProfile.defaults) {
         defaults.set(now, forKey: lastUsedKey)
         defaults.set(defaults.integer(forKey: launchCountKey), forKey: lastUsedLaunchKey)
     }
 
     /// Once per launch. Only decides anything while the user has no explicit
     /// preference — the moment they set the toggle either way, this stops.
-    static func noteLaunch(now: Date = Date(), defaults: UserDefaults = .standard) {
+    static func noteLaunch(now: Date = Date(), defaults: UserDefaults = BrowserProfile.defaults) {
         let launch = defaults.integer(forKey: launchCountKey) + 1
         defaults.set(launch, forKey: launchCountKey)
         if defaults.object(forKey: lastUsedKey) == nil {

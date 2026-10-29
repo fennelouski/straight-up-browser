@@ -94,7 +94,7 @@ final class SitePermissionStore: ObservableObject {
     private let defaults: UserDefaults
     private let storageKey = "sitePermissionRecords"
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = BrowserProfile.defaults) {
         self.defaults = defaults
         load()
     }

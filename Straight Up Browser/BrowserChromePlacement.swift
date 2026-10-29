@@ -18,11 +18,11 @@ enum BrowserChromePlacementSettings {
         static let tabSidebarSide = "tabSidebarSide"
     }
 
-    static func agentPanelSide(in defaults: UserDefaults = .standard) -> BrowserChromeSide {
+    static func agentPanelSide(in defaults: UserDefaults = BrowserProfile.defaults) -> BrowserChromeSide {
         BrowserChromeSide(rawValue: defaults.string(forKey: Key.agentPanelSide) ?? "") ?? .left
     }
 
-    static func tabSidebarSide(in defaults: UserDefaults = .standard) -> BrowserChromeSide {
+    static func tabSidebarSide(in defaults: UserDefaults = BrowserProfile.defaults) -> BrowserChromeSide {
         BrowserChromeSide(rawValue: defaults.string(forKey: Key.tabSidebarSide) ?? "") ?? .left
     }
 }

@@ -128,7 +128,7 @@ private struct OnboardingExhaust: View {
     }
 }
 
-private struct SpotlightShape: Shape {
+nonisolated private struct SpotlightShape: Shape {
     var focus: CGRect
     nonisolated var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<CGFloat, CGFloat>> {
         get { .init(.init(focus.origin.x, focus.origin.y), .init(focus.width, focus.height)) }

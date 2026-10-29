@@ -150,7 +150,8 @@ enum DownloadVisuals {
 #if os(macOS)
 enum SecurityScopedBookmark {
     static func data(for url: URL) -> Data? {
-        try? url.bookmarkData(
+        guard !BrowserProfile.isIsolated else { return nil }
+        return try? url.bookmarkData(
             options: .withSecurityScope,
             includingResourceValuesForKeys: nil,
             relativeTo: nil
@@ -158,6 +159,7 @@ enum SecurityScopedBookmark {
     }
 
     static func resolve(_ data: Data) -> URL? {
+        guard !BrowserProfile.isIsolated else { return nil }
         var isStale = false
         guard let url = try? URL(
             resolvingBookmarkData: data,
@@ -177,12 +179,13 @@ final class SecurityScopedFolderRegistry {
     private let defaults: UserDefaults
     private var activeURLs: [String: URL] = [:]
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = BrowserProfile.defaults) {
         self.defaults = defaults
     }
 
     @discardableResult
     func remember(_ url: URL) -> Bool {
+        guard !BrowserProfile.isIsolated else { return false }
         let standardized = url.standardizedFileURL
         guard let data = SecurityScopedBookmark.data(for: standardized),
               let resolved = SecurityScopedBookmark.resolve(data) else {
@@ -198,6 +201,7 @@ final class SecurityScopedFolderRegistry {
     }
 
     func accessibleURL(for url: URL) -> URL {
+        if let paths = BrowserProfile.paths { return paths.downloads }
         let standardized = url.standardizedFileURL
         if let active = activeURLs[standardized.path] {
             return active
@@ -244,7 +248,7 @@ final class DownloadFolderAccess {
     private let defaults: UserDefaults
     private var activeURL: URL?
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = BrowserProfile.defaults) {
         self.defaults = defaults
     }
 
@@ -263,6 +267,7 @@ final class DownloadFolderAccess {
     }
 
     func configuredFolder() -> URL? {
+        if let paths = BrowserProfile.paths { return paths.downloads }
         guard let configuredPath = defaults.string(forKey: Key.configuredPath),
               !configuredPath.isEmpty,
               configuredPath
@@ -333,8 +338,7 @@ final class DownloadManager: ObservableObject {
         #if os(macOS)
         _ = DownloadFolderAccess.shared.configuredFolder()
         #endif
-        let url = storeURL ?? FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let url = (BrowserProfile.isIsolated ? nil : storeURL) ?? BrowserProfile.applicationSupportURLs[0]
             .appendingPathComponent("Straight Up Browser", isDirectory: true)
             .appendingPathComponent("file-history.json")
         file = JSONHistoryFile(url: url)
@@ -348,7 +352,7 @@ final class DownloadManager: ObservableObject {
         source: URL?,
         privacy: FileTransferPrivacy = .standard
     ) {
-        guard privacy.persistsHistory else { return }
+        guard privacy.persistsHistory, BrowserProfile.allowsFileAccess(url) else { return }
         let record = FileRecord(kind: kind, path: url.path, source: source?.absoluteString, date: Date())
         let limit = maxRecords
         mutateRecords { records in
@@ -398,6 +402,7 @@ final class DownloadManager: ObservableObject {
     }
 
     func setDestination(_ id: UUID, url: URL, suggestedFilename: String) {
+        guard BrowserProfile.allowsFileAccess(url) else { return }
         mutate(id) {
             $0.destinationPath = url.path
             $0.filename = suggestedFilename

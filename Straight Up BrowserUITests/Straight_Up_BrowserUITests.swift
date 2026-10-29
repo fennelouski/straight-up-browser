@@ -761,6 +761,7 @@ final class Straight_Up_BrowserUITests: XCTestCase {
 
 @MainActor
 func launchBrowserForUITesting(_ app: XCUIApplication) {
+    app.launchArguments += ["-isolatedTestProfile", "uitest-" + UUID().uuidString]
     app.launchArguments += ["-memorySaverEnabled", "YES", "-globalOmnibarHotkey", "off", "-namedBrowserWindows", "[]"]
     if !app.launchArguments.contains("-nativeBrowserFullScreen") {
         app.launchArguments += ["-nativeBrowserFullScreen", "NO"]

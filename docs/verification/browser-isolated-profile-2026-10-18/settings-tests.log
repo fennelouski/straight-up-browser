@@ -1,0 +1,186 @@
+Building for debugging...
+[Pre-planning 1 / 95]
+[Planning deferred tasks]
+[28 / 52]
+[29 / 53] Browser
+[33 / 130]
+[39 / 130]
+[42 / 130]
+[47 / 130]
+[50 / 130]
+[52 / 130]
+[53 / 130]
+[55 / 130]
+[58 / 130]
+[60 / 130]
+[62 / 130]
+[65 / 130]
+[69 / 130]
+[70 / 130]
+[73 / 130]
+[75 / 130]
+[76 / 130]
+[81 / 130]
+[85 / 130]
+[88 / 130]
+[89 / 130]
+[90 / 130]
+[92 / 130]
+[95 / 130]
+[99 / 130] Browser
+[100 / 130] Browser
+[102 / 130] Browser
+[108 / 130] Browser
+[109 / 130] BrowserTests-product
+[110 / 130] BrowserTests-product
+[112 / 130] Browser
+[114 / 130] Browser
+[120 / 131] BrowserTests-product
+[121 / 137]
+[125 / 137] BrowserTests-product
+[127 / 137] BrowserTests-product
+[131 / 137] BrowserTests-product
+[133 / 137] BrowserTests-product
+Build complete! (15.46 sec)
+Test Suite 'All tests' started at 2026-10-18 18:29:06.649.
+Test Suite 'All tests' passed at 2026-10-18 18:29:06.650.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+􀟈  Test run started.
+􀄵  Testing Library Version: 2084
+􀄵  Target Platform: arm64e-apple-macos14.0
+􀟈  Suite SettingsAssistantPolicyTests started.
+􀟈  Suite SettingsDurableStoreTests started.
+􀟈  Suite SettingsAssistantTests started.
+􀟈  Test legacyCLIUnknownAndSettingsCapabilitiesFailClosed() started.
+􀟈  Test settingsProfileDoesNotExpandLegacyProfiles() started.
+􀟈  Test broadRunAndExactLegacyGrantCannotAuthorizeSettings() started.
+􀟈  Test fourTypedIDsRoundTripAndKeepIndependentTargetRevisions() started.
+􀟈  Test separateOwnersTrackSameValueAndABAWrites() started.
+􀟈  Test testHostSelectionCannotChooseProductionAuthority() started.
+􀟈  Test restartCannotResurrectAnUncertainNativeProposal() started.
+􀟈  Test recoveredNotAppliedRemainsStaleAfterOutcomeCompaction() started.
+􀟈  Test nativeThemeApplyAndUndoPreserveAbsenceWhileOtherKeysStayGated() started.
+􀟈  Test actualSecondProcessLockContentionAndCrashReleaseAreSafe() started.
+􀟈  Test missingStateAfterMigrationCannotReimportDefaults() started.
+􀟈  Test selfConsistentButImpossibleRevisionStateIsRejected() started.
+􀟈  Test failureFreezesWriterWithoutClaimingSuccess() started.
+􀟈  Test nativeAdapterRejectsRevokedOptInDespiteStaleAvailableViewAndKeepsManualThemeWorking() started.
+􀟈  Test operationIdentityCannotChangeValues() started.
+􀟈  Test themeMigrationPreservesValueOnceAndIgnoresRawDefaultsAfterwards() started.
+􀟈  Test crashAtEveryRealDurabilityBoundaryNeverBlindlyReplays(point:) started.
+􀟈  Test legacyValuesAreReadAccuratelyAndNeverNormalizedWithoutPreview() started.
+􀟈  Test questionsNeverReconcileAnOrphanOrBurnItsRevision() started.
+􀟈  Test invalidAuthorityIsPreservedAndFrozen(kind:) started.
+􀟈  Test callAndVagueMotionAdviceDoNotBundlePreferences() started.
+􀟈  Test manualEditAndABACycleInvalidatePreview() started.
+􀟈  Test wrongBooleanTypesAreRejected(value:) started.
+􀟈  Test undoNeverMutatesAfterEnteringRecoveryDuringItsSnapshot() started.
+􀟈  Test themeQuestionsAndPreviewsDoNotChangePreferenceOrRevision() started.
+􀟈  Test questionInPreviewModeCannotCreateChange() started.
+􀟈  Test productionCacheOnlyAdapterWithholdsApply() started.
+􀟈  Test scopedAndNegatedRequestsNeverBroadenToAppChange(request:) started.
+􀟈  Test revocationAfterCommitBlocksSubsequentOperations() started.
+􀟈  Test excessiveDepthAndSizeAreRejected() started.
+􀟈  Test switchingToAskAndChangingRequestInvalidateOldCard() started.
+􀟈  Test externalValueChangeIsRecheckedBeforeCommit() started.
+􀟈  Test unknownFieldsDuplicateKeysScopeAndContextAreRejected() started.
+􀟈  Test draftOpenedAfterPreviewBlocksApply() started.
+􀟈  Test manualDraftBlocksOnlyItsTargetAndClosingRestoresEligibility() started.
+􀟈  Test questionAndPreviewNeverWrite() started.
+􀟈  Test revocationBeforeCommitPreventsWrite() started.
+􀟈  Test finalLiveEligibilityWinsOverStaleViewAvailability() started.
+􀟈  Test postCommitReadFailureDoesNotReportAppliedOrPublishOptimistically() started.
+􀟈  Test validSuggestionDoesNotWriteAndQuestionOnlyRejectsProposal() started.
+􀟈  Test sameValueManualWriteBlocksUndo() started.
+􀟈  Test actualFileCommitReopensIdempotentlyAndRestoresAbsence() started.
+􀟈  Test unknownAndSensitiveIDsAreRejected(id:) started.
+􀟈  Test case passing 1 argument kind → "future" to invalidAuthorityIsPreservedAndFrozen(kind:) started.
+􀟈  Test case passing 1 argument value → "0" to wrongBooleanTypesAreRejected(value:) started.
+􀟈  Test case passing 1 argument value → "1" to wrongBooleanTypesAreRejected(value:) started.
+􀟈  Test case passing 1 argument value → ""false"" to wrongBooleanTypesAreRejected(value:) started.
+􀟈  Test case passing 1 argument value → "null" to wrongBooleanTypesAreRejected(value:) started.
+􀟈  Test previewIsTypedAppScopedAndNoOpHasNoReceipt() started.
+􀟈  Test case passing 1 argument request → "Disable page fades in this window" to scopedAndNegatedRequestsNeverBroadenToAppChange(request:) started.
+􀟈  Test case passing 1 argument point → .intentDirectorySynced to crashAtEveryRealDurabilityBoundaryNeverBlindlyReplays(point:) started.
+􀟈  Test case passing 1 argument value → "{}" to wrongBooleanTypesAreRejected(value:) started.
+􀟈  Test case passing 1 argument point → .outcomeDirectorySynced to crashAtEveryRealDurabilityBoundaryNeverBlindlyReplays(point:) started.
+􀟈  Test case passing 1 argument point → .outcomeRenamed to crashAtEveryRealDurabilityBoundaryNeverBlindlyReplays(point:) started.
+􀟈  Test case passing 1 argument point → .outcomeFileSynced to crashAtEveryRealDurabilityBoundaryNeverBlindlyReplays(point:) started.
+􀟈  Test case passing 1 argument request → "Turn page fades off on this site" to scopedAndNegatedRequestsNeverBroadenToAppChange(request:) started.
+􀟈  Test case passing 1 argument point → .intentFileSynced to crashAtEveryRealDurabilityBoundaryNeverBlindlyReplays(point:) started.
+􀟈  Test case passing 1 argument value → "[]" to wrongBooleanTypesAreRejected(value:) started.
+􀟈  Test expiredAndWrongSessionCannotCommit() started.
+􀟈  Test case passing 1 argument point → .stateDirectorySynced to crashAtEveryRealDurabilityBoundaryNeverBlindlyReplays(point:) started.
+􀟈  Test case passing 1 argument request → "Don't turn page fades off" to scopedAndNegatedRequestsNeverBroadenToAppChange(request:) started.
+􀟈  Test case passing 1 argument request → "Do not disable page fading" to scopedAndNegatedRequestsNeverBroadenToAppChange(request:) started.
+􀟈  Test availabilityRequiresExplicitOptInAndMasterSwitch() started.
+􀟈  Test explicitApplyIsIdempotentAndUndoRestoresAbsence() started.
+􀟈  Test case passing 1 argument point → .stateRenamed to crashAtEveryRealDurabilityBoundaryNeverBlindlyReplays(point:) started.
+􀟈  Test case passing 1 argument point → .stateFileSynced to crashAtEveryRealDurabilityBoundaryNeverBlindlyReplays(point:) started.
+􀟈  Test case passing 1 argument kind → "extraField" to invalidAuthorityIsPreservedAndFrozen(kind:) started.
+􀟈  Test case passing 1 argument id → "arbitrary.key" to unknownAndSensitiveIDsAreRejected(id:) started.
+􀟈  Test case passing 1 argument kind → "corrupt" to invalidAuthorityIsPreservedAndFrozen(kind:) started.
+􀟈  Test invalidDurationValuesAreRejected(value:) started.
+􀟈  Test case passing 1 argument point → .intentRenamed to crashAtEveryRealDurabilityBoundaryNeverBlindlyReplays(point:) started.
+􀟈  Test case passing 1 argument request → "Disable page fades for example.com" to scopedAndNegatedRequestsNeverBroadenToAppChange(request:) started.
+􀟈  Test case passing 1 argument value → "50" to invalidDurationValuesAreRejected(value:) started.
+􀟈  Test case passing 1 argument value → "275" to invalidDurationValuesAreRejected(value:) started.
+􀟈  Test case passing 1 argument value → "1001" to invalidDurationValuesAreRejected(value:) started.
+􀟈  Test case passing 1 argument value → "true" to invalidDurationValuesAreRejected(value:) started.
+􀟈  Test case passing 1 argument value → "1e9999" to invalidDurationValuesAreRejected(value:) started.
+􀟈  Test case passing 1 argument id → "appearance.reduceMotion" to unknownAndSensitiveIDsAreRejected(id:) started.
+􀟈  Test case passing 1 argument id → "security.strictSSL" to unknownAndSensitiveIDsAreRejected(id:) started.
+􀟈  Test case passing 1 argument value → "NaN" to invalidDurationValuesAreRejected(value:) started.
+􀟈  Test case passing 1 argument id → "agent.externalConnections" to unknownAndSensitiveIDsAreRejected(id:) started.
+􁁛  Test legacyCLIUnknownAndSettingsCapabilitiesFailClosed() passed after 0.185 seconds.
+􁁛  Test settingsProfileDoesNotExpandLegacyProfiles() passed after 0.185 seconds.
+􁁛  Test actualSecondProcessLockContentionAndCrashReleaseAreSafe() passed after 4.736 seconds.
+􁁛  Test broadRunAndExactLegacyGrantCannotAuthorizeSettings() passed after 4.937 seconds.
+􁁛  Suite SettingsAssistantPolicyTests passed after 4.937 seconds.
+􁁛  Test separateOwnersTrackSameValueAndABAWrites() passed after 5.038 seconds.
+􁁛  Test testHostSelectionCannotChooseProductionAuthority() passed after 5.151 seconds.
+􁁛  Test nativeThemeApplyAndUndoPreserveAbsenceWhileOtherKeysStayGated() passed after 5.452 seconds.
+􁁛  Test recoveredNotAppliedRemainsStaleAfterOutcomeCompaction() passed after 5.468 seconds.
+􁁛  Test nativeAdapterRejectsRevokedOptInDespiteStaleAvailableViewAndKeepsManualThemeWorking() passed after 5.468 seconds.
+􁁛  Test questionsNeverReconcileAnOrphanOrBurnItsRevision() passed after 5.468 seconds.
+􁁛  Test missingStateAfterMigrationCannotReimportDefaults() passed after 5.468 seconds.
+􁁛  Test legacyValuesAreReadAccuratelyAndNeverNormalizedWithoutPreview() passed after 5.468 seconds.
+􁁛  Test operationIdentityCannotChangeValues() passed after 5.468 seconds.
+􁁛  Test callAndVagueMotionAdviceDoNotBundlePreferences() passed after 5.468 seconds.
+􁁛  Test restartCannotResurrectAnUncertainNativeProposal() passed after 5.468 seconds.
+􁁛  Test fourTypedIDsRoundTripAndKeepIndependentTargetRevisions() passed after 5.468 seconds.
+􁁛  Test themeMigrationPreservesValueOnceAndIgnoresRawDefaultsAfterwards() passed after 5.468 seconds.
+􁁛  Test undoNeverMutatesAfterEnteringRecoveryDuringItsSnapshot() passed after 5.468 seconds.
+􁁛  Test questionInPreviewModeCannotCreateChange() passed after 5.468 seconds.
+􁁛  Test failureFreezesWriterWithoutClaimingSuccess() passed after 5.468 seconds.
+􁁛  Test themeQuestionsAndPreviewsDoNotChangePreferenceOrRevision() passed after 5.468 seconds.
+􁁛  Test productionCacheOnlyAdapterWithholdsApply() passed after 5.468 seconds.
+􁁛  Test invalidAuthorityIsPreservedAndFrozen(kind:) with 3 test cases passed after 5.468 seconds.
+􁁛  Test wrongBooleanTypesAreRejected(value:) with 6 test cases passed after 5.468 seconds.
+􁁛  Test revocationAfterCommitBlocksSubsequentOperations() passed after 5.468 seconds.
+􁁛  Test manualEditAndABACycleInvalidatePreview() passed after 5.468 seconds.
+􁁛  Test excessiveDepthAndSizeAreRejected() passed after 5.468 seconds.
+􁁛  Test draftOpenedAfterPreviewBlocksApply() passed after 5.468 seconds.
+􁁛  Test manualDraftBlocksOnlyItsTargetAndClosingRestoresEligibility() passed after 5.468 seconds.
+􁁛  Test externalValueChangeIsRecheckedBeforeCommit() passed after 5.468 seconds.
+􁁛  Test unknownFieldsDuplicateKeysScopeAndContextAreRejected() passed after 5.468 seconds.
+􁁛  Test selfConsistentButImpossibleRevisionStateIsRejected() passed after 5.468 seconds.
+􁁛  Test postCommitReadFailureDoesNotReportAppliedOrPublishOptimistically() passed after 5.468 seconds.
+􁁛  Test expiredAndWrongSessionCannotCommit() passed after 5.468 seconds.
+􁁛  Test validSuggestionDoesNotWriteAndQuestionOnlyRejectsProposal() passed after 5.468 seconds.
+􁁛  Test switchingToAskAndChangingRequestInvalidateOldCard() passed after 5.468 seconds.
+􁁛  Test finalLiveEligibilityWinsOverStaleViewAvailability() passed after 5.468 seconds.
+􁁛  Test sameValueManualWriteBlocksUndo() passed after 5.468 seconds.
+􁁛  Test scopedAndNegatedRequestsNeverBroadenToAppChange(request:) with 5 test cases passed after 5.468 seconds.
+􁁛  Test questionAndPreviewNeverWrite() passed after 5.468 seconds.
+􁁛  Test crashAtEveryRealDurabilityBoundaryNeverBlindlyReplays(point:) with 9 test cases passed after 5.468 seconds.
+􁁛  Test revocationBeforeCommitPreventsWrite() passed after 5.468 seconds.
+􁁛  Test availabilityRequiresExplicitOptInAndMasterSwitch() passed after 5.468 seconds.
+􁁛  Test actualFileCommitReopensIdempotentlyAndRestoresAbsence() passed after 5.468 seconds.
+􁁛  Test previewIsTypedAppScopedAndNoOpHasNoReceipt() passed after 5.468 seconds.
+􁁛  Test invalidDurationValuesAreRejected(value:) with 6 test cases passed after 5.468 seconds.
+􁁛  Test unknownAndSensitiveIDsAreRejected(id:) with 4 test cases passed after 5.468 seconds.
+􁁛  Test explicitApplyIsIdempotentAndUndoRestoresAbsence() passed after 5.468 seconds.
+􁁛  Suite SettingsDurableStoreTests passed after 5.469 seconds.
+􁁛  Suite SettingsAssistantTests passed after 5.469 seconds.
+􁁛  Test run with 48 tests in 3 suites passed after 5.469 seconds.

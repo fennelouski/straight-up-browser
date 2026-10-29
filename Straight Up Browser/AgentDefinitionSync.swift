@@ -69,7 +69,7 @@ nonisolated enum AgentDefinitionSyncSettings {
     }
 
     static func preferences(
-        from defaults: UserDefaults = .standard
+        from defaults: UserDefaults = BrowserProfile.defaults
     ) -> AgentDefinitionSyncPreferences {
         AgentDefinitionSyncPreferences(
             schedules: defaults.bool(forKey: Key.schedules),
@@ -80,7 +80,7 @@ nonisolated enum AgentDefinitionSyncSettings {
 
     static func save(
         _ preferences: AgentDefinitionSyncPreferences,
-        to defaults: UserDefaults = .standard
+        to defaults: UserDefaults = BrowserProfile.defaults
     ) {
         defaults.set(preferences.schedules, forKey: Key.schedules)
         defaults.set(preferences.providerPresets, forKey: Key.providerPresets)
@@ -1603,6 +1603,7 @@ actor CloudKitAgentDefinitionSyncBackend: AgentDefinitionSyncBackend {
     /// browser's scheduler and settings graph remains safe in unsigned test
     /// hosts and when every definition-sync category is disabled.
     private func database() throws -> CKDatabase {
+        guard !BrowserProfile.isIsolated else { throw AgentDefinitionSyncError.missingCloudKitEntitlement(containerIdentifier) }
         if let resolvedDatabase { return resolvedDatabase }
         guard CloudKitEntitlements.permits(containerIdentifier) else {
             throw AgentDefinitionSyncError.missingCloudKitEntitlement(

@@ -31,6 +31,7 @@ nonisolated final class BrowserAgentMCPLoopbackAuthorizationListener: @unchecked
     private var finished = false
 
     init() throws {
+        guard !BrowserProfile.isIsolated else { throw MCPConnectionError.authorizationDenied }
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         parameters.allowLocalEndpointReuse = false

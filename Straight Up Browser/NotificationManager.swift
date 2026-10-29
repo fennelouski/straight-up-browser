@@ -13,7 +13,7 @@ import SwiftData
 
 enum CLIPageReader {
     static func makeConfiguration() -> WKWebViewConfiguration {
-        let configuration = WKWebViewConfiguration()
+        let configuration = BrowserProfileWebKit.configuration()
         configuration.websiteDataStore = .nonPersistent()
         return configuration
     }
@@ -214,8 +214,8 @@ class NotificationManager {
 
     func setupNotificationObservers() {
         guard observers.isEmpty else { return } // idempotent; cleanup() re-arms
-        BrowserAutomationRegistry.shared.register(self)
-        BrowserAgentScheduler.shared.register(self)
+        if !BrowserProfile.isIsolated { BrowserAutomationRegistry.shared.register(self) }
+        if !BrowserProfile.isIsolated { BrowserAgentScheduler.shared.register(self) }
         defer { Self.observersReady = true }
 
         let openURLOobserver = addWindowCommandObserver(
@@ -755,7 +755,7 @@ class NotificationManager {
     }
 
     private func performRealClick(selector: String, responseFilePath: String?) {
-        guard UserDefaults.standard.bool(forKey: "cliRealEventsEnabled") else {
+        guard BrowserProfile.defaults.bool(forKey: "cliRealEventsEnabled") else {
             BrowserCLI.writeResponse(["error": "Real input events are disabled. Ask the user to enable Settings > Security > CLI Automation."], to: responseFilePath)
             return
         }
@@ -837,6 +837,7 @@ class NotificationManager {
     }
 
     private func printCurrentPage() {
+        guard !BrowserProfile.isIsolated else { return }
         guard let webView = webViewManager.activeWebView else { return }
         let operation = webView.printOperation(with: NSPrintInfo.shared)
         operation.showsPrintPanel = true
@@ -852,6 +853,7 @@ class NotificationManager {
     }
 
     private func exportPDF() {
+        guard !BrowserProfile.isIsolated else { return }
         guard let webView = webViewManager.activeWebView else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
@@ -1235,6 +1237,7 @@ class NotificationManager {
         arguments: [String: Any],
         responseFilePath: String?
     ) {
+        guard !BrowserProfile.isIsolated else { return }
         switch tool {
         case "navigate_page":
             guard let target = tab(for: arguments),
@@ -1995,7 +1998,7 @@ class NotificationManager {
             page: PageHandle(windowID: automationWindowId, tabID: tab.id),
             browserSession: agentSignalSession(for: tab)
         )
-        if UserDefaults.standard.bool(forKey: "agentWebKitConsoleCaptureEnabled"),
+        if BrowserProfile.defaults.bool(forKey: "agentWebKitConsoleCaptureEnabled"),
            let capabilities = await agentRunCapabilities(permit.runID),
            capabilities.contains(.pageScript),
            let token = await runtime.consoleBridgeToken(tabID: tab.id) {
@@ -2041,7 +2044,7 @@ class NotificationManager {
                 guard capabilities.contains(.pageScript) else {
                     return "console signals require the pageScript capability"
                 }
-                guard UserDefaults.standard.bool(forKey: "agentWebKitConsoleCaptureEnabled") else {
+                guard BrowserProfile.defaults.bool(forKey: "agentWebKitConsoleCaptureEnabled") else {
                     return "console capture is disabled in Agent settings"
                 }
             case .download:
@@ -2081,7 +2084,7 @@ class NotificationManager {
                 kinds = [.navigation, .resourceFailure, .dialog, .pageLifecycle]
                 if capabilities.contains(.download) { kinds.insert(.download) }
                 if capabilities.contains(.pageScript),
-                   UserDefaults.standard.bool(forKey: "agentWebKitConsoleCaptureEnabled") {
+                   BrowserProfile.defaults.bool(forKey: "agentWebKitConsoleCaptureEnabled") {
                     kinds.insert(.console)
                 }
             }
@@ -2626,8 +2629,8 @@ class NotificationManager {
     }
 
     private var automationBookmarkFolders: [String] {
-        get { UserDefaults.standard.stringArray(forKey: "agentBookmarkFolders") ?? [] }
-        set { UserDefaults.standard.set(Array(Set(newValue)).sorted(), forKey: "agentBookmarkFolders") }
+        get { BrowserProfile.defaults.stringArray(forKey: "agentBookmarkFolders") ?? [] }
+        set { BrowserProfile.defaults.set(Array(Set(newValue)).sorted(), forKey: "agentBookmarkFolders") }
     }
 
     private func performBookmarkTool(
@@ -2758,6 +2761,7 @@ class NotificationManager {
         arguments: [String: Any],
         responseFilePath: String?
     ) {
+        guard !BrowserProfile.isIsolated else { return }
         switch tool {
         case "list_tab_groups":
             respond(["ok": true, "groups": tabGroups().map(tabGroupDictionary)], to: responseFilePath)
@@ -2843,7 +2847,7 @@ class NotificationManager {
     }
 
     func cleanup() {
-        BrowserAgentScheduler.shared.unregister(self)
+        if !BrowserProfile.isIsolated { BrowserAgentScheduler.shared.unregister(self) }
         BrowserAutomationRegistry.shared.unregister(self)
         Self.observersReady = BrowserAutomationRegistry.shared.hasLiveManagers
         observers.forEach { NotificationCenter.default.removeObserver($0) }

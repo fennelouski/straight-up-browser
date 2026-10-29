@@ -18,11 +18,21 @@ enum GlobalOmnibarHotkey {
     static let defaultsKey = "globalOmnibarHotkey"
     static let defaultChord = "optSpace"
 
-    private static var hotKeyRef: EventHotKeyRef?
     private static var onPress: (() -> Void)?
-    private static var appliedChord: String?
+    private static var lastRequested: String?
+    private static let registration = GlobalHotkeyRegistration<EventHotKeyRef>(register: { chord, serial in
+        var reference: EventHotKeyRef?
+        let modifiers = UInt32(optionKey | (chord == "ctrlOptSpace" ? controlKey : 0))
+        let identifier = EventHotKeyID(signature: OSType(0x5355_4252), id: serial)
+        let result = RegisterEventHotKey(UInt32(kVK_Space), modifiers, identifier,
+                                        GetApplicationEventTarget(), 0, &reference)
+        return (result, reference)
+    }, unregister: { UnregisterEventHotKey($0) })
+
+    static var appliedBinding: String? { registration.currentChord }
 
     static func install(_ handler: @escaping () -> Void) {
+        guard !BrowserProfile.isIsolated else { return }
         onPress = handler
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
@@ -37,24 +47,44 @@ enum GlobalOmnibarHotkey {
     // Called at launch and on every UserDefaults change; no-ops unless the
     // chord setting actually changed.
     static func applyFromDefaults() {
-        let chord = UserDefaults.standard.string(forKey: defaultsKey) ?? defaultChord
-        guard chord != appliedChord else { return }
-        appliedChord = chord
+        guard !BrowserProfile.isIsolated else { return }
+        let chord = BrowserProfile.defaults.string(forKey: defaultsKey) ?? defaultChord
+        guard chord != lastRequested else { return }
+        _ = select(chord)
+    }
 
-        if let ref = hotKeyRef {
-            UnregisterEventHotKey(ref)
-            hotKeyRef = nil
+    /// Register first, then persist. A failed replacement keeps the old handle
+    /// and selected value. It does not request monitoring or accessibility.
+    @discardableResult static func select(_ chord: String, rememberingUndo: Bool = true) -> Bool {
+        guard !BrowserProfile.isIsolated else { return false }
+        let before = registration.currentChord
+        lastRequested = chord
+        let accepted = registration.select(chord)
+        let status = GlobalHotkeyStatus.shared
+        status.state = registration.state
+        status.recoveryRequired = registration.recoveryRequired
+        if accepted {
+            BrowserProfile.defaults.set(chord, forKey: defaultsKey)
+            if rememberingUndo, let before, before != chord {
+                status.undo = GlobalHotkeyChange(before: before, after: chord, revision: registration.revision)
+            }
+        } else if let before {
+            lastRequested = before
+            BrowserProfile.defaults.set(before, forKey: defaultsKey)
         }
+        return accepted
+    }
 
-        let modifiers: UInt32
-        switch chord {
-        case "optSpace": modifiers = UInt32(optionKey)
-        case "ctrlOptSpace": modifiers = UInt32(controlKey | optionKey)
-        default: return // "off"
-        }
-        let hotKeyID = EventHotKeyID(signature: OSType(0x5355_4252), id: 1) // 'SUBR'
-        RegisterEventHotKey(UInt32(kVK_Space), modifiers, hotKeyID,
-                            GetApplicationEventTarget(), 0, &hotKeyRef)
+    static func retry() {
+        if case .failed(let chord, _) = GlobalHotkeyStatus.shared.state { _ = select(chord) }
+    }
+
+    static func undoChange() -> Bool {
+        guard let change = GlobalHotkeyStatus.shared.undo,
+              registration.revision == change.revision, registration.currentChord == change.after else { return false }
+        let result = select(change.before, rememberingUndo: false)
+        if result { GlobalHotkeyStatus.shared.undo = nil }
+        return result
     }
 }
 
@@ -80,6 +110,10 @@ final class GlobalOmnibarController: NSObject, NSWindowDelegate {
     }
 
     private func show() {
+        // This global action has no tab identity. Donate only when it was
+        // invoked outside Browser, rather than guessing that a Browser window
+        // is nonprivate. Explicit practice confirmation remains session-only.
+        let canDonateLearning = !NSApp.isActive
         expandedHeight = min(560, (NSScreen.main?.visibleFrame.height ?? 584) - 24)
         var content = GlobalOmnibarWeatherView(
             isPresented: Binding(get: { true }, set: { [weak self] shown in
@@ -131,6 +165,13 @@ final class GlobalOmnibarController: NSObject, NSWindowDelegate {
 
         self.panel = panel
         panel.makeKeyAndOrderFront(nil) // keyboard focus without activating the app
+        if panel.isKeyWindow {
+            if canDonateLearning {
+                PowerUpLearning.shared.recordSuccess(feature: .globalOmnibar, method: .shortcut, isPrivate: false)
+            }
+            NotificationCenter.default.post(name: .powerUpConfirmedAction, object: nil,
+                                            userInfo: ["feature": PowerUpFeatureID.globalOmnibar.rawValue])
+        }
     }
 
     private func resizeForWeather(_ visible: Bool, cardHeight: CGFloat = 80) {

@@ -160,12 +160,13 @@ final class ExtensionPathRegistry {
     private let defaults: UserDefaults
     private var activeURLs: [String: URL] = [:]
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = BrowserProfile.defaults) {
         self.defaults = defaults
         migrateLegacyPathIfNeeded()
     }
 
     var paths: [URL] {
+        guard !BrowserProfile.isIsolated else { return [] }
         let stored = defaults.stringArray(forKey: Self.pathsKey) ?? []
         let bookmarks = bookmarkDataByPath()
         return uniqueStandardizedURLs(stored.compactMap { path in
@@ -186,6 +187,7 @@ final class ExtensionPathRegistry {
     }
 
     func remember(_ directory: URL) {
+        guard !BrowserProfile.isIsolated else { return }
         let standardized = directory.standardizedFileURL
         let existing = (defaults.stringArray(forKey: Self.pathsKey) ?? [])
             .map { URL(fileURLWithPath: $0) }
@@ -321,7 +323,7 @@ final class WebExtensionManager: NSObject {
 
     var hasExtensions: Bool { !loadedExtensions.isEmpty }
     var allowsPrivateAccess: Bool {
-        UserDefaults.standard.bool(forKey: privateAccessKey)
+        BrowserProfile.defaults.bool(forKey: privateAccessKey)
     }
 
     /// Called by WebViewManager as it creates web views. Gives the bridge a
@@ -352,6 +354,7 @@ final class WebExtensionManager: NSObject {
     // extra Xcode target, and it's how you'd dev-load Bitwarden/uBlock. Package
     // a Safari Web Extension target if you later want to ship one built in.
     func presentLoadPanel() {
+        guard !BrowserProfile.isIsolated else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -431,8 +434,8 @@ final class WebExtensionManager: NSObject {
                 if remember {
                     pathRegistry.remember(extensionDirectory)
                 }
-                if UserDefaults.standard.string(forKey: preferredPopupPathKey) == nil {
-                    UserDefaults.standard.set(
+                if BrowserProfile.defaults.string(forKey: preferredPopupPathKey) == nil {
+                    BrowserProfile.defaults.set(
                         extensionDirectory.path,
                         forKey: preferredPopupPathKey
                     )
@@ -465,7 +468,7 @@ final class WebExtensionManager: NSObject {
     }
 
     private func hasStoredApproval(at directory: URL) -> Bool {
-        let legacy = UserDefaults.standard
+        let legacy = BrowserProfile.defaults
             .dictionary(forKey: legacyApprovedScopesKey)?[directory.path] as? [String]
         return approvalRecords()[directory.path] != nil || legacy != nil
     }
@@ -481,15 +484,15 @@ final class WebExtensionManager: NSObject {
             fingerprint: fingerprint
         )
         if let data = try? JSONEncoder().encode(records) {
-            UserDefaults.standard.set(data, forKey: approvalRecordsKey)
+            BrowserProfile.defaults.set(data, forKey: approvalRecordsKey)
         }
         // Scope-only records are intentionally not migrated: their lack of an
         // integrity hash forces one fresh approval after this upgrade.
-        UserDefaults.standard.removeObject(forKey: legacyApprovedScopesKey)
+        BrowserProfile.defaults.removeObject(forKey: legacyApprovedScopesKey)
     }
 
     private func approvalRecords() -> [String: ApprovalRecord] {
-        guard let data = UserDefaults.standard.data(forKey: approvalRecordsKey),
+        guard let data = BrowserProfile.defaults.data(forKey: approvalRecordsKey),
               let records = try? JSONDecoder().decode(
                 [String: ApprovalRecord].self,
                 from: data
@@ -522,7 +525,7 @@ final class WebExtensionManager: NSObject {
         let extensionSelector = NSPopUpButton()
         extensionSelector.addItems(withTitles: names)
         extensionSelector.isEnabled = !names.isEmpty
-        if let preferredPath = UserDefaults.standard.string(
+        if let preferredPath = BrowserProfile.defaults.string(
             forKey: preferredPopupPathKey
         ),
            let preferredIndex = loadedExtensions.firstIndex(where: {
@@ -548,13 +551,13 @@ final class WebExtensionManager: NSObject {
 
         let response = alert.runModal()
         let allowPrivate = privateToggle.state == .on
-        UserDefaults.standard.set(allowPrivate, forKey: privateAccessKey)
+        BrowserProfile.defaults.set(allowPrivate, forKey: privateAccessKey)
         for loaded in loadedExtensions {
             loaded.context.hasAccessToPrivateData = allowPrivate
         }
         if extensionSelector.indexOfSelectedItem >= 0,
            loadedExtensions.indices.contains(extensionSelector.indexOfSelectedItem) {
-            UserDefaults.standard.set(
+            BrowserProfile.defaults.set(
                 loadedExtensions[extensionSelector.indexOfSelectedItem].directory.path,
                 forKey: preferredPopupPathKey
             )
@@ -570,9 +573,9 @@ final class WebExtensionManager: NSObject {
             }
             if loadedExtensions.isEmpty {
                 pathRegistry.forgetAll()
-                UserDefaults.standard.removeObject(forKey: preferredPopupPathKey)
-                UserDefaults.standard.removeObject(forKey: approvalRecordsKey)
-                UserDefaults.standard.removeObject(forKey: legacyApprovedScopesKey)
+                BrowserProfile.defaults.removeObject(forKey: preferredPopupPathKey)
+                BrowserProfile.defaults.removeObject(forKey: approvalRecordsKey)
+                BrowserProfile.defaults.removeObject(forKey: legacyApprovedScopesKey)
             }
         }
     }
@@ -586,10 +589,10 @@ final class WebExtensionManager: NSObject {
             forgetApproval(at: loaded.directory)
             if loadedExtensions.isEmpty {
                 extTabs.removeAll()
-                UserDefaults.standard.removeObject(forKey: preferredPopupPathKey)
-            } else if UserDefaults.standard.string(forKey: preferredPopupPathKey)
+                BrowserProfile.defaults.removeObject(forKey: preferredPopupPathKey)
+            } else if BrowserProfile.defaults.string(forKey: preferredPopupPathKey)
                         == loaded.directory.path {
-                UserDefaults.standard.set(
+                BrowserProfile.defaults.set(
                     loadedExtensions[0].directory.path,
                     forKey: preferredPopupPathKey
                 )
@@ -603,9 +606,9 @@ final class WebExtensionManager: NSObject {
         var records = approvalRecords()
         records.removeValue(forKey: directory.path)
         if records.isEmpty {
-            UserDefaults.standard.removeObject(forKey: approvalRecordsKey)
+            BrowserProfile.defaults.removeObject(forKey: approvalRecordsKey)
         } else if let data = try? JSONEncoder().encode(records) {
-            UserDefaults.standard.set(data, forKey: approvalRecordsKey)
+            BrowserProfile.defaults.set(data, forKey: approvalRecordsKey)
         }
     }
 
@@ -621,7 +624,7 @@ final class WebExtensionManager: NSObject {
     /// Open the user's selected extension toolbar popup (its unlock/vault UI).
     /// macOS hands us a ready-made NSPopover via the action.
     func showPopup() {
-        let preferredPath = UserDefaults.standard.string(
+        let preferredPath = BrowserProfile.defaults.string(
             forKey: preferredPopupPathKey
         )
         guard let loaded = loadedExtensions.first(where: {

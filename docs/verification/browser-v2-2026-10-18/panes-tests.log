@@ -1,0 +1,136 @@
+Browser v2 pane model verification
+Sources: actual PaneLayout.swift + ColdLayoutStarterScheduler.swift; actual PaneLayoutModelTests + ColdLayoutStarterSchedulerTests.
+Excluded: PaneLayoutTransactionTests requires the full Browser app, SwiftData and WebKit.
+No package dependencies; temporary package and compiler caches remain under /tmp.
+Building for debugging...
+[Pre-planning 1 / 95]
+[Planning deferred tasks]
+[28 / 52]
+[29 / 53] Browser
+[33 / 91]
+[39 / 91]
+[43 / 91]
+[46 / 91]
+[48 / 91]
+[52 / 91]
+[54 / 91]
+[57 / 91]
+[59 / 91]
+[62 / 91]
+[63 / 91]
+[64 / 91]
+[67 / 91] Browser
+[75 / 91] Browser
+[81 / 92] BrowserTests-product
+[85 / 131]
+[89 / 131]
+[93 / 131]
+[95 / 131]
+[99 / 131]
+[101 / 131]
+[102 / 131]
+[106 / 131]
+[108 / 131]
+[111 / 131]
+[114 / 131]
+[115 / 131]
+[119 / 131] BrowserTests-product
+[120 / 131] BrowserTests-product
+[125 / 131] BrowserTests-product
+[127 / 131] BrowserTests-product
+Build complete! (14.12 sec)
+Test Suite 'All tests' started at 2026-10-18 10:57:08.227.
+Test Suite 'All tests' passed at 2026-10-18 10:57:08.228.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+􀟈  Test run started.
+􀄵  Testing Library Version: 2084
+􀄵  Target Platform: arm64e-apple-macos14.0
+􀟈  Suite PaneLayoutModelTests started.
+􀟈  Suite ColdLayoutStarterSchedulerTests started.
+􀟈  Test malformedDuplicatesRatiosAndOversizedTreesAreRejected() started.
+􀟈  Test updateDiffIgnoresSplitBookkeepingAndTimestamps() started.
+􀟈  Test swapChangesOnlyOccupantsAndKeepsExactDividerGeometry() started.
+􀟈  Test recipeStoreRetainsVersionsAndRejectsStaleUpdatesAndDoesNotWriteURLsForManualSlots() started.
+􀟈  Test hiddenCenterPlacementRetainsPanePositionWithoutDuplicatingContent() started.
+􀟈  Test updateDiffShowsTopologyAndPreferredRatiosBeforeAndAfter() started.
+􀟈  Test retryInANewContextDefersOldPendingAndGateOffStartsNothing() started.
+􀟈  Test minimumClampsAppliedRatiosWithoutRewritingPreferredRatios() started.
+􀟈  Test retainedTreeRequiresUnchangedTypedMembershipOrderWorkspaceAndEnable() started.
+􀟈  Test undoCancellationDefersUnstartedTabsAndPreservesStartedWork() started.
+􀟈  Test updateDiffTreatsSameURLContentSwapAsPositionsNotDeletionOrRestoreChanges() started.
+􀟈  Test oldCancellationCannotReclaimATabAfterAnExplicitManualNavigation() started.
+􀟈  Test meetingClassificationDoesNotDependOnUserMemoryPinPreferences() started.
+􀟈  Test legacyMembershipRemovalPrunesWithoutResettingFivePaneTopologyAndAdditionSplitsFocusedLeaf() started.
+􀟈  Test manualMeetingPrivateLiveAndUnsafeSlotsNeverBecomeAutomaticNavigation() started.
+􀟈  Test manualNavigationCancelsPendingAndOnlyReleasesItsExplicitTarget() started.
+􀟈  Test failedStartersStayDeferredWhileSuccessfulStartersRetireOwnership() started.
+􀟈  Test documentsKeepTypedProviderReferencesThroughMoves() started.
+􀟈  Test retryRejectsSuccessfulOrActivePagesAndChangedOrUnsafeSpecifications() started.
+􀟈  Test fivePaneTopologyHasDistinctStablePaneAndContentIdentities() started.
+􀟈  Test compactProjectionKeepsProtectedAndPreferredTreeUnchanged() started.
+􀟈  Test retiredGenerationKeepsItsBudgetAndNewestRestoreGetsNextFreeSlot() started.
+􀟈  Test retryCannotBypassTwoRetiredActiveLoadsAndWaitsForAnExactTerminal() started.
+􀟈  Test updateDiffDistinguishesAddedRemovedAndChangedDocumentReferences() started.
+􀟈  Test aNewGenerationCannotRegisterAnActiveTabAgain() started.
+􀟈  Test spatialNeighborsNeverWrapAndResolveAsymmetricTiesByReadingOrder() started.
+􀟈  Test gateDisabledRegistrationDefersSafeStartersWithoutStartingGeneration() started.
+􀟈  Test edgeMovePrunesBeforeInsertingAndOwnEdgesAreNoOps() started.
+􀟈  Test storeRejectsPromotingStaleReviewedDraftToNewerExpectedRevisionAndRejectsOverflow() started.
+􀟈  Test updateDiffRejectsUnsafeOrStaleSnapshotsBeforeRenderingReferences() started.
+􀟈  Test selectingAQueuedTabPromotesItThroughAdmissionWithoutBypassingBudget() started.
+􀟈  Test updateDiffShowsExactStarterProfileAndFocusChanges() started.
+􀟈  Test secretAndAuthenticationURLsAreOmittedInsteadOfRewritten() started.
+􀟈  Test retryPreservesCurrentPendingPagesAndFocusPromotesItWithoutDuplication() started.
+􀟈  Test rolloutDefaultsOffAndNeverSelectsRecursiveRendererOrExpandedAdmissionBeforeEnable() started.
+􀟈  Test registrationIsLazyAndAdmissionIsFocusedFirstWithAtMostTwoReservations() started.
+􀟈  Test hiddenAndCompactOmittedPanesWaitWithoutConsumingCapacity() started.
+􀟈  Test aSuccessfulStarterCanUseNormalRestorationAfterItsWebViewIsDisposed() started.
+􀟈  Test changedWorkspaceRevisionOrGateInvalidatesPendingBeforeAdmission() started.
+􀟈  Test ambiguousDuplicateTabRegistrationsAreRejectedAndCloseForgetsOnlyDeferredState() started.
+􀟈  Test stagedDownloadPolicyBindsReturnedNavigationBeforeAsynchronousConversion() started.
+􀟈  Test staleAndDuplicateTerminalsCannotReleaseAnotherPermitForTheSameTab() started.
+􁁛  Test documentsKeepTypedProviderReferencesThroughMoves() passed after 0.001 seconds.
+􁁛  Test hiddenCenterPlacementRetainsPanePositionWithoutDuplicatingContent() passed after 0.001 seconds.
+􁁛  Test meetingClassificationDoesNotDependOnUserMemoryPinPreferences() passed after 0.001 seconds.
+􁁛  Test retainedTreeRequiresUnchangedTypedMembershipOrderWorkspaceAndEnable() passed after 0.001 seconds.
+􁁛  Test compactProjectionKeepsProtectedAndPreferredTreeUnchanged() passed after 0.001 seconds.
+􁁛  Test edgeMovePrunesBeforeInsertingAndOwnEdgesAreNoOps() passed after 0.001 seconds.
+􁁛  Test minimumClampsAppliedRatiosWithoutRewritingPreferredRatios() passed after 0.001 seconds.
+􁁛  Test secretAndAuthenticationURLsAreOmittedInsteadOfRewritten() passed after 0.001 seconds.
+􁁛  Test updateDiffIgnoresSplitBookkeepingAndTimestamps() passed after 0.001 seconds.
+􁁛  Test spatialNeighborsNeverWrapAndResolveAsymmetricTiesByReadingOrder() passed after 0.001 seconds.
+􁁛  Test updateDiffRejectsUnsafeOrStaleSnapshotsBeforeRenderingReferences() passed after 0.001 seconds.
+􁁛  Test swapChangesOnlyOccupantsAndKeepsExactDividerGeometry() passed after 0.001 seconds.
+􁁛  Test updateDiffTreatsSameURLContentSwapAsPositionsNotDeletionOrRestoreChanges() passed after 0.001 seconds.
+􁁛  Test rolloutDefaultsOffAndNeverSelectsRecursiveRendererOrExpandedAdmissionBeforeEnable() passed after 0.001 seconds.
+􁁛  Test updateDiffShowsExactStarterProfileAndFocusChanges() passed after 0.001 seconds.
+􁁛  Test legacyMembershipRemovalPrunesWithoutResettingFivePaneTopologyAndAdditionSplitsFocusedLeaf() passed after 0.001 seconds.
+􁁛  Test updateDiffDistinguishesAddedRemovedAndChangedDocumentReferences() passed after 0.001 seconds.
+􁁛  Test updateDiffShowsTopologyAndPreferredRatiosBeforeAndAfter() passed after 0.001 seconds.
+􁁛  Test malformedDuplicatesRatiosAndOversizedTreesAreRejected() passed after 0.001 seconds.
+􁁛  Test fivePaneTopologyHasDistinctStablePaneAndContentIdentities() passed after 0.001 seconds.
+􁁛  Test undoCancellationDefersUnstartedTabsAndPreservesStartedWork() passed after 0.002 seconds.
+􁁛  Test oldCancellationCannotReclaimATabAfterAnExplicitManualNavigation() passed after 0.002 seconds.
+􁁛  Test manualMeetingPrivateLiveAndUnsafeSlotsNeverBecomeAutomaticNavigation() passed after 0.002 seconds.
+􁁛  Test retryInANewContextDefersOldPendingAndGateOffStartsNothing() passed after 0.003 seconds.
+􁁛  Test manualNavigationCancelsPendingAndOnlyReleasesItsExplicitTarget() passed after 0.003 seconds.
+􁁛  Test retryRejectsSuccessfulOrActivePagesAndChangedOrUnsafeSpecifications() passed after 0.003 seconds.
+􁁛  Test failedStartersStayDeferredWhileSuccessfulStartersRetireOwnership() passed after 0.003 seconds.
+􁁛  Test retryCannotBypassTwoRetiredActiveLoadsAndWaitsForAnExactTerminal() passed after 0.003 seconds.
+􁁛  Test retiredGenerationKeepsItsBudgetAndNewestRestoreGetsNextFreeSlot() passed after 0.003 seconds.
+􁁛  Test aNewGenerationCannotRegisterAnActiveTabAgain() passed after 0.003 seconds.
+􁁛  Test selectingAQueuedTabPromotesItThroughAdmissionWithoutBypassingBudget() passed after 0.003 seconds.
+􁁛  Test retryPreservesCurrentPendingPagesAndFocusPromotesItWithoutDuplication() passed after 0.003 seconds.
+􁁛  Test hiddenAndCompactOmittedPanesWaitWithoutConsumingCapacity() passed after 0.003 seconds.
+􁁛  Test registrationIsLazyAndAdmissionIsFocusedFirstWithAtMostTwoReservations() passed after 0.003 seconds.
+􁁛  Test changedWorkspaceRevisionOrGateInvalidatesPendingBeforeAdmission() passed after 0.002 seconds.
+􁁛  Test staleAndDuplicateTerminalsCannotReleaseAnotherPermitForTheSameTab() passed after 0.002 seconds.
+􁁛  Test aSuccessfulStarterCanUseNormalRestorationAfterItsWebViewIsDisposed() passed after 0.002 seconds.
+􁁛  Test stagedDownloadPolicyBindsReturnedNavigationBeforeAsynchronousConversion() passed after 0.003 seconds.
+􁁛  Test ambiguousDuplicateTabRegistrationsAreRejectedAndCloseForgetsOnlyDeferredState() passed after 0.002 seconds.
+􁁛  Test gateDisabledRegistrationDefersSafeStartersWithoutStartingGeneration() passed after 0.003 seconds.
+􁁛  Suite ColdLayoutStarterSchedulerTests passed after 0.004 seconds.
+􁁛  Test storeRejectsPromotingStaleReviewedDraftToNewerExpectedRevisionAndRejectsOverflow() passed after 0.018 seconds.
+􁁛  Test recipeStoreRetainsVersionsAndRejectsStaleUpdatesAndDoesNotWriteURLsForManualSlots() passed after 0.019 seconds.
+􁁛  Suite PaneLayoutModelTests passed after 0.019 seconds.
+􁁛  Test run with 42 tests in 2 suites passed after 0.020 seconds.

@@ -49,7 +49,7 @@ final class DocumentStore: ObservableObject {
     init(modelContext: ModelContext, ledgerStore: LedgerStore, containerOverride: URL? = nil) {
         self.modelContext = modelContext
         self.ledgerStore = ledgerStore
-        if let containerOverride {
+        if let containerOverride = BrowserProfile.paths?.documents ?? containerOverride {
             containerState = .ready(containerOverride)
         } else {
             resolveContainer()
@@ -65,6 +65,7 @@ final class DocumentStore: ObservableObject {
     // MARK: Container
 
     private func resolveContainer() {
+        guard !BrowserProfile.isIsolated else { return }
         let containerID = TabSync.containerID
         Task.detached(priority: .userInitiated) {
             // First call can be slow and must be off-main.
@@ -92,7 +93,9 @@ final class DocumentStore: ObservableObject {
     }
 
     func url(for document: WorkspaceDocument) -> URL? {
-        documentsRootURL?.appendingPathComponent(document.relativePath)
+        guard let url = documentsRootURL?.appendingPathComponent(document.relativePath),
+              BrowserProfile.allowsFileAccess(url) else { return nil }
+        return url
     }
 
     // MARK: Row lookups
@@ -339,6 +342,7 @@ final class DocumentStore: ObservableObject {
     // MARK: Metadata query (design §4.4)
 
     private func startMetadataQuery() {
+        guard !BrowserProfile.isIsolated else { return }
         guard metadataQuery == nil else { return }
         let query = NSMetadataQuery()
         query.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope]
@@ -472,6 +476,7 @@ nonisolated struct DocumentMetadataUpdate: Sendable {
 
 private actor DocumentFileMaintenance {
     func download(_ url: URL) {
+        guard !BrowserProfile.isIsolated else { return }
         assert(!Thread.isMainThread)
         try? FileManager.default.startDownloadingUbiquitousItem(at: url)
     }
@@ -495,6 +500,7 @@ private actor DocumentFileMaintenance {
     }
 
     func resolveConflicts(at url: URL, displayName: String) -> Bool {
+        guard !BrowserProfile.isIsolated else { return false }
         assert(!Thread.isMainThread)
         let versions = NSFileVersion.unresolvedConflictVersionsOfItem(at: url) ?? []
         var preserved = false

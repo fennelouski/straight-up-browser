@@ -1,0 +1,125 @@
+Building for debugging...
+[Pre-planning 1 / 96]
+[Planning deferred tasks]
+[40 / 65] BrowserWeatherKernel_BrowserTests
+[41 / 65]
+[42 / 66] Browser
+[46 / 151]
+[52 / 151]
+[55 / 151]
+[60 / 151]
+[62 / 151]
+[66 / 151]
+[70 / 151]
+[72 / 151]
+[74 / 151]
+[78 / 151]
+[82 / 151]
+[86 / 151]
+[88 / 151]
+[90 / 151]
+[95 / 151]
+[96 / 151]
+[100 / 151]
+[103 / 151]
+[108 / 151]
+[111 / 151]
+[112 / 151]
+[114 / 151]
+[116 / 151] Browser
+[117 / 151] Browser
+[119 / 151] Browser
+[126 / 151] Browser
+[128 / 151] Browser
+[129 / 151] BrowserTests-product
+[132 / 151] Browser
+[133 / 151] Browser
+[133 / 151]
+[135 / 151] Browser
+[141 / 152] BrowserTests-product
+[142 / 163]
+[146 / 163]
+[149 / 163] BrowserTests-product
+[151 / 163] BrowserTests-product
+[156 / 163] BrowserTests-product
+[157 / 163] AllIncludingTests
+[157 / 163] BrowserTests-product
+[159 / 163] BrowserTests-product
+Build complete! (16.93 sec)
+Test Suite 'All tests' started at 2026-10-18 18:31:46.897.
+Test Suite 'All tests' passed at 2026-10-18 18:31:46.899.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.002) seconds
+􀟈  Test run started.
+􀄵  Testing Library Version: 2084
+􀄵  Target Platform: arm64e-apple-macos14.0
+􀟈  Suite OmnibarWeatherTests started.
+􀟈  Suite WeatherServiceTests started.
+􀟈  Suite WeatherContractTests started.
+􀟈  Test weatherIntentIsExactAndDoesNotHijackURLsOrHistory() started.
+􀟈  Test savedPlacesStayPrivateAndMissingAliasesAreExplicit() started.
+􀟈  Test quotaFailuresBackOffAcrossPlacesAndDoNotFallBack() started.
+􀟈  Test providerFallbackIsExplicitAndBounded() started.
+􀟈  Test identicalForecastsCoalesceAndExpiredCacheEntriesRefresh() started.
+􀟈  Test secretsStayInHeadersAndCredentialRevisionsIsolateCaches() started.
+􀟈  Test attributionReadinessSurvivesLocationChangesAndRepeatedLoads() started.
+􀟈  Test localAppleQuotaRefusesAnUncachedRequest() started.
+􀟈  Test deniedLocationOffersManualSetupWithoutRequestingPermission() started.
+􀟈  Test ambiguityDoesNotSelectTheFirstPlace() started.
+􀟈  Test tomorrowContractsNormalizePercentAndMetricUnits() started.
+􀟈  Test regionalGridChecksProjectionTimesCoverageAndUnitConversion() started.
+􀟈  Test accumulationStartsAtImpactAndDoesNotDependOnFrameRate() started.
+􀟈  Test fetchingAnimationStartsAfterThreeSecondsAndNestedOfflineErrorsAreRecognized() started.
+􀟈  Test independentOmnibarsRetainWeatherWithoutEnablingTheMasthead() started.
+􀟈  Test sharedContractPreservesExpiryAttributionAndMissingCapabilities() started.
+􀟈  Test rapidEditsKeepTheOldCardAndRejectLateResponses() started.
+􀟈  Test geocodingFixturesResolveBothPostalFormatsAndDeduplicate() started.
+􀟈  Test sharedContractRejectsStaleFutureOrWrongLocationData() started.
+􀟈  Test snowAndRainHaveDistinctEffectsAndSnowBanksAreBounded() started.
+􀟈  Test hourlyDryWindowsRequireAmountsAndNeverInventMinutePredictions() started.
+􀟈  Test autumnLeavesFollowTheLocationsHemisphere() started.
+􀟈  Test precipitationEntersAboveTheViewportAndAcceleratesToTerminalSpeed() started.
+􀟈  Test collisionsUseTheWindBlownPositionAndFirstExposedTopEdge() started.
+􀟈  Test sharedContractRejectsGapsProbabilityUnitsAndUnsafeAttribution() started.
+􀟈  Test cancellingOneConsumerDoesNotCancelAnother() started.
+􀟈  Test parsesLocationCommandsAndPreservesUnrelatedNavigation() started.
+􀟈  Test mapImportsUseSelectedPlacesAndNeverCameraCenters() started.
+􀟈  Test offlineRecoveryRetainsPriorForecastAndRetrySucceeds() started.
+􀟈  Test weatherPresentationSeparatesMissingSetupOfflineAndProviderFailures() started.
+􀟈  Test emptyWeatherStatesRenderAsCompactControls() started.
+􀟈  Test attributionFailuresRecoverAndLateMarksCannotReplaceTheCurrentProvider() started.
+􁁛  Test savedPlacesStayPrivateAndMissingAliasesAreExplicit() passed after 0.182 seconds.
+􁁛  Test deniedLocationOffersManualSetupWithoutRequestingPermission() passed after 0.183 seconds.
+􁁛  Test hourlyDryWindowsRequireAmountsAndNeverInventMinutePredictions() passed after 0.185 seconds.
+􁁛  Test weatherIntentIsExactAndDoesNotHijackURLsOrHistory() passed after 0.185 seconds.
+􁁛  Test sharedContractPreservesExpiryAttributionAndMissingCapabilities() passed after 0.185 seconds.
+􁁛  Test independentOmnibarsRetainWeatherWithoutEnablingTheMasthead() passed after 0.185 seconds.
+􁁛  Test accumulationStartsAtImpactAndDoesNotDependOnFrameRate() passed after 0.185 seconds.
+􁁛  Test precipitationEntersAboveTheViewportAndAcceleratesToTerminalSpeed() passed after 0.185 seconds.
+􁁛  Test sharedContractRejectsStaleFutureOrWrongLocationData() passed after 0.185 seconds.
+􁁛  Test collisionsUseTheWindBlownPositionAndFirstExposedTopEdge() passed after 0.185 seconds.
+􁁛  Test fetchingAnimationStartsAfterThreeSecondsAndNestedOfflineErrorsAreRecognized() passed after 0.185 seconds.
+􁁛  Test emptyWeatherStatesRenderAsCompactControls() passed after 0.185 seconds.
+􁁛  Test tomorrowContractsNormalizePercentAndMetricUnits() passed after 0.185 seconds.
+􁁛  Test autumnLeavesFollowTheLocationsHemisphere() passed after 0.185 seconds.
+􁁛  Test snowAndRainHaveDistinctEffectsAndSnowBanksAreBounded() passed after 0.185 seconds.
+􁁛  Test parsesLocationCommandsAndPreservesUnrelatedNavigation() passed after 0.185 seconds.
+􁁛  Test sharedContractRejectsGapsProbabilityUnitsAndUnsafeAttribution() passed after 0.185 seconds.
+􁁛  Test mapImportsUseSelectedPlacesAndNeverCameraCenters() passed after 0.185 seconds.
+􁁛  Test weatherPresentationSeparatesMissingSetupOfflineAndProviderFailures() passed after 0.185 seconds.
+􁁛  Suite OmnibarWeatherTests passed after 0.186 seconds.
+􁁛  Test regionalGridChecksProjectionTimesCoverageAndUnitConversion() passed after 0.187 seconds.
+􁁛  Test localAppleQuotaRefusesAnUncachedRequest() passed after 0.187 seconds.
+􁁛  Suite WeatherContractTests passed after 0.187 seconds.
+􁁛  Test secretsStayInHeadersAndCredentialRevisionsIsolateCaches() passed after 0.189 seconds.
+􁁛  Test attributionReadinessSurvivesLocationChangesAndRepeatedLoads() passed after 0.189 seconds.
+􁁛  Test providerFallbackIsExplicitAndBounded() passed after 0.190 seconds.
+􁁛  Test quotaFailuresBackOffAcrossPlacesAndDoNotFallBack() passed after 0.192 seconds.
+􁁛  Test ambiguityDoesNotSelectTheFirstPlace() passed after 0.194 seconds.
+􁁛  Test rapidEditsKeepTheOldCardAndRejectLateResponses() passed after 0.194 seconds.
+􁁛  Test offlineRecoveryRetainsPriorForecastAndRetrySucceeds() passed after 0.194 seconds.
+􁁛  Test identicalForecastsCoalesceAndExpiredCacheEntriesRefresh() passed after 0.208 seconds.
+􁁛  Test geocodingFixturesResolveBothPostalFormatsAndDeduplicate() passed after 0.224 seconds.
+􁁛  Test cancellingOneConsumerDoesNotCancelAnother() passed after 0.239 seconds.
+􁁛  Test attributionFailuresRecoverAndLateMarksCannotReplaceTheCurrentProvider() passed after 0.243 seconds.
+􁁛  Suite WeatherServiceTests passed after 0.244 seconds.
+􁁛  Test run with 32 tests in 3 suites passed after 0.244 seconds.

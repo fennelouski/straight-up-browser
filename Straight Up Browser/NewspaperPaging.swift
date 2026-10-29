@@ -91,7 +91,7 @@ struct NewspaperPageTurn: AnimatableModifier {
     }
 }
 
-private struct NewspaperSheetEdge: Shape {
+nonisolated private struct NewspaperSheetEdge: Shape {
     var bend: CGFloat
     let direction: Int
     nonisolated var animatableData: CGFloat { get { bend } set { bend = newValue } }

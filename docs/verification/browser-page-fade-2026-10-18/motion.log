@@ -1,0 +1,118 @@
+Motion policy harness: /var/folders/_7/88k0tj090n96y9fs1rpjnchr0000gn/T//browser-v2-motion.uesD9v
+Building for debugging...
+[Pre-planning 1 / 66]
+[Planning deferred tasks]
+[27 / 50]
+[28 / 51] MotionPolicies
+[33 / 118]
+[39 / 118]
+[41 / 118]
+[45 / 118]
+[49 / 118]
+[52 / 118]
+[57 / 118]
+[58 / 118]
+[60 / 118]
+[63 / 118]
+[67 / 118]
+[68 / 118]
+[71 / 118]
+[73 / 118]
+[74 / 118]
+[77 / 118]
+[81 / 118]
+[83 / 118]
+[86 / 118]
+[88 / 118]
+[90 / 118]
+[93 / 118] MotionPolicies
+[95 / 118] MotionPolicies
+[103 / 118] MotionPolicies
+[108 / 119] MotionPoliciesTests-product
+[109 / 128]
+[112 / 128]
+[115 / 128] MotionPoliciesTests-product
+[116 / 128] MotionPoliciesTests-product
+[118 / 128] MotionPoliciesTests-product
+[122 / 128] MotionPoliciesTests-product
+[124 / 128] MotionPoliciesTests-product
+Build complete! (15.95 sec)
+Test Suite 'All tests' started at 2026-10-18 16:28:34.580.
+Test Suite 'All tests' passed at 2026-10-18 16:28:34.581.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+􀟈  Test run started.
+􀄵  Testing Library Version: 2084
+􀄵  Target Platform: arm64e-apple-macos14.0
+􀟈  Suite PageFadeCircuitBreakerTests started.
+􀟈  Suite PageFadeLifecycleInboxTests started.
+􀟈  Suite WindowLayoutTests started.
+􀟈  Test sleepResetsResidenceAndAttemptHistoryWithoutDroppingTheLatch() started.
+􀟈  Test justOutsideBoundaryAndIndependentContextsDoNotTrip() started.
+􀟈  Test slidingPairsExtendSuppressionWhileIsolatedAttemptsDoNot() started.
+􀟈  Test reduceMotionStillObservesAttemptsAndCanRecoverWithoutReplaying() started.
+􀟈  Test everySnapRatioStaysOnScreen() started.
+􀟈  Test oppositeDirectionRestartsAtItsOwnEdgeButCenteredStatesAreShared() started.
+􀟈  Test overflowFailsClosedAndCloseClearsSessionState() started.
+􀟈  Test concurrentProducersDoNotLoseOrDuplicateEvents() started.
+􀟈  Test leavingSuppressedURLRequiresANewContinuousHourOnReturn() started.
+􀟈  Test leftRightSnapKeepFullHeightAndPinAnEdge() started.
+􀟈  Test aPreSleepRedirectCannotReintroduceClearedAttemptHistory() started.
+􀟈  Test constraintsSkipUnavailableStatesWithoutClampingTheirMeaning() started.
+􀟈  Test redirectMovesOneAttemptAndLatchesNewlyDiscoveredPairAtReconciliation() started.
+􀟈  Test positionSlidesAcrossTheLeftoverSpace() started.
+􀟈  Test oddDimensionsStayPixelAlignedAndHalvesShareOneEdge() started.
+􀟈  Test reloadAndPaneFocusRetainResidenceButVisibilityAndNavigationResetIt() started.
+􀟈  Test URLIdentityKeepsQueryPathAndFragmentDistinctions() started.
+􀟈  Test missingWindowScreenUsesIntersectionThenNearestWithStableTies() started.
+􀟈  Test unknownIDsFallBackToFullAndCentered() started.
+􀟈  Test pairWinsOverRecoveryAtTheExactDeadline() started.
+􀟈  Test everyOptionStaysOnScreen() started.
+􀟈  Test widthClampsToScreenWidth() started.
+􀟈  Test singleFeasiblePresetAndChangedGeometryDoNotUseAStaleIndex() started.
+􀟈  Test topBottomSnapKeepFullWidthAndPinAnEdge() started.
+􀟈  Test secondAttemptAtInclusiveBoundaryIsSuppressedAndDuplicatesDoNotCount() started.
+􀟈  Test centeredGeometryUsesWidthFractionsAndNegativeScreenOrigins() started.
+􀟈  Test overflowCanEarnOneQuietHourButLosesCreditOnNavigation() started.
+􀟈  Test constraintsUseContentAspectAndIncrementsAndFrameMaximums() started.
+􀟈  Test widthIsAMultipleOfHeight() started.
+􀟈  Test batchesKeepIngressOrderAndAreConsumedOnce() started.
+􀟈  Test appendsDuringProcessingStayBehindTheCurrentBatch() started.
+􀟈  Test fullWidthIgnoresPosition() started.
+􀟈  Test verticalCyclesKeepLegacyHeightsThenUseFullHeightCenteredWidths() started.
+􁁛  Test batchesKeepIngressOrderAndAreConsumedOnce() passed after 0.001 seconds.
+􁁛  Test appendsDuringProcessingStayBehindTheCurrentBatch() passed after 0.001 seconds.
+􁁛  Test concurrentProducersDoNotLoseOrDuplicateEvents() passed after 0.001 seconds.
+􁁛  Suite PageFadeLifecycleInboxTests passed after 0.001 seconds.
+􁁛  Test oppositeDirectionRestartsAtItsOwnEdgeButCenteredStatesAreShared() passed after 0.002 seconds.
+􁁛  Test leftRightSnapKeepFullHeightAndPinAnEdge() passed after 0.002 seconds.
+􁁛  Test slidingPairsExtendSuppressionWhileIsolatedAttemptsDoNot() passed after 0.002 seconds.
+􁁛  Test justOutsideBoundaryAndIndependentContextsDoNotTrip() passed after 0.002 seconds.
+􁁛  Test aPreSleepRedirectCannotReintroduceClearedAttemptHistory() passed after 0.002 seconds.
+􁁛  Test overflowFailsClosedAndCloseClearsSessionState() passed after 0.002 seconds.
+􁁛  Test leavingSuppressedURLRequiresANewContinuousHourOnReturn() passed after 0.002 seconds.
+􁁛  Test unknownIDsFallBackToFullAndCentered() passed after 0.002 seconds.
+􁁛  Test everySnapRatioStaysOnScreen() passed after 0.002 seconds.
+􁁛  Test reduceMotionStillObservesAttemptsAndCanRecoverWithoutReplaying() passed after 0.002 seconds.
+􁁛  Test sleepResetsResidenceAndAttemptHistoryWithoutDroppingTheLatch() passed after 0.002 seconds.
+􁁛  Test constraintsSkipUnavailableStatesWithoutClampingTheirMeaning() passed after 0.002 seconds.
+􁁛  Test widthClampsToScreenWidth() passed after 0.003 seconds.
+􁁛  Test missingWindowScreenUsesIntersectionThenNearestWithStableTies() passed after 0.003 seconds.
+􁁛  Test redirectMovesOneAttemptAndLatchesNewlyDiscoveredPairAtReconciliation() passed after 0.003 seconds.
+􁁛  Test constraintsUseContentAspectAndIncrementsAndFrameMaximums() passed after 0.002 seconds.
+􁁛  Test URLIdentityKeepsQueryPathAndFragmentDistinctions() passed after 0.003 seconds.
+􁁛  Test singleFeasiblePresetAndChangedGeometryDoNotUseAStaleIndex() passed after 0.003 seconds.
+􁁛  Test everyOptionStaysOnScreen() passed after 0.003 seconds.
+􁁛  Test secondAttemptAtInclusiveBoundaryIsSuppressedAndDuplicatesDoNotCount() passed after 0.002 seconds.
+􁁛  Test oddDimensionsStayPixelAlignedAndHalvesShareOneEdge() passed after 0.003 seconds.
+􁁛  Test positionSlidesAcrossTheLeftoverSpace() passed after 0.003 seconds.
+􁁛  Test centeredGeometryUsesWidthFractionsAndNegativeScreenOrigins() passed after 0.003 seconds.
+􁁛  Test pairWinsOverRecoveryAtTheExactDeadline() passed after 0.003 seconds.
+􁁛  Test verticalCyclesKeepLegacyHeightsThenUseFullHeightCenteredWidths() passed after 0.003 seconds.
+􁁛  Test widthIsAMultipleOfHeight() passed after 0.003 seconds.
+􁁛  Test overflowCanEarnOneQuietHourButLosesCreditOnNavigation() passed after 0.003 seconds.
+􁁛  Test topBottomSnapKeepFullWidthAndPinAnEdge() passed after 0.003 seconds.
+􁁛  Test fullWidthIgnoresPosition() passed after 0.003 seconds.
+􁁛  Test reloadAndPaneFocusRetainResidenceButVisibilityAndNavigationResetIt() passed after 0.003 seconds.
+􁁛  Suite PageFadeCircuitBreakerTests passed after 0.003 seconds.
+􁁛  Suite WindowLayoutTests passed after 0.003 seconds.
+􁁛  Test run with 33 tests in 3 suites passed after 0.004 seconds.

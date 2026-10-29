@@ -157,7 +157,7 @@ struct BrowserView_iOS: View {
     @AppStorage("progressBarRight") private var progressBarRight = false
     @AppStorage("progressFaviconRing") private var progressFaviconRing = false
     @AppStorage("memorySaverEnabled") private var memorySaverEnabled = false
-    @AppStorage("theme") private var theme = "System"
+    @BrowserThemeStorage private var theme
     @AppStorage("javaScriptEnabled") private var javaScriptEnabled = true
     @AppStorage("adBlockEnabled") private var adBlockEnabled = false
     @AppStorage("iPadTabRailVisibility") private var tabRailVisibility = TabRailVisibility_iOS.off.rawValue

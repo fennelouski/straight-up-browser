@@ -11,7 +11,7 @@ import Combine
 class NavigationManager: ObservableObject {
     @Published var omnibarError: String?
 
-    static func searchURL(for query: String, engine: String? = UserDefaults.standard.string(forKey: "searchEngine")) -> String {
+    static func searchURL(for query: String, engine: String? = BrowserProfile.defaults.string(forKey: "searchEngine")) -> String {
         let prefix: String
         switch engine {
         case "DuckDuckGo": prefix = "https://duckduckgo.com/?q="

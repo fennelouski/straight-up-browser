@@ -67,93 +67,93 @@ enum AgentSettingsRuntimeKey {
 }
 
 struct AgentSettingsView: View {
-    @AppStorage(AgentSettingsRuntimeKey.provider)
+    @AppStorage(AgentSettingsRuntimeKey.provider, store: BrowserProfile.defaults)
     private var providerRaw = BrowserAgentProvider.appleIntelligence.rawValue
-    @AppStorage(AgentSettingsRuntimeKey.adjustsPageLayout)
+    @AppStorage(AgentSettingsRuntimeKey.adjustsPageLayout, store: BrowserProfile.defaults)
     private var adjustsPageLayout = false
-    @AppStorage(AgentSettingsRuntimeKey.loadsMorePageContent)
+    @AppStorage(AgentSettingsRuntimeKey.loadsMorePageContent, store: BrowserProfile.defaults)
     private var loadsMorePageContent = true
-    @AppStorage(AgentSettingsRuntimeKey.panelSide)
+    @AppStorage(AgentSettingsRuntimeKey.panelSide, store: BrowserProfile.defaults)
     private var panelSideRaw = BrowserChromeSide.left.rawValue
-    @AppStorage(SettingsManager.aiFeaturesKey) private var aiFeaturesEnabled = true
-    @AppStorage(AgentSettingsRuntimeKey.endpoint)
+    @AppStorage(SettingsManager.aiFeaturesKey, store: BrowserProfile.defaults) private var aiFeaturesEnabled = true
+    @AppStorage(AgentSettingsRuntimeKey.endpoint, store: BrowserProfile.defaults)
     private var customEndpoint = ""
-    @AppStorage(AgentSettingsRuntimeKey.model)
+    @AppStorage(AgentSettingsRuntimeKey.model, store: BrowserProfile.defaults)
     private var savedModel = ""
 
-    @AppStorage(AgentProviderPricingSettings.Key.providerID)
+    @AppStorage(AgentProviderPricingSettings.Key.providerID, store: BrowserProfile.defaults)
     private var pricingProviderID = ""
-    @AppStorage(AgentProviderPricingSettings.Key.model)
+    @AppStorage(AgentProviderPricingSettings.Key.model, store: BrowserProfile.defaults)
     private var pricingModel = ""
-    @AppStorage(AgentProviderPricingSettings.Key.currencyCode)
+    @AppStorage(AgentProviderPricingSettings.Key.currencyCode, store: BrowserProfile.defaults)
     private var pricingCurrencyCode = "USD"
-    @AppStorage(AgentProviderPricingSettings.Key.inputMicrounitsPerMillionTokens)
+    @AppStorage(AgentProviderPricingSettings.Key.inputMicrounitsPerMillionTokens, store: BrowserProfile.defaults)
     private var pricingInputRate = ""
-    @AppStorage(AgentProviderPricingSettings.Key.cachedInputMicrounitsPerMillionTokens)
+    @AppStorage(AgentProviderPricingSettings.Key.cachedInputMicrounitsPerMillionTokens, store: BrowserProfile.defaults)
     private var pricingCachedInputRate = ""
-    @AppStorage(AgentProviderPricingSettings.Key.outputMicrounitsPerMillionTokens)
+    @AppStorage(AgentProviderPricingSettings.Key.outputMicrounitsPerMillionTokens, store: BrowserProfile.defaults)
     private var pricingOutputRate = ""
-    @AppStorage(AgentProviderPricingSettings.Key.blendedMicrounitsPerMillionTokens)
+    @AppStorage(AgentProviderPricingSettings.Key.blendedMicrounitsPerMillionTokens, store: BrowserProfile.defaults)
     private var pricingBlendedRate = ""
 
-    @AppStorage(AgentSettingsRuntimeKey.webKitConsoleCapture)
+    @AppStorage(AgentSettingsRuntimeKey.webKitConsoleCapture, store: BrowserProfile.defaults)
     private var webKitConsoleCapture = false
-    @AppStorage(AgentSettingsRuntimeKey.webKitDiagnosticContent)
+    @AppStorage(AgentSettingsRuntimeKey.webKitDiagnosticContent, store: BrowserProfile.defaults)
     private var webKitDiagnosticContent = false
 
-    @AppStorage(AgentMemorySettings.Key.enabled)
+    @AppStorage(AgentMemorySettings.Key.enabled, store: BrowserProfile.defaults)
     private var agentMemoryEnabled = false
-    @AppStorage(AgentMemorySettings.Key.allowSensitiveProposals)
+    @AppStorage(AgentMemorySettings.Key.allowSensitiveProposals, store: BrowserProfile.defaults)
     private var allowSensitiveMemoryProposals = false
-    @AppStorage(AgentMemorySettings.Key.maximumRetrievedEntries)
+    @AppStorage(AgentMemorySettings.Key.maximumRetrievedEntries, store: BrowserProfile.defaults)
     private var maximumRetrievedMemoryEntries = 4
-    @AppStorage(AgentMemorySettings.Key.maximumRetrievedTokens)
+    @AppStorage(AgentMemorySettings.Key.maximumRetrievedTokens, store: BrowserProfile.defaults)
     private var maximumRetrievedMemoryTokens = 1_024
-    @AppStorage(AgentMemorySettings.Key.retention)
+    @AppStorage(AgentMemorySettings.Key.retention, store: BrowserProfile.defaults)
     private var memoryRetention = AgentMemoryRetentionPolicy.untilManuallyDeleted.rawValue
 
-    @AppStorage(AgentObservabilitySettings.Key.maximumTurns)
+    @AppStorage(AgentObservabilitySettings.Key.maximumTurns, store: BrowserProfile.defaults)
     private var maximumTurns = AgentExecutionLimits.defaults.maximumTurns
-    @AppStorage(AgentObservabilitySettings.Key.maximumToolCalls)
+    @AppStorage(AgentObservabilitySettings.Key.maximumToolCalls, store: BrowserProfile.defaults)
     private var maximumToolCalls = AgentExecutionLimits.defaults.maximumToolCalls
-    @AppStorage(AgentObservabilitySettings.Key.maximumWallMinutes)
+    @AppStorage(AgentObservabilitySettings.Key.maximumWallMinutes, store: BrowserProfile.defaults)
     private var maximumWallMinutes = Int(
         AgentExecutionLimits.defaults.maximumElapsedMilliseconds / 60_000
     )
-    @AppStorage(AgentObservabilitySettings.Key.maximumProviderTokens)
+    @AppStorage(AgentObservabilitySettings.Key.maximumProviderTokens, store: BrowserProfile.defaults)
     private var maximumProviderTokens = 0
-    @AppStorage(AgentObservabilitySettings.Key.maximumProviderCostMicrounits)
+    @AppStorage(AgentObservabilitySettings.Key.maximumProviderCostMicrounits, store: BrowserProfile.defaults)
     private var maximumProviderCostMicrounits = 0
-    @AppStorage(AgentObservabilitySettings.Key.maximumOpenPages)
+    @AppStorage(AgentObservabilitySettings.Key.maximumOpenPages, store: BrowserProfile.defaults)
     private var maximumOpenPages = AgentExecutionLimits.defaults.maximumOpenPages
-    @AppStorage(AgentObservabilitySettings.Key.maximumModelResultMiB)
+    @AppStorage(AgentObservabilitySettings.Key.maximumModelResultMiB, store: BrowserProfile.defaults)
     private var maximumModelResultMiB = Int(
         AgentExecutionLimits.defaults.maximumModelResultBytes / 1_048_576
     )
-    @AppStorage(AgentObservabilitySettings.Key.maximumDownloads)
+    @AppStorage(AgentObservabilitySettings.Key.maximumDownloads, store: BrowserProfile.defaults)
     private var maximumDownloads = AgentExecutionLimits.defaults.maximumDownloads
-    @AppStorage(AgentObservabilitySettings.Key.maximumDownloadMiB)
+    @AppStorage(AgentObservabilitySettings.Key.maximumDownloadMiB, store: BrowserProfile.defaults)
     private var maximumDownloadMiB = Int(
         AgentExecutionLimits.defaults.maximumDownloadBytes / 1_048_576
     )
-    @AppStorage(AgentObservabilitySettings.Key.maximumArtifacts)
+    @AppStorage(AgentObservabilitySettings.Key.maximumArtifacts, store: BrowserProfile.defaults)
     private var maximumArtifacts = AgentExecutionLimits.defaults.maximumArtifacts
-    @AppStorage(AgentObservabilitySettings.Key.maximumArtifactMiB)
+    @AppStorage(AgentObservabilitySettings.Key.maximumArtifactMiB, store: BrowserProfile.defaults)
     private var maximumArtifactMiB = Int(
         AgentExecutionLimits.defaults.maximumArtifactBytes / 1_048_576
     )
-    @AppStorage(AgentObservabilitySettings.Key.localMetricsEnabled)
+    @AppStorage(AgentObservabilitySettings.Key.localMetricsEnabled, store: BrowserProfile.defaults)
     private var localMetricsEnabled = true
-    @AppStorage(AgentObservabilitySettings.Key.metricRetentionDays)
+    @AppStorage(AgentObservabilitySettings.Key.metricRetentionDays, store: BrowserProfile.defaults)
     private var metricRetentionDays = 30
-    @AppStorage(AgentHistoryRetentionSettings.Key.policy)
+    @AppStorage(AgentHistoryRetentionSettings.Key.policy, store: BrowserProfile.defaults)
     private var runHistoryRetention = AgentRetentionPolicy.days30.rawValue
 
-    @AppStorage(AgentDefinitionSyncSettings.Key.schedules)
+    @AppStorage(AgentDefinitionSyncSettings.Key.schedules, store: BrowserProfile.defaults)
     private var syncSchedules = false
-    @AppStorage(AgentDefinitionSyncSettings.Key.providerPresets)
+    @AppStorage(AgentDefinitionSyncSettings.Key.providerPresets, store: BrowserProfile.defaults)
     private var syncProviderPresets = false
-    @AppStorage(AgentDefinitionSyncSettings.Key.userAuthoredMemory)
+    @AppStorage(AgentDefinitionSyncSettings.Key.userAuthoredMemory, store: BrowserProfile.defaults)
     private var syncUserAuthoredMemory = false
 
     @ObservedObject private var workspace = BrowserAgentWorkspace.shared
@@ -1159,6 +1159,7 @@ struct AgentSettingsView: View {
     private func exportDiagnosticPreview(
         _ preview: AgentObservabilityDiagnosticPreview
     ) {
+        guard !BrowserProfile.isIsolated else { return }
         let panel = NSSavePanel()
         panel.title = "Export Redacted Agent Diagnostics"
         panel.nameFieldStringValue = "browser-agent-diagnostics-redacted.json"

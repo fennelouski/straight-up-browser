@@ -76,11 +76,12 @@ nonisolated struct AutofillContactValues: Equatable, Sendable {
 /// second, browser-specific address-book preference.
 nonisolated enum AutofillContactStore {
     static func authorizationStatus() -> CNAuthorizationStatus {
-        CNContactStore.authorizationStatus(for: .contacts)
+        BrowserProfile.isIsolated ? .denied : CNContactStore.authorizationStatus(for: .contacts)
     }
 
     @MainActor
     static func requestAccess() async -> Bool {
+        guard !BrowserProfile.isIsolated else { return false }
         guard authorizationStatus() == .notDetermined else {
             return isAuthorized(authorizationStatus())
         }
@@ -223,6 +224,7 @@ final class AutofillContactsRoster: ObservableObject {
     private var refreshToken = UUID()
 
     private init() {
+        guard !BrowserProfile.isIsolated else { return }
         observer = NotificationCenter.default.addObserver(
             forName: .CNContactStoreDidChange,
             object: nil,
@@ -309,6 +311,7 @@ struct AutofillContactPickerButton: NSViewRepresentable {
         }
 
         @objc func choose(_ sender: NSButton) {
+            guard !BrowserProfile.isIsolated else { return }
             Task { @MainActor in
                 guard await AutofillContactStore.requestAccess() else {
                     parent.onPermissionDenied()

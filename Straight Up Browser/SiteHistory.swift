@@ -64,7 +64,7 @@ final class SiteHistory {
     // doesn't queue the same question a dozen times.
     private var askingAbout: Set<String> = []
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = BrowserProfile.defaults) {
         self.defaults = defaults
         if let data = defaults.data(forKey: Self.storeKey),
            let decoded = try? JSONDecoder().decode([String: SiteVisit].self, from: data) {
@@ -232,7 +232,7 @@ final class SiteHistory {
     #if canImport(FoundationModels)
     @available(macOS 26.0, iOS 26.0, *)
     private static func modelNicknames(host: String, title: String) async -> [String]? {
-        guard SystemLanguageModel.default.availability == .available else { return nil }
+        guard !BrowserProfile.isIsolated && SystemLanguageModel.default.availability == .available else { return nil }
         let session = LanguageModelSession(instructions: """
             You give the short names people actually type for a website.
             Answer only with names in common use — an abbreviation, an initialism, or \

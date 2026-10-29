@@ -1,0 +1,42 @@
+{
+  "recordedAt": "2026-10-18T09:07:19.155422+00:00",
+  "sourceManifestSHA256": "8149d6943dd1d2d28ff4133a47ed27e0c3d850abd1439c41c5ce37ca888a81fb",
+  "checks": [
+    {
+      "command": [
+        "python3",
+        "scripts/check-agent-model-review.py"
+      ],
+      "exitCode": 0
+    },
+    {
+      "command": [
+        "python3",
+        "scripts/test-agent-model-review.py"
+      ],
+      "exitCode": 0
+    },
+    {
+      "command": [
+        "./scripts/validate-release-policy.sh"
+      ],
+      "exitCode": 0
+    },
+    {
+      "command": [
+        "./scripts/validate-security-policy.sh"
+      ],
+      "exitCode": 0
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0
+    }
+  ],
+  "pythonTestCount": 6,
+  "releaseOrLiveProviderReview": false
+}

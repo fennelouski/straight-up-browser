@@ -28,7 +28,7 @@ final class BackGuardStore: ObservableObject {
     @Published private(set) var byHost: [String: Bool]
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = BrowserProfile.defaults) {
         self.defaults = defaults
         if let raw = defaults.stringArray(forKey: Self.triggersKey) {
             triggers = Set(raw.compactMap(Trigger.init))

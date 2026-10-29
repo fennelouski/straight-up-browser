@@ -26,9 +26,10 @@ final class ToneSchedule: ObservableObject {
 
     private var timer: Timer?
     private var locationTask: Task<Void, Never>?
-    private let defaults = UserDefaults.standard
+    private let defaults = BrowserProfile.defaults
 
     private init() {
+        guard !BrowserProfile.isIsolated else { return }
         refresh()
         // ponytail: one 60s poll drives fixed times, sun times and the Focus
         // file alike. Watching three sources properly (file events, a timer
@@ -68,6 +69,7 @@ final class ToneSchedule: ObservableObject {
     }
 
     func refresh() {
+        guard !BrowserProfile.isIsolated else { return }
         switch mode {
         case .always:
             set(true, "Always on.")
@@ -191,7 +193,7 @@ final class ToneSchedule: ObservableObject {
             defer { Task { @MainActor in self?.locationTask = nil } }
             var request = URLRequest(url: URL(string: "https://ipapi.co/json/")!)
             request.timeoutInterval = 10
-            guard let (data, _) = try? await URLSession.shared.data(for: request),
+            guard let (data, _) = try? await BrowserProfileNetwork.session.data(for: request),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let lat = json["latitude"] as? Double, let lon = json["longitude"] as? Double
             else { return }
@@ -215,15 +217,18 @@ final class ToneSchedule: ObservableObject {
     /// Permission is asked for only when the mode is selected, and a refusal
     /// leaves it permanently off rather than nagging.
     static func focusIsOn() -> Bool {
+        guard !BrowserProfile.isIsolated else { return false }
         guard INFocusStatusCenter.default.authorizationStatus == .authorized else { return false }
         return INFocusStatusCenter.default.focusStatus.isFocused ?? false
     }
 
     static var focusAuthorization: INFocusStatusAuthorizationStatus {
-        INFocusStatusCenter.default.authorizationStatus
+        guard !BrowserProfile.isIsolated else { return .denied }
+        return INFocusStatusCenter.default.authorizationStatus
     }
 
     func requestFocusAuthorizationIfNeeded() {
+        guard !BrowserProfile.isIsolated else { return }
         guard INFocusStatusCenter.default.authorizationStatus == .notDetermined else { return }
         INFocusStatusCenter.default.requestAuthorization { [weak self] _ in
             Task { @MainActor in self?.refresh() }

@@ -1,0 +1,74 @@
+Writing result bundle at path:
+	/tmp/browser-v2-host-launch-probe-posix.xcresult
+
+warning: Building targets in manual order is deprecated - choose Dependency Order in scheme settings instead, or set DISABLE_MANUAL_TARGET_ORDER_BUILD_WARNING in any of the targets in the current scheme to suppress this warning
+note: Target dependency graph (2 targets)
+    Target 'ProbeTests' in project 'Probe'
+        ➜ Explicit dependency on target 'Probe' in project 'Probe'
+    Target 'Probe' in project 'Probe' (no dependencies)
+warning: Traditional headermap style is no longer supported; please migrate to using separate headermaps and set 'ALWAYS_SEARCH_USER_PATHS' to NO. (in target 'Probe' from project 'Probe')
+warning: Traditional headermap style is no longer supported; please migrate to using separate headermaps and set 'ALWAYS_SEARCH_USER_PATHS' to NO. (in target 'ProbeTests' from project 'Probe')
+2026-10-18 10:42:37.306 xcodebuild[99730:1389640752]  DVTAssertions: ASSERTION FAILURE in IDEFrameworks/IDEFoundation/Execution/LaunchSystem/IDELaunchServicesLauncher.m:445
+Details:  Assertion failed: childPID > 0
+Object:   <IDELaunchServicesLauncher: 0x8850494a0>
+Method:   -_waitForChildExit:
+Thread:   <NSThread: 0x884515200>{number = 29, name = (null)}
+Open FDs: 40/1048575
+Open Mach Ports: 141
+Hints:
+
+2026-10-18 10:42:37.339 xcodebuild[99730:1389640752]  DVTAssertions:
+Backtrace:
+  0   -[DVTAssertionHandler handleFailureInMethod:object:fileName:lineNumber:assertionSignature:messageFormat:arguments:] (in DVTFoundation)
+  1   _DVTAssertionHandler (in DVTFoundation)
+  2   _DVTAssertionFailureHandler (in DVTFoundation)
+  3   _DVTAssertionWarningHandler (in DVTFoundation)
+  4   __47-[IDELaunchServicesLauncher _waitForChildExit:]_block_invoke.119.cold.1 (in IDEFoundation)
+  5   -[IDELaunchServicesLauncher _waitForChildExit:] (in IDEFoundation)
+  6   __49-[IDELaunchServicesLauncher _launchWithPtyGroup:]_block_invoke_2 (in IDEFoundation)
+  7   __53-[DVTDispatchLock_Recursive asyncPerformLockedBlock:]_block_invoke (in DVTFoundation)
+  8   __43-[DVTDispatchLock asyncPerformLockedBlock:]_block_invoke (in DVTFoundation)
+  9   __DVT_CALLING_CLIENT_BLOCK__ (in DVTFoundation)
+ 10   __DVTDispatchBarrierAsync_block_invoke (in DVTFoundation)
+ 11   _dispatch_call_block_and_release (in libdispatch.dylib)
+ 12   _dispatch_client_callout (in libdispatch.dylib)
+ 13   _dispatch_lane_serial_drain (in libdispatch.dylib)
+ 14   _dispatch_lane_invoke (in libdispatch.dylib)
+ 15   _dispatch_root_queue_drain_deferred_wlh (in libdispatch.dylib)
+ 16   _dispatch_workloop_worker_thread (in libdispatch.dylib)
+ 17   _pthread_wqthread (in libsystem_pthread.dylib)
+ 18   start_wqthread (in libsystem_pthread.dylib)
+
+** INTERNAL ERROR: childPID > 0 **
+Assertion failure: ProductBuildVersion: 27A266a
+ASSERTION FAILURE in IDEFrameworks/IDEFoundation/Execution/LaunchSystem/IDELaunchServicesLauncher.m:445
+Details:  Assertion failed: childPID > 0
+Object:   <IDELaunchServicesLauncher: 0x8850494a0>
+Method:   -_waitForChildExit:
+Thread:   <NSThread: 0x884515200>{number = 29, name = (null)}
+Open FDs: 40/1048575
+Open Mach Ports: 141
+Hints:
+
+Backtrace:
+  0   -[DVTAssertionHandler handleFailureInMethod:object:fileName:lineNumber:assertionSignature:messageFormat:arguments:] (in DVTFoundation)
+  1   _DVTAssertionHandler (in DVTFoundation)
+  2   _DVTAssertionFailureHandler (in DVTFoundation)
+  3   _DVTAssertionWarningHandler (in DVTFoundation)
+  4   __47-[IDELaunchServicesLauncher _waitForChildExit:]_block_invoke.119.cold.1 (in IDEFoundation)
+  5   -[IDELaunchServicesLauncher _waitForChildExit:] (in IDEFoundation)
+  6   __49-[IDELaunchServicesLauncher _launchWithPtyGroup:]_block_invoke_2 (in IDEFoundation)
+  7   __53-[DVTDispatchLock_Recursive asyncPerformLockedBlock:]_block_invoke (in DVTFoundation)
+  8   __43-[DVTDispatchLock asyncPerformLockedBlock:]_block_invoke (in DVTFoundation)
+  9   __DVT_CALLING_CLIENT_BLOCK__ (in DVTFoundation)
+ 10   __DVTDispatchBarrierAsync_block_invoke (in DVTFoundation)
+ 11   _dispatch_call_block_and_release (in libdispatch.dylib)
+ 12   _dispatch_client_callout (in libdispatch.dylib)
+ 13   _dispatch_lane_serial_drain (in libdispatch.dylib)
+ 14   _dispatch_lane_invoke (in libdispatch.dylib)
+ 15   _dispatch_root_queue_drain_deferred_wlh (in libdispatch.dylib)
+ 16   _dispatch_workloop_worker_thread (in libdispatch.dylib)
+ 17   _pthread_wqthread (in libsystem_pthread.dylib)
+ 18   start_wqthread (in libsystem_pthread.dylib)
+
+Testing started

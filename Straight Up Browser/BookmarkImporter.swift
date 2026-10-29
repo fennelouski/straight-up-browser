@@ -49,6 +49,7 @@ nonisolated struct ImportedBookmark: Sendable {
 
 class BookmarkImporter {
     static func detectAvailableBrowsers() -> [BrowserType] {
+        guard !BrowserProfile.isIsolated else { return [] }
         var availableBrowsers: [BrowserType] = []
 
         for browser in BrowserType.allCases {
@@ -61,6 +62,7 @@ class BookmarkImporter {
     }
 
     static func importBookmarks(from browser: BrowserType) async throws -> [ImportedBookmark]? {
+        guard !BrowserProfile.isIsolated else { return nil }
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
@@ -77,6 +79,7 @@ class BookmarkImporter {
     }
 
     @concurrent static func importChromeBookmarks(from fileURL: URL) async throws -> [ImportedBookmark] {
+        guard !BrowserProfile.isIsolated else { return [] }
         assert(!Thread.isMainThread)
         let accessed = fileURL.startAccessingSecurityScopedResource()
         defer {

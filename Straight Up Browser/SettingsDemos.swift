@@ -1096,11 +1096,11 @@ struct ToneScheduleDemo: View {
 /// toggles, and modelling a five-field draft isn't worth it. Read-only popover (Done), toggles
 /// write straight through — the mock window animates a fake page load so you can see the result.
 struct ProgressIndicatorDemo: View {
-    @AppStorage("progressBarTop") private var top = true
-    @AppStorage("progressBarBottom") private var bottom = false
-    @AppStorage("progressBarLeft") private var left = false
-    @AppStorage("progressBarRight") private var right = false
-    @AppStorage("progressFaviconRing") private var ring = false
+    @AppStorage("progressBarTop", store: BrowserProfile.defaults) private var top = true
+    @AppStorage("progressBarBottom", store: BrowserProfile.defaults) private var bottom = false
+    @AppStorage("progressBarLeft", store: BrowserProfile.defaults) private var left = false
+    @AppStorage("progressBarRight", store: BrowserProfile.defaults) private var right = false
+    @AppStorage("progressFaviconRing", store: BrowserProfile.defaults) private var ring = false
 
     @State private var progress: CGFloat = 0.15
     private let tick = Timer.publish(every: 0.03, on: .main, in: .common).autoconnect()

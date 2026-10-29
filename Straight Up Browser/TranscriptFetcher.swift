@@ -48,7 +48,7 @@ final class TranscriptFetcher {
               let url = Self.json3URL(for: track)
         else { return nil }
 
-        guard let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
+        guard let (data, _) = try? await BrowserProfileNetwork.session.data(from: url) else { return nil }
         let segments = Self.parseJSON3(data)
         guard !segments.isEmpty else { return nil }
 
