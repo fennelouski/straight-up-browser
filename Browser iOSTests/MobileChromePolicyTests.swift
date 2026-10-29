@@ -112,3 +112,60 @@ struct MobileChromePolicyTests {
         #expect(await task.value.isEmpty)
     }
 }
+
+@Suite("Mobile suggestion snapshot ownership")
+struct MobileSuggestionSnapshotTests {
+    private func request(
+        query: String = "airfoil",
+        tabID: UUID? = UUID(uuidString: "00000000-0000-0000-0000-000000000001"),
+        entryID: UUID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+        revision: Int = 0,
+        isPrivate: Bool = false
+    ) -> MobileSuggestionRequest {
+        MobileSuggestionRequest(query: query, tabID: tabID, entryID: entryID,
+            revision: revision, isPrivate: isPrivate)
+    }
+
+    private func snapshot(for request: MobileSuggestionRequest) -> MobileSuggestionSnapshot {
+        MobileSuggestionSnapshot(request: request, results: [
+            Suggestion(url: URL(string: "https://received.example/airfoil")!,
+                title: "Airfoil reference", type: .openTab)
+        ])
+    }
+
+    @Test func onlyTheCurrentQueryCanDisplayCachedRows() {
+        let original = request()
+        let cache = snapshot(for: original)
+        #expect(cache.matchingResults(for: original).count == 1)
+        // The next lookup may still be debouncing. Old rows are already absent.
+        #expect(cache.matchingResults(for: request(query: "another project")).isEmpty)
+    }
+
+    @Test func switchingTabsOrReopeningTheSameTextInvalidatesRows() {
+        let cache = snapshot(for: request())
+        #expect(cache.matchingResults(for: request(tabID: UUID())).isEmpty)
+        #expect(cache.matchingResults(for: request(tabID: nil)).isEmpty)
+        #expect(cache.matchingResults(for: request(entryID: UUID())).isEmpty)
+    }
+
+    @Test func dataRefreshInvalidatesOldRowsAndTheirIndices() {
+        let original = request()
+        let refreshed = request(revision: 1)
+        // A late completion for an older request cannot become current again.
+        #expect(snapshot(for: original).matchingResults(for: refreshed).isEmpty)
+        #expect(snapshot(for: refreshed).matchingResults(for: refreshed).count == 1)
+    }
+
+    @Test func closedOrWhitespaceOnlyEditorsCannotDisplayRows() {
+        let cache = snapshot(for: request())
+        #expect(cache.matchingResults(for: request(query: "")).isEmpty)
+        let blank = request(query: " \n\t ")
+        #expect(snapshot(for: blank).matchingResults(for: blank).isEmpty)
+    }
+
+    @Test func privateEditorsCannotDisplayRegularOrPrivateSnapshots() {
+        let privateRequest = request(isPrivate: true)
+        #expect(snapshot(for: request()).matchingResults(for: privateRequest).isEmpty)
+        #expect(snapshot(for: privateRequest).matchingResults(for: privateRequest).isEmpty)
+    }
+}

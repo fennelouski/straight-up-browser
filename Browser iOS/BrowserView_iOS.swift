@@ -93,13 +93,8 @@ struct BrowserView_iOS: View {
 
     // Omnibar
     @State private var omnibarText = ""
-    @State private var cachedSuggestions: [Suggestion] = []
+    @State private var cachedSuggestionSnapshot: MobileSuggestionSnapshot?
     @State private var suggestionRevision = 0
-
-    private struct SuggestionRequest: Equatable {
-        let query: String
-        let revision: Int
-    }
     @State private var omnibarHasUserEdited = false
     @State private var selectedSuggestion = -1
     @State private var omnibarFocused = false
@@ -256,14 +251,21 @@ struct BrowserView_iOS: View {
         bookmarks.map { (title: $0.title, url: $0.url) }
     }
 
+    private var suggestionRequest: MobileSuggestionRequest {
+        MobileSuggestionRequest(query: showOmnibar ? omnibarText : "",
+            tabID: activeTab?.id, entryID: omnibarEditingID, revision: suggestionRevision,
+            isPrivate: activeTab?.sessionKind == .incognito)
+    }
+
     private var suggestions: [Suggestion] {
-        showOmnibar && !omnibarText.isEmpty ? cachedSuggestions : []
+        guard showOmnibar, !omnibarWeatherIntent else { return [] }
+        return cachedSuggestionSnapshot?.matchingResults(for: suggestionRequest) ?? []
     }
 
     private func refreshSuggestions() async {
-        guard showOmnibar, activeTab?.sessionKind != .incognito, !omnibarText.isEmpty, !omnibarWeatherIntent else { cachedSuggestions = []; return }
-        let query = omnibarText
-        let requestedTabID = activeTab?.id
+        let request = suggestionRequest
+        guard showOmnibar, request.allowsSuggestions, !omnibarWeatherIntent else { cachedSuggestionSnapshot = nil; return }
+        let query = request.query
         try? await Task.sleep(for: .milliseconds(100))
         guard !Task.isCancelled else { return }
         var bookmarkValues: [(title: String, url: URL)] = []
@@ -290,10 +292,11 @@ struct BrowserView_iOS: View {
             result[index].ledgerNote = ledgerNote(for: result[index].url)
         }
         var seen: Set<String> = []
-        guard showOmnibar, requestedTabID == activeTab?.id, query == omnibarText,
-              activeTab?.sessionKind != .incognito else { return }
-        cachedSuggestions = result.filter { seen.insert(MobileChromeLayout.canonicalURL($0.url)).inserted }
-        if selectedSuggestion >= cachedSuggestions.count { selectedSuggestion = -1 }
+        guard showOmnibar, request == suggestionRequest else { return }
+        // Row indices belong to one result snapshot, never to a later refresh.
+        selectedSuggestion = -1
+        cachedSuggestionSnapshot = MobileSuggestionSnapshot(request: request,
+            results: result.filter { seen.insert(MobileChromeLayout.canonicalURL($0.url)).inserted })
     }
 
     private var matchingPaletteTabs: [Tab] {
@@ -506,7 +509,7 @@ struct BrowserView_iOS: View {
             }
         }
         .onChange(of: tabManager.selectedTabId) { _, newValue in
-            cachedSuggestions = []; suggestionRevision += 1
+            cachedSuggestionSnapshot = nil; suggestionRevision += 1
             tabManager.updateActiveTab(in: allTabs)
             webViewManager?.setActiveTab(newValue)
             syncOmnibarToActiveTab()
@@ -518,7 +521,7 @@ struct BrowserView_iOS: View {
                 accessibilityFocus = isShowing ? .sidebar : .page
             }
         }
-        .task(id: SuggestionRequest(query: showOmnibar ? omnibarText : "", revision: suggestionRevision)) {
+        .task(id: suggestionRequest) {
             await refreshSuggestions()
         }
         .onChange(of: bookmarks) { _, _ in if showOmnibar { suggestionRevision += 1 } }

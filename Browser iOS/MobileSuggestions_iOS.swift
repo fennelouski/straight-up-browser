@@ -24,6 +24,30 @@ nonisolated struct MobileOpenTabSuggestion: Sendable {
     var isPrivate = false
 }
 
+/// Bind both asynchronous lookup and displayed rows to the current editor.
+/// A previous query must not remain keyboard-selectable during the debounce.
+nonisolated struct MobileSuggestionRequest: Equatable, Sendable {
+    let query: String
+    let tabID: UUID?
+    let entryID: UUID
+    let revision: Int
+    let isPrivate: Bool
+
+    var allowsSuggestions: Bool {
+        !isPrivate && !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+nonisolated struct MobileSuggestionSnapshot: Sendable {
+    let request: MobileSuggestionRequest
+    let results: [Suggestion]
+
+    func matchingResults(for current: MobileSuggestionRequest) -> [Suggestion] {
+        guard current.allowsSuggestions, request == current else { return [] }
+        return results
+    }
+}
+
 /// Pure local ranking. Remote records can only arrive through existing opted-in
 /// same-user CloudKit sync. This function performs no networking or persistence.
 @concurrent func omnibarSuggestions(

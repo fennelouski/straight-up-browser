@@ -6,10 +6,15 @@ single-job Swift package. HistoryVisit is extracted verbatim from its source.
 This does not substitute for the iOS target compile or native UI acceptance.
 """
 from pathlib import Path
+import argparse
 import os
 import json
 import subprocess
 import tempfile
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--filter", help="Run only matching Swift tests, for a focused follow-up")
+args = parser.parse_args()
 
 root = Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix="browser-mobile-policy-") as folder:
@@ -40,4 +45,7 @@ let package = Package(name: "MobileChromePolicy", targets: [
         (tests / name).write_text(test)
     env = os.environ.copy()
     env["CLANG_MODULE_CACHE_PATH"] = str(package / "module-cache")
-    subprocess.run(["/usr/bin/xcrun", "swift", "test", "--package-path", str(package), "--jobs", "1", "--disable-sandbox"], env=env, check=True)
+    command = ["/usr/bin/xcrun", "swift", "test", "--package-path", str(package), "--jobs", "1", "--disable-sandbox"]
+    if args.filter:
+        command += ["--filter", args.filter]
+    subprocess.run(command, env=env, check=True)
