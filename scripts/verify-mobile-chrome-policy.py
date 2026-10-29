@@ -45,7 +45,10 @@ let package = Package(name: "MobileChromePolicy", targets: [
         (tests / name).write_text(test)
     env = os.environ.copy()
     env["CLANG_MODULE_CACHE_PATH"] = str(package / "module-cache")
-    command = ["/usr/bin/xcrun", "swift", "test", "--package-path", str(package), "--jobs", "1", "--disable-sandbox"]
+    command = ["/usr/bin/xcrun", "swift", "test", "--package-path", str(package),
+        "--cache-path", str(package / "swiftpm-cache"),
+        "--config-path", str(package / "swiftpm-config"),
+        "--manifest-cache", "local", "--jobs", "1"]
     if args.filter:
         command += ["--filter", args.filter]
     subprocess.run(command, env=env, check=True)
