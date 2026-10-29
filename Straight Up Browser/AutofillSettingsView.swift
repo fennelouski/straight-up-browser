@@ -468,37 +468,37 @@ private struct AutofillProfileEditor: View {
                 TextField("Home", text: $profile.label).textFieldStyle(.roundedBorder)
             }
             LabeledContent(AutofillField.givenName.label) {
-                TextField("", text: $profile.givenName).textFieldStyle(.roundedBorder)
+                TextField("First name", text: $profile.givenName).textFieldStyle(.roundedBorder)
             }
             LabeledContent(AutofillField.familyName.label) {
-                TextField("", text: $profile.familyName).textFieldStyle(.roundedBorder)
+                TextField("Last name", text: $profile.familyName).textFieldStyle(.roundedBorder)
             }
             LabeledContent(AutofillField.email.label) {
-                TextField("", text: $profile.email).textFieldStyle(.roundedBorder)
+                TextField("Email address", text: $profile.email).textFieldStyle(.roundedBorder)
             }
             LabeledContent(AutofillField.phone.label) {
-                TextField("", text: $profile.phone).textFieldStyle(.roundedBorder)
+                TextField("Phone number", text: $profile.phone).textFieldStyle(.roundedBorder)
             }
             LabeledContent(AutofillField.organization.label) {
-                TextField("", text: $profile.organization).textFieldStyle(.roundedBorder)
+                TextField("Organization", text: $profile.organization).textFieldStyle(.roundedBorder)
             }
             LabeledContent(AutofillField.addressLine1.label) {
-                TextField("", text: $profile.addressLine1).textFieldStyle(.roundedBorder)
+                TextField("Street address", text: $profile.addressLine1).textFieldStyle(.roundedBorder)
             }
             LabeledContent(AutofillField.addressLine2.label) {
-                TextField("", text: $profile.addressLine2).textFieldStyle(.roundedBorder)
+                TextField("Apartment, suite, etc.", text: $profile.addressLine2).textFieldStyle(.roundedBorder)
             }
             LabeledContent(AutofillField.city.label) {
-                TextField("", text: $profile.city).textFieldStyle(.roundedBorder)
+                TextField("City", text: $profile.city).textFieldStyle(.roundedBorder)
             }
             LabeledContent(AutofillField.state.label) {
-                TextField("", text: $profile.addressState).textFieldStyle(.roundedBorder)
+                TextField("State or region", text: $profile.addressState).textFieldStyle(.roundedBorder)
             }
             LabeledContent(AutofillField.postalCode.label) {
-                TextField("", text: $profile.postalCode).textFieldStyle(.roundedBorder)
+                TextField("Postal code", text: $profile.postalCode).textFieldStyle(.roundedBorder)
             }
             LabeledContent(AutofillField.country.label) {
-                TextField("", text: $profile.country).textFieldStyle(.roundedBorder)
+                TextField("Country", text: $profile.country).textFieldStyle(.roundedBorder)
             }
         }
     }

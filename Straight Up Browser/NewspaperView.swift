@@ -1764,6 +1764,7 @@ struct NewspaperSettingsView: View {
                 HStack {
                     NewspaperTintedLabel(title: "Default section", systemImage: "folder", tint: .teal)
                     TextField("Front Page", text: $defaultSection)
+                        .textFieldStyle(.roundedBorder)
                         .multilineTextAlignment(.trailing)
                 }
             } header: {
@@ -1788,6 +1789,7 @@ struct NewspaperSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .textSelection(.enabled)
         .navigationTitle("Newspaper")
     }
 

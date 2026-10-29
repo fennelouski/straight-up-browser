@@ -338,6 +338,7 @@ struct BackGuardSection: View {
             }
             HStack {
                 TextField("Add a site (meet.google.com)", text: $newHost)
+                    .textFieldStyle(.roundedBorder)
                     .onSubmit(addHost)
                 Button("Add", action: addHost)
                     .disabled(ShortcutPriorityStore.normalize(newHost) == nil)
@@ -471,6 +472,7 @@ struct WebsiteShortcutPriorityView: View {
 
             HStack {
                 TextField("Add a site (example.com)", text: $newHost)
+                    .textFieldStyle(.roundedBorder)
                     .onSubmit(addHost)
                 Button("Add", action: addHost)
                     .disabled(ShortcutPriorityStore.normalize(newHost) == nil)
@@ -1871,6 +1873,7 @@ struct MemorySettingsView: View {
                 }
                 HStack {
                     TextField("Add a site (spotify.com)", text: $newHost)
+                        .textFieldStyle(.roundedBorder)
                         .onSubmit(addPinnedHost)
                     Button("Add", action: addPinnedHost)
                         .disabled(MemoryPinnedSites.normalized(newHost).isEmpty)

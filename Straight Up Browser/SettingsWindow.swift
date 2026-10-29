@@ -422,6 +422,7 @@ struct SettingsWindow: View {
             }
         }
         .background(paneShortcuts)
+        .textSelection(.enabled)
         .frame(minWidth: 720, minHeight: 520)
         .preferredColorScheme(colorScheme)
     }

@@ -170,6 +170,7 @@ struct Settings_iOS: View {
                         }
                     Toggle("Automatically offer page translation", isOn: $autoTranslateEnabled)
                     TextField("Languages you read (en, es, fr)", text: $translationPreferredLanguages)
+                        .textFieldStyle(.roundedBorder)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
@@ -340,6 +341,7 @@ struct Settings_iOS: View {
                 Button("Cancel", role: .cancel) {}
             }
         }
+        .textSelection(.enabled)
     }
 
     private var agentDefinitionSyncSection: some View {

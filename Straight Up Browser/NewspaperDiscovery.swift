@@ -509,6 +509,7 @@ struct NewspaperDiscoverySettings: View {
             #endif
             Stepper("Maximum automatic articles per day: \(limit)", value: $limit, in: 1...100)
             TextField("Excluded sites (for example: example.com)", text: $excludedHosts)
+                .textFieldStyle(.roundedBorder)
             Toggle("Add curated starter articles", isOn: $starters)
         } header: { Label("Article Discovery", systemImage: "sparkle.magnifyingglass") }
         footer: { Text("Collection from regular visits, front-page article links and recent-reading catch-up is on by default. Explicit opt-outs are retained. Catch-up checks up to 96 eligible public URLs from recent visits and open normal tabs in a bounded pass when Newspaper opens, within your daily article limit. Excluded sites, private sessions, credentials, sensitive account paths and non-tracking URL queries are skipped. Tracking parameters are removed. Prefetch collection, idle work, cloud sharing and AI validation remain optional. Outside catch-up, linked discovery makes at most one anonymous request every 30 minutes. iOS does not collect while suspended.") }

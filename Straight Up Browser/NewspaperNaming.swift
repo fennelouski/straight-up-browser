@@ -200,7 +200,9 @@ struct NewspaperNamingSettings: View {
     }
     var body: some View {
         CollapsibleSection(searchID: "newspaper.naming", initiallyCollapsed: true) {
-            TextField("Edition name", text: $title, prompt: Text(style.title)).accessibilityIdentifier("newspaper-personal-name")
+            TextField("Edition name", text: $title, prompt: Text(style.title))
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("newspaper-personal-name")
             if !title.isEmpty && NewspaperNaming.validName(title) == nil { Text("Use 2–48 characters: letters, numbers and ordinary name punctuation.").font(.caption).foregroundStyle(.secondary) }
             Button("Use the style's name") { title = "" }.disabled(title.isEmpty)
             Text("Name my edition").font(.headline)
@@ -213,6 +215,7 @@ struct NewspaperNamingSettings: View {
             #endif
             Text(target).font(.caption).textSelection(.enabled)
             TextField("Your name or nickname (optional)", text: $readerName)
+                .textFieldStyle(.roundedBorder)
             Toggle("Saved article sections", isOn: $includeTopics)
             Toggle("Saved article headlines", isOn: $includeHeadlines)
             Toggle("Device name", isOn: $includeDevice)
