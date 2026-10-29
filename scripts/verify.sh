@@ -53,7 +53,13 @@ if [ "$MACOS_UI_TEST_TIMEOUT_SECONDS" -lt 1 ]; then
     exit 64
 fi
 
-python3 ./scripts/check-agent-model-review.py
+# Match the explicit one-release exception in release.sh; all other versions remain gated.
+if [ "${BROWSER_SKIP_MODEL_REVIEW:-}" = "2.9.35" ] &&
+   [ "$(xcodebuild -project "$PROJECT" -target Browser -configuration Release -showBuildSettings | awk '/ MARKETING_VERSION = / { print $3; exit }')" = "2.9.35" ]; then
+    echo "WARNING: provider model review skipped for Browser 2.9.35 at the owner's request."
+else
+    python3 ./scripts/check-agent-model-review.py
+fi
 python3 ./scripts/test-agent-model-review.py
 ./scripts/validate-release-policy.sh
 ./scripts/validate-security-policy.sh

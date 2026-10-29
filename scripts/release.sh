@@ -66,7 +66,12 @@ xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null || {
     exit 1
 }
 
-python3 ./scripts/check-agent-model-review.py --live
+# One-release exception explicitly requested for 2.9.35; never claim a review passed.
+if [ "$MARKETING_VERSION" = "2.9.35" ] && [ "${BROWSER_SKIP_MODEL_REVIEW:-}" = "2.9.35" ]; then
+    echo "WARNING: provider model review skipped for Browser 2.9.35 at the owner's request."
+else
+    python3 ./scripts/check-agent-model-review.py --live
+fi
 
 # Never archive a release that has not passed the same gates as CI. This ships
 # the Mac app only, so the iPadOS UI suite doesn't gate it (the iOS Release
@@ -211,6 +216,14 @@ APPCAST_SHA256="$(shasum -a 256 "$APPCAST" | awk '{ print $1 }')"
 printf '%s  %s\n' "$DMG_SHA256" "Browser.dmg" > "$BUILD/Browser.dmg.sha256"
 
 PROVENANCE="$BUILD/release-provenance.json"
+MODEL_REVIEW_STATUS="passed"
+if [ "$MARKETING_VERSION" = "2.9.35" ] && [ "${BROWSER_SKIP_MODEL_REVIEW:-}" = "2.9.35" ]; then
+    MODEL_REVIEW_STATUS="skipped at owner request"
+fi
+UI_TEST_STATUS="passed"
+if [ "${RUN_UI_TESTS:-1}" != "1" ]; then
+    UI_TEST_STATUS="skipped"
+fi
 jq -n \
     --arg commit "$SOURCE_COMMIT" \
     --arg tag "$SOURCE_TAG" \
@@ -220,6 +233,8 @@ jq -n \
     --arg xcode "$(xcodebuild -version | paste -sd ' ' -)" \
     --arg dmg_sha256 "$DMG_SHA256" \
     --arg appcast_sha256 "$APPCAST_SHA256" \
+    --arg model_review "$MODEL_REVIEW_STATUS" \
+    --arg macos_ui_tests "$UI_TEST_STATUS" \
     '{
       source: {
         commit: $commit,
@@ -232,6 +247,7 @@ jq -n \
         xcode: $xcode,
         architecture: "arm64"
       },
+      verification: { modelReview: $model_review, macOSUITests: $macos_ui_tests },
       artifacts: {
         dmgSHA256: $dmg_sha256,
         appcastSHA256: $appcast_sha256
