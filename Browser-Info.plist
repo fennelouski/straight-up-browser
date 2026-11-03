@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>BrowserLocalBuildNotes</key>
-	<string>Includes preserved ClaimsPanel weak capture fix; local Air update</string>
+	<string>Configurable new-command destinations and omnibar presentation; focused split-pane ordering; prior login fix retained</string>
 	<key>BrowserSourceRevision</key>
-	<string>aa0e763cf3af39110d996f4b5baaf89f5ea71935</string>
+	<string>f227608204ff917c7846a1346889f5f0361340f5</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -97,5 +97,7 @@
 			<string>com.nathanfennel.straight-up-browser.tabgroup</string>
 		</dict>
 	</array>
+	<key>BrowserSourceBaseRevision</key>
+	<string>aa0e763cf3af39110d996f4b5baaf89f5ea71935</string>
 </dict>
 </plist>
