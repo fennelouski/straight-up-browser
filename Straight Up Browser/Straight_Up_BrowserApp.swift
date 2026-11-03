@@ -433,7 +433,24 @@ struct Straight_Up_BrowserApp: App {
                 Button("New Window") {
                     openWindow(id: "browser", value: BrowserWindows.shared.create())
                 }
-                .keyboardShortcut("n", modifiers: [.command])
+                Button("New (Configured Action)") {
+                    if BrowserWindows.shared.activeID != nil {
+                        NotificationCenter.default.post(name: .browserNewCommand, object: NSApp.keyWindow)
+                    } else {
+                        let id = BrowserWindows.shared.create()
+                        NewCommandPreferences.pendingWindows[id] = NewCommandPreferences.presentation()
+                        openWindow(id: "browser", value: id)
+                    }
+                }
+                .keyboardShortcut(sc(.newCommand))
+                Button("Move Pane Left") {
+                    NotificationCenter.default.post(name: .browserMovePaneLeft, object: NSApp.keyWindow)
+                }
+                .keyboardShortcut(sc(.movePaneLeft))
+                Button("Move Pane Right") {
+                    NotificationCenter.default.post(name: .browserMovePaneRight, object: NSApp.keyWindow)
+                }
+                .keyboardShortcut(sc(.movePaneRight))
                 Button("Rename Window…") {
                     NotificationCenter.default.post(name: .browserRenameWindow, object: NSApp.keyWindow)
                 }

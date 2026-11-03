@@ -848,7 +848,8 @@ nonisolated enum SemanticPageJavaScript {
           String(el.autocomplete || '').toLowerCase().split(/\s+/).includes('username')) ||
           usernameCandidates.filter(el => formInputs.indexOf(el) < passwordIndex).pop() || usernameCandidates[0];
         const isCredential = type === 'password' || credentialTokens.includes(autocompleteToken) ||
-          (!!pairedPassword && element === pairedUsername);
+          (!!pairedPassword && element === pairedUsername) ||
+          window.__browserCredentialRuntime?.isCredentialField(element) === true;
         // Register the identity now so the localID we report can be resolved later.
         const identity = identityFor(element, []);
         const report = () => {
@@ -899,6 +900,7 @@ nonisolated enum SemanticPageJavaScript {
       // outside this handler. The values travel once, straight to the
       // isolated-world message handler; nothing else in the runtime sees them.
       document.addEventListener('submit', event => {
+        if (window.__browserCredentialRuntime) return;
         const form = event.target;
         if (!(form instanceof HTMLFormElement)) return;
         const inputs = Array.from(form.querySelectorAll('input'));

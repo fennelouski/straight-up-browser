@@ -91,6 +91,26 @@ struct CredentialSavePromptTests {
         #expect(manager.savePrompt == nil)
     }
 
+    @Test func usernameStepSurvivesDocumentReplacementButNeverCrossesDomains() async throws {
+        let domain = "step-test-\(UUID().uuidString.lowercased()).invalid"
+        let manager = CredentialManager()
+        let tabID = UUID()
+        func submit(domain: String, username: String, password: String) async throws {
+            NotificationCenter.default.post(name: .browserCredentialSubmitted, object: nil, userInfo: [
+                "tabID": tabID, "domain": domain, "username": username, "password": password,
+            ])
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        try await submit(domain: domain, username: "synthetic-user", password: "")
+        #expect(manager.savePrompt == nil)
+        try await submit(domain: "different.invalid", username: "", password: "synthetic-password")
+        #expect(manager.savePrompt == nil)
+        try await submit(domain: domain, username: "", password: "synthetic-password")
+        #expect(manager.savePrompt?.username == "synthetic-user")
+        #expect(manager.savePrompt?.domain == domain)
+        manager.dismissSavePrompt()
+    }
+
     @Test func neverSaveHostAndSilentModeSkipThePrompt() async throws {
         let domain = "prompt-pref-\(UUID().uuidString.lowercased()).invalid"
         let style = CredentialPreferences.promptStyle, silent = CredentialPreferences.savesSilently

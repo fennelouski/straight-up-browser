@@ -25,7 +25,7 @@ struct ClaimsPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            headerYeah.
             Divider()
             content
             if let note {
@@ -44,7 +44,7 @@ struct ClaimsPanel: View {
         #endif
         .task {
             if !session.isLoaded { await session.open() }
-            scout.isAlreadyPromoted = { [weak ledgerStore] text in
+            scout.isAlreadyPromoted = { [weak ledgerStore = ledgerStore] text in
                 ledgerStore?.claimExists(normalizedFrom: text) ?? false
             }
             rescan(immediate: true)
