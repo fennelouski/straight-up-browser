@@ -32,8 +32,12 @@ RUN_UI_TESTS="${RUN_UI_TESTS:-0}"
 # UI test case limits do not cover a test-runner launch that never connects.
 # Keep an outer deadline as well so a release attempt cannot monopolize the
 # active macOS desktop indefinitely. Reaching the deadline is a failure, not a
-# skipped verification gate.
+# skipped verification gate. An explicit 0 disables only this outer deadline
+# for an idle-authorized run; it never skips UI tests or their case limits.
 MACOS_UI_TEST_TIMEOUT_SECONDS="${MACOS_UI_TEST_TIMEOUT_SECONDS:-480}"
+# Opt-in desktop protection. Recheck at the actual UI stage, not just before
+# builds; activity during those builds must restart the continuous idle wait.
+MACOS_UI_MIN_IDLE_SECONDS="${MACOS_UI_MIN_IDLE_SECONDS:-0}"
 # The iPadOS UI suite gates the iOS app, which ships on its own schedule. Set
 # this to 0 to release the Mac app without it. The iOS Release build below is
 # unconditional either way, so a macOS release still cannot land iOS code that
@@ -44,14 +48,16 @@ MIN_APP_COVERAGE_PERCENT="${MIN_APP_COVERAGE_PERCENT:-25}"
 
 case "$MACOS_UI_TEST_TIMEOUT_SECONDS" in
     ''|*[!0-9]*)
-        echo "MACOS_UI_TEST_TIMEOUT_SECONDS must be a positive whole number." >&2
+        echo "MACOS_UI_TEST_TIMEOUT_SECONDS must be a non-negative whole number (0 disables the outer deadline)." >&2
         exit 64
         ;;
 esac
-if [ "$MACOS_UI_TEST_TIMEOUT_SECONDS" -lt 1 ]; then
-    echo "MACOS_UI_TEST_TIMEOUT_SECONDS must be greater than zero." >&2
-    exit 64
-fi
+case "$MACOS_UI_MIN_IDLE_SECONDS" in
+    ''|*[!0-9]*)
+        echo "MACOS_UI_MIN_IDLE_SECONDS must be a non-negative whole number." >&2
+        exit 64
+        ;;
+esac
 
 python3 ./scripts/check-agent-model-review.py
 python3 ./scripts/test-agent-model-review.py
@@ -145,9 +151,18 @@ CLI_EXECUTABLE="$DERIVED_DATA_ROOT/macos-release/Build/Products/Release/Browser.
 ./scripts/validate-macos-architectures.sh "$MAC_EXECUTABLE" "$CLI_EXECUTABLE"
 
 if [ "$RUN_UI_TESTS" = "1" ]; then
-    echo "Running macOS UI tests (maximum ${MACOS_UI_TEST_TIMEOUT_SECONDS}s)..."
+    if [ "$MACOS_UI_MIN_IDLE_SECONDS" -gt 0 ]; then
+        ./scripts/wait-for-macos-idle.sh "$MACOS_UI_MIN_IDLE_SECONDS"
+    fi
+    if [ "$MACOS_UI_TEST_TIMEOUT_SECONDS" -eq 0 ]; then
+        echo "Running macOS UI tests (outer deadline explicitly disabled)..."
+        macos_ui_test_runner=(/usr/bin/env)
+    else
+        echo "Running macOS UI tests (maximum ${MACOS_UI_TEST_TIMEOUT_SECONDS}s)..."
+        macos_ui_test_runner=(./scripts/run-with-time-limit.sh "$MACOS_UI_TEST_TIMEOUT_SECONDS")
+    fi
     macos_ui_test_status=0
-    if ./scripts/run-with-time-limit.sh "$MACOS_UI_TEST_TIMEOUT_SECONDS" \
+    if "${macos_ui_test_runner[@]}" \
         xcodebuild test -quiet \
             -onlyUsePackageVersionsFromResolvedFile \
             -project "$PROJECT" \
@@ -165,7 +180,7 @@ if [ "$RUN_UI_TESTS" = "1" ]; then
         macos_ui_test_status=$?
     fi
     if [ "$macos_ui_test_status" -ne 0 ]; then
-        if [ "$macos_ui_test_status" -eq 124 ]; then
+        if [ "$macos_ui_test_status" -eq 124 ] && [ "$MACOS_UI_TEST_TIMEOUT_SECONDS" -gt 0 ]; then
             echo "macOS UI tests exceeded the ${MACOS_UI_TEST_TIMEOUT_SECONDS}s deadline; the release is intentionally stopped." >&2
         fi
         exit "$macos_ui_test_status"

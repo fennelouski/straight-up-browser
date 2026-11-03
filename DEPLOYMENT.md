@@ -124,7 +124,13 @@ which checks live weather while the Newspaper masthead is disabled.
    the profile with `NOTARY_PROFILE=name`. The macOS UI suite has an eight-minute
    wall-clock deadline by default, including Xcode runner startup. Use
    `MACOS_UI_TEST_TIMEOUT_SECONDS=<positive-seconds>` to set a different
-   deadline. It is a fail-closed guard: reaching it stops the release and does
+   deadline, or explicitly use `MACOS_UI_TEST_TIMEOUT_SECONDS=0` for no outer
+   deadline when the user has authorized an idle-only run. Zero does not skip
+   the suite or disable individual test checks. Set `MACOS_UI_MIN_IDLE_SECONDS=480`
+   to require eight continuous minutes of HID input inactivity immediately before
+   the macOS UI stage; activity during the earlier builds restarts that wait.
+   An unreadable idle signal fails closed. The wall-clock deadline is also a
+   fail-closed guard: reaching it stops the release and does
    not waive XCTest verification. The macOS UI test host activates Browser;
    use a separate signed macOS account or dedicated release host when that must
    not interrupt the primary desktop session.

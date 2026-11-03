@@ -153,6 +153,7 @@ final class Straight_Up_BrowserUITests: XCTestCase {
 
     @MainActor
     func testNewspaperAppearanceHeadlineAndDiscoveryControls() {
+        executionTimeAllowance = 90
         let app = browserForUITesting()
         app.launchArguments += ["-newspaperUITesting", "-newspaperShowHeadline", "YES",
             "-newspaperDiscoverVisited", "NO", "-newspaperDiscoverPrefetched", "NO", "-newspaperDiscoverRelated", "NO", "-newspaperExternalValidation", "NO", "-newspaperShowWeather", "NO"]
@@ -166,26 +167,23 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         paper.buttons["Newspaper Settings"].click()
         let settings = app.windows["settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
-        for _ in 0..<16 {
-            if settings.popUpButtons["newspaper-appearance"].isHittable { break }
-            settings.scrollViews.element(boundBy: 1).swipeUp()
-        }
+        revealSettingsElement(settings.popUpButtons["newspaper-appearance"], in: settings)
         settings.popUpButtons["newspaper-appearance"].click()
         app.menuItems["Dark"].click()
+        revealSettingsElement(settings.buttons["Broadsheet"], in: settings)
         settings.buttons["Broadsheet"].click()
         XCTAssertTrue(settings.buttons["Shelf"].exists)
         XCTAssertTrue(settings.staticTexts["Light"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(settings.staticTexts["Dark"].firstMatch.exists)
         let previews = XCTAttachment(screenshot: settings.screenshot()); previews.name = "Newspaper-Settings-Previews"; previews.lifetime = .keepAlways; add(previews)
         let dark = XCTAttachment(screenshot: paper.screenshot()); dark.name = "Newspaper-Dark"; dark.lifetime = .keepAlways; add(dark)
+        revealSettingsElement(settings.popUpButtons["newspaper-appearance"], in: settings)
         settings.popUpButtons["newspaper-appearance"].click()
         app.menuItems["Light"].click()
+        revealSettingsElement(settings.buttons["Ink"], in: settings)
         settings.buttons["Ink"].click()
         XCTAssertEqual(settings.popUpButtons["newspaper-appearance"].value as? String, "Light")
-        for _ in 0..<12 {
-            if settings.switches["newspaper-discovery-visited"].isHittable { break }
-            settings.scrollViews.element(boundBy: 1).swipeUp()
-        }
+        revealSettingsElement(settings.switches["newspaper-discovery-visited"], in: settings)
         XCTAssertTrue(settings.switches["newspaper-discovery-visited"].waitForExistence(timeout: 5))
         XCTAssertEqual((settings.switches["newspaper-discovery-visited"].value as? NSNumber)?.intValue, 0)
         XCTAssertEqual((settings.switches["newspaper-discovery-external"].value as? NSNumber)?.intValue, 0)
@@ -196,6 +194,7 @@ final class Straight_Up_BrowserUITests: XCTestCase {
 
     @MainActor
     func testNewspaperPublicationStylesAndVisualFormats() {
+        executionTimeAllowance = 90
         let app = browserForUITesting()
         app.launchArguments += ["-newspaperUITesting", "-newspaperShowWeather", "NO", "-newspaperShowHeadline", "NO", "-newspaperNavigationStyle", "continuous"]
         launchBrowserForUITesting(app)
@@ -222,39 +221,19 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         XCTAssertTrue(settings.buttons["Publication Style & Paper"].waitForExistence(timeout: 5))
         let settingsContent = settings.scrollViews.element(boundBy: 1)
-        for _ in 0..<32 {
-            if settings.buttons["Publication Style & Paper"].isHittable { break }
-            settingsContent.scroll(byDeltaX: 0, deltaY: 200)
-        }
+        revealSettingsElement(settings.buttons["Publication Style & Paper"], in: settings)
         XCTAssertFalse(settings.buttons["Bold Weekly"].exists)
         settings.buttons["Publication Style & Paper"].click()
-        for _ in 0..<32 {
-            if settings.buttons["Bold Weekly"].isHittable { break }
-            settingsContent.scroll(byDeltaX: 0, deltaY: -200)
-        }
+        revealSettingsElement(settings.buttons["Bold Weekly"], in: settings)
         XCTAssertTrue(settings.buttons["Bold Weekly"].waitForExistence(timeout: 5))
         settings.buttons["Bold Weekly"].click()
-        for _ in 0..<32 {
-            if settings.buttons["Use this style's recommended format and paper"].isHittable { break }
-            settingsContent.scroll(byDeltaX: 0, deltaY: -200)
-        }
+        revealSettingsElement(settings.buttons["Use this style's recommended format and paper"], in: settings)
         settings.buttons["Use this style's recommended format and paper"].click()
         XCTAssertTrue(paper.descendants(matching: .any)["newspaper-cover-issue"].waitForExistence(timeout: 5))
         XCTAssertTrue(paper.descendants(matching: .any)["newspaper-table-of-contents"].exists)
         let cover = XCTAttachment(screenshot: paper.screenshot()); cover.name = "Newspaper-Cover-Contents"; cover.lifetime = .keepAlways; add(cover)
         let eclecticFormat = settings.buttons["Eclectic"]
-        for _ in 0..<64 {
-            if eclecticFormat.exists {
-                let formatFrame = eclecticFormat.frame
-                let viewport = settingsContent.frame
-                if eclecticFormat.isHittable,
-                   formatFrame.midY > viewport.minY + 24,
-                   formatFrame.midY < viewport.maxY - 24 {
-                    break
-                }
-            }
-            settingsContent.scroll(byDeltaX: 0, deltaY: -100)
-        }
+        revealSettingsElement(eclecticFormat, in: settings)
         XCTAssertTrue(eclecticFormat.exists)
         XCTAssertTrue(eclecticFormat.isHittable)
         XCTAssertGreaterThan(eclecticFormat.frame.midY, settingsContent.frame.minY + 24)
@@ -285,10 +264,7 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         paper.buttons["Newspaper Settings"].click()
         let settings = app.windows["settings"]
         XCTAssertTrue(settings.buttons["Edition Name"].waitForExistence(timeout: 5))
-        for _ in 0..<32 {
-            if settings.buttons["Edition Name"].isHittable { break }
-            settings.scrollViews.element(boundBy: 1).scroll(byDeltaX: 0, deltaY: 200)
-        }
+        revealSettingsElement(settings.buttons["Edition Name"], in: settings)
         XCTAssertFalse(settings.textFields["newspaper-personal-name"].exists)
         settings.buttons["Edition Name"].click()
         let field = settings.textFields["newspaper-personal-name"]
@@ -757,6 +733,34 @@ final class Straight_Up_BrowserUITests: XCTestCase {
         XCTAssertTrue(more.waitForExistence(timeout: 5))
     }
 
+}
+
+/// Start from the control's actual position, not an assumed scroll direction.
+/// Appearance sits below the layout gallery and may begin above the viewport
+/// after other interactions. Blind upward swipes can scroll away from it.
+@MainActor
+func revealSettingsElement(_ element: XCUIElement, in window: XCUIElement,
+                           file: StaticString = #filePath, line: UInt = #line) {
+    let scrollView = window.scrollViews.element(boundBy: 1)
+    XCTAssertTrue(scrollView.waitForExistence(timeout: 5), file: file, line: line)
+    for _ in 0..<12 {
+        // Lazy style galleries don't expose offscreen buttons until scrolling
+        // materializes their rows. Continue a bounded downward search first.
+        guard element.exists else {
+            scrollView.scroll(byDeltaX: 0, deltaY: -360)
+            continue
+        }
+        let viewport = scrollView.frame.insetBy(dx: 0, dy: 24)
+        let target = element.frame
+        if element.isHittable, viewport.contains(CGPoint(x: viewport.midX, y: target.midY)) {
+            return
+        }
+        let offset = target.midY - viewport.midY
+        let distance = min(600, max(160, abs(offset)))
+        scrollView.scroll(byDeltaX: 0, deltaY: offset < 0 ? distance : -distance)
+    }
+    XCTAssertTrue(element.exists, "Settings control was not found", file: file, line: line)
+    XCTAssertTrue(element.isHittable, "Settings control did not become reachable", file: file, line: line)
 }
 
 @MainActor
